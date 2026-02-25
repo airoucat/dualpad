@@ -20,10 +20,13 @@ set_policy("package.requires_lock", true)
 add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
+add_requires("hidapi")
+
 -- targets
 target("DualPad")
     -- add dependencies to target
     add_deps("commonlibsse-ng")
+    add_packages("hidapi")
 
     -- add commonlibsse-ng plugin
     add_rules("commonlibsse-ng.plugin", {

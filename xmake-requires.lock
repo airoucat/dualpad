@@ -27,6 +27,14 @@
             },
             version = "24.2.0"
         },
+        ["hidapi#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "d3f5164cd147433c264ff3f6d65d40052bbbe384",
+                url = "https://gitee.com/tboox/xmake-repo.git"
+            },
+            version = "0.14.0"
+        },
         ["ninja#f56260b5"] = {
             repo = {
                 branch = "master",
