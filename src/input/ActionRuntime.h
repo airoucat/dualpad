@@ -7,4 +7,7 @@ namespace dualpad::input
 
     // 主线程每帧调用（热重载轮询 + 消费Action队列）
     void TickActionRuntimeMainThread();
+
+    void StartActionRuntimeTickOnMainThread();
+    void StopActionRuntimeTickOnMainThread();
 }

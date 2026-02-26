@@ -2,6 +2,7 @@
 #include "input/ActionConfig.h"
 #include "input/ActionRouter.h"
 #include "input/InputActions.h"
+#include "input/GameActions.h"
 
 #include <SKSE/SKSE.h>
 
@@ -64,7 +65,7 @@ namespace dualpad::input
         bool TryParseTriggerCode(std::string_view s, TriggerCode& out)
         {
             using P = std::pair<std::string_view, TriggerCode>;
-            static constexpr std::array<P, 38> kMap{ {
+            static constexpr P kMap[] = {
                 { "Square", TriggerCode::Square },
                 { "Cross", TriggerCode::Cross },
                 { "Circle", TriggerCode::Circle },
@@ -106,10 +107,25 @@ namespace dualpad::input
                 { "TP_SWIPE_RIGHT", TriggerCode::TpSwipeRight },
 
                 { "None", TriggerCode::None },
-                // 可加兼容别名
+
+                // 兼容别名
                 { "TpLeftPress", TriggerCode::TpLeftPress },
-                { "TpRightPress", TriggerCode::TpRightPress }
-            } };
+                { "TpMidPress", TriggerCode::TpMidPress },
+                { "TpRightPress", TriggerCode::TpRightPress },
+                { "TpSwipeUp", TriggerCode::TpSwipeUp },
+                { "TpSwipeDown", TriggerCode::TpSwipeDown },
+                { "TpSwipeLeft", TriggerCode::TpSwipeLeft },
+                { "TpSwipeRight", TriggerCode::TpSwipeRight },
+
+                { "LStickUp", TriggerCode::LStickUp },
+                { "LStickDown", TriggerCode::LStickDown },
+                { "LStickLeft", TriggerCode::LStickLeft },
+                { "LStickRight", TriggerCode::LStickRight },
+                { "RStickUp", TriggerCode::RStickUp },
+                { "RStickDown", TriggerCode::RStickDown },
+                { "RStickLeft", TriggerCode::RStickLeft },
+                { "RStickRight", TriggerCode::RStickRight },
+            };
 
             for (auto& [name, code] : kMap) {
                 if (s == name) {
@@ -127,7 +143,16 @@ namespace dualpad::input
 
             return false;
         }
-
+        bool TryParseAxisCode(std::string_view s, AxisCode& out)
+        {
+            if (s == "LStickX") { out = AxisCode::LStickX; return true; }
+            if (s == "LStickY") { out = AxisCode::LStickY; return true; }
+            if (s == "RStickX") { out = AxisCode::RStickX; return true; }
+            if (s == "RStickY") { out = AxisCode::RStickY; return true; }
+            if (s == "L2") { out = AxisCode::L2; return true; }
+            if (s == "R2") { out = AxisCode::R2; return true; }
+            return false;
+        }
         // 支持两种写法：
         // 1) TP_LEFT_PRESS.Press
         // 2) Input.TP_LEFT_PRESS.Press
@@ -148,7 +173,18 @@ namespace dualpad::input
             return TryParseTriggerCode(codeStr, code) && TryParseTriggerPhase(phaseStr, phase);
         }
 
-        bool ParseIniFile(const std::filesystem::path& path, std::vector<ActionRouter::BindingEntry>& out)
+        bool TryParseAxisKey(std::string_view key, AxisCode& axis)
+        {
+            if (StartsWith(key, "InputAxis.")) {
+                key.remove_prefix(10);
+            }
+            return TryParseAxisCode(key, axis);
+        }
+
+        bool ParseIniFile(
+            const std::filesystem::path& path,
+            std::vector<ActionRouter::BindingEntry>& out,
+            std::vector<ActionRouter::AxisBindingEntry>& outAxis)
         {
             std::ifstream ifs(path);
             if (!ifs.is_open()) {
@@ -156,25 +192,28 @@ namespace dualpad::input
             }
 
             out.clear();
+            outAxis.clear();
 
             std::string line;
             std::size_t lineNo = 0;
-            std::string section;
+            std::string section;  // "", "Bindings", "Axes", ...
 
             while (std::getline(ifs, line)) {
                 ++lineNo;
+                if (lineNo == 1 && line.size() >= 3 &&
+                    static_cast<unsigned char>(line[0]) == 0xEF &&
+                    static_cast<unsigned char>(line[1]) == 0xBB &&
+                    static_cast<unsigned char>(line[2]) == 0xBF) {
+                    line.erase(0, 3);
+                }
                 line = Trim(line);
 
                 if (line.empty()) continue;
                 if (line[0] == ';' || line[0] == '#') continue;
 
+                // section header
                 if (line.front() == '[' && line.back() == ']') {
                     section = Trim(line.substr(1, line.size() - 2));
-                    continue;
-                }
-
-                // 只认 [Bindings]（无 section 也接受）
-                if (!section.empty() && section != "Bindings") {
                     continue;
                 }
 
@@ -186,26 +225,38 @@ namespace dualpad::input
 
                 auto key = Trim(line.substr(0, eq));
                 auto val = Trim(line.substr(eq + 1));
-
                 if (key.empty() || val.empty()) {
                     continue;
                 }
 
-                TriggerCode code{};
-                TriggerPhase phase{};
-                if (!TryParseBindingKey(key, code, phase)) {
-                    logger::warn("[DualPad] Actions.ini:{} invalid trigger key: {}", lineNo, key);
+                // -------- [Axes] --------
+                if (section == "Axes") {
+                    AxisCode a{};
+                    if (!TryParseAxisKey(key, a)) {
+                        logger::warn("[DualPad] Actions.ini:{} invalid axis key: {}", lineNo, key);
+                        continue;
+                    }
+                    outAxis.push_back(ActionRouter::AxisBindingEntry{ a, val });
                     continue;
                 }
 
-                out.push_back(ActionRouter::BindingEntry{
-                    code, phase, val
-                    });
+                // -------- [Bindings] or no section --------
+                if (section.empty() || section == "Bindings") {
+                    TriggerCode code{};
+                    TriggerPhase phase{};
+                    if (!TryParseBindingKey(key, code, phase)) {
+                        logger::warn("[DualPad] Actions.ini:{} invalid trigger key: {}", lineNo, key);
+                        continue;
+                    }
+                    out.push_back(ActionRouter::BindingEntry{ code, phase, val });
+                    continue;
+                }
+
+                // unknown section -> ignore
             }
 
             return true;
         }
-
         std::filesystem::path DefaultConfigPath()
         {
             // Data/SKSE/Plugins/DualPadActions.ini （运行目录通常是游戏根目录）
@@ -231,10 +282,18 @@ namespace dualpad::input
                 "; key format: <TriggerCode>.<Phase> = <ActionId>\n"
                 "; or: Input.<TriggerCode>.<Phase> = <ActionId>\n"
                 "[Bindings]\n"
-                "TP_LEFT_PRESS.Press=Game.OpenInventory\n"
-                "TP_RIGHT_PRESS.Press=Game.OpenMagic\n"
-                "TP_SWIPE_UP.Pulse=Game.OpenMap\n"
-                "TP_SWIPE_LEFT.Pulse=Game.OpenJournal\n";
+                "TP_LEFT_PRESS.Press=" << actions::OpenInventory << "\n"
+                "TP_RIGHT_PRESS.Press=" << actions::OpenMagic << "\n"
+                "TP_SWIPE_UP.Pulse=" << actions::OpenMap << "\n"
+                "TP_SWIPE_LEFT.Pulse=" << actions::OpenJournal << "\n"
+                " \n"
+                "[Axes]\n"
+                "LStickX=" << actions::MoveX << "\n"
+                "LStickY=" << actions::MoveY << "\n"
+                "RStickX=" << actions::LookX << "\n"
+                "RStickY=" << actions::LookY << "\n"
+                "L2=" << actions::TriggerL << "\n"
+                "R2=" << actions::TriggerR << "\n";
         }
 
         void TryReloadNow(bool forceLogNoFile = false)
@@ -263,23 +322,34 @@ namespace dualpad::input
             }
 
             std::vector<ActionRouter::BindingEntry> entries;
-            if (!ParseIniFile(g_cfg.path, entries)) {
+            std::vector<ActionRouter::AxisBindingEntry> axisEntries;
+            if (!ParseIniFile(g_cfg.path, entries, axisEntries)) {
                 logger::warn("[DualPad] Failed to parse Actions.ini: {}", g_cfg.path.string());
                 return;
             }
 
-            if (entries.empty()) {
+            const auto bindingCount = entries.size();
+            const auto axisCount = axisEntries.size();
+
+            if (bindingCount == 0 && axisCount == 0) {
                 logger::warn("[DualPad] Actions.ini parsed but no valid bindings, keep current bindings");
-                g_cfg.lastWrite = wt;       // 避免每次都刷警告
+                g_cfg.lastWrite = wt;
                 g_cfg.fileSeenOnce = true;
                 return;
             }
 
-            ActionRouter::GetSingleton().ReplaceBindings(std::move(entries));
+            if (bindingCount > 0) {
+                ActionRouter::GetSingleton().ReplaceBindings(std::move(entries));
+            }
+            if (axisCount > 0) {
+                ActionRouter::GetSingleton().ReplaceAxisBindings(std::move(axisEntries));
+            }
+
             g_cfg.lastWrite = wt;
             g_cfg.fileSeenOnce = true;
 
             logger::info("[DualPad] Actions.ini reloaded: {}", g_cfg.path.string());
+            logger::info("[DualPad] Actions.ini parsed: bindings={}, axes={}", bindingCount, axisCount);
         }
     }
 

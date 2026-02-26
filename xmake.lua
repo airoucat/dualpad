@@ -20,23 +20,44 @@ set_policy("package.requires_lock", true)
 add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
+-- packages
 add_requires("hidapi")
 
--- targets
+-- MO2 deploy path
+local mo2_plugins_dir = "G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins"
+
+-- target
 target("DualPad")
-    -- add dependencies to target
+    -- commonlibsse-ng plugin target is a shared library (dll)
     add_deps("commonlibsse-ng")
     add_packages("hidapi")
 
-    -- add commonlibsse-ng plugin
     add_rules("commonlibsse-ng.plugin", {
         name = "DualPad",
         author = "xuanyuantec",
         description = "DualPad SKSE plugin"
     })
 
-    -- add src files
+    -- source
     add_files("src/**.cpp")
     add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
+
+    -- output directly to MO2 mod folder
+    set_targetdir(mo2_plugins_dir)
+
+    -- keep symbols in debug / releasedbg
+    if is_mode("debug", "releasedbg") then
+        set_symbols("debug")
+    end
+
+    -- ensure pdb is copied next to dll (有些情况下不会自动在同目录)
+    after_build(function (target)
+        local pdb = target:symbolfile()
+        if pdb and os.isfile(pdb) then
+            os.mkdir(mo2_plugins_dir)
+            os.cp(pdb, path.join(mo2_plugins_dir, path.filename(pdb)))
+        end
+        print("Deployed: %s", target:targetfile())
+    end)

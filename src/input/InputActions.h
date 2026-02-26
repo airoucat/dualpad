@@ -23,7 +23,10 @@ namespace dualpad::input
 
         // virtual touchpad
         TpLeftPress, TpMidPress, TpRightPress,
-        TpSwipeUp, TpSwipeDown, TpSwipeLeft, TpSwipeRight
+        TpSwipeUp, TpSwipeDown, TpSwipeLeft, TpSwipeRight,
+
+        LStickUp, LStickDown, LStickLeft, LStickRight,
+        RStickUp, RStickDown, RStickLeft, RStickRight
     };
 
     enum class TriggerPhase : std::uint8_t
@@ -32,6 +35,24 @@ namespace dualpad::input
         Release = 1,
         Pulse = 2   // 单次事件（如 Swipe）
     };
+
+    enum class AxisCode : std::uint8_t
+    {
+        LStickX, LStickY, RStickX, RStickY, L2, R2
+    };
+
+    inline constexpr std::string_view ToString(AxisCode a)
+    {
+        switch (a) {
+        case AxisCode::LStickX: return "LStickX";
+        case AxisCode::LStickY: return "LStickY";
+        case AxisCode::RStickX: return "RStickX";
+        case AxisCode::RStickY: return "RStickY";
+        case AxisCode::L2: return "L2";
+        case AxisCode::R2: return "R2";
+        default: return "Unknown";
+        }
+    }
 
     inline constexpr std::string_view ToString(TriggerCode c)
     {
@@ -70,6 +91,14 @@ namespace dualpad::input
         case TriggerCode::TpSwipeDown: return "TP_SWIPE_DOWN";
         case TriggerCode::TpSwipeLeft: return "TP_SWIPE_LEFT";
         case TriggerCode::TpSwipeRight: return "TP_SWIPE_RIGHT";
+        case TriggerCode::LStickUp: return "LStickUp";
+        case TriggerCode::LStickDown: return "LStickDown";
+        case TriggerCode::LStickLeft: return "LStickLeft";
+        case TriggerCode::LStickRight: return "LStickRight";
+        case TriggerCode::RStickUp: return "RStickUp";
+        case TriggerCode::RStickDown: return "RStickDown";
+        case TriggerCode::RStickLeft: return "RStickLeft";
+        case TriggerCode::RStickRight: return "RStickRight";
         default: return "None";
         }
     }

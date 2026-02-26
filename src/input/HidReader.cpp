@@ -2,6 +2,8 @@
 #include "input/HidReader.h"
 #include "input/DualSenseEdgeMapping.h"
 #include "input/ActionRouter.h"
+#include "input/StickFilter.h"
+#include "input/AnalogState.h"
 
 #include <hidapi/hidapi.h>
 #include <RE/Skyrim.h>
@@ -26,12 +28,12 @@ namespace dse = dualpad::input::dse;
 // 2 = Warn + Error
 // 3 = Info + Warn + Error
 #ifndef DUALPAD_LOG_LEVEL
-#define DUALPAD_LOG_LEVEL 3
+#define DUALPAD_LOG_LEVEL 2
 #endif
 
 // Echo log to in-game console
 #ifndef DUALPAD_LOG_ECHO_CONSOLE
-#define DUALPAD_LOG_ECHO_CONSOLE 1
+#define DUALPAD_LOG_ECHO_CONSOLE 0
 #endif
 
 // Raw HID dump (very verbose)
@@ -64,6 +66,8 @@ namespace
     using dualpad::input::ActionRouter;
     using dualpad::input::TriggerCode;
     using dualpad::input::TriggerPhase;
+    namespace stickf = dualpad::input::stick;
+    using dualpad::input::AnalogState;
 
     // ===== touchpad feature toggles =====
     constexpr bool kEnableSplitTouchpadPress = true;   // true: Left/Mid/Right press; false: whole touchpad click
@@ -72,12 +76,26 @@ namespace
     constexpr int kSwipeThresholdX = 340;              // ~18% of 1920
     constexpr int kSwipeThresholdY = 190;              // ~18% of 1080
 
+    // ===== stick channel toggles =====
+    constexpr bool kPublishFilteredAnalog = true;      // continuous main channel
+    constexpr bool kEnableStickDirectionTrigger = true; // discrete helper channel
+
+    // DS4Windows-style direction hysteresis/dominance
+    constexpr float kDirEnter = 0.58f;
+    constexpr float kDirExit = 0.42f;
+    constexpr float kDominance = 1.12f;
+
     enum TouchPressBits : std::uint8_t
     {
         kTpPressNone = 0,
         kTpPressLeft = 1 << 0,
         kTpPressMid = 1 << 1,
         kTpPressRight = 1 << 2
+    };
+
+    enum class StickDir : std::uint8_t
+    {
+        None = 0, Up, Down, Left, Right
     };
 
     std::atomic_bool g_running{ false };
@@ -266,6 +284,59 @@ namespace
         return kNoTouchClickFallbackMid ? kTpPressMid : kTpPressNone;
     }
 
+    inline TriggerCode LDirCode(StickDir d)
+    {
+        switch (d) {
+        case StickDir::Up: return TriggerCode::LStickUp;
+        case StickDir::Down: return TriggerCode::LStickDown;
+        case StickDir::Left: return TriggerCode::LStickLeft;
+        case StickDir::Right: return TriggerCode::LStickRight;
+        default: return TriggerCode::None;
+        }
+    }
+
+    inline TriggerCode RDirCode(StickDir d)
+    {
+        switch (d) {
+        case StickDir::Up: return TriggerCode::RStickUp;
+        case StickDir::Down: return TriggerCode::RStickDown;
+        case StickDir::Left: return TriggerCode::RStickLeft;
+        case StickDir::Right: return TriggerCode::RStickRight;
+        default: return TriggerCode::None;
+        }
+    }
+
+    inline StickDir ResolveDir(float x, float y, StickDir prev)
+    {
+        const float ax = std::fabs(x);
+        const float ay = std::fabs(y);
+        const float m = (ax > ay) ? ax : ay;
+
+        if (prev == StickDir::None) {
+            if (m < kDirEnter) return StickDir::None;
+        }
+        else {
+            if (m < kDirExit) return StickDir::None;
+        }
+
+        if (ax > ay * kDominance) return (x >= 0.0f) ? StickDir::Right : StickDir::Left;
+        if (ay > ax * kDominance) return (y >= 0.0f) ? StickDir::Up : StickDir::Down;
+
+        return (ax >= ay) ? ((x >= 0.0f) ? StickDir::Right : StickDir::Left)
+            : ((y >= 0.0f) ? StickDir::Up : StickDir::Down);
+    }
+
+    inline void EmitDirChange(StickDir oldD, StickDir newD, bool leftStick)
+    {
+        if (oldD == newD) return;
+
+        const auto oldCode = leftStick ? LDirCode(oldD) : RDirCode(oldD);
+        const auto newCode = leftStick ? LDirCode(newD) : RDirCode(newD);
+
+        if (oldCode != TriggerCode::None) EmitTrigger(oldCode, TriggerPhase::Release);
+        if (newCode != TriggerCode::None) EmitTrigger(newCode, TriggerPhase::Press);
+    }
+
     struct TouchRuntime
     {
         std::uint8_t heldSplitPress{ kTpPressNone };
@@ -274,6 +345,60 @@ namespace
         int lastX{ 0 }, lastY{ 0 };
         bool suppressSwipeThisTouch{ false };
     };
+
+    struct StickRuntime
+    {
+        stickf::Filter l;
+        stickf::Filter r;
+        StickDir prevL{ StickDir::None };
+        StickDir prevR{ StickDir::None };
+
+        StickRuntime()
+        {
+            stickf::Config lc;
+            lc.deadzone = 0.05f;
+            lc.antiDeadzone = 0.10f;   // 提升小幅输入可感知性
+            lc.maxzone = 1.0f;
+            lc.expo = 1.00f;           // 先关指数曲线
+            lc.smoothAlpha = 0.85f;    // 降低“粘滞感”
+            lc.epsilon = 0.001f;
+            lc.invertY = true;
+            stickf::Config rc = lc;
+            rc.deadzone = 0.05f;
+            rc.expo = 1.00f;
+            rc.smoothAlpha = 0.85f;
+
+            l.SetConfig(lc);
+            r.SetConfig(rc);
+        }
+    };
+
+    inline void HandleStickChannels(const dse::State& cur, StickRuntime& rt, bool emitDir)
+    {
+        const auto lv = rt.l.ProcessRawU8(cur.lx, cur.ly);
+        const auto rv = rt.r.ProcessRawU8(cur.rx, cur.ry);
+
+        if (kPublishFilteredAnalog) {
+            AnalogState::GetSingleton().Update(
+                lv.x, lv.y, rv.x, rv.y,
+                static_cast<float>(cur.l2) / 255.0f,
+                static_cast<float>(cur.r2) / 255.0f
+            );
+        }
+
+        if (!kEnableStickDirectionTrigger) return;
+
+        const auto nl = ResolveDir(lv.x, lv.y, rt.prevL);
+        const auto nr = ResolveDir(rv.x, rv.y, rt.prevR);
+
+        if (emitDir) {
+            EmitDirChange(rt.prevL, nl, true);
+            EmitDirChange(rt.prevR, nr, false);
+        }
+
+        rt.prevL = nl;
+        rt.prevR = nr;
+    }
 
     // TODO: future trajectory sample for menu selector/cursor
     inline void OnTouchTrajectorySample(std::uint16_t x, std::uint16_t y, bool active)
@@ -482,6 +607,7 @@ namespace
         dse::State prev{};
         bool hasPrev = false;
         TouchRuntime touchRt{};
+        StickRuntime stickRt{};
 
 #if DUALPAD_HEARTBEAT && (DUALPAD_LOG_LEVEL >= 3)
         auto lastHeartbeat = std::chrono::steady_clock::now();
@@ -496,6 +622,8 @@ namespace
                 }
                 hasPrev = false;
                 touchRt = TouchRuntime{};
+                stickRt = StickRuntime{};
+                AnalogState::GetSingleton().Reset();
                 DbgInfo("DualPad HID connected.");
             }
 
@@ -507,14 +635,21 @@ namespace
                 DbgInfo("[RAW] len={} data={}", n, HexLine(buf, static_cast<size_t>(n)));
 #endif
                 dse::State cur{};
+
                 if (dse::ParseReport01(buf, n, cur)) {
                     if (!hasPrev) {
+                        // warmup continuous channel (no direction edge)
+                        HandleStickChannels(cur, stickRt, false);
+
                         prev = cur;
                         hasPrev = true;
                         DbgInfo("DS init: LX={} LY={} RX={} RY={} L2={} R2={} btn0={:02X} btn1={:02X} btn2={:02X} btn3={:02X}",
                             cur.lx, cur.ly, cur.rx, cur.ry, cur.l2, cur.r2, cur.btn0, cur.btn1, cur.btn2, cur.btn3);
                     }
                     else {
+                        // every frame: continuous analog + optional dir edges
+                        HandleStickChannels(cur, stickRt, true);
+
                         const bool buttonChanged =
                             (cur.btn0 != prev.btn0) ||
                             (cur.btn1 != prev.btn1) ||
