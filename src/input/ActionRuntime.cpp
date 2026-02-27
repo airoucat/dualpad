@@ -3,17 +3,14 @@
 #include "input/ActionRouter.h"
 #include "input/ActionConfig.h"
 #include "input/GameActionOutput.h"
-#include "input/AnalogState.h"
-#include "input/InputActions.h"
-#include "input/AxisDiag.h"
+#include "input/InputIngress.h"
+#include "input/NativeUserEventBridge.h"
 
 #include <atomic>
 #include <chrono>
 #include <thread>
-#include <cmath>
-#include <cstdint>
+#include <vector>
 
-#include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 namespace logger = SKSE::log;
 
@@ -22,7 +19,6 @@ namespace
     std::atomic_bool g_tickRun{ false };
     std::atomic_bool g_tickTaskQueued{ false };
     std::jthread g_tickScheduler;
-    // std::atomic_bool g_bound{ false };
 
     void QueueOneTickTask()
     {
@@ -35,17 +31,18 @@ namespace
             return;
         }
 
-        ti->AddTask([]() {
+        // 用 UI 任务，避免 worker 线程时序问题
+        ti->AddUITask([]() {
             if (!g_tickRun.load(std::memory_order_acquire)) {
                 g_tickTaskQueued.store(false, std::memory_order_release);
                 return;
             }
-            // dualpad::input::BindGameOutputThread();   // 每次都绑当前执行线程
+
             dualpad::input::TickActionRuntimeMainThread();
             g_tickTaskQueued.store(false, std::memory_order_release);
             });
     }
-} // <- 这里一定要关掉匿名 namespace
+}
 
 namespace dualpad::input
 {
@@ -53,23 +50,35 @@ namespace dualpad::input
     {
         ActionRouter::GetSingleton().InitDefaultBindings();
         InitActionConfigHotReload();
+        BindGameOutputThread();
+        InputIngress::GetSingleton().Reset();
     }
 
     void TickActionRuntimeMainThread()
     {
         PollActionConfigHotReload();
 
-        auto s = AnalogState::GetSingleton().Read();
-        auto& r = ActionRouter::GetSingleton();
-        r.EmitAxis(AxisCode::LStickX, s.lx);
-        r.EmitAxis(AxisCode::LStickY, s.ly);
-        r.EmitAxis(AxisCode::RStickX, s.rx);
-        r.EmitAxis(AxisCode::RStickY, s.ry);
-        r.EmitAxis(AxisCode::L2, s.l2);
-        r.EmitAxis(AxisCode::R2, s.r2);
+        static thread_local std::vector<TriggerEvent> evs;
+        InputIngress::GetSingleton().DrainTriggers(evs);
+        for (const auto& e : evs) {
+            ActionRouter::GetSingleton().EmitInput(e.code, e.phase);
+        }
+
+        AnalogSample s{};
+        if (InputIngress::GetSingleton().ReadLatestAnalog(s)) {
+            auto& r = ActionRouter::GetSingleton();
+            r.EmitAxis(AxisCode::LStickX, s.lx);
+            r.EmitAxis(AxisCode::LStickY, s.ly);
+            r.EmitAxis(AxisCode::RStickX, s.rx);
+            r.EmitAxis(AxisCode::RStickY, s.ry);
+            r.EmitAxis(AxisCode::L2, s.l2);
+            r.EmitAxis(AxisCode::R2, s.r2);
+        }
 
         // CollectGameOutputCommands();
         // FlushGameOutputOnBoundThread();
+
+        // NativeUserEventBridge::GetSingleton().FlushQueued();
     }
 
     void StartActionRuntimeTickOnMainThread()
@@ -78,8 +87,7 @@ namespace dualpad::input
             return;
         }
 
-        // g_bound.store(false, std::memory_order_release);
-        logger::info("[DualPad] Start runtime tick loop (SKSE task scheduler)");
+        logger::info("[DualPad] Start runtime tick loop");
 
         g_tickScheduler = std::jthread([](std::stop_token st) {
             using namespace std::chrono_literals;

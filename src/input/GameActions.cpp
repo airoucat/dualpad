@@ -11,21 +11,53 @@ namespace dualpad::input::actions
         using BPair = std::pair<std::string_view, ButtonAction>;
         using APair = std::pair<std::string_view, AxisAction>;
 
-        static constexpr std::array<BPair, 4> kButtonMap{ {
-            { OpenInventory, ButtonAction::OpenInventory },
-            { OpenMagic,     ButtonAction::OpenMagic },
-            { OpenMap,       ButtonAction::OpenMap },
-            { OpenJournal,   ButtonAction::OpenJournal },
-        } };
+        static constexpr BPair kButtonMap[] = {
+            { Confirm, ButtonAction::Confirm },
+            { Back, ButtonAction::Back },
+            { CloseMenu, ButtonAction::CloseMenu },
+            { NavigateUp, ButtonAction::NavigateUp },
+            { NavigateDown, ButtonAction::NavigateDown },
+            { NavigateLeft, ButtonAction::NavigateLeft },
+            { NavigateRight, ButtonAction::NavigateRight },
+            { TabSwitch, ButtonAction::TabSwitch },
+            { PageUp, ButtonAction::PageUp },
+            { PageDown, ButtonAction::PageDown },
 
-        static constexpr std::array<APair, 6> kAxisMap{ {
-            { MoveX,    AxisAction::MoveX },
-            { MoveY,    AxisAction::MoveY },
-            { LookX,    AxisAction::LookX },
-            { LookY,    AxisAction::LookY },
+            { OpenInventory, ButtonAction::OpenInventory },
+            { OpenMagic, ButtonAction::OpenMagic },
+            { OpenMap, ButtonAction::OpenMap },
+            { OpenLocalMap, ButtonAction::OpenLocalMap },
+            { OpenJournal, ButtonAction::OpenJournal },
+            { OpenFavorites, ButtonAction::OpenFavorites },
+            { OpenTweenMenu, ButtonAction::OpenTweenMenu },
+            { OpenPauseMenu, ButtonAction::OpenPauseMenu },
+            { OpenOptions, ButtonAction::OpenOptions },
+
+            { Activate, ButtonAction::Activate },
+            { Jump, ButtonAction::Jump },
+            { Shout, ButtonAction::Shout },
+            { ToggleSneak, ButtonAction::ToggleSneak },
+            { SprintHold, ButtonAction::SprintHold },
+            { ToggleRun, ButtonAction::ToggleRun },
+            { LeftEquip, ButtonAction::LeftEquip },
+            { RightEquip, ButtonAction::RightEquip },
+            { ChargeItem, ButtonAction::ChargeItem },
+            { Wait, ButtonAction::Wait },
+
+            { QuickSave, ButtonAction::QuickSave },
+            { QuickLoad, ButtonAction::QuickLoad },
+            { Screenshot, ButtonAction::Screenshot },
+            { ToggleConsole, ButtonAction::ToggleConsole },
+        };
+
+        static constexpr APair kAxisMap[] = {
+            { MoveX, AxisAction::MoveX },
+            { MoveY, AxisAction::MoveY },
+            { LookX, AxisAction::LookX },
+            { LookY, AxisAction::LookY },
             { TriggerL, AxisAction::TriggerL },
             { TriggerR, AxisAction::TriggerR },
-        } };
+        };
     }
 
     ButtonAction ParseButtonAction(std::string_view id)
@@ -46,13 +78,10 @@ namespace dualpad::input::actions
 
     std::string_view ToActionId(ButtonAction a)
     {
-        switch (a) {
-        case ButtonAction::OpenInventory: return OpenInventory;
-        case ButtonAction::OpenMagic:     return OpenMagic;
-        case ButtonAction::OpenMap:       return OpenMap;
-        case ButtonAction::OpenJournal:   return OpenJournal;
-        default:                          return {};
+        for (auto& [k, v] : kButtonMap) {
+            if (v == a) return k;
         }
+        return {};
     }
 
     std::string_view ToActionId(AxisAction a)

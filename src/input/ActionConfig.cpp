@@ -116,7 +116,9 @@ namespace dualpad::input
                 { "TpSwipeDown", TriggerCode::TpSwipeDown },
                 { "TpSwipeLeft", TriggerCode::TpSwipeLeft },
                 { "TpSwipeRight", TriggerCode::TpSwipeRight },
-
+                { "Share", TriggerCode::Create },              // 兼容命名
+                { "TouchPadPress", TriggerCode::TouchpadClick },
+                { "TouchpadPress", TriggerCode::TouchpadClick },
                 { "LStickUp", TriggerCode::LStickUp },
                 { "LStickDown", TriggerCode::LStickDown },
                 { "LStickLeft", TriggerCode::LStickLeft },
@@ -133,13 +135,6 @@ namespace dualpad::input
                     return true;
                 }
             }
-
-            // 兼容更多别名（如果需要）
-            if (s == "TpMidPress") { out = TriggerCode::TpMidPress; return true; }
-            if (s == "TpSwipeUp") { out = TriggerCode::TpSwipeUp; return true; }
-            if (s == "TpSwipeDown") { out = TriggerCode::TpSwipeDown; return true; }
-            if (s == "TpSwipeLeft") { out = TriggerCode::TpSwipeLeft; return true; }
-            if (s == "TpSwipeRight") { out = TriggerCode::TpSwipeRight; return true; }
 
             return false;
         }
@@ -236,6 +231,7 @@ namespace dualpad::input
                         logger::warn("[DualPad] Actions.ini:{} invalid axis key: {}", lineNo, key);
                         continue;
                     }
+                    logger::info("[DualPad][Diag][ParseAxis] line={} key='{}' action='{}'", lineNo, key, val);
                     outAxis.push_back(ActionRouter::AxisBindingEntry{ a, val });
                     continue;
                 }
@@ -248,6 +244,7 @@ namespace dualpad::input
                         logger::warn("[DualPad] Actions.ini:{} invalid trigger key: {}", lineNo, key);
                         continue;
                     }
+                    logger::info("[DualPad][Diag][ParseBind] line={} key='{}' action='{}'", lineNo, key, val);
                     out.push_back(ActionRouter::BindingEntry{ code, phase, val });
                     continue;
                 }
@@ -337,14 +334,18 @@ namespace dualpad::input
                 g_cfg.fileSeenOnce = true;
                 return;
             }
-
-            if (bindingCount > 0) {
-                ActionRouter::GetSingleton().ReplaceBindings(std::move(entries));
+            for (const auto& e : entries) {
+                logger::info("[DualPad][Diag][ReloadBind] code={} phase={} action='{}'",
+                    static_cast<int>(e.code), static_cast<int>(e.phase), e.actionId);
             }
-            if (axisCount > 0) {
-                ActionRouter::GetSingleton().ReplaceAxisBindings(std::move(axisEntries));
+            for (const auto& a : axisEntries) {
+                logger::info("[DualPad][Diag][ReloadAxis] axis={} action='{}'",
+                    static_cast<int>(a.code), a.actionId);
             }
-
+            // 现在统一一次性替换（按钮+轴）
+            if (bindingCount > 0 || axisCount > 0) {
+                ActionRouter::GetSingleton().ReplaceBindings(std::move(entries), std::move(axisEntries));
+            }
             g_cfg.lastWrite = wt;
             g_cfg.fileSeenOnce = true;
 

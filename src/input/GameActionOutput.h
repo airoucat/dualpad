@@ -10,4 +10,6 @@ namespace dualpad::input
 
     // 只在绑定线程每帧调用：真正执行 Game.* action + 写 axis 到游戏
     void FlushGameOutputOnBoundThread();
+
+    void FlushGameOutputAtInputTail();
 }

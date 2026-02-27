@@ -1,9 +1,11 @@
 #include "pch.h"
 #include "input/HidReader.h"
 #include "input/DualSenseEdgeMapping.h"
-#include "input/ActionRouter.h"
+// #include "input/ActionRouter.h"
+// #include "input/ActionDispatch.h"
 #include "input/StickFilter.h"
-#include "input/AnalogState.h"
+// #include "input/AnalogState.h"
+#include "input/InputIngress.h"
 
 #include <hidapi/hidapi.h>
 #include <RE/Skyrim.h>
@@ -63,11 +65,10 @@ namespace dse = dualpad::input::dse;
 
 namespace
 {
-    using dualpad::input::ActionRouter;
+    // using dualpad::input::ActionRouter;
     using dualpad::input::TriggerCode;
     using dualpad::input::TriggerPhase;
     namespace stickf = dualpad::input::stick;
-    using dualpad::input::AnalogState;
 
     // ===== touchpad feature toggles =====
     constexpr bool kEnableSplitTouchpadPress = true;   // true: Left/Mid/Right press; false: whole touchpad click
@@ -78,7 +79,7 @@ namespace
 
     // ===== stick channel toggles =====
     constexpr bool kPublishFilteredAnalog = true;      // continuous main channel
-    constexpr bool kEnableStickDirectionTrigger = true; // discrete helper channel
+    constexpr bool kEnableStickDirectionTrigger = false; // discrete helper channel
 
     // DS4Windows-style direction hysteresis/dominance
     constexpr float kDirEnter = 0.58f;
@@ -225,7 +226,7 @@ namespace
 
     inline void EmitTrigger(TriggerCode code, TriggerPhase phase)
     {
-        ActionRouter::GetSingleton().EmitInput(code, phase);
+        dualpad::input::InputIngress::GetSingleton().PushTrigger(code, phase);
     }
 
     inline void EmitEdge(std::uint8_t oldV, std::uint8_t newV, std::uint8_t mask, TriggerCode code)
@@ -379,11 +380,14 @@ namespace
         const auto rv = rt.r.ProcessRawU8(cur.rx, cur.ry);
 
         if (kPublishFilteredAnalog) {
-            AnalogState::GetSingleton().Update(
-                lv.x, lv.y, rv.x, rv.y,
-                static_cast<float>(cur.l2) / 255.0f,
-                static_cast<float>(cur.r2) / 255.0f
-            );
+            dualpad::input::AnalogSample s{};
+            s.lx = lv.x;
+            s.ly = lv.y;
+            s.rx = rv.x;
+            s.ry = rv.y;
+            s.l2 = static_cast<float>(cur.l2) / 255.0f;
+            s.r2 = static_cast<float>(cur.r2) / 255.0f;
+            dualpad::input::InputIngress::GetSingleton().PushAnalog(s);
         }
 
         if (!kEnableStickDirectionTrigger) return;
@@ -623,7 +627,7 @@ namespace
                 hasPrev = false;
                 touchRt = TouchRuntime{};
                 stickRt = StickRuntime{};
-                AnalogState::GetSingleton().Reset();
+                dualpad::input::InputIngress::GetSingleton().Reset();
                 DbgInfo("DualPad HID connected.");
             }
 
