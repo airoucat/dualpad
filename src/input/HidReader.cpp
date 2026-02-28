@@ -25,7 +25,7 @@ namespace
 
     using namespace std::chrono_literals;
 
-    // 按键码映射
+    // 按键映射
     enum class BtnCode : std::uint32_t
     {
         Square = 0x00000001,
@@ -191,7 +191,7 @@ namespace
                 // 构建按键掩码
                 std::uint32_t mask = BuildButtonMask(state);
 
-                // === 触摸板手势 ===
+                // === 处理触摸板手势 ===
                 const auto g = gesture.Update(state);
                 if (g != dualpad::input::TouchGesture::None) {
                     const auto gMask = GestureToMask(g);
@@ -199,7 +199,7 @@ namespace
                         logger::info("[DualPad] Gesture detected: {}",
                             dualpad::input::ToString(g));
 
-                        // Pulse 手势按键（用于 XInput）
+                        // Pulse 手势按键（传递给 XInput）
                         dualpad::input::SyntheticPadState::GetSingleton().PulseButton(gMask);
 
                         // 查询绑定并执行动作
@@ -217,54 +217,67 @@ namespace
                     }
                 }
 
-                // 更新按键状态
+                // === 处理按键变化 ===
                 const std::uint32_t pressed = mask & ~prevMask;
                 const std::uint32_t released = prevMask & ~mask;
 
+                // ===== 关键修改：检查自定义绑定并屏蔽已处理的按键 =====
+                std::uint32_t handledButtons = 0;  // 记录哪些按键被我们处理了
+
                 if (pressed != 0) {
-                    dualpad::input::SyntheticPadState::GetSingleton().SetButton(pressed, true);
+                    auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
+                    auto& bindingManager = dualpad::input::BindingManager::GetSingleton();
 
-                    // 背键日志
-                    if (pressed & static_cast<std::uint32_t>(BtnCode::BackLeft)) {
-                        logger::info("[DualPad] Back Left pressed");
+                    // 遍历所有可能的按键位
+                    for (int i = 0; i < 32; ++i) {
+                        std::uint32_t buttonMask = (1u << i);
 
-                        // 查询绑定并执行动作
-                        dualpad::input::Trigger trigger;
-                        trigger.type = dualpad::input::TriggerType::Button;
-                        trigger.code = static_cast<std::uint32_t>(BtnCode::BackLeft);
+                        if (pressed & buttonMask) {
+                            // 构造触发器
+                            dualpad::input::Trigger trigger;
+                            trigger.type = dualpad::input::TriggerType::Button;
+                            trigger.code = buttonMask;
 
-                        auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
-                        auto actionId = dualpad::input::BindingManager::GetSingleton()
-                            .GetActionForTrigger(trigger, context);
+                            // 查询是否有绑定
+                            auto actionId = bindingManager.GetActionForTrigger(trigger, context);
 
-                        if (actionId) {
-                            dualpad::input::ActionExecutor::GetSingleton().Execute(*actionId, context);
+                            if (actionId.has_value()) {
+                                // 找到绑定，执行动作
+                                logger::info("[DualPad] Button {:08X} has binding: {}",
+                                    buttonMask, actionId.value());
+
+                                dualpad::input::ActionExecutor::GetSingleton().Execute(actionId.value(), context);
+
+                                // 标记这个按键已被处理，不传递给 Skyrim
+                                handledButtons |= buttonMask;
+                            }
                         }
                     }
-                    if (pressed & static_cast<std::uint32_t>(BtnCode::BackRight)) {
-                        logger::info("[DualPad] Back Right pressed");
 
-                        // 查询绑定并执行动作
-                        dualpad::input::Trigger trigger;
-                        trigger.type = dualpad::input::TriggerType::Button;
-                        trigger.code = static_cast<std::uint32_t>(BtnCode::BackRight);
+                    // 从按键状态中移除已处理的按键
+                    std::uint32_t filteredPressed = pressed & ~handledButtons;
 
-                        auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
-                        auto actionId = dualpad::input::BindingManager::GetSingleton()
-                            .GetActionForTrigger(trigger, context);
+                    if (handledButtons != 0) {
+                        logger::info("[DualPad] Blocked buttons from Skyrim: {:08X}", handledButtons);
+                    }
 
-                        if (actionId) {
-                            dualpad::input::ActionExecutor::GetSingleton().Execute(*actionId, context);
-                        }
+                    // 只传递未被处理的按键给 SyntheticPadState
+                    if (filteredPressed != 0) {
+                        dualpad::input::SyntheticPadState::GetSingleton().SetButton(filteredPressed, true);
                     }
                 }
+
                 if (released != 0) {
-                    dualpad::input::SyntheticPadState::GetSingleton().SetButton(released, false);
+                    // 释放按键时也要过滤（如果之前被屏蔽了，就不要发送释放事件）
+                    std::uint32_t filteredReleased = released & ~handledButtons;
+                    if (filteredReleased != 0) {
+                        dualpad::input::SyntheticPadState::GetSingleton().SetButton(filteredReleased, false);
+                    }
                 }
 
                 prevMask = mask;
 
-                // 更新摇杆
+                // 处理摇杆
                 const float lx = NormalizeU8(state.lx);
                 const float ly = -NormalizeU8(state.ly);
                 const float rx = NormalizeU8(state.rx);

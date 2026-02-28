@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "input/ActionExecutor.h"
 #include "input/Action.h"
+#include "input/Screenshot.h"
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 
@@ -199,16 +200,23 @@ namespace dualpad::input
         // 截图（Windows API，可以在任何线程调用）
         if (actionId == actions::Screenshot) {
             logger::info("[DualPad][Executor] Taking screenshot");
-            INPUT input[2] = {};
-            input[0].type = INPUT_KEYBOARD;
-            input[0].ki.wVk = VK_SNAPSHOT;
-            input[0].ki.dwFlags = 0;
-            input[1].type = INPUT_KEYBOARD;
-            input[1].ki.wVk = VK_SNAPSHOT;
-            input[1].ki.dwFlags = KEYEVENTF_KEYUP;
-            SendInput(2, input, sizeof(INPUT));
-            logger::info("[DualPad][Executor] Screenshot key sent");
-            return true;
+
+            auto* taskInterface = SKSE::GetTaskInterface();
+            if (taskInterface) {
+                taskInterface->AddTask([]() {
+                    std::string path = dualpad::utils::TakeScreenshot();
+                    if (!path.empty()) {
+                        logger::info("[DualPad][Executor] Screenshot saved: {}", path);
+                    }
+                    else {
+                        logger::error("[DualPad][Executor] Screenshot failed");
+                    }
+                    });
+
+                return true;
+            }
+
+            return false;
         }
 
         // =====================
@@ -243,13 +251,13 @@ namespace dualpad::input
 
         // 快速存档（暂未实现）
         if (actionId == actions::QuickSave) {
-            logger::info("[DualPad][Executor] Quick Save (not implemented)");
+            (void)actionId;
             return true;
         }
 
         // 快速读档（暂未实现）
         if (actionId == actions::QuickLoad) {
-            logger::info("[DualPad][Executor] Quick Load (not implemented)");
+            (void)actionId;
             return true;
         }
 

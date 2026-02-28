@@ -23,7 +23,6 @@ namespace
 
             // 加载绑定配置
             dualpad::input::BindingConfig::GetSingleton().Load();
-
             // 安装 IAT hook
             const bool usesXInput = dualpad::input::InstallXInputIATHook();
 

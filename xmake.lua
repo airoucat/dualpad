@@ -21,7 +21,7 @@ local mo2_plugins_dir = "G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins"
 target("DualPad")
     add_deps("commonlibsse-ng")
     add_packages("hidapi")
-
+    add_syslinks("gdi32", "gdiplus", "user32")
     add_rules("commonlibsse-ng.plugin", {
         name = "DualPad",
         author = "xuanyuantec",
