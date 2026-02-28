@@ -1,15 +1,18 @@
 #include "pch.h"
 #include "input/HidReader.h"
 #include "input/DualSenseProtocol.h"
-#include "input/TouchpadGesture.h"
 #include "input/SyntheticPadState.h"
+#include "input/TouchpadGesture.h"
 #include "input/PadProfile.h"
+#include "input/Trigger.h"
+#include "input/BindingManager.h"
+#include "input/ActionExecutor.h"
+#include "input/InputContext.h"
 
-#include <hidapi/hidapi.h>
 #include <SKSE/SKSE.h>
-
-#include <atomic>
+#include <hidapi/hidapi.h>
 #include <thread>
+#include <atomic>
 #include <chrono>
 
 namespace logger = SKSE::log;
@@ -188,13 +191,29 @@ namespace
                 // 构建按键掩码
                 std::uint32_t mask = BuildButtonMask(state);
 
-                // 触摸板手势
+                // === 触摸板手势 ===
                 const auto g = gesture.Update(state);
                 if (g != dualpad::input::TouchGesture::None) {
                     const auto gMask = GestureToMask(g);
                     if (gMask != 0) {
-                        // Pulse 手势按键
+                        logger::info("[DualPad] Gesture detected: {}",
+                            dualpad::input::ToString(g));
+
+                        // Pulse 手势按键（用于 XInput）
                         dualpad::input::SyntheticPadState::GetSingleton().PulseButton(gMask);
+
+                        // 查询绑定并执行动作
+                        dualpad::input::Trigger trigger;
+                        trigger.type = dualpad::input::TriggerType::Gesture;
+                        trigger.code = gMask;
+
+                        auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
+                        auto actionId = dualpad::input::BindingManager::GetSingleton()
+                            .GetActionForTrigger(trigger, context);
+
+                        if (actionId) {
+                            dualpad::input::ActionExecutor::GetSingleton().Execute(*actionId, context);
+                        }
                     }
                 }
 
@@ -204,6 +223,40 @@ namespace
 
                 if (pressed != 0) {
                     dualpad::input::SyntheticPadState::GetSingleton().SetButton(pressed, true);
+
+                    // 背键日志
+                    if (pressed & static_cast<std::uint32_t>(BtnCode::BackLeft)) {
+                        logger::info("[DualPad] Back Left pressed");
+
+                        // 查询绑定并执行动作
+                        dualpad::input::Trigger trigger;
+                        trigger.type = dualpad::input::TriggerType::Button;
+                        trigger.code = static_cast<std::uint32_t>(BtnCode::BackLeft);
+
+                        auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
+                        auto actionId = dualpad::input::BindingManager::GetSingleton()
+                            .GetActionForTrigger(trigger, context);
+
+                        if (actionId) {
+                            dualpad::input::ActionExecutor::GetSingleton().Execute(*actionId, context);
+                        }
+                    }
+                    if (pressed & static_cast<std::uint32_t>(BtnCode::BackRight)) {
+                        logger::info("[DualPad] Back Right pressed");
+
+                        // 查询绑定并执行动作
+                        dualpad::input::Trigger trigger;
+                        trigger.type = dualpad::input::TriggerType::Button;
+                        trigger.code = static_cast<std::uint32_t>(BtnCode::BackRight);
+
+                        auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
+                        auto actionId = dualpad::input::BindingManager::GetSingleton()
+                            .GetActionForTrigger(trigger, context);
+
+                        if (actionId) {
+                            dualpad::input::ActionExecutor::GetSingleton().Execute(*actionId, context);
+                        }
+                    }
                 }
                 if (released != 0) {
                     dualpad::input::SyntheticPadState::GetSingleton().SetButton(released, false);
@@ -213,7 +266,7 @@ namespace
 
                 // 更新摇杆
                 const float lx = NormalizeU8(state.lx);
-                const float ly = -NormalizeU8(state.ly);  // Y 轴反转
+                const float ly = -NormalizeU8(state.ly);
                 const float rx = NormalizeU8(state.rx);
                 const float ry = -NormalizeU8(state.ry);
                 const float l2 = static_cast<float>(state.l2) / 255.0f;

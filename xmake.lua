@@ -8,7 +8,7 @@ set_license("GPL-3.0")
 
 set_languages("c++23")
 set_warnings("allextra")
-
+set_policy("check.auto_ignore_flags", false)
 set_policy("package.requires_lock", true)
 
 add_rules("mode.debug", "mode.releasedbg")

@@ -1,13 +1,16 @@
 #include "pch.h"
 #include "input/TouchpadGesture.h"
+#include <SKSE/SKSE.h>
 #include <cmath>
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
     namespace
     {
-        constexpr int kSwipeThresholdX = 340;  // ~18% of 1920
-        constexpr int kSwipeThresholdY = 190;  // ~18% of 1080
+        constexpr int kSwipeThresholdX = 340;
+        constexpr int kSwipeThresholdY = 190;
     }
 
     TouchpadGestureRecognizer::TouchpadGestureRecognizer() = default;
@@ -19,9 +22,9 @@ namespace dualpad::input
         }
 
         const auto x = state.touch1.x;
-        if (x < 640) return 1;      // 左区
-        if (x < 1280) return 2;     // 中区
-        return 3;                   // 右区
+        if (x < 640) return 1;
+        if (x < 1280) return 2;
+        return 3;
     }
 
     TouchGesture TouchpadGestureRecognizer::EvaluateSwipe() const
@@ -48,13 +51,14 @@ namespace dualpad::input
 
         // === 分区点击 ===
         if (!_wasClicking && clicking) {
-            // 点击开始
             _heldRegion = ClassifyRegion(state);
             _wasClicking = true;
 
             if (_tracking) {
-                _suppressSwipe = true;  // 点击时禁止滑动
+                _suppressSwipe = true;
             }
+
+            logger::info("[DualPad][Touchpad] Click region: {}", _heldRegion);
 
             switch (_heldRegion) {
             case 1: return TouchGesture::LeftPress;
@@ -63,14 +67,12 @@ namespace dualpad::input
             }
         }
         else if (_wasClicking && !clicking) {
-            // 点击结束
             _wasClicking = false;
             _heldRegion = 0;
         }
 
         // === 滑动 ===
         if (!_wasClicking && touching && !_tracking) {
-            // 触摸开始
             _tracking = true;
             _startX = static_cast<int>(state.touch1.x);
             _startY = static_cast<int>(state.touch1.y);
@@ -79,16 +81,18 @@ namespace dualpad::input
             _suppressSwipe = false;
         }
         else if (_tracking && touching) {
-            // 触摸移动
             _lastX = static_cast<int>(state.touch1.x);
             _lastY = static_cast<int>(state.touch1.y);
         }
         else if (_tracking && !touching) {
-            // 触摸结束
             _tracking = false;
 
             if (!_suppressSwipe) {
-                return EvaluateSwipe();
+                auto gesture = EvaluateSwipe();
+                if (gesture != TouchGesture::None) {
+                    logger::info("[DualPad][Touchpad] Swipe: {}", ToString(gesture));
+                    return gesture;
+                }
             }
         }
 

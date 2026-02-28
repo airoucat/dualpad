@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "input/HidReader.h"
 #include "input/IATHook.h"
+#include "input/ContextEventSink.h"
+#include "input/InputContext.h"
+#include "input/BindingConfig.h"  // 添加这一行
 
 namespace logger = SKSE::log;
 
@@ -14,6 +17,12 @@ namespace
 
         if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
             logger::info("[DualPad] Initializing systems");
+
+            // 注册上下文事件监听
+            dualpad::input::ContextEventSink::GetSingleton().Register();
+
+            // 加载绑定配置
+            dualpad::input::BindingConfig::GetSingleton().Load();
 
             // 安装 IAT hook
             const bool usesXInput = dualpad::input::InstallXInputIATHook();

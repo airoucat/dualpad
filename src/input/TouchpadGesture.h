@@ -16,6 +16,20 @@ namespace dualpad::input
         SwipeRight
     };
 
+    inline constexpr std::string_view ToString(TouchGesture g)
+    {
+        switch (g) {
+        case TouchGesture::LeftPress: return "TpLeftPress";
+        case TouchGesture::MidPress: return "TpMidPress";
+        case TouchGesture::RightPress: return "TpRightPress";
+        case TouchGesture::SwipeUp: return "TpSwipeUp";
+        case TouchGesture::SwipeDown: return "TpSwipeDown";
+        case TouchGesture::SwipeLeft: return "TpSwipeLeft";
+        case TouchGesture::SwipeRight: return "TpSwipeRight";
+        default: return "None";
+        }
+    }
+
     class TouchpadGestureRecognizer
     {
     public:
@@ -28,7 +42,7 @@ namespace dualpad::input
 
     private:
         // 分区点击
-        std::uint8_t _heldRegion{ 0 };  // 0=none, 1=left, 2=mid, 3=right
+        std::uint8_t _heldRegion{ 0 };
         bool _wasClicking{ false };
 
         // 滑动
