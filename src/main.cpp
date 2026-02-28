@@ -3,7 +3,8 @@
 #include "input/IATHook.h"
 #include "input/ContextEventSink.h"
 #include "input/InputContext.h"
-#include "input/BindingConfig.h"  // 添加这一行
+#include "input/BindingConfig.h"
+#include "input/ScreenshotManager.h"  // 添加这行
 
 namespace logger = SKSE::log;
 
@@ -21,8 +22,12 @@ namespace
             // 注册上下文事件监听
             dualpad::input::ContextEventSink::GetSingleton().Register();
 
-            // 加载绑定配置
+            // 加载按键绑定
             dualpad::input::BindingConfig::GetSingleton().Load();
+
+            // 启动截图管理器（添加这行）
+            dualpad::utils::ScreenshotManager::GetSingleton().Start();
+
             // 安装 IAT hook
             const bool usesXInput = dualpad::input::InstallXInputIATHook();
 
