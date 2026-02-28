@@ -60,22 +60,29 @@ namespace dualpad::input
             WORD buttons = 0;
             const auto& bits = GetPadBits(GetActivePadProfile());
 
-            if (frame.downMask & bits.jump) buttons |= 0x1000;      // A
-            if (frame.downMask & bits.activate) buttons |= 0x1000;  // A
-            if (frame.downMask & bits.cancel) buttons |= 0x2000;    // B
-            if (frame.downMask & bits.sneak) buttons |= 0x0040;     // R3
-            if (frame.downMask & bits.sprint) buttons |= 0x0040;    // L3
-            if (frame.downMask & bits.shout) buttons |= 0x0200;     // RB
+            // Ãæ¼ü
+            if (frame.downMask & bits.cross) buttons |= 0x1000;      // A (¡Á)
+            if (frame.downMask & bits.circle) buttons |= 0x2000;     // B (¡ð)
+            if (frame.downMask & bits.square) buttons |= 0x4000;     // X (¡õ)
+            if (frame.downMask & bits.triangle) buttons |= 0x8000;   // Y (¡÷)
+
+            // ¼ç¼ü
+            if (frame.downMask & bits.l1) buttons |= 0x0100;         // LB
+            if (frame.downMask & bits.r1) buttons |= 0x0200;         // RB
+
+            // Ò¡¸Ë°´ÏÂ
+            if (frame.downMask & bits.l3) buttons |= 0x0040;         // L3
+            if (frame.downMask & bits.r3) buttons |= 0x0080;         // R3
+
+            // ²Ëµ¥¼ü
+            if (frame.downMask & bits.options) buttons |= 0x0010;    // Start
+            if (frame.downMask & bits.create) buttons |= 0x0020;     // Back
 
             // D-Pad
             if (frame.downMask & bits.dpadUp) buttons |= 0x0001;
             if (frame.downMask & bits.dpadDown) buttons |= 0x0002;
             if (frame.downMask & bits.dpadLeft) buttons |= 0x0004;
             if (frame.downMask & bits.dpadRight) buttons |= 0x0008;
-
-            // L1/R1
-            if (frame.downMask & bits.l1) buttons |= 0x0100;
-            if (frame.downMask & bits.r1) buttons |= 0x0200;
 
             pState->Gamepad.wButtons = buttons;
 
