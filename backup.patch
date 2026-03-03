@@ -1,0 +1,4620 @@
+diff --git a/src/haptics/EventCollector.cpp b/src/haptics/EventCollector.cpp
+new file mode 100644
+index 0000000..8f3ff50
+--- /dev/null
++++ b/src/haptics/EventCollector.cpp
+@@ -0,0 +1,210 @@
++Ôªø#include "pch.h"
++#include "haptics/EventCollector.h"
++#include "haptics/HapticsTypes.h"
++#include "haptics/EventQueue.h"
++#include "haptics/HapticsConfig.h"
++#include <SKSE/SKSE.h>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    EventCollector& EventCollector::GetSingleton()
++    {
++        static EventCollector instance;
++        return instance;
++    }
++
++    void EventCollector::Register()
++    {
++        if (_registered) {
++            logger::warn("[Haptics][EventCollector] Already registered");
++            return;
++        }
++
++        logger::info("[Haptics][EventCollector] Registering event listeners...");
++
++        auto* player = RE::PlayerCharacter::GetSingleton();
++        if (!player) {
++            logger::error("[Haptics][EventCollector] Player not found");
++            return;
++        }
++
++        // Ê≥®ÂÜåÂä®ÁîªÂõæ‰∫ã‰ª∂ÔºàËÑöÊ≠•„ÄÅË∑≥Ë∑É„ÄÅËêΩÂú∞Á≠âÔºâ
++        player->AddAnimationGraphEventSink(this);
++
++        // Ê≥®ÂÜåÂèóÂáª‰∫ã‰ª∂
++        auto* eventSource = RE::ScriptEventSourceHolder::GetSingleton();
++        if (eventSource) {
++            eventSource->AddEventSink<RE::TESHitEvent>(this);
++        }
++
++        _registered = true;
++
++        logger::info("[Haptics][EventCollector] Event listeners registered");
++    }
++
++    void EventCollector::Unregister()
++    {
++        if (!_registered) {
++            return;
++        }
++
++        logger::info("[Haptics][EventCollector] Unregistering event listeners...");
++
++        auto* player = RE::PlayerCharacter::GetSingleton();
++        if (player) {
++            player->RemoveAnimationGraphEventSink(this);
++        }
++
++        auto* eventSource = RE::ScriptEventSourceHolder::GetSingleton();
++        if (eventSource) {
++            eventSource->RemoveEventSink<RE::TESHitEvent>(this);
++        }
++
++        _registered = false;
++
++        logger::info("[Haptics][EventCollector] Event listeners unregistered");
++    }
++
++    // ========================================
++    // Âä®ÁîªÂõæ‰∫ã‰ª∂Â§ÑÁêÜÔºàËÑöÊ≠•„ÄÅË∑≥Ë∑É„ÄÅËêΩÂú∞„ÄÅÊå•Á†çÁ≠âÔºâ
++    // ========================================
++    RE::BSEventNotifyControl EventCollector::ProcessEvent(
++        const RE::BSAnimationGraphEvent* event,
++        RE::BSTEventSource<RE::BSAnimationGraphEvent>*)
++    {
++        if (!event || !event->holder) {
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        // Âè™Â§ÑÁêÜÁé©ÂÆ∂‰∫ã‰ª∂
++        if (!IsPlayerEvent(event->holder)) {
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        std::string_view tag = event->tag.c_str();
++
++        // Ë∞ÉËØïÊó•ÂøóÔºà‰∏¥Êó∂Ôºâ
++        logger::info("[Haptics][EventCollector] Raw animation event: {}", tag);
++
++        EventMsg msg;
++        msg.qpc = ToQPC(Now());
++        msg.intensity = 1.0f;
++
++        // ========================================
++        // ËØÜÂà´ÂêÑÁßç‰∫ã‰ª∂Ê†áÁ≠æ
++        // ========================================
++
++        // ËÑöÊ≠•Â£∞Ôºà‰øÆÊîπÔºöÂåÖÂê´ FootLeft/FootRightÔºâ
++        if (tag.find("footstep") != std::string_view::npos ||
++            tag.find("Footstep") != std::string_view::npos ||
++            tag.find("FootLeft") != std::string_view::npos ||
++            tag.find("FootRight") != std::string_view::npos) {
++            msg.type = EventType::Footstep;
++            msg.intensity = 0.4f;
++        }
++        // Ê≠¶Âô®Êå•Á†çÔºà‰øÆÊîπÔºöÂåÖÂê´ weaponLeftSwingÔºâ
++        else if (tag.find("weaponSwing") != std::string_view::npos ||
++            tag.find("WeaponSwing") != std::string_view::npos ||
++            tag.find("weaponLeftSwing") != std::string_view::npos) {
++            msg.type = EventType::WeaponSwing;
++            msg.intensity = 0.6f;
++        }
++        // Ë∑≥Ë∑ÉÔºà‰øÆÊîπÔºöÂè™ÂåπÈÖç JumpUpÔºâ
++        else if (tag.find("JumpUp") != std::string_view::npos) {
++            msg.type = EventType::Jump;
++            msg.intensity = 0.5f;
++        }
++        // ËêΩÂú∞Ôºà‰øÆÊîπÔºöÂè™ÂåπÈÖç JumpLandEndÔºâ
++        else if (tag.find("JumpLandEnd") != std::string_view::npos) {
++            msg.type = EventType::Land;
++            msg.intensity = 0.7f;
++        }
++        // Ê†ºÊå°
++        else if (tag.find("blockStart") != std::string_view::npos) {
++            msg.type = EventType::Block;
++            msg.intensity = 0.5f;
++        }
++        else {
++            // Êú™ËØÜÂà´ÁöÑ‰∫ã‰ª∂ÔºåË∑≥Ëøá
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        // ‚úÖ Êñ∞Â¢ûÔºöÊ£ÄÊü•‰∫ã‰ª∂ÊòØÂê¶ÂÖÅËÆ∏ÔºàÊ†πÊçÆÊ®°ÂºèËøáÊª§Ôºâ
++        auto& config = HapticsConfig::GetSingleton();
++        if (!config.IsEventAllowed(msg.type)) {
++            logger::info("[Haptics][EventCollector] Event filtered: {} (mode restriction)",
++                ToString(msg.type));
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        // Êé®ÈÄÅÂà∞ÈòüÂàó
++        bool pushed = EventQueue::GetSingleton().Push(msg);
++
++        logger::info("[Haptics][EventCollector] Animation event: {} -> {} (pushed={})",
++            tag, ToString(msg.type), pushed);
++
++        return RE::BSEventNotifyControl::kContinue;
++    }
++
++    // ========================================
++    // ÂèóÂáª‰∫ã‰ª∂Â§ÑÁêÜ
++    // ========================================
++    RE::BSEventNotifyControl EventCollector::ProcessEvent(
++        const RE::TESHitEvent* event,
++        RE::BSTEventSource<RE::TESHitEvent>*)
++    {
++        if (!event) {
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        auto* player = RE::PlayerCharacter::GetSingleton();
++        if (!player) {
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        auto* target = event->target.get();          // Ë¢´Âáª‰∏≠ËÄÖ
++        auto* cause = event->cause.get();            // ÊîªÂáªÊù•Ê∫êÔºàËã•ÁºñËØëÊä•ÈîôÔºåÊîπÊàê‰Ω†ÁâàÊú¨Â≠óÊÆµÔºâ
++
++        const bool playerIsTarget = (target == player);  // Áé©ÂÆ∂Ë¢´Êâì
++        const bool playerIsCause = (cause == player);    // Áé©ÂÆ∂ÊâìÂà´‰∫∫
++
++        // ‰∏§ËÄÖÈÉΩ‰∏çÊòØÁé©ÂÆ∂ÔºåÂøΩÁï•
++        if (!playerIsTarget && !playerIsCause) {
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        EventMsg msg;
++        msg.qpc = ToQPC(Now());
++        msg.type = EventType::HitImpact;
++
++        // ‰Ω†ÂèØ‰ª•ÊåâÂú∫ÊôØÂæÆË∞ÉÂº∫Â∫¶
++        // Áé©ÂÆ∂Ë¢´ÊâìÔºöÊõ¥Âº∫ÔºõÁé©ÂÆ∂Êâì‰∫∫ÔºöÁï•Âº±
++        msg.intensity = playerIsTarget ? 0.95f : 0.80f;
++
++        auto& config = HapticsConfig::GetSingleton();
++        if (!config.IsEventAllowed(msg.type)) {
++            logger::info("[Haptics][EventCollector] HitImpact filtered by mode");
++            return RE::BSEventNotifyControl::kContinue;
++        }
++
++        const bool pushed = EventQueue::GetSingleton().Push(msg);
++
++        logger::info(
++            "[Haptics][EventCollector] HitImpact pushed={} playerIsTarget={} playerIsCause={} intensity={:.2f}",
++            pushed, playerIsTarget, playerIsCause, msg.intensity);
++
++        return RE::BSEventNotifyControl::kContinue;
++    }
++
++    bool EventCollector::IsPlayerEvent(RE::TESObjectREFR* ref) const
++    {
++        if (!ref) {
++            return false;
++        }
++
++        auto* player = RE::PlayerCharacter::GetSingleton();
++        return ref == player;
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/EventCollector.h b/src/haptics/EventCollector.h
+new file mode 100644
+index 0000000..569bfb2
+--- /dev/null
++++ b/src/haptics/EventCollector.h
+@@ -0,0 +1,39 @@
++#pragma once
++#include <RE/Skyrim.h>
++
++namespace dualpad::haptics
++{
++    // SKSE  ¬º˛≤…ºØ∆˜
++    // º‡Ã˝”Œœ∑ ¬º˛≤¢◊™ªªŒ™¥•æı ¬º˛
++    class EventCollector :
++        public RE::BSTEventSink<RE::BSAnimationGraphEvent>,
++        public RE::BSTEventSink<RE::TESHitEvent>
++    {
++    public:
++        static EventCollector& GetSingleton();
++
++        // ◊¢≤· ¬º˛º‡Ã˝
++        void Register();
++
++        // »°œ˚◊¢≤·
++        void Unregister();
++
++        // BSAnimationGraphEvent£®Ω≈≤Ω°¢ª”µ∂µ»£©
++        RE::BSEventNotifyControl ProcessEvent(
++            const RE::BSAnimationGraphEvent* event,
++            RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override;
++
++        // TESHitEvent£® ‹ª˜£©
++        RE::BSEventNotifyControl ProcessEvent(
++            const RE::TESHitEvent* event,
++            RE::BSTEventSource<RE::TESHitEvent>*) override;
++
++    private:
++        EventCollector() = default;
++
++        bool _registered{ false };
++
++        // ∏®÷˙£∫≈–∂œ «∑ÒŒ™ÕÊº“œ‡πÿ ¬º˛
++        bool IsPlayerEvent(RE::TESObjectREFR* ref) const;
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/EventQueue.cpp b/src/haptics/EventQueue.cpp
+new file mode 100644
+index 0000000..b0b1b2c
+--- /dev/null
++++ b/src/haptics/EventQueue.cpp
+@@ -0,0 +1,59 @@
++#include "pch.h"
++#include "haptics/EventQueue.h"
++#include <SKSE/SKSE.h>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    EventQueue& EventQueue::GetSingleton()
++    {
++        static EventQueue instance;
++        return instance;
++    }
++
++    void EventQueue::Initialize(std::size_t capacity)
++    {
++        if (_initialized) {
++            logger::warn("[Haptics][EventQueue] Already initialized");
++            return;
++        }
++
++        _capacity = capacity;
++        _queue.reserve(capacity);
++        _initialized = true;
++
++        logger::info("[Haptics][EventQueue] Initialized (capacity: {})", capacity);
++    }
++
++    bool EventQueue::Push(const EventMsg& msg)
++    {
++        std::scoped_lock lock(_mutex);
++
++        if (_queue.size() >= _capacity) {
++            _dropped.fetch_add(1, std::memory_order_relaxed);
++            return false;  // ∂”¡–¬˙
++        }
++
++        _queue.push_back(msg);
++        _pushed.fetch_add(1, std::memory_order_relaxed);
++        logger::info("[Haptics][EventQueue] push type={} size={}",
++            ToString(msg.type), _queue.size());
++        return true;  // ≥…π¶
++    }
++
++    std::vector<EventMsg> EventQueue::DrainAll()
++    {
++        std::scoped_lock lock(_mutex);
++
++        std::vector<EventMsg> result;
++        result.swap(_queue);
++        return result;
++    }
++
++    std::size_t EventQueue::Size() const
++    {
++        std::scoped_lock lock(_mutex);
++        return _queue.size();
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/EventQueue.h b/src/haptics/EventQueue.h
+new file mode 100644
+index 0000000..97abafc
+--- /dev/null
++++ b/src/haptics/EventQueue.h
+@@ -0,0 +1,42 @@
++#pragma once
++#include "haptics/HapticsTypes.h"
++#include <vector>
++#include <mutex>
++#include <atomic>
++
++namespace dualpad::haptics
++{
++    //  ¬º˛∂”¡–£®MPSC: Multiple Producer, Single Consumer£©
++    // ”√”⁄¥””Œœ∑œﬂ≥Ã ’ºØ ¬º˛£¨‘⁄¥•æıœﬂ≥Ãœ˚∑—
++    class EventQueue
++    {
++    public:
++        static EventQueue& GetSingleton();
++
++        // ≥ı ºªØ∂”¡–
++        void Initialize(std::size_t capacity = 1024);
++
++        // Õ∆ÀÕ ¬º˛£®…˙≤˙’ﬂ£¨∂‡œﬂ≥Ã∞≤»´£©
++        bool Push(const EventMsg& msg);  // ÷ª…˘√˜£¨≤ª µœ÷
++
++        // ¿≠»°À˘”– ¬º˛£®œ˚∑—’ﬂ£¨µ•œﬂ≥Ã£©
++        std::vector<EventMsg> DrainAll();
++
++        // Õ≥º∆
++        std::size_t Size() const;
++        std::uint32_t GetPushedCount() const { return _pushed.load(std::memory_order_relaxed); }
++        std::uint32_t GetDroppedCount() const { return _dropped.load(std::memory_order_relaxed); }
++
++    private:
++        EventQueue() = default;
++
++        mutable std::mutex _mutex;
++        std::vector<EventMsg> _queue;
++        std::size_t _capacity{ 1024 };
++
++        std::atomic<std::uint32_t> _pushed{ 0 };
++        std::atomic<std::uint32_t> _dropped{ 0 };
++
++        bool _initialized{ false };
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/EventWindowScorer.cpp b/src/haptics/EventWindowScorer.cpp
+new file mode 100644
+index 0000000..253d447
+--- /dev/null
++++ b/src/haptics/EventWindowScorer.cpp
+@@ -0,0 +1,478 @@
++Ôªø#include "pch.h"
++#include "haptics/EventWindowScorer.h"
++#include "haptics/HapticsConfig.h"
++#include "haptics/VoiceManager.h"
++#include "haptics/EventQueue.h"
++#include <SKSE/SKSE.h>
++#include <algorithm>
++#include <cmath>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    EventWindowScorer& EventWindowScorer::GetSingleton()
++    {
++        static EventWindowScorer instance;
++        return instance;
++    }
++
++    void EventWindowScorer::Initialize()
++    {
++        if (_initialized) {
++            logger::warn("[Haptics][Scorer] Already initialized");
++            return;
++        }
++
++        logger::info("[Haptics][Scorer] Initializing...");
++
++        _activeWindows.reserve(32);
++        _initialized = true;
++
++        logger::info("[Haptics][Scorer] Initialized");
++    }
++
++    void EventWindowScorer::Shutdown()
++    {
++        if (!_initialized) {
++            return;
++        }
++
++        logger::info("[Haptics][Scorer] Shutting down...");
++
++        {
++            std::scoped_lock lock(_mutex);
++            _activeWindows.clear();
++        }
++
++        _initialized = false;
++
++        logger::info("[Haptics][Scorer] Shutdown complete");
++    }
++
++    void EventWindowScorer::AddEvent(const EventMsg& event)
++    {
++        if (!_initialized) {
++            return;
++        }
++
++        auto& config = HapticsConfig::GetSingleton();
++
++        EventWindow window;
++        window.event = event;
++
++        auto eventTime = FromQPC(event.qpc);
++        window.windowStart = eventTime - std::chrono::milliseconds(config.windowPreMs);
++        window.windowEnd = eventTime + std::chrono::milliseconds(config.windowPostMs);
++        window.resolved = false;
++
++        {
++            std::scoped_lock lock(_mutex);
++            _activeWindows.push_back(window);
++        }
++
++        _totalEvents.fetch_add(1, std::memory_order_relaxed);
++
++        logger::trace("[Haptics][Scorer] Event added: type={} qpc={} window=[{}, {}]",
++            ToString(event.type), event.qpc,
++            ToQPC(window.windowStart), ToQPC(window.windowEnd));
++    }
++
++    void EventWindowScorer::AddAudioFeature(const AudioFeatureMsg& feature)
++    {
++        if (!_initialized) {
++            return;
++        }
++
++        auto featureTime = FromQPC(feature.qpcStart);
++
++        std::scoped_lock lock(_mutex);
++
++        // Â∞ùËØïÂåπÈÖçÂà∞ÊâÄÊúâÊ¥ªË∑ÉÁ™óÂè£
++        for (auto& window : _activeWindows) {
++            if (window.resolved) {
++                continue;
++            }
++
++            // Ê£ÄÊü•ÊòØÂê¶Âú®Á™óÂè£ÂÜÖ
++            if (featureTime >= window.windowStart && featureTime <= window.windowEnd) {
++                window.candidates.push_back(feature);
++
++                logger::trace("[Haptics][Scorer] Feature matched to window: event={} voiceId={} rms={:.3f}",
++                    ToString(window.event.type), feature.voiceId, feature.rms);
++            }
++        }
++    }
++
++    std::vector<HapticSourceMsg> EventWindowScorer::Update()
++    {
++        if (!_initialized) {
++            return {};
++        }
++
++        // ‰ªé EventQueue ÊãâÂèñÊñ∞‰∫ã‰ª∂
++        auto newEvents = EventQueue::GetSingleton().DrainAll();
++        if (!newEvents.empty()) {
++            logger::info("[Haptics][Scorer] Pulled {} events from queue", newEvents.size());
++        }
++
++        for (const auto& event : newEvents) {
++            AddEvent(event);
++            logger::info("[Haptics][Scorer] Event added: type={} intensity={:.2f}",
++                ToString(event.type), event.intensity);
++        }
++
++        AudioFeatureMsg feats[256];
++        const auto n = VoiceManager::GetSingleton().PopAudioFeatures(feats, std::size(feats));
++        for (size_t i = 0; i < n; ++i) {
++            AddAudioFeature(feats[i]);
++        }
++        if (n > 0) {
++            logger::info("[Haptics][Scorer] Pulled {} audio features", n);
++        }
++
++        std::vector<HapticSourceMsg> results;
++
++        auto& config = HapticsConfig::GetSingleton();
++        auto now = Now();
++
++        std::scoped_lock lock(_mutex);
++
++        // ÈÅçÂéÜÊâÄÊúâÁ™óÂè£
++        for (auto it = _activeWindows.begin(); it != _activeWindows.end(); ) {
++            auto& window = *it;
++
++            // Ê£ÄÊü•Á™óÂè£ÊòØÂê¶Â∑≤Ë∂ÖÊó∂
++            if (now > window.windowEnd) {
++                // Á™óÂè£ÂÖ≥Èó≠ÔºåÁîüÊàêÊúÄ‰Ω≥ÂåπÈÖç
++                if (!window.candidates.empty()) {
++                    float bestScore = 0.0f;
++                    AudioFeatureMsg bestFeature;
++                    bool found = false;
++
++                    for (const auto& candidate : window.candidates) {
++                        float score = ScoreFeature(window.event, candidate, window.event.qpc);
++
++                        if (score > bestScore) {
++                            bestScore = score;
++                            bestFeature = candidate;
++                            found = true;
++                        }
++                    }
++
++                    if (found && bestScore >= config.minConfidence) {
++                        window.bestMatch = bestFeature;
++                        window.bestScore = bestScore;
++                        window.hasMatch = true;
++
++                        _totalMatched.fetch_add(1, std::memory_order_relaxed);
++
++                        logger::trace("[Haptics][Scorer] Window resolved: event={} score={:.3f} voiceId={}",
++                            ToString(window.event.type), bestScore, bestFeature.voiceId);
++                    }
++                    else {
++                        _totalUnmatched.fetch_add(1, std::memory_order_relaxed);
++
++                        logger::trace("[Haptics][Scorer] Window unmatched: event={} candidates={} bestScore={:.3f}",
++                            ToString(window.event.type), window.candidates.size(), bestScore);
++                    }
++                }
++                else {
++                    _totalUnmatched.fetch_add(1, std::memory_order_relaxed);
++
++                    logger::info("[Haptics][Scorer] Window closed without audio: event={}",
++                        ToString(window.event.type));
++                }
++
++                // ÁîüÊàêËß¶ËßâÊ∫êÊ∂àÊÅØÔºàÂèØÈÖçÁΩÆÂºÄÂÖ≥Ôºâ
++                const bool isAudioDriven = (config.hapticsMode == HapticsConfig::HapticsMode::AudioDriven);
++
++                if (window.hasMatch) {
++                    // ÊúâÈü≥È¢ëÂåπÈÖçÔºöÂÖàÂä†Èü≥È¢ëË∞ÉÂà∂
++                    auto audioMsg = CreateAudioModulation(window.event, window.bestMatch, window.bestScore);
++                    results.push_back(audioMsg);
++
++                    logger::info("[Haptics][Scorer] Created audio modulation: type={} score={:.2f} L={:.2f} R={:.2f}",
++                        ToString(window.event.type), window.bestScore, audioMsg.left, audioMsg.right);
++
++                    // AudioDriven ‰∏ãÊòØÂê¶ËøòÂè†Âä† baseÔºåÁî±ÂºÄÂÖ≥ÂÜ≥ÂÆö
++                    bool allowBaseTogether = true;
++                    if (isAudioDriven && config.audioDrivenPreferAudioOnly) {
++                        allowBaseTogether = false;
++                    }
++
++                    if (allowBaseTogether && config.enableBasePulse) {
++                        auto baseMsg = CreateBaseEventPulse(window.event);
++                        results.push_back(baseMsg);
++
++                        logger::info("[Haptics][Scorer] Created base pulse (with match): type={} L={:.2f} R={:.2f}",
++                            ToString(window.event.type), baseMsg.left, baseMsg.right);
++                    }
++                }
++                else {
++                    // Êó†Èü≥È¢ëÂåπÈÖçÔºöÊòØÂê¶ÂÖÅËÆ∏ base ÂÖúÂ∫ï
++                    if (config.enableBasePulse && config.fallbackBaseWhenNoMatch) {
++                        auto baseMsg = CreateBaseEventPulse(window.event);
++                        results.push_back(baseMsg);
++
++                        logger::info("[Haptics][Scorer] Created fallback base pulse: type={} L={:.2f} R={:.2f}",
++                            ToString(window.event.type), baseMsg.left, baseMsg.right);
++                    }
++                }
++
++                // ÁßªÈô§Á™óÂè£
++                it = _activeWindows.erase(it);
++            }
++            else {
++                ++it;
++            }
++        }
++
++        if (!results.empty()) {
++            logger::info("[Haptics][Scorer] Returning {} haptic sources", results.size());
++        }
++
++        return results;
++    }
++
++    EventWindowScorer::Stats EventWindowScorer::GetStats() const
++    {
++        Stats s;
++        s.totalEvents = _totalEvents.load(std::memory_order_relaxed);
++        s.totalMatched = _totalMatched.load(std::memory_order_relaxed);
++        s.totalUnmatched = _totalUnmatched.load(std::memory_order_relaxed);
++
++        {
++            std::scoped_lock lock(_mutex);
++            s.activeWindows = static_cast<std::uint32_t>(_activeWindows.size());
++        }
++
++        return s;
++    }
++
++    float EventWindowScorer::ScoreFeature(const EventMsg& event, const AudioFeatureMsg& feature,
++        std::uint64_t eventQpc) const
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        float scoreTiming = ScoreTiming(eventQpc, feature.qpcStart,
++            config.windowPreMs + config.windowPostMs);
++        float scoreAttack = ScoreAttack(event.type, feature.attack);
++        float scoreSpectrum = ScoreSpectrum(event.type, feature);
++        float scoreDuration = ScoreDuration(event.type, feature.qpcEnd - feature.qpcStart);
++        float scoreChannel = ScoreChannel(event.type, feature.energyL, feature.energyR);
++
++        float total = scoreTiming * config.weightTiming
++            + scoreAttack * config.weightAttack
++            + scoreSpectrum * config.weightSpectrum
++            + scoreDuration * config.weightDuration
++            + scoreChannel * config.weightChannel;
++
++        return std::clamp(total, 0.0f, 1.0f);
++    }
++
++    float EventWindowScorer::ScoreTiming(std::uint64_t eventQpc, std::uint64_t featureQpc,
++        std::uint64_t windowDuration) const
++    {
++        // Êó∂Â∫èÂàÜÔºöÁ¶ª‰∫ã‰ª∂Ë∂äËøëÂàÜË∂äÈ´ò
++        std::int64_t delta = static_cast<std::int64_t>(featureQpc) - static_cast<std::int64_t>(eventQpc);
++        float absDelta = static_cast<float>(std::abs(delta));
++        float windowUs = static_cast<float>(windowDuration) * 1000.0f;
++
++        if (windowUs <= 0.0f) return 0.0f;
++
++        float normalized = 1.0f - (absDelta / windowUs);
++        return std::clamp(normalized, 0.0f, 1.0f);
++    }
++
++    float EventWindowScorer::ScoreAttack(EventType eventType, float attack) const
++    {
++        // Áû¨ÊÄÅÂàÜÔºö‰∏çÂêå‰∫ã‰ª∂Á±ªÂûãÊúüÊúõ‰∏çÂêåÁöÑÁû¨ÊÄÅÂº∫Â∫¶
++        switch (eventType) {
++        case EventType::HitImpact:
++        case EventType::WeaponSwing:
++        case EventType::Block:
++            // ÊúüÊúõÈ´òÁû¨ÊÄÅ
++            return attack;
++
++        case EventType::Footstep:
++        case EventType::Land:
++            // ÊúüÊúõ‰∏≠Á≠âÁû¨ÊÄÅ
++            return std::clamp(attack * 1.5f, 0.0f, 1.0f);
++
++        case EventType::SpellCast:
++        case EventType::SpellImpact:
++            // ÂèØËÉΩ‰ΩéÁû¨ÊÄÅ
++            return std::clamp(attack * 0.8f + 0.2f, 0.0f, 1.0f);
++
++        default:
++            return attack;
++        }
++    }
++
++    float EventWindowScorer::ScoreSpectrum(EventType eventType, const AudioFeatureMsg& feature) const
++    {
++        // È¢ëË∞±ÂàÜÔºö‰∏çÂêå‰∫ã‰ª∂Á±ªÂûãÊúüÊúõ‰∏çÂêåÁöÑÈ¢ëÊÆµÂàÜÂ∏É
++        switch (eventType) {
++        case EventType::WeaponSwing:
++        case EventType::HitImpact:
++            // ÊúüÊúõ‰∏≠È´òÈ¢ë
++            return (feature.bandMid * 0.6f + feature.bandHigh * 0.4f);
++
++        case EventType::Footstep:
++        case EventType::Land:
++            // ÊúüÊúõ‰ΩéÈ¢ë
++            return feature.bandLow;
++
++        case EventType::SpellCast:
++        case EventType::SpellImpact:
++            // ÊúüÊúõÂÆΩÂ∏¶
++            return (feature.bandLow + feature.bandMid + feature.bandHigh) / 3.0f;
++
++        default:
++            return feature.rms;
++        }
++    }
++
++    float EventWindowScorer::ScoreDuration(EventType eventType, std::uint64_t durationUs) const
++    {
++        // ÊåÅÁª≠Êó∂ÈïøÂàÜÔºö‰∏çÂêå‰∫ã‰ª∂Á±ªÂûãÊúüÊúõ‰∏çÂêåÁöÑÊåÅÁª≠Êó∂Èó¥
++        float durationMs = static_cast<float>(durationUs) / 1000.0f;
++
++        switch (eventType) {
++        case EventType::Footstep:
++        case EventType::HitImpact:
++            // ÊúüÊúõÁü≠‰øÉÔºà< 100msÔºâ
++            if (durationMs < 100.0f) return 1.0f;
++            return std::max(0.0f, 1.0f - (durationMs - 100.0f) / 200.0f);
++
++        case EventType::SpellCast:
++        case EventType::Shout:
++            // ÊúüÊúõËæÉÈïøÔºà100-500msÔºâ
++            if (durationMs >= 100.0f && durationMs <= 500.0f) return 1.0f;
++            if (durationMs < 100.0f) return durationMs / 100.0f;
++            return std::max(0.0f, 1.0f - (durationMs - 500.0f) / 500.0f);
++
++        default:
++            return 0.5f;
++        }
++    }
++
++    float EventWindowScorer::ScoreChannel(EventType eventType, float energyL, float energyR) const
++    {
++        // Â£∞ÈÅìÂàÜÔºöÂèØÁî®‰∫éËæÖÂä©Âà§Êñ≠Ôºà‰æãÂ¶ÇÂ∑¶Âè≥ËÑöÊ≠•Ôºâ
++        // ÂΩìÂâçÁÆÄÂåñÂÆûÁé∞ÔºöËøîÂõûÊÄªËÉΩÈáè
++        (void)eventType;
++        return (energyL + energyR) * 0.5f;
++    }
++
++    HapticSourceMsg EventWindowScorer::CreateBaseEventPulse(const EventMsg& event) const
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        HapticSourceMsg msg;
++        msg.qpc = event.qpc;
++        msg.type = SourceType::BaseEvent;
++        msg.eventType = event.type;  // ‚úÖ ÂÖ≥ÈîÆÔºö‰º†ÈÄí‰∫ã‰ª∂Á±ªÂûã
++        msg.confidence = 1.0f;
++        msg.priority = GetPriorityForEvent(event.type);
++        msg.ttlMs = GetTTLForEvent(event.type);
++
++        // Ê†πÊçÆ‰∫ã‰ª∂Á±ªÂûãËÆæÁΩÆÂü∫Á°ÄÂº∫Â∫¶
++        float baseIntensity = 0.5f;
++
++        switch (event.type) {
++        case EventType::HitImpact:
++            baseIntensity = config.basePulseHit;
++            break;
++        case EventType::WeaponSwing:
++            baseIntensity = config.basePulseSwing;
++            break;
++        case EventType::Footstep:
++            baseIntensity = config.basePulseFootstep;
++            break;
++        default:
++            baseIntensity = 0.5f;
++            break;
++        }
++
++        msg.left = baseIntensity * event.intensity;
++        msg.right = baseIntensity * event.intensity;
++
++        return msg;
++    }
++
++    HapticSourceMsg EventWindowScorer::CreateAudioModulation(const EventMsg& event,
++        const AudioFeatureMsg& feature, float confidence) const
++    {
++        HapticSourceMsg msg;
++        msg.qpc = feature.qpcStart;
++        msg.type = SourceType::AudioMod;
++        msg.eventType = event.type;  // ‚úÖ ÂÖ≥ÈîÆÔºö‰º†ÈÄí‰∫ã‰ª∂Á±ªÂûã
++        msg.confidence = confidence;
++        msg.priority = GetPriorityForEvent(event.type);
++        msg.ttlMs = GetTTLForEvent(event.type);
++
++        // ‰ΩøÁî®Èü≥È¢ëÁâπÂæÅË∞ÉÂà∂Âº∫Â∫¶
++        float intensity = feature.rms * event.intensity * confidence;
++
++        msg.left = std::clamp(intensity * feature.energyL, 0.0f, 1.0f);
++        msg.right = std::clamp(intensity * feature.energyR, 0.0f, 1.0f);
++
++        return msg;
++    }
++
++    int EventWindowScorer::GetPriorityForEvent(EventType type) const
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        switch (type) {
++        case EventType::HitImpact:
++        case EventType::Block:
++            return config.priorityHit;
++
++        case EventType::SpellCast:
++        case EventType::SpellImpact:
++        case EventType::Shout:
++            return config.prioritySpell;
++
++        case EventType::WeaponSwing:
++        case EventType::BowRelease:
++            return config.prioritySwing;
++
++        case EventType::Footstep:
++        case EventType::Jump:
++        case EventType::Land:
++            return config.priorityFootstep;
++
++        default:
++            return 50;
++        }
++    }
++
++    std::uint32_t EventWindowScorer::GetTTLForEvent(EventType type) const
++    {
++        // TTLÔºàÁîüÂ≠òÊó∂Èó¥ÔºâÔºö‰∏çÂêå‰∫ã‰ª∂Á±ªÂûãÁöÑËß¶ËßâÊåÅÁª≠Êó∂Èó¥
++        switch (type) {
++        case EventType::HitImpact:
++        case EventType::Block:
++            return 80;  // 80ms
++
++        case EventType::WeaponSwing:
++            return 120;
++
++        case EventType::Footstep:
++            return 60;
++
++        case EventType::SpellCast:
++        case EventType::SpellImpact:
++            return 200;
++
++        case EventType::Shout:
++            return 300;
++
++        default:
++            return 100;
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/EventWindowScorer.h b/src/haptics/EventWindowScorer.h
+new file mode 100644
+index 0000000..bbbfcdc
+--- /dev/null
++++ b/src/haptics/EventWindowScorer.h
+@@ -0,0 +1,92 @@
++#pragma once
++#include "haptics/HapticsTypes.h"
++#include <vector>
++#include <unordered_map>
++#include <mutex>
++
++namespace dualpad::haptics
++{
++    //  ¬º˛¥∞ø⁄£®”√”⁄∆•≈‰“Ù∆µÃÿ’˜£©
++    struct EventWindow
++    {
++        EventMsg event;
++        TimePoint windowStart;
++        TimePoint windowEnd;
++        bool resolved{ false };
++
++        // ∫Ú—°“Ù∆µÃÿ’˜
++        std::vector<AudioFeatureMsg> candidates;
++
++        // ◊Óº—∆•≈‰Ω·π˚
++        AudioFeatureMsg bestMatch;
++        float bestScore{ 0.0f };
++        bool hasMatch{ false };
++    };
++
++    //  ¬º˛¥∞ø⁄¥Ú∑÷∆˜
++    // ∏∫‘Ω´”Œœ∑ ¬º˛”Î“Ù∆µÃÿ’˜Ω¯––∆•≈‰¥Ú∑÷
++    class EventWindowScorer
++    {
++    public:
++        static EventWindowScorer& GetSingleton();
++
++        // ≥ı ºªØ
++        void Initialize();
++
++        // πÿ±’
++        void Shutdown();
++
++        // ÃÌº”–¬ ¬º˛£®¥¥Ω®¥∞ø⁄£©
++        void AddEvent(const EventMsg& event);
++
++        // ÃÌº”“Ù∆µÃÿ’˜£®≥¢ ‘∆•≈‰µΩªÓ‘æ¥∞ø⁄£©
++        void AddAudioFeature(const AudioFeatureMsg& feature);
++
++        // ∏¸–¬À˘”–¥∞ø⁄£®ºÏ≤È≥¨ ±°¢º∆À„◊Óº—∆•≈‰£©
++        // ∑µªÿ“—Ω‚Œˆµƒ¥•æı‘¥œ˚œ¢
++        std::vector<HapticSourceMsg> Update();
++
++        // Õ≥º∆
++        struct Stats
++        {
++            std::uint32_t totalEvents{ 0 };
++            std::uint32_t totalMatched{ 0 };
++            std::uint32_t totalUnmatched{ 0 };
++            std::uint32_t activeWindows{ 0 };
++        };
++
++        Stats GetStats() const;
++
++    private:
++        EventWindowScorer() = default;
++
++        mutable std::mutex _mutex;
++        std::vector<EventWindow> _activeWindows;
++
++        bool _initialized{ false };
++
++        // Õ≥º∆
++        std::atomic<std::uint32_t> _totalEvents{ 0 };
++        std::atomic<std::uint32_t> _totalMatched{ 0 };
++        std::atomic<std::uint32_t> _totalUnmatched{ 0 };
++
++        // ƒ⁄≤ø∏®÷˙
++        float ScoreFeature(const EventMsg& event, const AudioFeatureMsg& feature,
++            std::uint64_t eventQpc) const;
++
++        float ScoreTiming(std::uint64_t eventQpc, std::uint64_t featureQpc,
++            std::uint64_t windowDuration) const;
++
++        float ScoreAttack(EventType eventType, float attack) const;
++        float ScoreSpectrum(EventType eventType, const AudioFeatureMsg& feature) const;
++        float ScoreDuration(EventType eventType, std::uint64_t duration) const;
++        float ScoreChannel(EventType eventType, float energyL, float energyR) const;
++
++        HapticSourceMsg CreateBaseEventPulse(const EventMsg& event) const;
++        HapticSourceMsg CreateAudioModulation(const EventMsg& event,
++            const AudioFeatureMsg& feature, float confidence) const;
++
++        int GetPriorityForEvent(EventType type) const;
++        std::uint32_t GetTTLForEvent(EventType type) const;
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/FocusManager.cpp b/src/haptics/FocusManager.cpp
+new file mode 100644
+index 0000000..b6d4fb7
+--- /dev/null
++++ b/src/haptics/FocusManager.cpp
+@@ -0,0 +1,91 @@
++#include "pch.h"
++#include "haptics/FocusManager.h"
++#include <SKSE/SKSE.h>
++#include <algorithm>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    void FocusManager::SetFocus(EventType type, std::uint32_t durationMs)
++    {
++        std::scoped_lock lock(_mutex);
++
++        _currentFocus = type;
++        _focusExpireTime = Clock::now() + std::chrono::milliseconds(durationMs);
++
++        logger::info("[Haptics][Focus] Activated: type={} duration={}ms",
++            static_cast<int>(type), durationMs);
++    }
++
++    void FocusManager::Update()
++    {
++        std::scoped_lock lock(_mutex);
++
++        if (_currentFocus == EventType::Unknown) {
++            return;
++        }
++
++        auto now = Clock::now();
++        if (now >= _focusExpireTime) {
++            logger::info("[Haptics][Focus] Expired: type={}", static_cast<int>(_currentFocus));
++            _currentFocus = EventType::Unknown;
++        }
++    }
++
++    bool FocusManager::HasFocus() const
++    {
++        std::scoped_lock lock(_mutex);
++        return _currentFocus != EventType::Unknown;
++    }
++
++    EventType FocusManager::GetCurrentFocus() const
++    {
++        std::scoped_lock lock(_mutex);
++        return _currentFocus;
++    }
++
++    std::uint32_t FocusManager::GetRemainingMs() const
++    {
++        std::scoped_lock lock(_mutex);
++
++        if (_currentFocus == EventType::Unknown) {
++            return 0;
++        }
++
++        auto now = Clock::now();
++        if (now >= _focusExpireTime) {
++            return 0;
++        }
++
++        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
++            _focusExpireTime - now);
++        return static_cast<std::uint32_t>(remaining.count());
++    }
++
++    float FocusManager::GetDuckFactorFor(EventType targetType) const
++    {
++        std::scoped_lock lock(_mutex);
++
++        if (_currentFocus == EventType::Unknown) {
++            return 1.0f;  // ŒﬁΩπµ„£¨≤ª—π÷∆
++        }
++
++        // ≤È’“∆•≈‰µƒ ducking πÊ‘Ú
++        for (const auto& rule : _duckingRules) {
++            if (rule.focusType == _currentFocus && rule.targetType == targetType) {
++                return rule.duckFactor;
++            }
++        }
++
++        return 1.0f;  // ŒﬁπÊ‘Ú£¨≤ª—π÷∆
++    }
++
++    void FocusManager::SetDuckingRules(const std::vector<DuckingRule>& rules)
++    {
++        std::scoped_lock lock(_mutex);
++        _duckingRules = rules;
++
++        logger::info("[Haptics][Focus] Loaded {} ducking rules", rules.size());
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/FocusManager.h b/src/haptics/FocusManager.h
+new file mode 100644
+index 0000000..fabf6c5
+--- /dev/null
++++ b/src/haptics/FocusManager.h
+@@ -0,0 +1,43 @@
++#pragma once
++
++#include "haptics/HapticsTypes.h"
++#include <chrono>
++#include <vector>
++#include <mutex>
++
++namespace dualpad::haptics
++{
++    class FocusManager
++    {
++    public:
++        FocusManager() = default;
++        ~FocusManager() = default;
++
++        // …Ë÷√Ωπµ„
++        void SetFocus(EventType type, std::uint32_t durationMs);
++
++        // ∏¸–¬Ωπµ„◊¥Ã¨£®√ø÷°µ˜”√£©
++        void Update();
++
++        // ≤È—ØΩπµ„◊¥Ã¨
++        bool HasFocus() const;
++        EventType GetCurrentFocus() const;
++        std::uint32_t GetRemainingMs() const;
++
++        // ≤È—Ø—π÷∆œµ ˝
++        float GetDuckFactorFor(EventType targetType) const;
++
++        // …Ë÷√ ducking πÊ‘Ú
++        void SetDuckingRules(const std::vector<DuckingRule>& rules);
++
++    private:
++        using Clock = std::chrono::steady_clock;
++        using TimePoint = std::chrono::steady_clock::time_point;
++
++        EventType _currentFocus{ EventType::Unknown };
++        TimePoint _focusExpireTime;
++        std::vector<DuckingRule> _duckingRules;
++
++        mutable std::mutex _mutex;
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/HapticMixer.cpp b/src/haptics/HapticMixer.cpp
+new file mode 100644
+index 0000000..08a6636
+--- /dev/null
++++ b/src/haptics/HapticMixer.cpp
+@@ -0,0 +1,394 @@
++#include "pch.h"
++#include "haptics/HapticMixer.h"
++#include "haptics/EventWindowScorer.h"
++#include "haptics/HapticsConfig.h"
++#include "haptics/HidOutput.h"
++#include <SKSE/SKSE.h>
++#include <algorithm>
++#include <chrono>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    HapticMixer& HapticMixer::GetSingleton()
++    {
++        static HapticMixer instance;
++        return instance;
++    }
++
++    void HapticMixer::Start()
++    {
++        if (_running.exchange(true)) {
++            logger::warn("[Haptics][Mixer] Already running");
++            return;
++        }
++
++        logger::info("[Haptics][Mixer] Starting mixer thread...");
++
++        _activeSources.reserve(32);
++        _lastLeft = 0.0f;
++        _lastRight = 0.0f;
++
++        // ≥ı ºªØΩπµ„π‹¿Ì∆˜
++        auto& config = HapticsConfig::GetSingleton();
++        _focusManager.SetDuckingRules(config.duckingRules);
++
++        _thread = std::jthread([this](std::stop_token st) {
++            (void)st;
++            MixerThreadLoop();
++            });
++
++        logger::info("[Haptics][Mixer] Mixer thread started");
++    }
++
++    void HapticMixer::Stop()
++    {
++        if (!_running.exchange(false)) {
++            return;
++        }
++
++        logger::info("[Haptics][Mixer] Stopping mixer thread...");
++
++        if (_thread.joinable()) {
++            _thread.request_stop();
++            _thread.join();
++        }
++
++        {
++            std::scoped_lock lock(_mutex);
++            _activeSources.clear();
++        }
++
++        logger::info("[Haptics][Mixer] Mixer thread stopped");
++    }
++
++    void HapticMixer::AddSource(const HapticSourceMsg& msg)
++    {
++        if (!_running.load(std::memory_order_acquire)) {
++            return;
++        }
++
++        // ºÏ≤È ¬º˛ «∑Ò‘ –Ì
++        auto& config = HapticsConfig::GetSingleton();
++        if (!config.IsEventAllowed(msg.eventType)) {
++            logger::info("[Haptics][Mixer] Event filtered (mode restriction): type={}",
++                static_cast<int>(msg.eventType));
++            return;
++        }
++
++        ActiveSource source;
++        source.msg = msg;
++
++        //  π”√µ±«∞ ±º‰ + TTL
++        if (msg.type == SourceType::BaseEvent) {
++            source.expireTime = Now() + std::chrono::milliseconds(msg.ttlMs);
++        }
++        else {
++            source.expireTime = FromQPC(msg.qpc) + std::chrono::milliseconds(msg.ttlMs);
++        }
++
++        source.currentLeft = msg.left;
++        source.currentRight = msg.right;
++
++        {
++            std::scoped_lock lock(_mutex);
++            _activeSources.push_back(source);
++        }
++
++        _totalSourcesAdded.fetch_add(1, std::memory_order_relaxed);
++
++        // »Áπ˚∏√ ¬º˛”–Ωπµ„¥∞ø⁄£¨º§ªÓΩπµ„
++        const auto* eventConfig = config.GetEventConfig(msg.eventType);
++        if (eventConfig && eventConfig->focusWindowMs > 0) {
++            _focusManager.SetFocus(msg.eventType, eventConfig->focusWindowMs);
++        }
++
++        // ’Ô∂œ»’÷æ
++        if (msg.type == SourceType::BaseEvent) {
++            auto now = Now();
++            auto remainMs = std::chrono::duration_cast<std::chrono::milliseconds>(
++                source.expireTime - now).count();
++            logger::info("[Haptics][Diag] AddSource base: type={} ttl={}ms remain={}ms L={:.3f} R={:.3f}",
++                static_cast<int>(msg.eventType), msg.ttlMs, remainMs, msg.left, msg.right);
++        }
++    }
++
++    HapticMixer::Stats HapticMixer::GetStats() const
++    {
++        Stats s;
++        s.totalTicks = _totalTicks.load(std::memory_order_relaxed);
++        s.totalSourcesAdded = _totalSourcesAdded.load(std::memory_order_relaxed);
++        s.framesOutput = _framesOutput.load(std::memory_order_relaxed);
++        s.peakLeft = _peakLeft.load(std::memory_order_relaxed);
++        s.peakRight = _peakRight.load(std::memory_order_relaxed);
++
++        {
++            std::scoped_lock lock(_mutex);
++            s.activeSources = static_cast<std::uint32_t>(_activeSources.size());
++        }
++
++        if (s.totalTicks > 0) {
++            s.avgTickTimeUs = 0.0f;
++        }
++
++        return s;
++    }
++
++    void HapticMixer::MixerThreadLoop()
++    {
++        auto& config = HapticsConfig::GetSingleton();
++        const auto tickDuration = std::chrono::milliseconds(config.tickMs);
++
++        logger::info("[Haptics][Mixer] Mixer loop started (tick={}ms)", config.tickMs);
++
++        auto nextTick = std::chrono::steady_clock::now();
++
++        while (_running.load(std::memory_order_acquire)) {
++            auto tickStart = std::chrono::steady_clock::now();
++
++            // ¥¶¿Ì“ª¥Œ tick
++            HidFrame frame = ProcessTick();
++
++            // ∑¢ÀÕµΩ HID
++            HidOutput::GetSingleton().SendFrame(frame);
++
++            _totalTicks.fetch_add(1, std::memory_order_relaxed);
++            _framesOutput.fetch_add(1, std::memory_order_relaxed);
++
++            // ∏¸–¬∑Â÷µ
++            _peakLeft.store(std::max(_peakLeft.load(), frame.leftMotor / 255.0f), std::memory_order_relaxed);
++            _peakRight.store(std::max(_peakRight.load(), frame.rightMotor / 255.0f), std::memory_order_relaxed);
++
++            // µ»¥˝œ¬“ª¥Œ tick
++            nextTick += tickDuration;
++            std::this_thread::sleep_until(nextTick);
++
++            // »Áπ˚—”≥ŸÃ´¥Û£¨÷ÿ–¬Õ¨≤Ω
++            auto now = std::chrono::steady_clock::now();
++            if (now > nextTick + tickDuration * 2) {
++                // logger::warn("[Haptics][Mixer] Tick lagging, resync");
++                nextTick = now;
++            }
++        }
++
++        logger::info("[Haptics][Mixer] Mixer loop stopped");
++    }
++
++    HidFrame HapticMixer::ProcessTick()
++    {
++        // 1. ∏¸–¬Ωπµ„◊¥Ã¨
++        _focusManager.Update();
++
++        // 2. ¥” ¬º˛¥∞ø⁄¥¶¿Ì∆˜¿≠»°–¬‘¥
++        auto newSources = EventWindowScorer::GetSingleton().Update();
++
++        if (!newSources.empty()) {
++            logger::info("[Haptics][Mixer] Received {} haptic sources", newSources.size());
++        }
++
++        for (auto& source : newSources) {
++            AddSource(source);
++            logger::info("[Haptics][Mixer] Source added: srcType={} eventType={} L={:.3f} R={:.3f} priority={}",
++                static_cast<int>(source.type),
++                ToString(source.eventType),
++                source.left, source.right, source.priority);
++        }
++
++        // 3. ∏¸–¬ªÓ‘æ‘¥£®“∆≥˝π˝∆⁄£©
++        UpdateActiveSources();
++
++        // 4. ªÏ“Ù
++        float left = 0.0f;
++        float right = 0.0f;
++        MixSources(left, right);
++
++        // 5. Ducking£®Ωπµ„—π÷∆£©
++        ApplyDucking(left, right);
++
++        // 6. Compressor£®—πÀı∆˜£©
++        ApplyCompressor(left, right);
++
++        // 7. Limiter£®œﬁ∑˘∆˜£©
++        ApplyLimiter(left, right);
++
++        // 8. Slew Rate Limiting£®∆Ωª¨π˝∂…£©
++        ApplySlewLimit(left, right);
++
++        // 9. Deadzone£®À¿«¯£©
++        ApplyDeadzone(left, right);
++
++        // 10. ◊™ªªŒ™ HID ∏Ò Ω
++        HidFrame frame;
++        frame.qpc = ToQPC(Now());
++        frame.leftMotor = static_cast<std::uint8_t>(std::clamp(left * 255.0f, 0.0f, 255.0f));
++        frame.rightMotor = static_cast<std::uint8_t>(std::clamp(right * 255.0f, 0.0f, 255.0f));
++        /*
++        if (frame.leftMotor > 0 || frame.rightMotor > 0) {
++            logger::info("[Haptics][Mixer] Output frame: L={} R={}",
++                frame.leftMotor, frame.rightMotor);
++        }
++        */
++        return frame;
++    }
++
++    void HapticMixer::UpdateActiveSources()
++    {
++        auto now = Now();
++
++        std::scoped_lock lock(_mutex);
++
++        auto it = _activeSources.begin();
++        while (it != _activeSources.end()) {
++            if (now > it->expireTime) {
++                auto overdueMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->expireTime).count();
++
++                if (it->msg.type == SourceType::BaseEvent) {
++                    logger::info("[Haptics][Diag] RemoveSource expired: overdue={}ms ttl={}ms L={:.3f} R={:.3f}",
++                        overdueMs, it->msg.ttlMs, it->msg.left, it->msg.right);
++                }
++
++                it = _activeSources.erase(it);
++            }
++            else {
++                ++it;
++            }
++        }
++    }
++
++    void HapticMixer::MixSources(float& outLeft, float& outRight)
++    {
++        outLeft = 0.0f;
++        outRight = 0.0f;
++
++        std::scoped_lock lock(_mutex);
++
++        if (_activeSources.empty()) {
++            return;
++        }
++
++        // ∞¥”≈œ»º∂≈≈–Ú
++        std::sort(_activeSources.begin(), _activeSources.end(),
++            [](const ActiveSource& a, const ActiveSource& b) {
++                return a.msg.priority > b.msg.priority;
++            });
++
++        // ”¶”√Ωπµ„—π÷∆∫ÛªÏ“Ù
++        float totalWeight = 0.0f;
++
++        for (const auto& src : _activeSources) {
++            float duckFactor = 1.0f;
++
++            // »Áπ˚µ±«∞”–Ωπµ„£¨«“∏√‘¥≤ª «Ωπµ„‘¥£¨”¶”√—π÷∆
++            if (_focusManager.HasFocus()) {
++                EventType srcType = src.msg.eventType;
++                EventType focusType = _focusManager.GetCurrentFocus();
++
++                if (srcType != focusType) {
++                    duckFactor = _focusManager.GetDuckFactorFor(srcType);
++                }
++            }
++
++            float weight = src.msg.confidence * duckFactor;
++            outLeft += src.currentLeft * weight;
++            outRight += src.currentRight * weight;
++            totalWeight += weight;
++        }
++
++        // πÈ“ªªØ
++        if (totalWeight > 0.0f) {
++            outLeft = outLeft / totalWeight;
++            outRight = outRight / totalWeight;
++        }
++    }
++
++    void HapticMixer::ApplyDucking(float& left, float& right)
++    {
++        // ’‚¿Ôµƒ ducking “—æ≠‘⁄ MixSources ÷–Õ®π˝Ωπµ„π‹¿Ì∆˜¥¶¿Ì¡À
++        // ±£¡Ù¥À∫Ø ˝“‘ºÊ»›æ…µƒ»´æ÷ ducking ¬ﬂº≠£®»Áπ˚–Ë“™£©
++        (void)left;
++        (void)right;
++    }
++
++    void HapticMixer::ApplyCompressor(float& left, float& right)
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        constexpr float threshold = 0.7f;
++        constexpr float ratio = 3.0f;
++
++        auto compress = [](float x, float thresh, float r) -> float {
++            if (x <= thresh) return x;
++            float over = x - thresh;
++            return thresh + over / r;
++            };
++
++        left = compress(left, threshold, ratio);
++        right = compress(right, threshold, ratio);
++
++        (void)config;
++    }
++
++    void HapticMixer::ApplyLimiter(float& left, float& right)
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        left = std::clamp(left, 0.0f, config.limiter);
++        right = std::clamp(right, 0.0f, config.limiter);
++    }
++
++    void HapticMixer::ApplySlewLimit(float& left, float& right)
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        float maxDelta = config.slewPerTick / 255.0f;
++
++        float deltaLeft = left - _lastLeft;
++        float deltaRight = right - _lastRight;
++
++        if (std::abs(deltaLeft) > maxDelta) {
++            left = _lastLeft + (deltaLeft > 0 ? maxDelta : -maxDelta);
++        }
++
++        if (std::abs(deltaRight) > maxDelta) {
++            right = _lastRight + (deltaRight > 0 ? maxDelta : -maxDelta);
++        }
++
++        _lastLeft = left;
++        _lastRight = right;
++    }
++
++    void HapticMixer::ApplyDeadzone(float& left, float& right)
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        if (left < config.deadzone) left = 0.0f;
++        if (right < config.deadzone) right = 0.0f;
++    }
++
++    float HapticMixer::GetDuckingFactor(SourceType type) const
++    {
++        (void)type;
++        return 1.0f;
++    }
++
++    bool HapticMixer::HasHighPrioritySource() const
++    {
++        auto& config = HapticsConfig::GetSingleton();
++
++        std::scoped_lock lock(_mutex);
++
++        for (const auto& src : _activeSources) {
++            if (src.msg.priority >= config.priorityHit) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
++    EventType HapticMixer::GetEventTypeFromSource(const ActiveSource& src) const
++    {
++        return src.msg.eventType;
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/HapticMixer.h b/src/haptics/HapticMixer.h
+new file mode 100644
+index 0000000..ee461e6
+--- /dev/null
++++ b/src/haptics/HapticMixer.h
+@@ -0,0 +1,96 @@
++#pragma once
++#include "haptics/HapticsTypes.h"
++#include "haptics/FocusManager.h"
++#include <vector>
++#include <atomic>
++#include <thread>
++#include <mutex>
++
++namespace dualpad::haptics
++{
++    // ¥•æı‘¥£®¥¯…˙¥Ê∆⁄£©
++    struct ActiveSource
++    {
++        HapticSourceMsg msg;
++        TimePoint expireTime;
++        float currentLeft{ 0.0f };
++        float currentRight{ 0.0f };
++    };
++
++    // ªÏ“Ù∆˜œﬂ≥Ã
++    // πÃ∂® tick ‘À––£¨æ€∫œ∂‡∏ˆ‘¥£¨ ‰≥ˆµΩ HID
++    class HapticMixer
++    {
++    public:
++        static HapticMixer& GetSingleton();
++
++        // ∆Ù∂ØªÏ“Ù∆˜œﬂ≥Ã
++        void Start();
++
++        // Õ£÷πªÏ“Ùœﬂ≥Ã
++        void Stop();
++
++        // ÃÌº”¥•æı‘¥£®”… EventWindowScorer µ˜”√£©
++        void AddSource(const HapticSourceMsg& msg);
++
++        // ≤È—Ø◊¥Ã¨
++        bool IsRunning() const { return _running.load(std::memory_order_acquire); }
++
++        // Õ≥º∆
++        struct Stats
++        {
++            std::uint32_t totalTicks{ 0 };
++            std::uint32_t totalSourcesAdded{ 0 };
++            std::uint32_t activeSources{ 0 };
++            std::uint32_t framesOutput{ 0 };
++            float avgTickTimeUs{ 0.0f };
++            float peakLeft{ 0.0f };
++            float peakRight{ 0.0f };
++        };
++
++        Stats GetStats() const;
++
++    private:
++        HapticMixer() = default;
++
++        std::atomic<bool> _running{ false };
++        std::jthread _thread;
++
++        mutable std::mutex _mutex;
++        std::vector<ActiveSource> _activeSources;
++
++        // …œ“ª÷° ‰≥ˆ£®”√”⁄ slew rate limiting£©
++        float _lastLeft{ 0.0f };
++        float _lastRight{ 0.0f };
++
++        // –¬‘ˆ£∫Ωπµ„π‹¿Ì∆˜
++        FocusManager _focusManager;
++
++        // Õ≥º∆
++        std::atomic<std::uint32_t> _totalTicks{ 0 };
++        std::atomic<std::uint32_t> _totalSourcesAdded{ 0 };
++        std::atomic<std::uint32_t> _framesOutput{ 0 };
++        std::atomic<float> _peakLeft{ 0.0f };
++        std::atomic<float> _peakRight{ 0.0f };
++
++        // ªÏ“Ùœﬂ≥Ã÷˜—≠ª∑
++        void MixerThreadLoop();
++
++        // µ•¥Œ tick ¥¶¿Ì
++        HidFrame ProcessTick();
++
++        // ¥¶¿Ì≤Ω÷Ë
++        void UpdateActiveSources();
++        void MixSources(float& outLeft, float& outRight);
++        void ApplyDucking(float& left, float& right);
++        void ApplyCompressor(float& left, float& right);
++        void ApplyLimiter(float& left, float& right);
++        void ApplySlewLimit(float& left, float& right);
++        void ApplyDeadzone(float& left, float& right);
++
++        // ∏®÷˙
++        float GetDuckingFactor(SourceType type) const;
++        bool HasHighPrioritySource() const;
++        EventType GetEventTypeFromSource(const ActiveSource& src) const;
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/HapticsConfig.cpp b/src/haptics/HapticsConfig.cpp
+new file mode 100644
+index 0000000..ea9f700
+--- /dev/null
++++ b/src/haptics/HapticsConfig.cpp
+@@ -0,0 +1,331 @@
++#include "pch.h"
++#include "haptics/HapticsConfig.h"
++#include <SKSE/SKSE.h>
++#include <fstream>
++#include <cstdio>
++#include <sstream>
++#include <unordered_map>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    namespace
++    {
++        inline std::string Trim(std::string s)
++        {
++            auto isSpace = [](unsigned char c) {
++                return c == ' ' || c == '\t' || c == '\r' || c == '\n';
++                };
++
++            while (!s.empty() && isSpace(static_cast<unsigned char>(s.front()))) {
++                s.erase(s.begin());
++            }
++            while (!s.empty() && isSpace(static_cast<unsigned char>(s.back()))) {
++                s.pop_back();
++            }
++            return s;
++        }
++    }
++
++    HapticsConfig& HapticsConfig::GetSingleton()
++    {
++        static HapticsConfig instance;
++        return instance;
++    }
++
++    std::filesystem::path HapticsConfig::GetDefaultPath()
++    {
++        return "Data/SKSE/Plugins/DualPadHaptics.ini";
++    }
++
++    bool HapticsConfig::Load(const std::filesystem::path& path)
++    {
++        auto configPath = path.empty() ? GetDefaultPath() : path;
++
++        logger::info("[Haptics][Config] Loading from: {}", configPath.string());
++
++        if (!std::filesystem::exists(configPath)) {
++            logger::warn("[Haptics][Config] Config file not found, using defaults");
++            return false;
++        }
++
++        return ParseIniFile(configPath);
++    }
++
++    bool HapticsConfig::ParseIniFile(const std::filesystem::path& path)
++    {
++        std::ifstream ifs(path);
++        if (!ifs.is_open()) {
++            logger::error("[Haptics][Config] Failed to open: {}", path.string());
++            return false;
++        }
++
++        std::string currentSection;
++        std::string line;
++        std::size_t lineNo = 0;
++        std::unordered_map<std::string, std::unordered_map<std::string, std::string>> sections;
++
++        while (std::getline(ifs, line)) {
++            ++lineNo;
++
++            // »•≥˝ BOM
++            if (lineNo == 1 && line.size() >= 3 &&
++                static_cast<unsigned char>(line[0]) == 0xEF &&
++                static_cast<unsigned char>(line[1]) == 0xBB &&
++                static_cast<unsigned char>(line[2]) == 0xBF) {
++                line.erase(0, 3);
++            }
++
++            line = Trim(line);
++
++            if (line.empty() || line[0] == ';' || line[0] == '#') {
++                continue;
++            }
++
++            if (line.front() == '[' && line.back() == ']') {
++                currentSection = Trim(line.substr(1, line.size() - 2));
++                continue;
++            }
++
++            auto eqPos = line.find('=');
++            if (eqPos == std::string::npos) {
++                continue;
++            }
++
++            auto key = Trim(line.substr(0, eqPos));
++            auto value = Trim(line.substr(eqPos + 1));
++
++            if (key.empty() || value.empty()) {
++                continue;
++            }
++
++            sections[currentSection][key] = value;
++        }
++
++        // Ω‚Œˆ∏˜∏ˆ section
++        for (const auto& [section, values] : sections) {
++            try {
++                if (section == "Core") {
++                    if (values.count("enabled")) enabled = (values.at("enabled") == "true");
++                    if (values.count("tick_ms")) tickMs = std::stoul(values.at("tick_ms"));
++                    if (values.count("use_qpc")) useQpc = (values.at("use_qpc") == "true");
++                    if (values.count("hot_reload")) hotReload = (values.at("hot_reload") == "true");
++                }
++                else if (section == "AudioTap") {
++                    if (values.count("block_prefer_samples")) blockPreferSamples = std::stoul(values.at("block_prefer_samples"));
++                    if (values.count("queue_capacity")) queueCapacity = std::stoul(values.at("queue_capacity"));
++                }
++                else if (section == "Scoring") {
++                    if (values.count("window_pre_ms")) windowPreMs = std::stoul(values.at("window_pre_ms"));
++                    if (values.count("window_post_ms")) windowPostMs = std::stoul(values.at("window_post_ms"));
++                    if (values.count("min_confidence")) minConfidence = std::stof(values.at("min_confidence"));
++                    if (values.count("weight_timing")) weightTiming = std::stof(values.at("weight_timing"));
++                    if (values.count("weight_attack")) weightAttack = std::stof(values.at("weight_attack"));
++                    if (values.count("weight_spectrum")) weightSpectrum = std::stof(values.at("weight_spectrum"));
++                    if (values.count("weight_duration")) weightDuration = std::stof(values.at("weight_duration"));
++                    if (values.count("weight_channel")) weightChannel = std::stof(values.at("weight_channel"));
++                }
++                else if (section == "Mixer") {
++                    if (values.count("limiter")) limiter = std::stof(values.at("limiter"));
++                    if (values.count("compressor_attack_ms")) compressorAttackMs = std::stoul(values.at("compressor_attack_ms"));
++                    if (values.count("compressor_release_ms")) compressorReleaseMs = std::stoul(values.at("compressor_release_ms"));
++                    if (values.count("slew_per_tick")) slewPerTick = std::stof(values.at("slew_per_tick"));
++                    if (values.count("deadzone")) deadzone = std::stof(values.at("deadzone"));
++                }
++                else if (section == "Ducking") {
++                    if (values.count("hit_duck_footstep")) hitDuckFootstep = std::stof(values.at("hit_duck_footstep"));
++                    if (values.count("hit_duck_ambient")) hitDuckAmbient = std::stof(values.at("hit_duck_ambient"));
++                    if (values.count("spell_duck_footstep")) spellDuckFootstep = std::stof(values.at("spell_duck_footstep"));
++                }
++                else if (section == "Priority") {
++                    if (values.count("hit")) priorityHit = std::stoi(values.at("hit"));
++                    if (values.count("spell")) prioritySpell = std::stoi(values.at("spell"));
++                    if (values.count("swing")) prioritySwing = std::stoi(values.at("swing"));
++                    if (values.count("footstep")) priorityFootstep = std::stoi(values.at("footstep"));
++                    if (values.count("ambient")) priorityAmbient = std::stoi(values.at("ambient"));
++                }
++                else if (section == "Fallback") {
++                    if (values.count("enable_base_pulse")) enableBasePulse = (values.at("enable_base_pulse") == "true");
++                    if (values.count("base_pulse_hit")) basePulseHit = std::stof(values.at("base_pulse_hit"));
++                    if (values.count("base_pulse_swing")) basePulseSwing = std::stof(values.at("base_pulse_swing"));
++                    if (values.count("base_pulse_footstep")) basePulseFootstep = std::stof(values.at("base_pulse_footstep"));
++                }
++                else if (section == "Device") {
++                    if (values.count("output_backend")) outputBackend = values.at("output_backend");
++                    if (values.count("retry_count")) retryCount = std::stoul(values.at("retry_count"));
++                    if (values.count("reconnect_ms")) reconnectMs = std::stoul(values.at("reconnect_ms"));
++                }
++                else if (section == "Debug") {
++                    if (values.count("log_level")) logLevel = values.at("log_level");
++                    if (values.count("stats_interval_ms")) statsIntervalMs = std::stoul(values.at("stats_interval_ms"));
++                    if (values.count("dump_metrics")) dumpMetrics = (values.at("dump_metrics") == "true");
++                }
++                else if (section == "Mode") {
++                    LoadModeConfig(section, values);
++                }
++                else if (section == "EventPriority") {
++                    LoadEventPriorityConfig(section, values);
++                }
++                else if (section == "DuckingMatrix") {
++                    LoadDuckingMatrix(section, values);
++                }
++                else if (section == "ExtensionAPI") {
++                    LoadExtensionConfig(section, values);
++                }
++            }
++            catch (const std::exception& e) {
++                logger::warn("[Haptics][Config] Parse error in section [{}]: {}",
++                    section, e.what());
++            }
++        }
++        logger::info("[Haptics][Config] Config loaded successfully");
++        return true;
++    }
++    void HapticsConfig::LoadModeConfig(const std::string& section,
++        const std::unordered_map<std::string, std::string>& values)
++    {
++        if (values.count("haptics_mode")) {
++            const auto& modeStr = values.at("haptics_mode");
++            if (modeStr == "NativeOnly") {
++                hapticsMode = HapticsMode::NativeOnly;
++            }
++            else if (modeStr == "AudioDriven") {
++                hapticsMode = HapticsMode::AudioDriven;
++            }
++            else {
++                hapticsMode = HapticsMode::Hybrid;
++            }
++        }
++
++        if (values.count("allow_subtle_events_without_audio")) {
++            allowSubtleEventsWithoutAudio = (values.at("allow_subtle_events_without_audio") == "true");
++        }
++
++        logger::info("[Haptics][Config] Mode: {} SubtleWithoutAudio: {}",
++            static_cast<int>(hapticsMode), allowSubtleEventsWithoutAudio);
++
++        if (values.count("audio_driven_prefer_audio_only")) {
++            audioDrivenPreferAudioOnly = (values.at("audio_driven_prefer_audio_only") == "true");
++        }
++        if (values.count("fallback_base_when_no_match")) {
++            fallbackBaseWhenNoMatch = (values.at("fallback_base_when_no_match") == "true");
++        }
++
++        logger::info("[Haptics][Config] AudioDrivenPreferAudioOnly: {} FallbackBaseWhenNoMatch: {}",
++            audioDrivenPreferAudioOnly, fallbackBaseWhenNoMatch);
++    }
++    void HapticsConfig::LoadEventPriorityConfig(const std::string& section,
++        const std::unordered_map<std::string, std::string>& values)
++    {
++        for (const auto& [key, value] : values) {
++            EventType type = StringToEventType(key);
++            if (type == EventType::Unknown) continue;
++
++            EventConfig config;
++            int allowDuck, reqAudio;
++
++            // ∏Ò Ω: priority, ttl_ms, focus_window_ms, ducking_strength, allow_ducking, requires_audio
++            if (sscanf_s(value.c_str(), "%hhu, %u, %u, %f, %d, %d",
++                &config.priority, &config.ttlMs, &config.focusWindowMs,
++                &config.duckingStrength, &allowDuck, &reqAudio) == 6)
++            {
++                config.allowDucking = (allowDuck != 0);
++                config.requiresAudio = (reqAudio != 0);
++                eventConfigs[type] = config;
++
++                logger::info("[Haptics][Config] Event {}: pri={} ttl={}ms focus={}ms duck={:.2f} reqAudio={}",
++                    key, config.priority, config.ttlMs, config.focusWindowMs,
++                    config.duckingStrength, config.requiresAudio);
++            }
++        }
++    }
++    void HapticsConfig::LoadDuckingMatrix(const std::string& section,
++        const std::unordered_map<std::string, std::string>& values)
++    {
++        for (const auto& [key, value] : values) {
++            // Ω‚Œˆ "focus_type -> target_type"
++            size_t arrowPos = key.find("->");
++            if (arrowPos == std::string::npos) continue;
++
++            std::string focusStr = Trim(key.substr(0, arrowPos));
++            std::string targetStr = Trim(key.substr(arrowPos + 2));
++
++            EventType focusType = StringToEventType(focusStr);
++            EventType targetType = StringToEventType(targetStr);
++
++            if (focusType == EventType::Unknown || targetType == EventType::Unknown) continue;
++
++            float duckFactor = std::stof(value);
++
++            DuckingRule rule;
++            rule.focusType = focusType;
++            rule.targetType = targetType;
++            rule.duckFactor = std::clamp(duckFactor, 0.0f, 1.0f);
++
++            duckingRules.push_back(rule);
++
++            logger::info("[Haptics][Config] Ducking: {} -> {} = {:.2f}",
++                focusStr, targetStr, rule.duckFactor);
++        }
++    }
++    void HapticsConfig::LoadExtensionConfig(const std::string& section,
++        const std::unordered_map<std::string, std::string>& values)
++    {
++        if (values.count("enable_custom_events")) {
++            enableCustomEvents = (values.at("enable_custom_events") == "true");
++        }
++        if (values.count("max_custom_events")) {
++            maxCustomEvents = std::stoul(values.at("max_custom_events"));
++        }
++        if (values.count("custom_event_priority_base")) {
++            customEventPriorityBase = static_cast<std::uint8_t>(
++                std::stoul(values.at("custom_event_priority_base")));
++        }
++
++        logger::info("[Haptics][Config] Extension API: enabled={} maxCustom={} basePri={}",
++            enableCustomEvents, maxCustomEvents, customEventPriorityBase);
++    }
++    bool HapticsConfig::IsEventAllowed(EventType type) const
++    {
++        auto it = eventConfigs.find(type);
++        if (it == eventConfigs.end()) {
++            return true;  // Œ¥≈‰÷√µƒ ¬º˛ƒ¨»œ‘ –Ì
++        }
++
++        const auto& config = it->second;
++
++        // »Áπ˚ ¬º˛–Ë“™“Ù∆µƒ£ Ω
++        if (config.requiresAudio) {
++            // ºÏ≤Èµ±«∞ƒ£ Ω
++            if (hapticsMode != HapticsMode::AudioDriven) {
++                return allowSubtleEventsWithoutAudio;
++            }
++        }
++
++        return true;
++    }
++    const HapticsConfig::EventConfig* HapticsConfig::GetEventConfig(EventType type) const
++    {
++        auto it = eventConfigs.find(type);
++        return (it != eventConfigs.end()) ? &it->second : nullptr;
++    }
++    EventType HapticsConfig::StringToEventType(const std::string& str) const
++    {
++        static const std::unordered_map<std::string, EventType> map = {
++            {"hit_impact", EventType::HitImpact},
++            {"block", EventType::Block},
++            {"weapon_swing", EventType::WeaponSwing},
++            {"spell_impact", EventType::SpellImpact},
++            {"spell_cast", EventType::SpellCast},
++            {"land", EventType::Land},
++            {"jump", EventType::Jump},
++            {"footstep", EventType::Footstep},
++            {"bow_release", EventType::BowRelease},
++            {"shout", EventType::Shout}
++        };
++
++        auto it = map.find(str);
++        return (it != map.end()) ? it->second : EventType::Unknown;
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/HapticsConfig.h b/src/haptics/HapticsConfig.h
+new file mode 100644
+index 0000000..7404500
+--- /dev/null
++++ b/src/haptics/HapticsConfig.h
+@@ -0,0 +1,120 @@
++#pragma once
++#include "haptics/HapticsTypes.h"
++#include <cstdint>
++#include <string>
++#include <filesystem>
++#include <unordered_map>
++#include <vector>
++
++namespace dualpad::haptics
++{
++    struct HapticsConfig
++    {
++        // –¬‘ˆ£∫’∂Øƒ£ Ω
++        enum class HapticsMode
++        {
++            NativeOnly,    // ÷ª”√”Œœ∑‘≠…˙’∂Ø
++            Hybrid,        // ‘≠…˙ + πÿº¸ ¬º˛
++            AudioDriven    // ÕÍ’˚“Ù∆µ«˝∂Ø
++        };
++
++        // –¬‘ˆ£∫ ¬º˛≈‰÷√
++        struct EventConfig
++        {
++            std::uint8_t priority;
++            std::uint32_t ttlMs;
++            std::uint32_t focusWindowMs;
++            float duckingStrength;
++            bool allowDucking;
++            bool requiresAudio;
++        };
++
++        // Core
++        bool enabled{ true };
++        std::uint32_t tickMs{ 4 };
++        bool useQpc{ true };
++        bool hotReload{ true };
++
++        // –¬‘ˆ£∫ƒ£ Ω≈‰÷√
++        HapticsMode hapticsMode{ HapticsMode::Hybrid };
++        bool allowSubtleEventsWithoutAudio{ false };
++
++        // AudioTap
++        std::uint32_t blockPreferSamples{ 128 };
++        std::uint32_t queueCapacity{ 4096 };
++
++        // Scoring
++        std::uint32_t windowPreMs{ 20 };
++        std::uint32_t windowPostMs{ 80 };
++        float minConfidence{ 0.35f };
++        float weightTiming{ 0.45f };
++        float weightAttack{ 0.20f };
++        float weightSpectrum{ 0.20f };
++        float weightDuration{ 0.10f };
++        float weightChannel{ 0.05f };
++
++        // Mixer
++        float limiter{ 0.90f };
++        std::uint32_t compressorAttackMs{ 3 };
++        std::uint32_t compressorReleaseMs{ 40 };
++        float slewPerTick{ 30.0f };
++        float deadzone{ 0.03f };
++
++        // Ducking
++        float hitDuckFootstep{ 0.30f };
++        float hitDuckAmbient{ 0.20f };
++        float spellDuckFootstep{ 0.60f };
++
++        // Priority
++        int priorityHit{ 100 };
++        int prioritySpell{ 80 };
++        int prioritySwing{ 70 };
++        int priorityFootstep{ 60 };
++        int priorityAmbient{ 30 };
++
++        // Fallback
++        bool enableBasePulse{ true };
++        float basePulseHit{ 0.85f };
++        float basePulseSwing{ 0.65f };
++        float basePulseFootstep{ 0.40f };
++        bool audioDrivenPreferAudioOnly{ true };  // AudioDriven«“”–∆•≈‰ ±£∫÷ª”√“Ù∆µµ˜÷∆
++        bool fallbackBaseWhenNoMatch{ true };     // √ª”–“Ù∆µ∆•≈‰ ±£∫ «∑Ò‘ –Ìª˘¥°¬ˆ≥Â∂µµ◊
++
++        // Device
++        std::string outputBackend{ "hid" };
++        std::uint32_t retryCount{ 3 };
++        std::uint32_t reconnectMs{ 500 };
++
++        // Debug
++        std::string logLevel{ "info" };
++        std::uint32_t statsIntervalMs{ 1000 };
++        bool dumpMetrics{ false };
++
++        // –¬‘ˆ£∫ ¬º˛≈‰÷√”≥…‰
++        std::unordered_map<EventType, EventConfig> eventConfigs;
++        std::vector<DuckingRule> duckingRules;
++
++        // –¬‘ˆ£∫¿©’π API ≈‰÷√
++        bool enableCustomEvents{ true };
++        std::uint32_t maxCustomEvents{ 32 };
++        std::uint8_t customEventPriorityBase{ 50 };
++        static HapticsConfig& GetSingleton();
++        bool Load(const std::filesystem::path& path = {});
++        static std::filesystem::path GetDefaultPath();
++
++        // –¬‘ˆ∑Ω∑®
++        bool IsEventAllowed(EventType type) const;
++        const EventConfig* GetEventConfig(EventType type) const;
++        EventType StringToEventType(const std::string& str) const;
++
++    private:
++        HapticsConfig() = default;
++        bool ParseIniFile(const std::filesystem::path& path);
++
++        // –¬‘ˆ£∫≈‰÷√º”‘ÿ∏®÷˙∑Ω∑®
++        void LoadModeConfig(const std::string& section, const std::unordered_map<std::string, std::string>& values);
++        void LoadEventPriorityConfig(const std::string& section, const std::unordered_map<std::string, std::string>& values);
++        void LoadDuckingMatrix(const std::string& section, const std::unordered_map<std::string, std::string>& values);
++        void LoadExtensionConfig(const std::string& section, const std::unordered_map<std::string, std::string>& values);
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/HapticsSystem.cpp b/src/haptics/HapticsSystem.cpp
+new file mode 100644
+index 0000000..04e0473
+--- /dev/null
++++ b/src/haptics/HapticsSystem.cpp
+@@ -0,0 +1,307 @@
++Ôªø#include "pch.h"
++#include "haptics/HapticsSystem.h"
++#include "haptics/HapticsConfig.h"
++#include "haptics/VoiceManager.h"
++#include "haptics/EventQueue.h"
++#include "haptics/EventWindowScorer.h"
++#include "haptics/HapticMixer.h"
++#include "haptics/HidOutput.h"
++#include "haptics/XAudio2Hook.h"
++#include <SKSE/SKSE.h>
++
++#include <atomic>
++#include <thread>
++#include <chrono>
++
++namespace logger = SKSE::log;
++
++namespace
++{
++    std::atomic_bool g_xaudioRetryStarted{ false };
++    std::atomic_bool g_xaudioRetryAbort{ false };
++}
++
++namespace dualpad::haptics
++{
++    HapticsSystem& HapticsSystem::GetSingleton()
++    {
++        static HapticsSystem instance;
++        return instance;
++    }
++
++    bool HapticsSystem::Initialize()
++    {
++        if (_initialized) {
++            logger::warn("[Haptics][System] Already initialized");
++            return true;
++        }
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Initializing Haptics System...");
++        logger::info("[Haptics][System] ========================================");
++
++        // Ê≠•È™§ 1: Âä†ËΩΩÈÖçÁΩÆ
++        if (!InitializeConfig()) {
++            logger::error("[Haptics][System] Failed to initialize config");
++            return false;
++        }
++
++        // Ê≠•È™§ 2: ÂàùÂßãÂåñÈòüÂàó
++        if (!InitializeQueues()) {
++            logger::error("[Haptics][System] Failed to initialize queues");
++            return false;
++        }
++
++        // Ê≠•È™§ 3: ÂàùÂßãÂåñÁÆ°ÁêÜÂô®
++        if (!InitializeManagers()) {
++            logger::error("[Haptics][System] Failed to initialize managers");
++            return false;
++        }
++
++        _initialized = true;
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Haptics System Initialized");
++        logger::info("[Haptics][System] ========================================");
++
++        return true;
++    }
++
++    bool HapticsSystem::Start()
++    {
++        if (!_initialized) {
++            logger::error("[Haptics][System] Cannot start: not initialized");
++            return false;
++        }
++
++        if (_running.exchange(true)) {
++            logger::warn("[Haptics][System] Already running");
++            return true;
++        }
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Starting Haptics System...");
++        logger::info("[Haptics][System] ========================================");
++
++        auto& config = HapticsConfig::GetSingleton();
++
++        // Ê†πÊçÆÊ®°ÂºèÂÜ≥ÂÆöÂêØÂä®Á≠ñÁï•
++        if (config.hapticsMode == HapticsConfig::HapticsMode::NativeOnly) {
++            logger::info("[Haptics][System] Mode is NativeOnly, skipping custom haptics");
++            logger::info("[Haptics][System] ========================================");
++            logger::info("[Haptics][System] Haptics System Started (NativeOnly Mode)");
++            logger::info("[Haptics][System] ========================================");
++            return true;
++        }
++
++        // Ê≠•È™§ 4: ÂêØÂä®Á∫øÁ®ã
++        if (!InitializeThreads()) {
++            logger::error("[Haptics][System] Failed to start threads");
++            _running.store(false);
++            return false;
++        }
++
++        // Â¶ÇÊûúÊòØ AudioDriven Ê®°ÂºèÔºåÂêØÁî® XAudio2 Hook
++        if (config.hapticsMode == HapticsConfig::HapticsMode::AudioDriven) {
++            logger::info("[Haptics][System] AudioDriven mode, enabling XAudio2 hook...");
++
++            g_xaudioRetryAbort.store(false, std::memory_order_release);
++
++            const bool hookOkNow = XAudio2Hook::GetSingleton().Install();
++            if (hookOkNow) {
++                logger::info("[Haptics][System] XAudio2 Hook installed (or pending-ready)");
++            }
++            else {
++                logger::warn("[Haptics][System] XAudio2 hook not ready at startup, will retry in background");
++
++                bool expected = false;
++                if (g_xaudioRetryStarted.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
++                    std::thread([]() {
++                        for (int i = 1; i <= 30; ++i) {
++                            if (g_xaudioRetryAbort.load(std::memory_order_acquire)) {
++                                logger::info("[Haptics][System] Retry XAudio2 hook aborted");
++                                g_xaudioRetryStarted.store(false, std::memory_order_release);
++                                return;
++                            }
++
++                            std::this_thread::sleep_for(std::chrono::seconds(1));
++
++                            if (g_xaudioRetryAbort.load(std::memory_order_acquire)) {
++                                logger::info("[Haptics][System] Retry XAudio2 hook aborted");
++                                g_xaudioRetryStarted.store(false, std::memory_order_release);
++                                return;
++                            }
++
++                            if (XAudio2Hook::GetSingleton().Install()) {
++                                logger::info("[Haptics][System] Retry XAudio2 hook success at attempt {}", i);
++                                g_xaudioRetryStarted.store(false, std::memory_order_release);
++                                return;
++                            }
++                        }
++
++                        logger::warn("[Haptics][System] Retry XAudio2 hook timeout (30 attempts)");
++                        g_xaudioRetryStarted.store(false, std::memory_order_release);
++                        }).detach();
++                }
++            }
++        }
++        else {
++            logger::info("[Haptics][System] Hybrid mode, XAudio2 hook disabled");
++        }
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Haptics System Started (Mode: {})",
++            static_cast<int>(config.hapticsMode));
++        PrintStats();
++        logger::info("[Haptics][System] ========================================");
++
++        return true;
++    }
++
++    void HapticsSystem::Stop()
++    {
++        if (!_running.exchange(false)) {
++            return;
++        }
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Stopping Haptics System...");
++        logger::info("[Haptics][System] ========================================");
++
++        // ‰∏≠Ê≠¢ÂêéÂè∞ÈáçËØï
++        g_xaudioRetryAbort.store(true, std::memory_order_release);
++
++        // ÂÅúÊ≠¢Á∫øÁ®ã
++        StopThreads();
++
++        // Âç∏ËΩΩ Hook
++        XAudio2Hook::GetSingleton().Uninstall();
++
++        // ÂÅúÊ≠¢ÈúáÂä®
++        HidOutput::GetSingleton().StopVibration();
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Haptics System Stopped");
++        logger::info("[Haptics][System] ========================================");
++    }
++
++    void HapticsSystem::Shutdown()
++    {
++        if (!_initialized) {
++            return;
++        }
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Shutting down Haptics System...");
++        logger::info("[Haptics][System] ========================================");
++
++        // ÂÖàÂÅúÊ≠¢
++        Stop();
++
++        // ÂÖ≥Èó≠ÁÆ°ÁêÜÂô®
++        ShutdownManagers();
++
++        _initialized = false;
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Haptics System Shutdown Complete");
++        logger::info("[Haptics][System] ========================================");
++    }
++
++    void HapticsSystem::PrintStats()
++    {
++        if (!_initialized) {
++            logger::info("[Haptics][System] Not initialized");
++            return;
++        }
++
++        logger::info("[Haptics][System] ========================================");
++        logger::info("[Haptics][System] Haptics System Statistics");
++        logger::info("[Haptics][System] ========================================");
++
++        // VoiceManager ÁªüËÆ°
++        auto voiceStats = VoiceManager::GetSingleton().GetStats();
++        logger::info("[Haptics][VoiceManager] Created: {} | Destroyed: {} | Active: {} | Tap: {}",
++            voiceStats.totalCreated, voiceStats.totalDestroyed, voiceStats.activeCurrent, voiceStats.tapInstalled);
++        logger::info("[Haptics][VoiceManager] Features: Pushed={} Dropped={}",
++            voiceStats.featuresPushed, voiceStats.featuresDropped);
++
++        // EventWindowScorer ÁªüËÆ°
++        auto scorerStats = EventWindowScorer::GetSingleton().GetStats();
++        logger::info("[Haptics][Scorer] Events: {} | Matched: {} | Unmatched: {} | Active: {}",
++            scorerStats.totalEvents, scorerStats.totalMatched, scorerStats.totalUnmatched, scorerStats.activeWindows);
++
++        // HapticMixer ÁªüËÆ°
++        auto mixerStats = HapticMixer::GetSingleton().GetStats();
++        logger::info("[Haptics][Mixer] Ticks: {} | Sources: {} | Active: {} | Frames: {}",
++            mixerStats.totalTicks, mixerStats.totalSourcesAdded, mixerStats.activeSources, mixerStats.framesOutput);
++        logger::info("[Haptics][Mixer] Peak: L={:.3f} R={:.3f}",
++            mixerStats.peakLeft, mixerStats.peakRight);
++
++        // HidOutput ÁªüËÆ°
++        auto hidStats = HidOutput::GetSingleton().GetStats();
++        logger::info("[Haptics][HidOutput] Frames: {} | Bytes: {} | Failures: {}",
++            hidStats.totalFramesSent, hidStats.totalBytesSent, hidStats.sendFailures);
++
++        logger::info("[Haptics][System] ========================================");
++    }
++
++    bool HapticsSystem::InitializeConfig()
++    {
++        logger::info("[Haptics][System] [1/4] Loading configuration...");
++
++        auto& config = HapticsConfig::GetSingleton();
++        config.Load();
++
++        if (!config.enabled) {
++            logger::warn("[Haptics][System] Haptics disabled in config");
++            return false;
++        }
++
++        logger::info("[Haptics][System] Config loaded: tick={}ms queue={} minConf={:.2f} mode={}",
++            config.tickMs, config.queueCapacity, config.minConfidence,
++            static_cast<int>(config.hapticsMode));
++
++        return true;
++    }
++
++    bool HapticsSystem::InitializeQueues()
++    {
++        logger::info("[Haptics][System] [2/4] Initializing queues...");
++        VoiceManager::GetSingleton().Initialize();
++        EventQueue::GetSingleton().Initialize();
++        logger::info("[Haptics][System] Queues initialized");
++        return true;
++    }
++
++    bool HapticsSystem::InitializeManagers()
++    {
++        logger::info("[Haptics][System] [3/4] Initializing managers...");
++        EventWindowScorer::GetSingleton().Initialize();
++        logger::info("[Haptics][System] Managers initialized");
++        return true;
++    }
++
++    bool HapticsSystem::InitializeThreads()
++    {
++        logger::info("[Haptics][System] [4/4] Starting threads...");
++        HapticMixer::GetSingleton().Start();
++        logger::info("[Haptics][System] Threads started");
++        return true;
++    }
++
++    void HapticsSystem::StopThreads()
++    {
++        logger::info("[Haptics][System] Stopping threads...");
++        HapticMixer::GetSingleton().Stop();
++        logger::info("[Haptics][System] Threads stopped");
++    }
++
++    void HapticsSystem::ShutdownManagers()
++    {
++        logger::info("[Haptics][System] Shutting down managers...");
++        EventWindowScorer::GetSingleton().Shutdown();
++        VoiceManager::GetSingleton().Shutdown();
++        logger::info("[Haptics][System] Managers shutdown");
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/HapticsSystem.h b/src/haptics/HapticsSystem.h
+new file mode 100644
+index 0000000..e526723
+--- /dev/null
++++ b/src/haptics/HapticsSystem.h
+@@ -0,0 +1,48 @@
++#pragma once
++#include <atomic>
++
++namespace dualpad::haptics
++{
++    // ¥•æıœµÕ≥◊‹øÿ
++    // ∏∫‘≥ı ºªØ°¢∆Ù∂Ø°¢Õ£÷πÀ˘”–¥•æı◊”œµÕ≥
++    class HapticsSystem
++    {
++    public:
++        static HapticsSystem& GetSingleton();
++
++        // ≥ı ºªØÀ˘”–◊”œµÕ≥
++        bool Initialize();
++
++        // ∆Ù∂Ø¥•æıœµÕ≥£®∆Ù∂Øœﬂ≥Ã£©
++        bool Start();
++
++        // Õ£÷π¥•æıœµÕ≥
++        void Stop();
++
++        // πÿ±’≤¢«Â¿Ì◊ ‘¥
++        void Shutdown();
++
++        // ≤È—Ø◊¥Ã¨
++        bool IsRunning() const { return _running.load(std::memory_order_acquire); }
++        bool IsInitialized() const { return _initialized; }
++
++        // ¥Ú”°Õ≥º∆–≈œ¢£®µ˜ ‘”√£©
++        void PrintStats();
++
++    private:
++        HapticsSystem() = default;
++
++        bool _initialized{ false };
++        std::atomic<bool> _running{ false };
++
++        // ≥ı ºªØ≤Ω÷Ë
++        bool InitializeConfig();
++        bool InitializeQueues();
++        bool InitializeManagers();
++        bool InitializeThreads();
++
++        // πÿ±’≤Ω÷Ë
++        void StopThreads();
++        void ShutdownManagers();
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/HapticsTypes.h b/src/haptics/HapticsTypes.h
+new file mode 100644
+index 0000000..c81b4cb
+--- /dev/null
++++ b/src/haptics/HapticsTypes.h
+@@ -0,0 +1,140 @@
++#pragma once
++#include <cstdint>
++#include <string>
++#include <chrono>
++#include <string_view>
++
++namespace dualpad::haptics
++{
++    // Õ≥“ª ±º‰¿‡–Õ£®QPC£©
++    using TimePoint = std::chrono::steady_clock::time_point;
++    using Duration = std::chrono::steady_clock::duration;
++
++    inline std::uint64_t ToQPC(TimePoint tp)
++    {
++        return std::chrono::duration_cast<std::chrono::microseconds>(
++            tp.time_since_epoch()).count();
++    }
++
++    inline TimePoint FromQPC(std::uint64_t qpc)
++    {
++        return TimePoint(std::chrono::microseconds(qpc));
++    }
++
++    inline TimePoint Now()
++    {
++        return std::chrono::steady_clock::now();
++    }
++
++    //  ¬º˛¿‡–Õ
++    enum class EventType : std::uint8_t
++    {
++        Unknown = 0,
++        Footstep,
++        WeaponSwing,
++        HitImpact,
++        SpellCast,
++        SpellImpact,
++        BowRelease,
++        Jump,
++        Land,
++        Block,
++        Shout,
++
++        // Œ™◊‘∂®“Â ¬º˛‘§¡Ù£®¥” 128 ø™ º£©
++        CustomEventStart = 128,
++        CustomEventEnd = 255
++    };
++
++    // –¬‘ˆ£∫ ¬º˛∑÷¿‡
++    enum class EventCategory : std::uint8_t
++    {
++        Combat,
++        Movement,
++        Magic,
++        Environment,
++        Custom
++    };
++
++    inline constexpr std::string_view ToString(EventType type)
++    {
++        switch (type) {
++        case EventType::Footstep: return "Footstep";
++        case EventType::WeaponSwing: return "WeaponSwing";
++        case EventType::HitImpact: return "HitImpact";
++        case EventType::SpellCast: return "SpellCast";
++        case EventType::SpellImpact: return "SpellImpact";
++        case EventType::BowRelease: return "BowRelease";
++        case EventType::Jump: return "Jump";
++        case EventType::Land: return "Land";
++        case EventType::Block: return "Block";
++        case EventType::Shout: return "Shout";
++        default: return "Unknown";
++        }
++    }
++
++    // –¬‘ˆ£∫Ducking πÊ‘Ú
++    struct DuckingRule
++    {
++        EventType focusType;    // Ωπµ„ ¬º˛
++        EventType targetType;   // ±ª—π÷∆ ¬º˛
++        float duckFactor;       // —π÷∆œµ ˝ (0.0-1.0)
++    };
++
++    //  ¬º˛œ˚œ¢
++    struct EventMsg
++    {
++        std::uint64_t qpc{ 0 };
++        EventType type{ EventType::Unknown };
++        float intensity{ 1.0f };  // 0..1
++        std::uint32_t actorId{ 0 };
++    };
++
++    // “Ù∆µÃÿ’˜œ˚œ¢
++    struct AudioFeatureMsg
++    {
++        std::uint64_t qpcStart{ 0 };
++        std::uint64_t qpcEnd{ 0 };
++        std::uint32_t voiceId{ 0 };
++        std::uint32_t sampleRate{ 48000 };
++        std::uint16_t channels{ 2 };
++
++        float rms{ 0.0f };
++        float peak{ 0.0f };
++        float bandLow{ 0.0f };   // 0-250Hz
++        float bandMid{ 0.0f };   // 250-2000Hz
++        float bandHigh{ 0.0f };  // 2000Hz+
++        float attack{ 0.0f };    // À≤Ã¨÷∏±Í
++        float energyL{ 0.0f };
++        float energyR{ 0.0f };
++    };
++
++    // ¥•æı‘¥¿‡–Õ
++    enum class SourceType : std::uint8_t
++    {
++        BaseEvent,      // ª˘¥° ¬º˛¬ˆ≥Â
++        AudioMod,       // “Ù∆µµ˜÷∆
++        Ambient         // ª∑æ≥≤„
++    };
++
++    // ¥•æı‘¥œ˚œ¢
++    struct HapticSourceMsg
++    {
++        std::uint64_t qpc{ 0 };
++        SourceType type{ SourceType::BaseEvent };
++        EventType eventType{ EventType::Unknown };  // –¬‘ˆ£∫ ¬º˛¿‡–Õ
++        float left{ 0.0f };
++        float right{ 0.0f };
++        float confidence{ 1.0f };  // 0..1
++        int priority{ 50 };        // 0..100
++        std::uint32_t ttlMs{ 100 };
++    };
++
++    // HID  ‰≥ˆ÷°
++    struct HidFrame
++    {
++        std::uint64_t qpc{ 0 };
++        std::uint8_t leftMotor{ 0 };   // 0-255
++        std::uint8_t rightMotor{ 0 };  // 0-255
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/HidOutput.cpp b/src/haptics/HidOutput.cpp
+new file mode 100644
+index 0000000..4432406
+--- /dev/null
++++ b/src/haptics/HidOutput.cpp
+@@ -0,0 +1,119 @@
++Ôªø#include "pch.h"
++#include "haptics/HidOutput.h"
++
++#include <SKSE/SKSE.h>
++#include <Windows.h>
++#include <hidapi/hidapi.h>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    HidOutput& HidOutput::GetSingleton()
++    {
++        static HidOutput instance;
++        return instance;
++    }
++
++    std::string HidOutput::WideToUtf8(const wchar_t* wstr)
++    {
++        if (!wstr) {
++            return "unknown";
++        }
++
++        const int needed = ::WideCharToMultiByte(
++            CP_UTF8, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
++
++        if (needed <= 1) {
++            return "unknown";
++        }
++
++        std::string out(static_cast<std::size_t>(needed - 1), '\0');
++        ::WideCharToMultiByte(
++            CP_UTF8, 0, wstr, -1, out.data(), needed, nullptr, nullptr);
++
++        return out;
++    }
++
++    void HidOutput::SetDevice(hid_device* device)
++    {
++        std::scoped_lock lock(_mutex);
++
++        if (device && !_device) {
++            logger::info("[Haptics][HidOutput] Device connected");
++        }
++        else if (!device && _device) {
++            logger::info("[Haptics][HidOutput] Device disconnected");
++            // Ê≥®ÊÑèÔºöËøôÈáåÂ∑≤ÊåÅÈîÅÔºåÂøÖÈ°ªË∞ÉÁî® Unlocked ÁâàÊú¨ÔºåÈÅøÂÖçËá™Ê≠ªÈîÅ
++            (void)SendVibrateCommandUnlocked(0, 0);
++        }
++
++        _device = device;
++    }
++
++    bool HidOutput::IsConnected() const
++    {
++        std::scoped_lock lock(_mutex);
++        return _device != nullptr;
++    }
++
++    bool HidOutput::SendFrame(const HidFrame& frame)
++    {
++        const bool success = SendVibrateCommand(frame.leftMotor, frame.rightMotor);
++
++        if (success) {
++            _totalFramesSent.fetch_add(1, std::memory_order_relaxed);
++            _totalBytesSent.fetch_add(48, std::memory_order_relaxed);  // Êä•ÊñáÈïøÂ∫¶
++        }
++        else {
++            _sendFailures.fetch_add(1, std::memory_order_relaxed);
++        }
++
++        return success;
++    }
++
++    void HidOutput::StopVibration()
++    {
++        logger::info("[Haptics][HidOutput] Stopping vibration...");
++        (void)SendVibrateCommand(0, 0);
++    }
++
++    HidOutput::Stats HidOutput::GetStats() const
++    {
++        Stats s;
++        s.totalFramesSent = _totalFramesSent.load(std::memory_order_relaxed);
++        s.totalBytesSent = _totalBytesSent.load(std::memory_order_relaxed);
++        s.sendFailures = _sendFailures.load(std::memory_order_relaxed);
++        return s;
++    }
++
++    bool HidOutput::SendVibrateCommand(std::uint8_t leftMotor, std::uint8_t rightMotor)
++    {
++        std::scoped_lock lock(_mutex);
++        return SendVibrateCommandUnlocked(leftMotor, rightMotor);
++    }
++
++    bool HidOutput::SendVibrateCommandUnlocked(std::uint8_t leftMotor, std::uint8_t rightMotor)
++    {
++        if (!_device) {
++            return false;
++        }
++
++        // DualSense ËæìÂá∫Êä•ÊñáÔºà‰Ω†ÂΩìÂâçÂ∑•Á®ã‰ΩøÁî®ÁöÑÁÆÄÂåñÊ†ºÂºèÔºâ
++        unsigned char buf[48]{};
++        buf[0] = 0x02;        // Report ID
++        buf[1] = 0xFF;        // flags
++        buf[2] = 0xF7;        // flags2
++        buf[3] = rightMotor;  // right (small)
++        buf[4] = leftMotor;   // left (large)
++
++        const int written = hid_write(_device, buf, static_cast<size_t>(sizeof(buf)));
++        if (written < 0) {
++            const wchar_t* err = hid_error(_device);
++            logger::warn("[Haptics][HidOutput] hid_write failed: {}", WideToUtf8(err));
++            return false;
++        }
++
++        return true;
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/HidOutput.h b/src/haptics/HidOutput.h
+new file mode 100644
+index 0000000..bbdbae6
+--- /dev/null
++++ b/src/haptics/HidOutput.h
+@@ -0,0 +1,65 @@
++Ôªø#pragma once
++
++#include "haptics/HapticsTypes.h"
++#include <atomic>
++#include <cstdint>
++#include <mutex>
++
++// ÂâçÂêëÂ£∞ÊòéÔºàÈÅøÂÖçÂú®Â§¥Êñá‰ª∂ÂºïÂÖ• hidapiÔºâ
++struct hid_device_;
++using hid_device = struct hid_device_;
++
++namespace dualpad::haptics
++{
++    class HidOutput
++    {
++    public:
++        static HidOutput& GetSingleton();
++
++        // Áî± HidReader Âú®ËÆæÂ§áËøûÊé•/Êñ≠ÂºÄÊó∂Ë∞ÉÁî®
++        void SetDevice(hid_device* device);
++
++        // ÂèëÈÄÅÈúáÂä®Â∏ß
++        bool SendFrame(const HidFrame& frame);
++
++        // ÂÅúÊ≠¢ÈúáÂä®
++        void StopVibration();
++
++        // Êü•ËØ¢Áä∂ÊÄÅ
++        bool IsConnected() const;
++
++        struct Stats
++        {
++            std::uint32_t totalFramesSent{ 0 };
++            std::uint32_t totalBytesSent{ 0 };
++            std::uint32_t sendFailures{ 0 };
++        };
++
++        Stats GetStats() const;
++
++    private:
++        HidOutput() = default;
++        ~HidOutput() = default;
++        HidOutput(const HidOutput&) = delete;
++        HidOutput& operator=(const HidOutput&) = delete;
++
++        // ÂØπÂ§ñË∞ÉÁî®ÔºàÂä†ÈîÅÔºâ
++        bool SendVibrateCommand(std::uint8_t leftMotor, std::uint8_t rightMotor);
++
++        // ÂÜÖÈÉ®ÔºöË∞ÉÁî®ÊñπÂ∑≤ÊåÅÈîÅÔºà‰∏çÂä†ÈîÅÔºåÈÅøÂÖçÊ≠ªÈîÅÔºâ
++        bool SendVibrateCommandUnlocked(std::uint8_t leftMotor, std::uint8_t rightMotor);
++
++        static std::string WideToUtf8(const wchar_t* wstr);
++
++    private:
++        // Áî± HidReader ÁÆ°ÁêÜÁîüÂëΩÂë®ÊúüÔºåËøôÈáåÂè™ÊåÅÊúâË£∏ÊåáÈíàÂºïÁî®
++        hid_device* _device{ nullptr };
++
++        mutable std::mutex _mutex;
++
++        // ÁªüËÆ°
++        std::atomic<std::uint32_t> _totalFramesSent{ 0 };
++        std::atomic<std::uint32_t> _totalBytesSent{ 0 };
++        std::atomic<std::uint32_t> _sendFailures{ 0 };
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/SPSCQueue.h b/src/haptics/SPSCQueue.h
+new file mode 100644
+index 0000000..7e730d8
+--- /dev/null
++++ b/src/haptics/SPSCQueue.h
+@@ -0,0 +1,116 @@
++#pragma once
++#include <atomic>
++#include <cstddef>
++#include <new>
++#include <type_traits>
++#include <cassert>
++
++namespace dualpad::haptics
++{
++    // πÃ∂®»›¡ø SPSC ŒﬁÀ¯ª∑–Œ∂”¡–
++    // T ±ÿ–Îø…ƒ¨»œππ‘Ï°¢ø…“∆∂Ø
++    template <typename T>
++    class SPSCQueue
++    {
++        static_assert(std::is_default_constructible_v<T>);
++        static_assert(std::is_move_assignable_v<T>);
++
++    public:
++        explicit SPSCQueue(std::size_t capacity)
++            : _capacity(capacity + 1)  // ¡Ù“ª∏ˆø’Œª«¯∑÷¬˙/ø’
++            , _buffer(new T[_capacity])
++        {
++            assert(capacity > 0);
++        }
++
++        ~SPSCQueue()
++        {
++            delete[] _buffer;
++        }
++
++        SPSCQueue(const SPSCQueue&) = delete;
++        SPSCQueue& operator=(const SPSCQueue&) = delete;
++
++        // …˙≤˙’ﬂµ˜”√£®“Ù∆µœﬂ≥Ã£©
++        bool TryPush(T&& item)
++        {
++            const auto head = _head.load(std::memory_order_relaxed);
++            const auto nextHead = Advance(head);
++
++            if (nextHead == _tail.load(std::memory_order_acquire)) {
++                return false;  // ∂”¡–¬˙
++            }
++
++            _buffer[head] = std::move(item);
++            _head.store(nextHead, std::memory_order_release);
++            return true;
++        }
++
++        bool TryPush(const T& item)
++        {
++            T copy = item;
++            return TryPush(std::move(copy));
++        }
++
++        // œ˚∑—’ﬂµ˜”√£®¥•æıœﬂ≥Ã£©
++        bool TryPop(T& item)
++        {
++            const auto tail = _tail.load(std::memory_order_relaxed);
++
++            if (tail == _head.load(std::memory_order_acquire)) {
++                return false;  // ∂”¡–ø’
++            }
++
++            item = std::move(_buffer[tail]);
++            _tail.store(Advance(tail), std::memory_order_release);
++            return true;
++        }
++
++        // ≈˙¡øµØ≥ˆ£®œ˚∑—’ﬂ≤‡£©
++        std::size_t PopBatch(T* out, std::size_t maxCount)
++        {
++            std::size_t count = 0;
++
++            while (count < maxCount) {
++                if (!TryPop(out[count])) {
++                    break;
++                }
++                ++count;
++            }
++
++            return count;
++        }
++
++        std::size_t SizeApprox() const
++        {
++            const auto head = _head.load(std::memory_order_acquire);
++            const auto tail = _tail.load(std::memory_order_acquire);
++
++            if (head >= tail) {
++                return head - tail;
++            }
++            return _capacity - (tail - head);
++        }
++
++        bool Empty() const
++        {
++            return _head.load(std::memory_order_acquire)
++                == _tail.load(std::memory_order_acquire);
++        }
++
++        std::size_t Capacity() const { return _capacity - 1; }
++
++    private:
++        std::size_t Advance(std::size_t idx) const
++        {
++            return (idx + 1 < _capacity) ? (idx + 1) : 0;
++        }
++
++        const std::size_t _capacity;
++        T* _buffer;
++
++        // ∑÷ø™ cacheline ±‹√‚ false sharing
++        alignas(64) std::atomic<std::size_t> _head{ 0 };
++        alignas(64) std::atomic<std::size_t> _tail{ 0 };
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/VoiceManager.cpp b/src/haptics/VoiceManager.cpp
+new file mode 100644
+index 0000000..7fc91bb
+--- /dev/null
++++ b/src/haptics/VoiceManager.cpp
+@@ -0,0 +1,200 @@
++#include "pch.h"
++#include "haptics/VoiceManager.h"
++#include "haptics/XAPOTap.h"
++#include "haptics/HapticsConfig.h"
++#include <SKSE/SKSE.h>
++#include <xaudio2.h>
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    VoiceManager& VoiceManager::GetSingleton()
++    {
++        static VoiceManager instance;
++        return instance;
++    }
++
++    void VoiceManager::Initialize()
++    {
++        if (_initialized) {
++            logger::warn("[Haptics][VoiceManager] Already initialized");
++            return;
++        }
++
++        logger::info("[Haptics][VoiceManager] Initializing...");
++
++        auto& config = HapticsConfig::GetSingleton();
++
++        // ¥¥Ω®“Ù∆µÃÿ’˜∂”¡–
++        _featureQueue = std::make_unique<SPSCQueue<AudioFeatureMsg>>(config.queueCapacity);
++
++        _initialized = true;
++
++        logger::info("[Haptics][VoiceManager] Initialized (queue capacity: {})", config.queueCapacity);
++    }
++
++    void VoiceManager::Shutdown()
++    {
++        if (!_initialized) {
++            return;
++        }
++
++        logger::info("[Haptics][VoiceManager] Shutting down...");
++
++        {
++            std::scoped_lock lock(_mutex);
++            _voices.clear();
++        }
++
++        _featureQueue.reset();
++        _initialized = false;
++
++        logger::info("[Haptics][VoiceManager] Shutdown complete");
++    }
++
++    void VoiceManager::OnVoiceCreated(
++        IXAudio2SourceVoice* voice,
++        std::uint32_t sampleRate,
++        std::uint16_t channels,
++        bool allowTap)
++    {
++        if (!voice || !_initialized) {
++            return;
++        }
++
++        std::scoped_lock lock(_mutex);
++
++        VoiceInfo info;
++        info.voiceId = AllocateVoiceId();
++        info.voice = voice;
++        info.sampleRate = sampleRate;
++        info.channels = channels;
++        info.createTime = Now();
++        info.hasTap = false;
++
++        // ≥¢ ‘∞≤◊∞ Tap
++        if (allowTap && InstallTapOnVoice(info)) {
++            info.hasTap = true;
++            _tapInstalled.fetch_add(1, std::memory_order_relaxed);
++        }
++        if (!allowTap) {
++            logger::trace("[Haptics][VoiceManager] Skip tap install (allowTap=false)");
++        }
++
++        _voices[voice] = info;
++        _totalCreated.fetch_add(1, std::memory_order_relaxed);
++
++        logger::trace("[Haptics][VoiceManager] Voice created: id={} rate={} ch={} tap={}",
++            info.voiceId, sampleRate, channels, info.hasTap);
++    }
++
++    void VoiceManager::OnVoiceDestroyed(IXAudio2SourceVoice* voice)
++    {
++        if (!voice || !_initialized) {
++            return;
++        }
++
++        std::scoped_lock lock(_mutex);
++
++        auto it = _voices.find(voice);
++        if (it != _voices.end()) {
++            logger::trace("[Haptics][VoiceManager] Voice destroyed: id={}", it->second.voiceId);
++            _voices.erase(it);
++            _totalDestroyed.fetch_add(1, std::memory_order_relaxed);
++        }
++    }
++
++    bool VoiceManager::PushAudioFeature(const AudioFeatureMsg& msg)
++    {
++        if (!_initialized || !_featureQueue) {
++            return false;
++        }
++
++        if (_featureQueue->TryPush(msg)) {
++            _featuresPushed.fetch_add(1, std::memory_order_relaxed);
++            return true;
++        }
++
++        // ∂”¡–¬˙£¨∂™∆˙
++        _featuresDropped.fetch_add(1, std::memory_order_relaxed);
++        return false;
++    }
++
++    std::size_t VoiceManager::PopAudioFeatures(AudioFeatureMsg* out, std::size_t maxCount)
++    {
++        if (!_initialized || !_featureQueue || !out) {
++            return 0;
++        }
++
++        return _featureQueue->PopBatch(out, maxCount);
++    }
++
++    std::size_t VoiceManager::GetActiveVoiceCount() const
++    {
++        std::scoped_lock lock(_mutex);
++        return _voices.size();
++    }
++
++    std::size_t VoiceManager::GetQueueSize() const
++    {
++        if (!_initialized || !_featureQueue) {
++            return 0;
++        }
++
++        return _featureQueue->SizeApprox();
++    }
++
++    VoiceManager::Stats VoiceManager::GetStats() const
++    {
++        Stats s;
++        s.totalCreated = _totalCreated.load(std::memory_order_relaxed);
++        s.totalDestroyed = _totalDestroyed.load(std::memory_order_relaxed);
++        s.activeCurrent = static_cast<std::uint32_t>(GetActiveVoiceCount());
++        s.tapInstalled = _tapInstalled.load(std::memory_order_relaxed);
++        s.featuresPushed = _featuresPushed.load(std::memory_order_relaxed);
++        s.featuresDropped = _featuresDropped.load(std::memory_order_relaxed);
++        return s;
++    }
++
++    std::uint32_t VoiceManager::AllocateVoiceId()
++    {
++        return _nextVoiceId++;
++    }
++
++    bool VoiceManager::InstallTapOnVoice(VoiceInfo& info)
++    {
++        if (!info.voice) {
++            return false;
++        }
++
++        // ¥¥Ω® XAPO Tap
++        XAPOTapParams params;
++        params.voiceId = info.voiceId;
++        params.enableFeatureExtraction = true;
++
++        auto* tap = new DualSenseXAPOTap(params);
++
++        // ππΩ® Effect Chain
++        XAUDIO2_EFFECT_DESCRIPTOR descriptor;
++        descriptor.pEffect = tap;
++        descriptor.InitialState = TRUE;
++        descriptor.OutputChannels = info.channels;
++
++        XAUDIO2_EFFECT_CHAIN chain;
++        chain.EffectCount = 1;
++        chain.pEffectDescriptors = &descriptor;
++
++        // …Ë÷√µΩ voice
++        HRESULT hr = info.voice->SetEffectChain(&chain);
++
++        if (FAILED(hr)) {
++            logger::warn("[Haptics][VoiceManager] Failed to set effect chain: {:X}",
++                static_cast<uint32_t>(hr));
++            tap->Release();
++            return false;
++        }
++
++        logger::trace("[Haptics][VoiceManager] XAPO Tap installed on voice {}", info.voiceId);
++        return true;
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/VoiceManager.h b/src/haptics/VoiceManager.h
+new file mode 100644
+index 0000000..3499486
+--- /dev/null
++++ b/src/haptics/VoiceManager.h
+@@ -0,0 +1,99 @@
++#pragma once
++#include "haptics/HapticsTypes.h"
++#include "haptics/SPSCQueue.h"
++#include <cstdint>
++#include <unordered_map>
++#include <mutex>
++#include <memory>
++
++// «∞œÚ…˘√˜£®±‹√‚“˝»Î XAudio2 Õ∑Œƒº˛£©
++struct IXAudio2SourceVoice;
++struct IXAudio2;
++
++namespace dualpad::haptics
++{
++    // –¬‘ˆ£∫“Ù∆µÃÿ’˜Ω·ππÃÂ
++    struct AudioFeature
++    {
++        float rms{ 0.0f };
++        float peak{ 0.0f };
++        float spectralCentroid{ 0.0f };
++        float zeroCrossingRate{ 0.0f };
++        float confidence{ 0.0f };
++    };
++    // Voice –≈œ¢
++    struct VoiceInfo
++    {
++        std::uint32_t voiceId{ 0 };
++        IXAudio2SourceVoice* voice{ nullptr };
++        std::uint32_t sampleRate{ 48000 };
++        std::uint16_t channels{ 2 };
++        TimePoint createTime;
++        bool hasTap{ false };
++    };
++
++    // Voice π‹¿Ì∆˜
++    // ∏∫‘∏˙◊ŸÀ˘”– SourceVoice ≤¢π‹¿Ì XAPO Tap µƒ…˙√¸÷‹∆⁄
++    class VoiceManager
++    {
++    public:
++        static VoiceManager& GetSingleton();
++
++        // ≥ı ºªØ£®∑÷≈‰∂”¡–µ»£©
++        void Initialize();
++
++        // πÿ±’£®«Â¿Ì◊ ‘¥£©
++        void Shutdown();
++
++        // Voice …˙√¸÷‹∆⁄ªÿµ˜£®”… XAudio2Hook µ˜”√£©
++        void OnVoiceCreated(IXAudio2SourceVoice* voice, std::uint32_t sampleRate, std::uint16_t channels, bool allowTap = true);
++        void OnVoiceDestroyed(IXAudio2SourceVoice* voice);
++
++        // ¥” XAPO Tap Õ∆ÀÕ“Ù∆µÃÿ’˜£®“Ù∆µœﬂ≥Ãµ˜”√£¨ŒﬁÀ¯£©
++        bool PushAudioFeature(const AudioFeatureMsg& msg);
++
++        // œ˚∑—’ﬂ≤‡£∫≈˙¡øªÒ»°“Ù∆µÃÿ’˜£®¥•æıœﬂ≥Ãµ˜”√£©
++        std::size_t PopAudioFeatures(AudioFeatureMsg* out, std::size_t maxCount);
++
++        // ≤È—Ø
++        std::size_t GetActiveVoiceCount() const;
++        std::size_t GetQueueSize() const;
++
++        // Õ≥º∆
++        struct Stats
++        {
++            std::uint32_t totalCreated{ 0 };
++            std::uint32_t totalDestroyed{ 0 };
++            std::uint32_t activeCurrent{ 0 };
++            std::uint32_t tapInstalled{ 0 };
++            std::uint32_t featuresPushed{ 0 };
++            std::uint32_t featuresDropped{ 0 };
++        };
++
++        Stats GetStats() const;
++
++    private:
++        VoiceManager() = default;
++
++        mutable std::mutex _mutex;
++        std::unordered_map<IXAudio2SourceVoice*, VoiceInfo> _voices;
++
++        std::uint32_t _nextVoiceId{ 1 };
++
++        // “Ù∆µÃÿ’˜∂”¡–£®SPSC£¨“Ù∆µœﬂ≥Ã -> ¥•æıœﬂ≥Ã£©
++        std::unique_ptr<SPSCQueue<AudioFeatureMsg>> _featureQueue;
++
++        // Õ≥º∆
++        std::atomic<std::uint32_t> _totalCreated{ 0 };
++        std::atomic<std::uint32_t> _totalDestroyed{ 0 };
++        std::atomic<std::uint32_t> _tapInstalled{ 0 };
++        std::atomic<std::uint32_t> _featuresPushed{ 0 };
++        std::atomic<std::uint32_t> _featuresDropped{ 0 };
++
++        bool _initialized{ false };
++
++        // ƒ⁄≤ø∏®÷˙
++        std::uint32_t AllocateVoiceId();
++        bool InstallTapOnVoice(VoiceInfo& info);
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/XAPOTap.cpp b/src/haptics/XAPOTap.cpp
+new file mode 100644
+index 0000000..1c3ad95
+--- /dev/null
++++ b/src/haptics/XAPOTap.cpp
+@@ -0,0 +1,311 @@
++#include "pch.h"
++#include "haptics/XAPOTap.h"
++#include "haptics/VoiceManager.h"
++#include <SKSE/SKSE.h>
++#include <cmath>
++#include <algorithm>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++    namespace
++    {
++        // ºÚµ• RMS º∆À„
++        inline float ComputeRMS(const float* samples, std::uint32_t count)
++        {
++            if (count == 0) return 0.0f;
++
++            float sum = 0.0f;
++            for (std::uint32_t i = 0; i < count; ++i) {
++                sum += samples[i] * samples[i];
++            }
++            return std::sqrt(sum / static_cast<float>(count));
++        }
++
++        // ∑Â÷µ
++        inline float ComputePeak(const float* samples, std::uint32_t count)
++        {
++            float peak = 0.0f;
++            for (std::uint32_t i = 0; i < count; ++i) {
++                peak = std::max(peak, std::abs(samples[i]));
++            }
++            return peak;
++        }
++
++        // À≤Ã¨ºÏ≤‚£®ºÚªØ∞Ê£∫ ◊÷°∑Â÷µ / RMS ±»÷µ£©
++        inline float ComputeAttack(const float* samples, std::uint32_t count)
++        {
++            if (count < 8) return 0.0f;
++
++            float firstPeak = ComputePeak(samples, 8);
++            float rms = ComputeRMS(samples, count);
++
++            if (rms < 0.001f) return 0.0f;
++
++            return std::min(firstPeak / rms, 10.0f) / 10.0f;  // πÈ“ªªØµΩ 0..1
++        }
++
++        // ¡¢ÃÂ…˘ƒ‹¡ø
++        inline void ComputeStereoEnergy(const float* samples, std::uint32_t frameCount, std::uint16_t channels,
++            float& outL, float& outR)
++        {
++            outL = 0.0f;
++            outR = 0.0f;
++
++            if (channels == 1) {
++                outL = outR = ComputeRMS(samples, frameCount);
++                return;
++            }
++
++            if (channels == 2) {
++                float sumL = 0.0f, sumR = 0.0f;
++                for (std::uint32_t i = 0; i < frameCount; ++i) {
++                    sumL += samples[i * 2 + 0] * samples[i * 2 + 0];
++                    sumR += samples[i * 2 + 1] * samples[i * 2 + 1];
++                }
++                outL = std::sqrt(sumL / static_cast<float>(frameCount));
++                outR = std::sqrt(sumR / static_cast<float>(frameCount));
++                return;
++            }
++
++            // ∂‡…˘µ¿£∫ºÚªØŒ™«∞¡Ω∏ˆ…˘µ¿
++            outL = outR = ComputeRMS(samples, frameCount * channels) / std::sqrt(static_cast<float>(channels));
++        }
++    }
++
++    DualSenseXAPOTap::DualSenseXAPOTap(const XAPOTapParams& params)
++        : CXAPOBase(nullptr)  // Œﬁ≤Œ ˝£®Œ“√«≤ª–Ë“™∂ØÃ¨≤Œ ˝£©
++        , _params(params)
++    {
++        // ‘§∑÷≈‰µ•…˘µ¿ª∫≥Â£®◊Ó¥Û 1024 ÷°£©
++        _monoBuffer.resize(1024);
++
++        ResetBandStates();
++    }
++
++    DualSenseXAPOTap::~DualSenseXAPOTap()
++    {
++        // «Â¿Ì
++    }
++
++    HRESULT DualSenseXAPOTap::QueryInterface(REFIID riid, void** ppvObject)
++    {
++        if (!ppvObject) {
++            return E_POINTER;
++        }
++
++        if (riid == __uuidof(IUnknown) || riid == __uuidof(IXAPO)) {
++            *ppvObject = static_cast<IXAPO*>(this);
++            AddRef();
++            return S_OK;
++        }
++
++        *ppvObject = nullptr;
++        return E_NOINTERFACE;
++    }
++
++    ULONG DualSenseXAPOTap::AddRef()
++    {
++        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
++    }
++
++    ULONG DualSenseXAPOTap::Release()
++    {
++        ULONG newCount = _refCount.fetch_sub(1, std::memory_order_acq_rel) - 1;
++        if (newCount == 0) {
++            delete this;
++        }
++        return newCount;
++    }
++
++    HRESULT DualSenseXAPOTap::LockForProcess(
++        UINT32 InputLockedParameterCount,
++        const XAPO_LOCKFORPROCESS_BUFFER_PARAMETERS* pInputLockedParameters,
++        UINT32 OutputLockedParameterCount,
++        const XAPO_LOCKFORPROCESS_BUFFER_PARAMETERS* pOutputLockedParameters)
++    {
++        // µ˜”√ª˘¿‡
++        HRESULT hr = CXAPOBase::LockForProcess(
++            InputLockedParameterCount, pInputLockedParameters,
++            OutputLockedParameterCount, pOutputLockedParameters);
++
++        if (FAILED(hr)) {
++            return hr;
++        }
++
++        // Ã·»°∏Ò Ω–≈œ¢
++        if (InputLockedParameterCount > 0 && pInputLockedParameters) {
++            auto* fmt = pInputLockedParameters[0].pFormat;
++            if (fmt) {
++                _sampleRate = fmt->nSamplesPerSec;
++                _channels = fmt->nChannels;
++
++                // ºÏ≤È «∑ÒŒ™∏°µ„∏Ò Ω
++                if (fmt->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
++                    _isFloat = true;
++                }
++                else if (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
++                    auto* fmtEx = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(fmt);
++                    _isFloat = (fmtEx->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT);
++                }
++                else {
++                    _isFloat = false;
++                }
++            }
++        }
++
++        return S_OK;
++    }
++
++    void DualSenseXAPOTap::Process(
++        UINT32 InputProcessParameterCount,
++        const XAPO_PROCESS_BUFFER_PARAMETERS* pInputProcessParameters,
++        UINT32 OutputProcessParameterCount,
++        XAPO_PROCESS_BUFFER_PARAMETERS* pOutputProcessParameters,
++        BOOL IsEnabled)
++    {
++        // ≤Œ ˝ºÏ≤È
++        if (InputProcessParameterCount == 0 || OutputProcessParameterCount == 0 ||
++            !pInputProcessParameters || !pOutputProcessParameters) {
++            return;
++        }
++
++        auto* input = &pInputProcessParameters[0];
++        auto* output = &pOutputProcessParameters[0];
++
++        if (!input->pBuffer || !output->pBuffer) {
++            return;
++        }
++
++        const std::uint32_t frameCount = input->ValidFrameCount;
++        if (frameCount == 0) {
++            output->ValidFrameCount = 0;
++            return;
++        }
++
++        // Õ∏¥´“Ù∆µ£®÷±Ω”∏¥÷∆£©
++        if (input->pBuffer != output->pBuffer) {
++            const std::uint32_t byteCount = frameCount * _channels * sizeof(float);
++            memcpy(output->pBuffer, input->pBuffer, byteCount);
++        }
++
++        output->ValidFrameCount = frameCount;
++        output->BufferFlags = input->BufferFlags;
++
++        // Ã·»°Ãÿ’˜≤¢Õ∆ÀÕ£®»Áπ˚∆Ù”√£©
++        if (IsEnabled && _params.enableFeatureExtraction && _isFloat) {
++            auto* samples = static_cast<const float*>(input->pBuffer);
++            ExtractAndPushFeatures(samples, frameCount);
++        }
++
++        _processedFrames.fetch_add(frameCount, std::memory_order_relaxed);
++    }
++
++    void DualSenseXAPOTap::ExtractAndPushFeatures(const float* samples, std::uint32_t frameCount)
++    {
++        // º∆À„Ãÿ’˜
++        auto features = ComputeFeatures(samples, frameCount);
++
++        // Õ∆ÀÕµΩ VoiceManager£®ŒﬁÀ¯£©
++        if (VoiceManager::GetSingleton().PushAudioFeature(features)) {
++            _pushedCount.fetch_add(1, std::memory_order_relaxed);
++        }
++        else {
++            _droppedCount.fetch_add(1, std::memory_order_relaxed);
++        }
++    }
++
++    AudioFeatureMsg DualSenseXAPOTap::ComputeFeatures(const float* samples, std::uint32_t frameCount)
++    {
++        AudioFeatureMsg msg;
++        msg.qpcStart = ToQPC(Now());
++        msg.voiceId = _params.voiceId;
++        msg.sampleRate = _sampleRate;
++        msg.channels = _channels;
++
++        const std::uint32_t sampleCount = frameCount * _channels;
++
++        // ª˘¥°Ãÿ’˜
++        msg.rms = ComputeRMS(samples, sampleCount);
++        msg.peak = ComputePeak(samples, sampleCount);
++        msg.attack = ComputeAttack(samples, sampleCount);
++
++        // ¡¢ÃÂ…˘ƒ‹¡ø
++        ComputeStereoEnergy(samples, frameCount, _channels, msg.energyL, msg.energyR);
++
++        // ∆µ∂Œƒ‹¡ø£®ºÚªØ µœ÷£∫ π”√ºÚµ• IIR ¬À≤®∆˜£©
++        // ◊¢“‚£∫’‚¿ÔŒ™¡À–‘ƒ‹÷ª◊ˆ¥÷¬‘π¿º∆
++        //  µº œÓƒøø…“‘”√∏¸æ´»∑µƒ FFT ªÚ Biquad ¬À≤®∆˜
++
++        // ◊™ªªŒ™µ•…˘µ¿£®»Áπ˚ «¡¢ÃÂ…˘£©
++        std::uint32_t monoCount = frameCount;
++        const float* monoSamples = samples;
++
++        if (_channels == 2 && frameCount <= _monoBuffer.size()) {
++            for (std::uint32_t i = 0; i < frameCount; ++i) {
++                _monoBuffer[i] = (samples[i * 2 + 0] + samples[i * 2 + 1]) * 0.5f;
++            }
++            monoSamples = _monoBuffer.data();
++        }
++
++        // ºÚµ•∆µ∂Œ∑÷¿Î£®’ºŒª µœ÷£©
++        float sumLow = 0.0f, sumMid = 0.0f, sumHigh = 0.0f;
++
++        for (std::uint32_t i = 0; i < monoCount; ++i) {
++            float s = monoSamples[i];
++
++            float low = ProcessBandLow(s);
++            float mid = ProcessBandMid(s);
++            float high = ProcessBandHigh(s);
++
++            sumLow += low * low;
++            sumMid += mid * mid;
++            sumHigh += high * high;
++        }
++
++        msg.bandLow = std::sqrt(sumLow / static_cast<float>(monoCount));
++        msg.bandMid = std::sqrt(sumMid / static_cast<float>(monoCount));
++        msg.bandHigh = std::sqrt(sumHigh / static_cast<float>(monoCount));
++
++        msg.qpcEnd = ToQPC(Now());
++
++        return msg;
++    }
++
++    void DualSenseXAPOTap::ResetBandStates()
++    {
++        _bandLow = {};
++        _bandMid = {};
++        _bandHigh = {};
++    }
++
++    float DualSenseXAPOTap::ProcessBandLow(float sample)
++    {
++        // ºÚµ•“ªΩ◊µÕÕ®¬À≤®∆˜£®Ωÿ÷π∆µ¬ ‘º 250Hz @ 48kHz£©
++        constexpr float alpha = 0.03f;
++        _bandLow.z1 = _bandLow.z1 + alpha * (sample - _bandLow.z1);
++        return _bandLow.z1;
++    }
++
++    float DualSenseXAPOTap::ProcessBandMid(float sample)
++    {
++        // ºÚµ•¥¯Õ®£®÷–∆µ£©£∫∏ﬂÕ® + µÕÕ®
++        constexpr float alphaHigh = 0.03f;
++        constexpr float alphaLow = 0.3f;
++
++        _bandMid.z1 = _bandMid.z1 + alphaHigh * (sample - _bandMid.z1);
++        float highPassed = sample - _bandMid.z1;
++
++        _bandMid.z2 = _bandMid.z2 + alphaLow * (highPassed - _bandMid.z2);
++        return _bandMid.z2;
++    }
++
++    float DualSenseXAPOTap::ProcessBandHigh(float sample)
++    {
++        // ºÚµ•“ªΩ◊∏ﬂÕ®¬À≤®∆˜£®Ωÿ÷π∆µ¬ ‘º 2000Hz @ 48kHz£©
++        constexpr float alpha = 0.2f;
++        _bandHigh.z1 = _bandHigh.z1 + alpha * (sample - _bandHigh.z1);
++        return sample - _bandHigh.z1;
++    }
++}
+\ No newline at end of file
+diff --git a/src/haptics/XAPOTap.h b/src/haptics/XAPOTap.h
+new file mode 100644
+index 0000000..123d590
+--- /dev/null
++++ b/src/haptics/XAPOTap.h
+@@ -0,0 +1,84 @@
++#pragma once
++#include "haptics/HapticsTypes.h"
++#include <xapo.h>
++#include <xapobase.h>
++#include <atomic>
++#include <cstdint>
++
++namespace dualpad::haptics
++{
++    // XAPO Tap ≤Œ ˝
++    struct XAPOTapParams
++    {
++        std::uint32_t voiceId{ 0 };
++        bool enableFeatureExtraction{ true };
++        float gainCompensation{ 1.0f };
++    };
++
++    // DualSense XAPO Tap
++    // Õ∏¥´“Ù∆µ + Ã·»°«·¡øÃÿ’˜ + Õ∆ÀÕµΩ VoiceManager
++    class DualSenseXAPOTap : public CXAPOBase
++    {
++    public:
++        explicit DualSenseXAPOTap(const XAPOTapParams& params);
++        virtual ~DualSenseXAPOTap();
++
++        // IUnknown
++        STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject) override;
++        STDMETHOD_(ULONG, AddRef)() override;
++        STDMETHOD_(ULONG, Release)() override;
++
++        // IXAPO
++        STDMETHOD(LockForProcess)(
++            UINT32 InputLockedParameterCount,
++            const XAPO_LOCKFORPROCESS_BUFFER_PARAMETERS* pInputLockedParameters,
++            UINT32 OutputLockedParameterCount,
++            const XAPO_LOCKFORPROCESS_BUFFER_PARAMETERS* pOutputLockedParameters) override;
++
++        STDMETHOD_(void, Process)(
++            UINT32 InputProcessParameterCount,
++            const XAPO_PROCESS_BUFFER_PARAMETERS* pInputProcessParameters,
++            UINT32 OutputProcessParameterCount,
++            XAPO_PROCESS_BUFFER_PARAMETERS* pOutputProcessParameters,
++            BOOL IsEnabled) override;
++
++        // Õ≥º∆
++        std::uint64_t GetProcessedFrames() const { return _processedFrames.load(); }
++        std::uint64_t GetPushedCount() const { return _pushedCount.load(); }
++        std::uint64_t GetDroppedCount() const { return _droppedCount.load(); }
++
++    private:
++        XAPOTapParams _params;
++        std::atomic<ULONG> _refCount{ 1 };
++
++        // ∏Ò Ω–≈œ¢£®‘⁄ LockForProcess ÷–…Ë÷√£©
++        std::uint32_t _sampleRate{ 48000 };
++        std::uint16_t _channels{ 2 };
++        bool _isFloat{ true };
++
++        // Õ≥º∆
++        std::atomic<std::uint64_t> _processedFrames{ 0 };
++        std::atomic<std::uint64_t> _pushedCount{ 0 };
++        std::atomic<std::uint64_t> _droppedCount{ 0 };
++
++        // Ãÿ’˜Ã·»°ª∫≥Â£®±‹√‚√ø¥Œ∑÷≈‰£©
++        std::vector<float> _monoBuffer;
++
++        // ƒ⁄≤ø∏®÷˙
++        void ExtractAndPushFeatures(const float* samples, std::uint32_t frameCount);
++        AudioFeatureMsg ComputeFeatures(const float* samples, std::uint32_t frameCount);
++
++        // ºÚµ•∆µ∂Œ¬À≤®∆˜◊¥Ã¨
++        struct BandState
++        {
++            float z1{ 0.0f };
++            float z2{ 0.0f };
++        };
++        BandState _bandLow, _bandMid, _bandHigh;
++
++        void ResetBandStates();
++        float ProcessBandLow(float sample);
++        float ProcessBandMid(float sample);
++        float ProcessBandHigh(float sample);
++    };
++}
+\ No newline at end of file
+diff --git a/src/haptics/XAudio2Hook.cpp b/src/haptics/XAudio2Hook.cpp
+new file mode 100644
+index 0000000..c573f8f
+--- /dev/null
++++ b/src/haptics/XAudio2Hook.cpp
+@@ -0,0 +1,730 @@
++#include "pch.h"
++
++#include <Psapi.h>
++#pragma comment(lib, "Psapi.lib")
++
++#include "haptics/XAudio2Hook.h"
++#include "haptics/VoiceManager.h"
++
++#include <SKSE/SKSE.h>
++#include <MinHook.h>
++#include <xaudio2.h>
++#include <objbase.h>
++
++#include <array>
++#include <vector>
++#include <cmath>
++#include <algorithm>
++#include <cwctype>
++
++namespace logger = SKSE::log;
++
++namespace dualpad::haptics
++{
++	namespace
++	{
++		using XAudio2Create_t = HRESULT(WINAPI*)(IXAudio2**, UINT32, XAUDIO2_PROCESSOR);
++
++		using CreateSourceVoice_t = HRESULT(STDMETHODCALLTYPE*)(
++			IXAudio2* self,
++			IXAudio2SourceVoice** ppSourceVoice,
++			const WAVEFORMATEX* pSourceFormat,
++			UINT32 Flags,
++			float MaxFrequencyRatio,
++			IXAudio2VoiceCallback* pCallback,
++			const XAUDIO2_VOICE_SENDS* pSendList,
++			const XAUDIO2_EFFECT_CHAIN* pEffectChain);
++
++		using SubmitSourceBuffer_t = HRESULT(STDMETHODCALLTYPE*)(
++			IXAudio2SourceVoice* self,
++			const XAUDIO2_BUFFER* pBuffer,
++			const XAUDIO2_BUFFER_WMA* pBufferWMA);
++
++		using DestroyVoice_t = void(STDMETHODCALLTYPE*)(IXAudio2SourceVoice* self);
++
++		// ---------- globals ----------
++		CreateSourceVoice_t g_origCreateSourceVoice = nullptr;
++		SubmitSourceBuffer_t g_origSubmitSourceBuffer = nullptr;
++		DestroyVoice_t g_origDestroyVoice = nullptr;
++		XAudio2Create_t g_origXAudio2Create = nullptr;
++
++		std::atomic<std::uint32_t> g_xaudio2CreateCalls{ 0 };
++		std::atomic<std::uint32_t> g_createSourceVoiceCalls{ 0 };
++		std::atomic<std::uint32_t> g_submitSourceBufferCalls{ 0 };
++
++		std::atomic<std::uint32_t> g_submitSlot0Hits{ 0 };
++
++		struct ScopedCOM
++		{
++			HRESULT hr{ E_FAIL };
++			bool needUninit{ false };
++
++			ScopedCOM()
++			{
++				hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
++				if (SUCCEEDED(hr)) {
++					needUninit = true;
++				}
++				else if (hr == RPC_E_CHANGED_MODE) {
++					hr = S_OK;
++					needUninit = false;
++				}
++			}
++
++			~ScopedCOM()
++			{
++				if (needUninit) {
++					CoUninitialize();
++				}
++			}
++
++			bool ok() const { return SUCCEEDED(hr); }
++		};
++
++		std::string WideToUtf8(const wchar_t* ws)
++		{
++			if (!ws || !*ws) {
++				return {};
++			}
++
++			const int needed = WideCharToMultiByte(CP_UTF8, 0, ws, -1, nullptr, 0, nullptr, nullptr);
++			if (needed <= 1) {
++				return {};
++			}
++
++			std::string out(static_cast<size_t>(needed), '\0');
++			WideCharToMultiByte(CP_UTF8, 0, ws, -1, out.data(), needed, nullptr, nullptr);
++			out.pop_back();
++			return out;
++		}
++
++		bool IsExecutableAddress(void* p)
++		{
++			if (!p) {
++				return false;
++			}
++
++			MEMORY_BASIC_INFORMATION mbi{};
++			if (!VirtualQuery(p, &mbi, sizeof(mbi))) {
++				return false;
++			}
++
++			if (mbi.State != MEM_COMMIT) {
++				return false;
++			}
++
++			const DWORD prot = mbi.Protect & 0xFF;
++			return prot == PAGE_EXECUTE ||
++				prot == PAGE_EXECUTE_READ ||
++				prot == PAGE_EXECUTE_READWRITE ||
++				prot == PAGE_EXECUTE_WRITECOPY;
++		}
++
++		void ExtractAudioFeatures(
++			const BYTE* data,
++			UINT32 dataSize,
++			WORD channels,
++			WORD bitsPerSample,
++			float& outRMS,
++			float& outPeak)
++		{
++			outRMS = 0.0f;
++			outPeak = 0.0f;
++
++			if (!data || dataSize == 0 || channels == 0 || bitsPerSample == 0) {
++				return;
++			}
++
++			const UINT32 bytesPerSample = bitsPerSample / 8;
++			if (bytesPerSample == 0) {
++				return;
++			}
++
++			const UINT32 totalSamples = dataSize / (bytesPerSample * channels);
++			if (totalSamples == 0) {
++				return;
++			}
++
++			double sumSquares = 0.0;
++			float maxAbs = 0.0f;
++
++			if (bitsPerSample == 16) {
++				auto samples = reinterpret_cast<const int16_t*>(data);
++				const UINT32 sampleCount = totalSamples * channels;
++				for (UINT32 i = 0; i < sampleCount; ++i) {
++					const float n = samples[i] / 32768.0f;
++					sumSquares += n * n;
++					maxAbs = std::max(maxAbs, std::abs(n));
++				}
++			}
++			else if (bitsPerSample == 32) {
++				auto samples = reinterpret_cast<const float*>(data);
++				const UINT32 sampleCount = totalSamples * channels;
++				for (UINT32 i = 0; i < sampleCount; ++i) {
++					sumSquares += samples[i] * samples[i];
++					maxAbs = std::max(maxAbs, std::abs(samples[i]));
++				}
++			}
++			else {
++				return;
++			}
++
++			outRMS = static_cast<float>(std::sqrt(sumSquares / (totalSamples * channels)));
++			outPeak = maxAbs;
++		}
++
++		void STDMETHODCALLTYPE Hook_DestroyVoice(IXAudio2SourceVoice* self)
++		{
++			if (self) {
++				VoiceManager::GetSingleton().OnVoiceDestroyed(self);
++			}
++			if (g_origDestroyVoice) {
++				g_origDestroyVoice(self);
++			}
++		}
++
++		HRESULT Hook_SubmitSourceBuffer_Common(
++			SubmitSourceBuffer_t origFn,
++			IXAudio2SourceVoice* self,
++			const XAUDIO2_BUFFER* pBuffer,
++			const XAUDIO2_BUFFER_WMA* pBufferWMA)
++		{
++			const auto n = g_submitSourceBufferCalls.fetch_add(1, std::memory_order_relaxed) + 1;
++			if (n <= 20 || n % 100 == 0) {
++				logger::info("[Haptics][XAudio2Hook] SubmitSourceBuffer called #{} self={:p} bytes={}",
++					n, static_cast<void*>(self), pBuffer ? pBuffer->AudioBytes : 0u);
++			}
++
++			if (!origFn) {
++				logger::error("[Haptics][XAudio2Hook] original SubmitSourceBuffer is null");
++				return E_FAIL;
++			}
++
++			if (self && pBuffer && pBuffer->pAudioData && pBuffer->AudioBytes > 0) {
++				XAUDIO2_VOICE_DETAILS details{};
++				self->GetVoiceDetails(&details);
++
++				const WORD channels = static_cast<WORD>(details.InputChannels);
++				const DWORD sampleRate = static_cast<DWORD>(details.InputSampleRate);
++
++				constexpr WORD bitsPerSample = 16;
++
++				float rms = 0.0f;
++				float peak = 0.0f;
++				ExtractAudioFeatures(pBuffer->pAudioData, pBuffer->AudioBytes, channels, bitsPerSample, rms, peak);
++
++				if (rms > 0.001f || peak > 0.001f) {
++					AudioFeatureMsg msg{};
++
++					const auto tpNow = Now();
++					msg.qpcStart = ToQPC(tpNow);
++
++					const UINT32 bytesPerFrame = static_cast<UINT32>(channels) * 2u;
++					const UINT32 frameCount = bytesPerFrame ? (pBuffer->AudioBytes / bytesPerFrame) : 0u;
++					const std::uint64_t durUs =
++						(sampleRate > 0) ? (static_cast<std::uint64_t>(frameCount) * 1000000ull / sampleRate) : 0ull;
++
++					msg.qpcEnd = msg.qpcStart + durUs;
++					msg.voiceId = 0;
++					msg.sampleRate = sampleRate;
++					msg.channels = channels;
++
++					msg.rms = rms;
++					msg.peak = peak;
++					msg.bandLow = rms * 0.5f;
++					msg.bandMid = rms * 0.3f;
++					msg.bandHigh = rms * 0.2f;
++					msg.attack = peak;
++					msg.energyL = rms;
++					msg.energyR = rms;
++
++					VoiceManager::GetSingleton().PushAudioFeature(msg);
++				}
++			}
++
++			return origFn(self, pBuffer, pBufferWMA);
++		}
++
++		HRESULT STDMETHODCALLTYPE Hook_SubmitSourceBuffer_0(
++			IXAudio2SourceVoice* self,
++			const XAUDIO2_BUFFER* pBuffer,
++			const XAUDIO2_BUFFER_WMA* pBufferWMA)
++		{
++			g_submitSlot0Hits.fetch_add(1, std::memory_order_relaxed);
++			return Hook_SubmitSourceBuffer_Common(g_origSubmitSourceBuffer, self, pBuffer, pBufferWMA);
++		}
++
++		bool SelfTestSubmitCall(IXAudio2SourceVoice* voice)
++		{
++			if (!voice) {
++				return false;
++			}
++
++			const auto before = g_submitSlot0Hits.load(std::memory_order_relaxed);
++
++			static std::array<BYTE, 192> s_silence{};
++			XAUDIO2_BUFFER buf{};
++			buf.AudioBytes = static_cast<UINT32>(s_silence.size());
++			buf.pAudioData = s_silence.data();
++			buf.Flags = XAUDIO2_END_OF_STREAM;
++
++			const HRESULT hr = voice->SubmitSourceBuffer(&buf, nullptr);
++			if (FAILED(hr)) {
++				logger::warn("[Haptics][XAudio2Hook] SelfTest SubmitSourceBuffer failed: hr=0x{:08X}", (unsigned)hr);
++				return false;
++			}
++
++			voice->FlushSourceBuffers();
++
++			const auto after = g_submitSlot0Hits.load(std::memory_order_relaxed);
++			return after > before;
++		}
++
++		bool TryInstallSubmitHookWithSelfTest(IXAudio2SourceVoice* probeVoice, void** outTarget)
++		{
++			if (!probeVoice || !outTarget) {
++				return false;
++			}
++			*outTarget = nullptr;
++
++			void*** obj = reinterpret_cast<void***>(probeVoice);
++			if (!obj || !*obj) {
++				return false;
++			}
++			void** vtbl = *obj;
++
++			constexpr int kCandidates[] = { 21, 22, 20, 19, 23 };
++
++			for (int idx : kCandidates) {
++				void* target = vtbl[idx];
++
++				if (!IsExecutableAddress(target)) {
++					continue;
++				}
++
++				g_origSubmitSourceBuffer = nullptr;
++
++				const MH_STATUS c = MH_CreateHook(
++					target,
++					reinterpret_cast<LPVOID>(&Hook_SubmitSourceBuffer_0),
++					reinterpret_cast<LPVOID*>(&g_origSubmitSourceBuffer));
++
++				if (c != MH_OK && c != MH_ERROR_ALREADY_CREATED) {
++					continue;
++				}
++
++				const MH_STATUS e = MH_EnableHook(target);
++				if (e != MH_OK && e != MH_ERROR_ENABLED) {
++					MH_RemoveHook(target);
++					g_origSubmitSourceBuffer = nullptr;
++					continue;
++				}
++
++				if (SelfTestSubmitCall(probeVoice)) {
++					logger::info("[Haptics][XAudio2Hook] SubmitSourceBuffer index {} verified (slot=0)", idx);
++					*outTarget = target;
++					return true;
++				}
++
++				MH_DisableHook(target);
++				MH_RemoveHook(target);
++				g_origSubmitSourceBuffer = nullptr;
++			}
++
++			return false;
++		}
++
++		HRESULT STDMETHODCALLTYPE Hook_CreateSourceVoice(
++			IXAudio2* self,
++			IXAudio2SourceVoice** ppSourceVoice,
++			const WAVEFORMATEX* pSourceFormat,
++			UINT32 Flags,
++			float MaxFrequencyRatio,
++			IXAudio2VoiceCallback* pCallback,
++			const XAUDIO2_VOICE_SENDS* pSendList,
++			const XAUDIO2_EFFECT_CHAIN* pEffectChain)
++		{
++			const auto n = g_createSourceVoiceCalls.fetch_add(1, std::memory_order_relaxed) + 1;
++			if (n <= 10 || n % 50 == 0) {
++				logger::info("[Haptics][XAudio2Hook] CreateSourceVoice called #{} self={:p}", n, static_cast<void*>(self));
++			}
++
++			if (!g_origCreateSourceVoice) {
++				logger::error("[Haptics][XAudio2Hook] g_origCreateSourceVoice is null");
++				return E_FAIL;
++			}
++
++			const HRESULT hr = g_origCreateSourceVoice(
++				self, ppSourceVoice, pSourceFormat, Flags, MaxFrequencyRatio, pCallback, pSendList, pEffectChain);
++
++			if (SUCCEEDED(hr) && ppSourceVoice && *ppSourceVoice) {
++				const uint32_t sr = pSourceFormat ? pSourceFormat->nSamplesPerSec : 48000;
++				const uint16_t ch = pSourceFormat ? pSourceFormat->nChannels : 2;
++
++				VoiceManager::GetSingleton().OnVoiceCreated(*ppSourceVoice, sr, ch, false);
++
++				XAudio2Hook::GetSingleton().EnsureDestroyHookInstalled(*ppSourceVoice);
++				XAudio2Hook::GetSingleton().EnsureSubmitBufferHookInstalled(*ppSourceVoice);
++
++				if (n <= 5) {
++					logger::info("[Haptics][XAudio2Hook] SourceVoice created: {:p} sr={} ch={}",
++						static_cast<void*>(*ppSourceVoice), sr, ch);
++				}
++			}
++
++			return hr;
++		}
++
++		HRESULT WINAPI Hook_XAudio2Create(IXAudio2** ppXAudio2, UINT32 Flags, XAUDIO2_PROCESSOR XAudio2Processor)
++		{
++			const auto n = g_xaudio2CreateCalls.fetch_add(1, std::memory_order_relaxed) + 1;
++			if (n <= 5 || n % 50 == 0) {
++				logger::info("[Haptics][XAudio2Hook] XAudio2Create called #{} Flags={} Processor={}", n, Flags, XAudio2Processor);
++			}
++
++			if (!g_origXAudio2Create) {
++				logger::error("[Haptics][XAudio2Hook] g_origXAudio2Create is null");
++				return E_FAIL;
++			}
++
++			const HRESULT hr = g_origXAudio2Create(ppXAudio2, Flags, XAudio2Processor);
++
++			// —”≥ŸÃΩ≤‚£∫”Œœ∑µ⁄“ª¥Œ≥…π¶¥¥Ω® IXAudio2 ∫Û£¨”√À¸¿¥◊∞ CreateSourceVoice hook
++			if (SUCCEEDED(hr) && ppXAudio2 && *ppXAudio2 && n <= 3) {
++				XAudio2Hook::GetSingleton().TryInstallCreateSourceVoiceHookFromInstance(*ppXAudio2);
++			}
++
++			return hr;
++		}
++	}
++
++	const char* ToString(XAudio2Version v)
++	{
++		switch (v) {
++		case XAudio2Version::XAudio2_7: return "XAudio2.7";
++		case XAudio2Version::XAudio2_8: return "XAudio2.8";
++		case XAudio2Version::XAudio2_9: return "XAudio2.9";
++		default: return "Unknown";
++		}
++	}
++
++	XAudio2Hook& XAudio2Hook::GetSingleton()
++	{
++		static XAudio2Hook s;
++		return s;
++	}
++
++	bool XAudio2Hook::ResolveXAudio2Create()
++	{
++		if (_xaudio2CreateProc) {
++			return true;
++		}
++
++		auto tryResolveInModule = [&](HMODULE mod, const char* modTagUtf8) -> bool {
++			if (!mod) {
++				return false;
++			}
++
++			FARPROC proc = GetProcAddress(mod, "XAudio2Create");
++			if (!proc) {
++				proc = GetProcAddress(mod, MAKEINTRESOURCEA(3));
++			}
++			if (!proc) {
++				return false;
++			}
++
++			_xaudioModule = mod;
++			_xaudio2CreateProc = reinterpret_cast<void*>(proc);
++			_version = XAudio2Version::Unknown;
++
++			logger::info("[Haptics][XAudio2Hook] Resolved XAudio2Create from {} at {:p}",
++				modTagUtf8 ? modTagUtf8 : "(unknown)", _xaudio2CreateProc);
++			return true;
++			};
++
++		constexpr const wchar_t* kNames[] = {
++			L"xaudio2_9redist.dll",
++			L"xaudio2_9.dll",
++			L"xaudio2_8.dll",
++			L"xaudio2_7.dll",
++			L"FAudio.dll"
++		};
++
++		for (auto name : kNames) {
++			HMODULE mod = GetModuleHandleW(name);
++			if (!mod) {
++				continue;
++			}
++			const auto tag = WideToUtf8(name);
++			if (tryResolveInModule(mod, tag.c_str())) {
++				return true;
++			}
++		}
++
++		HMODULE mods[2048]{};
++		DWORD cbNeeded = 0;
++		if (EnumProcessModules(GetCurrentProcess(), mods, sizeof(mods), &cbNeeded)) {
++			const DWORD count = cbNeeded / sizeof(HMODULE);
++			for (DWORD i = 0; i < count; ++i) {
++				wchar_t pathW[MAX_PATH]{};
++				if (!GetModuleFileNameExW(GetCurrentProcess(), mods[i], pathW, MAX_PATH)) {
++					continue;
++				}
++
++				const auto path = WideToUtf8(pathW);
++				if (tryResolveInModule(mods[i], path.c_str())) {
++					return true;
++				}
++			}
++		}
++
++		logger::warn("[Haptics][XAudio2Hook] XAudio2Create not found (name+fullscan+ordinal)");
++		return false;
++	}
++
++	void XAudio2Hook::TryInstallCreateSourceVoiceHookFromInstance(IXAudio2* xa)
++	{
++		if (!xa) {
++			return;
++		}
++
++		if (_createSourceVoiceHooked.load(std::memory_order_acquire)) {
++			return;
++		}
++
++		void*** obj = reinterpret_cast<void***>(xa);
++		if (!obj || !*obj) {
++			return;
++		}
++
++		void** vtbl = *obj;
++
++		constexpr int kCandidates[] = { 5, 8, 6, 7 };
++		for (int idx : kCandidates) {
++			void* p = vtbl[idx];
++
++			if (!IsExecutableAddress(p)) {
++				continue;
++			}
++
++			const MH_STATUS c = MH_CreateHook(
++				p,
++				reinterpret_cast<LPVOID>(&Hook_CreateSourceVoice),
++				reinterpret_cast<LPVOID*>(&g_origCreateSourceVoice));
++
++			if (c == MH_OK || c == MH_ERROR_ALREADY_CREATED) {
++				const MH_STATUS e = MH_EnableHook(p);
++				if (e == MH_OK || e == MH_ERROR_ENABLED) {
++					_targetCreateSourceVoice = p;
++					_createSourceVoiceHooked.store(true, std::memory_order_release);
++					logger::info("[Haptics][XAudio2Hook] CreateSourceVoice hook installed (lazy): vtbl[{}]={:p}", idx, p);
++					return;
++				}
++			}
++		}
++	}
++
++	bool XAudio2Hook::ProbeCreateSourceVoiceTarget(void** outTarget)
++	{
++		// ≤ª‘Ÿ π”√£®“—∏ƒŒ™—”≥ŸÃΩ≤‚£©
++		if (outTarget) {
++			*outTarget = nullptr;
++		}
++		return false;
++	}
++
++	bool XAudio2Hook::ProbeSubmitSourceBufferTargetFromVoice(IXAudio2SourceVoice* voice, void** outTarget)
++	{
++		if (!voice || !outTarget) {
++			return false;
++		}
++		*outTarget = nullptr;
++
++		void*** obj = reinterpret_cast<void***>(voice);
++		if (!obj || !*obj) {
++			return false;
++		}
++		void** vtbl = *obj;
++
++		constexpr int kCandidates[] = { 21, 22, 20, 19, 23 };
++		for (int idx : kCandidates) {
++			void* p = vtbl[idx];
++			if (IsExecutableAddress(p)) {
++				*outTarget = p;
++				return true;
++			}
++		}
++		return false;
++	}
++
++	bool XAudio2Hook::ProbeDestroyVoiceTargetFromVoice(IXAudio2SourceVoice* voice, void** outTarget)
++	{
++		if (!voice || !outTarget) {
++			return false;
++		}
++		*outTarget = nullptr;
++
++		void*** obj = reinterpret_cast<void***>(voice);
++		if (!obj || !*obj) {
++			return false;
++		}
++		void** vtbl = *obj;
++
++		constexpr int kCandidates[] = { 18, 17, 19, 20, 16 };
++		for (int idx : kCandidates) {
++			void* p = vtbl[idx];
++			if (IsExecutableAddress(p)) {
++				*outTarget = p;
++				return true;
++			}
++		}
++		return false;
++	}
++
++	bool XAudio2Hook::EnsureSubmitBufferHookInstalled(IXAudio2SourceVoice* voice)
++	{
++		std::scoped_lock lk(_lock);
++
++		if (!_installed.load(std::memory_order_acquire)) {
++			return false;
++		}
++
++		if (_submitBufferHooked.load(std::memory_order_acquire)) {
++			return true;
++		}
++
++		void* target = nullptr;
++		if (!TryInstallSubmitHookWithSelfTest(voice, &target) || !target) {
++			return false;
++		}
++
++		_targetSubmitSourceBuffer = target;
++		_submitBufferHooked.store(true, std::memory_order_release);
++		logger::info("[Haptics][XAudio2Hook] SubmitSourceBuffer hook installed: target={:p}", target);
++		return true;
++	}
++
++	bool XAudio2Hook::EnsureDestroyHookInstalled(IXAudio2SourceVoice* voice)
++	{
++		std::scoped_lock lk(_lock);
++
++		if (!_installed.load(std::memory_order_acquire)) {
++			return false;
++		}
++		if (_destroyHookInstalled.load(std::memory_order_acquire)) {
++			return true;
++		}
++
++		void* target = nullptr;
++		if (!ProbeDestroyVoiceTargetFromVoice(voice, &target) || !target) {
++			return false;
++		}
++
++		const MH_STATUS c = MH_CreateHook(
++			target,
++			reinterpret_cast<LPVOID>(&Hook_DestroyVoice),
++			reinterpret_cast<LPVOID*>(&g_origDestroyVoice));
++
++		if (c != MH_OK && c != MH_ERROR_ALREADY_CREATED) {
++			logger::error("[Haptics][XAudio2Hook] MH_CreateHook(DestroyVoice) failed: {}", static_cast<int>(c));
++			return false;
++		}
++
++		const MH_STATUS e = MH_EnableHook(target);
++		if (e != MH_OK && e != MH_ERROR_ENABLED) {
++			logger::error("[Haptics][XAudio2Hook] MH_EnableHook(DestroyVoice) failed: {}", static_cast<int>(e));
++			return false;
++		}
++
++		_targetDestroyVoice = target;
++		_destroyHookInstalled.store(true, std::memory_order_release);
++		logger::info("[Haptics][XAudio2Hook] DestroyVoice hook installed: target={:p}", target);
++		return true;
++	}
++
++	bool XAudio2Hook::Install()
++	{
++		std::scoped_lock lk(_lock);
++
++		if (_installed.load(std::memory_order_acquire)) {
++			logger::warn("[Haptics][XAudio2Hook] Already installed");
++			return true;
++		}
++
++		logger::info("[Haptics][XAudio2Hook] ========================================");
++		logger::info("[Haptics][XAudio2Hook] Installing XAudio2 hooks (lazy strategy)...");
++		logger::info("[Haptics][XAudio2Hook] ========================================");
++
++		const MH_STATUS init = MH_Initialize();
++		if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) {
++			logger::error("[Haptics][XAudio2Hook] MH_Initialize failed: {}", static_cast<int>(init));
++			return false;
++		}
++
++		const bool resolvedCreate = ResolveXAudio2Create();
++		if (!resolvedCreate) {
++			logger::warn("[Haptics][XAudio2Hook] ResolveXAudio2Create failed");
++			return false;
++		}
++
++		// ÷ª◊∞ XAudio2Create hook£¨µ»”Œœ∑◊‘º∫¥¥Ω® µ¿˝∫Û‘Ÿ—”≥ŸÃΩ≤‚
++		if (_xaudio2CreateProc) {
++			const MH_STATUS c = MH_CreateHook(
++				_xaudio2CreateProc,
++				reinterpret_cast<LPVOID>(&Hook_XAudio2Create),
++				reinterpret_cast<LPVOID*>(&g_origXAudio2Create));
++
++			if (c == MH_OK || c == MH_ERROR_ALREADY_CREATED) {
++				const MH_STATUS e = MH_EnableHook(_xaudio2CreateProc);
++				if (e == MH_OK || e == MH_ERROR_ENABLED) {
++					logger::info("[Haptics][XAudio2Hook] XAudio2Create hook installed: {:p}", _xaudio2CreateProc);
++					_installed.store(true, std::memory_order_release);
++					logger::info("[Haptics][XAudio2Hook] Install done (lazy mode, will hook CreateSourceVoice on first XAudio2Create)");
++					return true;
++				}
++			}
++		}
++
++		logger::warn("[Haptics][XAudio2Hook] Install failed: could not hook XAudio2Create");
++		return false;
++	}
++
++	void XAudio2Hook::Uninstall()
++	{
++		std::scoped_lock lk(_lock);
++		if (!_installed.exchange(false, std::memory_order_acq_rel)) {
++			return;
++		}
++		if (_targetSubmitSourceBuffer) {
++			MH_DisableHook(_targetSubmitSourceBuffer);
++			MH_RemoveHook(_targetSubmitSourceBuffer);
++		}
++		if (_targetDestroyVoice) {
++			MH_DisableHook(_targetDestroyVoice);
++			MH_RemoveHook(_targetDestroyVoice);
++		}
++		if (_targetCreateSourceVoice) {
++			MH_DisableHook(_targetCreateSourceVoice);
++			MH_RemoveHook(_targetCreateSourceVoice);
++		}
++		if (_xaudio2CreateProc) {
++			MH_DisableHook(_xaudio2CreateProc);
++			MH_RemoveHook(_xaudio2CreateProc);
++		}
++		g_origSubmitSourceBuffer = nullptr;
++		g_origDestroyVoice = nullptr;
++		g_origCreateSourceVoice = nullptr;
++		g_origXAudio2Create = nullptr;
++		_targetSubmitSourceBuffer = nullptr;
++		_targetDestroyVoice = nullptr;
++		_targetCreateSourceVoice = nullptr;
++		_submitBufferHooked.store(false, std::memory_order_release);
++		_destroyHookInstalled.store(false, std::memory_order_release);
++		_createSourceVoiceHooked.store(false, std::memory_order_release);
++		logger::info("[Haptics][XAudio2Hook] Uninstalled");
++		logger::info("[Haptics][XAudio2Hook] Calls: XAudio2Create={} CreateSourceVoice={} SubmitSourceBuffer={}",
++			g_xaudio2CreateCalls.load(std::memory_order_relaxed),
++			g_createSourceVoiceCalls.load(std::memory_order_relaxed),
++			g_submitSourceBufferCalls.load(std::memory_order_relaxed));
++	}
++}
+\ No newline at end of file
+diff --git a/src/haptics/XAudio2Hook.h b/src/haptics/XAudio2Hook.h
+new file mode 100644
+index 0000000..a07158b
+--- /dev/null
++++ b/src/haptics/XAudio2Hook.h
+@@ -0,0 +1,62 @@
++#pragma once
++
++#include <Windows.h>
++#include <atomic>
++#include <mutex>
++
++struct IXAudio2;
++struct IXAudio2SourceVoice;
++
++namespace dualpad::haptics
++{
++    enum class XAudio2Version
++    {
++        Unknown = 0,
++        XAudio2_7,
++        XAudio2_8,
++        XAudio2_9
++    };
++
++    const char* ToString(XAudio2Version v);
++
++    class XAudio2Hook
++    {
++    public:
++        static XAudio2Hook& GetSingleton();
++
++        bool Install();
++        void Uninstall();
++
++        bool IsInstalled() const { return _installed.load(std::memory_order_acquire); }
++        XAudio2Version GetVersion() const { return _version; }
++
++        // π© Hook_CreateSourceVoice ƒ⁄≤øµ˜”√
++        bool EnsureDestroyHookInstalled(IXAudio2SourceVoice* voice);
++        bool EnsureSubmitBufferHookInstalled(IXAudio2SourceVoice* voice);
++        void TryInstallCreateSourceVoiceHookFromInstance(IXAudio2* xa);
++    private:
++        XAudio2Hook() = default;
++        ~XAudio2Hook() = default;
++        XAudio2Hook(const XAudio2Hook&) = delete;
++        XAudio2Hook& operator=(const XAudio2Hook&) = delete;
++
++        bool ResolveXAudio2Create();
++        bool ProbeCreateSourceVoiceTarget(void** outTarget);
++        bool ProbeSubmitSourceBufferTargetFromVoice(IXAudio2SourceVoice* voice, void** outTarget);
++        bool ProbeDestroyVoiceTargetFromVoice(IXAudio2SourceVoice* voice, void** outTarget);
++
++        mutable std::mutex _lock;
++        std::atomic<bool> _installed{ false };
++
++        XAudio2Version _version{ XAudio2Version::Unknown };
++        HMODULE _xaudioModule{ nullptr };
++        void* _xaudio2CreateProc{ nullptr };
++
++        void* _targetCreateSourceVoice{ nullptr };
++        void* _targetSubmitSourceBuffer{ nullptr };
++        void* _targetDestroyVoice{ nullptr };
++        std::atomic<bool> _createSourceVoiceHooked{ false };
++        std::atomic<bool> _submitBufferHooked{ false };
++        std::atomic<bool> _destroyHookInstalled{ false };
++    };
++}
+\ No newline at end of file
+diff --git a/src/input/HidReader.cpp b/src/input/HidReader.cpp
+index cdd5961..bc9394b 100644
+--- a/src/input/HidReader.cpp
++++ b/src/input/HidReader.cpp
+@@ -8,6 +8,7 @@
+ #include "input/BindingManager.h"
+ #include "input/ActionExecutor.h"
+ #include "input/InputContext.h"
++#include "haptics/HidOutput.h" 
+ 
+ #include <SKSE/SKSE.h>
+ #include <hidapi/hidapi.h>
+@@ -177,6 +178,9 @@ namespace
+                 prevState = {};
+                 prevMask = 0;
+                 gesture.Reset();
++
++                // –¬‘ˆ£∫Õ®÷™ HidOutput …Ë±∏“—¡¨Ω”
++                dualpad::haptics::HidOutput::GetSingleton().SetDevice(dev);
+             }
+ 
+             unsigned char buf[64]{};
+@@ -291,6 +295,9 @@ namespace
+             }
+             else if (n < 0) {
+                 logger::warn("[DualPad] HID read error, reconnecting...");
++                // –¬‘ˆ£∫Õ®÷™ HidOutput …Ë±∏“—∂œø™
++                dualpad::haptics::HidOutput::GetSingleton().SetDevice(nullptr);
++
+                 hid_close(dev);
+                 dev = nullptr;
+                 std::this_thread::sleep_for(500ms);
+diff --git a/src/main.cpp b/src/main.cpp
+index 6b92321..c8e8880 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1,10 +1,14 @@
+-#include "pch.h"
++Ôªø#include "pch.h"
+ #include "input/HidReader.h"
+ #include "input/IATHook.h"
+ #include "input/ContextEventSink.h"
+ #include "input/InputContext.h"
+ #include "input/BindingConfig.h"
+-#include "input/ScreenshotManager.h"  // ÃÌº”’‚––
++#include "input/ScreenshotManager.h"
++
++#include "haptics/HapticsSystem.h"
++#include "haptics/EventCollector.h"
++#include "haptics/XAudio2Hook.h"  // ‚úÖ Êñ∞Â¢ûÔºöÁî®‰∫é PostLoadGame ÂÜçÊ¨° Install
+ 
+ namespace logger = SKSE::log;
+ 
+@@ -19,18 +23,17 @@ namespace
+         if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
+             logger::info("[DualPad] Initializing systems");
+ 
+-            // ◊¢≤·…œœ¬Œƒ ¬º˛º‡Ã˝
++            // Ê≥®ÂÜå‰∏ä‰∏ãÊñá‰∫ã‰ª∂ÁõëÂê¨
+             dualpad::input::ContextEventSink::GetSingleton().Register();
+ 
+-            // º”‘ÿ∞¥º¸∞Û∂®
++            // Âä†ËΩΩÊåâÈîÆÁªëÂÆö
+             dualpad::input::BindingConfig::GetSingleton().Load();
+ 
+-            // ∆Ù∂ØΩÿÕºπ‹¿Ì∆˜£®ÃÌº”’‚––£©
++            // ÂàùÂßãÂåñÊà™ÂõæÁÆ°ÁêÜÂô®
+             dualpad::utils::ScreenshotManager::GetSingleton().Start();
+ 
+-            // ∞≤◊∞ IAT hook
++            // ÂÆâË£Ö IAT Hook
+             const bool usesXInput = dualpad::input::InstallXInputIATHook();
+-
+             if (usesXInput) {
+                 logger::info("[DualPad] XInput IAT hook active");
+             }
+@@ -38,11 +41,42 @@ namespace
+                 logger::warn("[DualPad] Skyrim does not use XInput");
+             }
+ 
+-            // ∆Ù∂Ø HID ∂¡»°œﬂ≥Ã
++            // ÂêØÂä® HID ËØªÂèñÁ∫øÁ®ã
+             dualpad::input::StartHidReader();
+ 
++            // ÂàùÂßãÂåñ Haptics Á≥ªÁªüÔºàEventCollector Âú® PostLoadGame ÂÜçÊ≥®ÂÜåÔºâ
++            auto& hapticsSystem = dualpad::haptics::HapticsSystem::GetSingleton();
++            if (hapticsSystem.Initialize()) {
++                if (hapticsSystem.Start()) {
++                    logger::info("[DualPad] Haptics system started successfully");
++                }
++                else {
++                    logger::error("[DualPad] Failed to start haptics system");
++                }
++            }
++            else {
++                logger::warn("[DualPad] Haptics system disabled or failed to initialize");
++            }
++
++            if (auto* console = RE::ConsoleLog::GetSingleton(); console) {
++                console->Print("DualPad Haptics loaded. Use 'haptics_stats' to view stats.");
++            }
++
+             logger::info("[DualPad] Initialization complete");
+         }
++        else if (msg->type == SKSE::MessagingInterface::kPostLoadGame) {
++            // Ê∏∏ÊàèÂä†ËΩΩÂÆåÊàêÂêéÊ≥®ÂÜå‰∫ã‰ª∂ÈááÈõÜ
++            logger::info("[DualPad] Game loaded, registering haptics event collector");
++            dualpad::haptics::EventCollector::GetSingleton().Register();
++
++            // ‚úÖ ÂÖ≥ÈîÆË°•‰∏ÅÔºöÊ∏∏ÊàèÂä†ËΩΩÂêéÂÜçÂ∞ùËØïÂÆâË£Ö‰∏ÄÊ¨° XAudio2 Hook
++            if (dualpad::haptics::XAudio2Hook::GetSingleton().Install()) {
++                logger::info("[DualPad] Late XAudio2 hook install success (kPostLoadGame)");
++            }
++            else {
++                logger::warn("[DualPad] Late XAudio2 hook install still not ready (kPostLoadGame)");
++            }
++        }
+     }
+ }
+ 
+diff --git a/src/pch.h b/src/pch.h
+index d8c02f5..0279f5f 100644
+--- a/src/pch.h
++++ b/src/pch.h
+@@ -1,5 +1,8 @@
+ #pragma once
+ 
++// ‘⁄∞¸∫¨»Œ∫Œ Windows Õ∑Œƒº˛÷Æ«∞∂®“Â NOMINMAX
++#define NOMINMAX
++
+ #include <RE/Skyrim.h>
+ #include <SKSE/SKSE.h>
+ 
+diff --git a/xmake-requires.lock b/xmake-requires.lock
+index 34db27f..fd0650a 100644
+--- a/xmake-requires.lock
++++ b/xmake-requires.lock
+@@ -35,6 +35,14 @@
+             },
+             version = "0.14.0"
+         },
++        ["minhook#f56260b5"] = {
++            repo = {
++                branch = "master",
++                commit = "d3f5164cd147433c264ff3f6d65d40052bbbe384",
++                url = "https://gitee.com/tboox/xmake-repo.git"
++            },
++            version = "v1.3.4"
++        },
+         ["ninja#f56260b5"] = {
+             repo = {
+                 branch = "master",
+diff --git a/xmake.lua b/xmake.lua
+index 0b1f57c..e41bc3c 100644
+--- a/xmake.lua
++++ b/xmake.lua
+@@ -15,13 +15,17 @@ add_rules("mode.debug", "mode.releasedbg")
+ add_rules("plugin.vsxmake.autoupdate")
+ 
+ add_requires("hidapi")
+-
++add_requires("minhook")
+ local mo2_plugins_dir = "G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins"
+ 
+ target("DualPad")
+     add_deps("commonlibsse-ng")
++    add_packages("hidapi", "minhook") 
+     add_packages("hidapi")
+-    add_syslinks("gdi32", "gdiplus", "user32")
++    
++    -- ÃÌº” XAPO œ‡πÿø‚
++    add_syslinks("gdi32", "gdiplus", "user32", "xapobase", "xaudio2")
++    
+     add_rules("commonlibsse-ng.plugin", {
+         name = "DualPad",
+         author = "xuanyuantec",

@@ -8,6 +8,7 @@
 #include "input/BindingManager.h"
 #include "input/ActionExecutor.h"
 #include "input/InputContext.h"
+#include "haptics/HidOutput.h" 
 
 #include <SKSE/SKSE.h>
 #include <hidapi/hidapi.h>
@@ -177,6 +178,9 @@ namespace
                 prevState = {};
                 prevMask = 0;
                 gesture.Reset();
+
+                // 新增：通知 HidOutput 设备已连接
+                dualpad::haptics::HidOutput::GetSingleton().SetDevice(dev);
             }
 
             unsigned char buf[64]{};
@@ -291,6 +295,9 @@ namespace
             }
             else if (n < 0) {
                 logger::warn("[DualPad] HID read error, reconnecting...");
+                // 新增：通知 HidOutput 设备已断开
+                dualpad::haptics::HidOutput::GetSingleton().SetDevice(nullptr);
+
                 hid_close(dev);
                 dev = nullptr;
                 std::this_thread::sleep_for(500ms);
