@@ -1,10 +1,13 @@
 #pragma once
-#include "haptics/HapticsTypes.h"
 
+#include "haptics/HapticsTypes.h"
+#include "haptics/SemanticCacheTypes.h"
+
+#include <atomic>
 #include <cstdint>
-#include <deque>
-#include <shared_mutex>
+#include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace dualpad::haptics
 {
@@ -14,27 +17,64 @@ namespace dualpad::haptics
         struct Value
         {
             SemanticGroup group{ SemanticGroup::Unknown };
-            float weight{ 0.5f };
-            std::uint64_t expireUs{ 0 }; // 0=永不过期
-            std::uint64_t stampUs{ 0 };
+            float confidence{ 0.5f };
+            float baseWeight{ 0.5f };
+            float weight{ 0.5f }; // 兼容旧代码（=baseWeight）
+            std::uint16_t texturePresetId{ 0 };
+            SemanticFlags flags{ SemanticFlags::None };
+        };
+
+        struct Snapshot
+        {
+            std::unordered_map<std::uint32_t, SemanticMeta> table;
+            std::uint64_t fingerprintHash{ 0 };
+            std::uint32_t rulesVersion{ 0 };
+        };
+
+        struct Stats
+        {
+            std::uint64_t queries{ 0 };
+            std::uint64_t hits{ 0 };
+            std::uint64_t fallbacks{ 0 };
+            std::uint64_t unknownFallbacks{ 0 };
+            std::size_t snapshotSize{ 0 };
         };
 
         static FormSemanticCache& GetSingleton();
 
-        // 启动预热（当前先预置 fallback 逻辑，后续可接数据库）
+        // 启动期调用
         void WarmupDefaults();
 
-        void Set(std::uint32_t formId, SemanticGroup group, float weight, std::uint32_t ttlMs);
+        // 安装只读快照（atomic swap）
+        void InstallSnapshot(std::shared_ptr<const Snapshot> snapshot);
+
+        // 用 records 直接构建并安装
+        void InstallFromRecords(
+            const std::vector<FormSemanticRecord>& records,
+            std::uint64_t fingerprintHash,
+            std::uint32_t rulesVersion);
+
+        // 兼容：少量手动覆盖（copy-on-write，避免运行期高频调用）
+        void Set(std::uint32_t formId, const SemanticMeta& meta);
+
         Value Resolve(std::uint32_t formId, EventType fallbackType) const;
-        void PruneExpired(std::uint64_t nowUs);
+
+        std::shared_ptr<const Snapshot> GetSnapshot() const;
+        std::size_t Size() const;
+
+        Stats GetStats() const;
+        void ResetStats();
 
     private:
         FormSemanticCache() = default;
         SemanticGroup FallbackFromEvent(EventType type) const;
 
-        mutable std::shared_mutex _mx;
-        std::unordered_map<std::uint32_t, Value> _map;
-        std::deque<std::uint32_t> _fifo;
-        std::size_t _maxEntries{ 8192 };
+        // 注意：用 atomic_load/atomic_store 操作 shared_ptr
+        std::shared_ptr<const Snapshot> _snapshot;
+
+        mutable std::atomic<std::uint64_t> _queries{ 0 };
+        mutable std::atomic<std::uint64_t> _hits{ 0 };
+        mutable std::atomic<std::uint64_t> _fallbacks{ 0 };
+        mutable std::atomic<std::uint64_t> _unknownFallbacks{ 0 };
     };
 }

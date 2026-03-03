@@ -4,7 +4,7 @@
 #include "haptics/EventShortWindowCache.h"
 #include "haptics/SubmitFeatureCache.h"
 #include "haptics/HapticTemplateCache.h"
-
+#include "haptics/MatchResultCache.h"
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -30,6 +30,14 @@ namespace dualpad::haptics
             std::uint64_t totalEvents{ 0 };
             std::uint64_t totalMatched{ 0 };
             std::uint64_t totalUnmatched{ 0 };
+
+            std::uint64_t noCandidate{ 0 };
+            std::uint64_t candidateLowScore{ 0 };
+            std::uint64_t metaMismatch{ 0 };
+
+            std::uint64_t cacheHits{ 0 };
+            std::uint64_t cacheMisses{ 0 };
+            std::uint64_t cachePuts{ 0 };
         };
 
         static EventWindowScorer& GetSingleton();
@@ -44,11 +52,15 @@ namespace dualpad::haptics
 
     private:
         EventWindowScorer();
-
+        MatchResultCache _matchCache;
         struct PendingEvent
         {
             EventToken token{};
             std::uint64_t deadlineUs{ 0 };
+            // ===== 新增 =====
+            std::uint8_t emittedCount{ 0 };
+            std::uint64_t lastEmitUs{ 0 };
+            bool cacheProbeDone{ false };   // 新增：该事件是否已做过一次缓存探测
         };
 
         struct RuntimeParams
@@ -68,6 +80,15 @@ namespace dualpad::haptics
             bool audioDrivenPreferAudioOnly{ true };
             bool fallbackBaseWhenNoMatch{ true };
             bool enableAmbientPassthrough{ false };
+            // ===== 新增：连续修正控制 =====
+            std::uint8_t  maxCorrectionBursts{ 3 };      // 同一事件最多发3次修正
+            std::uint32_t minInterCorrectionUs{ 14000 }; // 两次修正最小间隔 14ms
+            std::uint32_t minCorrectionTtlMsGeneral{ 24 };
+            std::uint32_t minCorrectionTtlMsWeapon{ 40 };
+
+            float wMeta{ 0.25f };
+            float metaUnknownConf{ 0.45f };
+            float metaMismatchPenalty{ 0.20f };
         };
 
         static EventToken ToEventToken(const EventMsg& e, std::uint64_t id);
@@ -82,6 +103,9 @@ namespace dualpad::haptics
 
         float Score(const EventToken& e, const AudioChunkFeature& a) const;
         void ReloadRuntimeParamsFromConfig();
+
+        static SemanticGroup ExpectedSemantic(EventType t);
+        float ScoreWithMeta(const EventToken& e, const AudioChunkFeature& a, bool& outMetaMismatch) const;
 
         EventShortWindowCache& _eventCache;
         SubmitFeatureCache& _submitCache;
@@ -101,5 +125,11 @@ namespace dualpad::haptics
         mutable std::atomic<std::uint64_t> _matched{ 0 };
         mutable std::atomic<std::uint64_t> _unmatched{ 0 };
         mutable std::atomic<std::uint64_t> _passthroughSources{ 0 };
+        mutable std::atomic<std::uint64_t> _noCandidate{ 0 };
+        mutable std::atomic<std::uint64_t> _candidateLowScore{ 0 };
+        mutable std::atomic<std::uint64_t> _metaMismatch{ 0 };
+        mutable std::atomic<std::uint64_t> _cacheHits{ 0 };
+        mutable std::atomic<std::uint64_t> _cacheMisses{ 0 };
+        mutable std::atomic<std::uint64_t> _cachePuts{ 0 };
     };
 }

@@ -189,11 +189,16 @@ namespace dualpad::haptics
 
                 const float matchPct = m.matchRate * 100.0f;
                 const float fallbackPct = m.fallbackRate * 100.0f;
+                const auto cacheDen = scorer.cacheHits + scorer.cacheMisses;
+                const float cacheHitPct = (cacheDen > 0)
+                    ? (100.0f * static_cast<float>(scorer.cacheHits) / static_cast<float>(cacheDen))
+                    : 0.0f;
 
                 logger::info(
                     "[Haptics][MVP] SubmitTap={} Pulled={} Active={} Frames={} HidFrames={} VoiceDrop={} | "
                     "Lat(Base P50/P95={:.1f}/{:.1f}ms, AudioMod P50/P95={:.1f}/{:.1f}ms) "
-                    "Match={:.1f}% Fallback={:.1f}% Q(E:{}/{} V:{}/{})",
+                    "Match={:.1f}% Fallback={:.1f}% Q(E:{}/{} V:{}/{}) "
+                    "Cache(H/M/P={}/{}/{} Hit={:.1f}%)",
                     tap.submitFeaturesPushed,
                     scorer.audioFeaturesPulled,
                     mixer.activeSources,
@@ -204,7 +209,8 @@ namespace dualpad::haptics
                     m.audioModP50Ms, m.audioModP95Ms,
                     matchPct, fallbackPct,
                     m.eventQueueSize, m.eventQueueCap,
-                    m.voiceQueueSize, m.voiceQueueCap);
+                    m.voiceQueueSize, m.voiceQueueCap,
+                    scorer.cacheHits, scorer.cacheMisses, scorer.cachePuts, cacheHitPct);
             }
         }
 

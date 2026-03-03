@@ -143,6 +143,8 @@ namespace dualpad::haptics
                     if (kv.count("weight_spectrum")) weightSpectrum = std::stof(kv.at("weight_spectrum"));
                     if (kv.count("weight_duration")) weightDuration = std::stof(kv.at("weight_duration"));
                     if (kv.count("weight_channel")) weightChannel = std::stof(kv.at("weight_channel"));
+                    if (kv.count("weight_meta")) weightMeta = std::stof(kv.at("weight_meta"));
+                    if (kv.count("weight_meta")) weightMeta = std::stof(kv.at("weight_meta"));
                 }
                 else if (sec == "Mixer") {
                     if (kv.count("limiter")) limiter = std::stof(kv.at("limiter"));

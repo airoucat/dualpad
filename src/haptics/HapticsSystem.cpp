@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "haptics/HapticsSystem.h"
 #include "haptics/HapticsConfig.h"
+#include "haptics/SemanticWarmupService.h"
 #include "haptics/VoiceManager.h"
 #include "haptics/EventQueue.h"
 #include "haptics/EventWindowScorer.h"
@@ -221,9 +222,11 @@ namespace dualpad::haptics
     {
         logger::info("[Haptics][System] [3/4] Initializing managers...");
 
-        // 缓存预热（Phase2）
         FormSemanticCache::GetSingleton().WarmupDefaults();
         HapticTemplateCache::GetSingleton().WarmupDefaults();
+
+        // 新增：全量声音相关 Form 语义预热（加载或重建）
+        (void)SemanticWarmupService::GetSingleton().Boot();
 
         EventWindowScorer::GetSingleton().Initialize();
 

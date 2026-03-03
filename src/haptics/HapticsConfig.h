@@ -48,6 +48,7 @@ namespace dualpad::haptics
         float minConfidence{ 0.35f };
         float weightTiming{ 0.45f };
         float weightAttack{ 0.20f };
+        float weightMeta{ 0.25f };
         float weightSpectrum{ 0.20f };
         float weightDuration{ 0.10f };
         float weightChannel{ 0.05f };
@@ -87,7 +88,7 @@ namespace dualpad::haptics
         // LowLatency
         std::uint32_t correctionWindowMs{ 30 };
         std::uint32_t eventShortWindowMs{ 180 };
-        std::uint32_t submitFeatureCacheMs{ 320 };
+        std::uint32_t submitFeatureCacheMs{ 420 };
         float correctionMinScore{ 0.38f };
         float immediateGain{ 1.00f };
         float correctionGain{ 1.00f };

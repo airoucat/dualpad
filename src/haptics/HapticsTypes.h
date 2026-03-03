@@ -64,6 +64,11 @@ namespace dualpad::haptics
         std::uint32_t actorId{ 0 };
         std::uint32_t formId{ 0 };
         SemanticGroup semanticHint{ SemanticGroup::Unknown };
+
+        // 新增
+        float semanticConfidence{ 0.5f };  // 0..1
+        float semanticWeight{ 0.5f };      // 0..1
+        std::uint16_t semanticFlags{ 0 };  // SemanticFlags bitmask
     };
 
     struct AudioFeatureMsg
@@ -99,6 +104,11 @@ namespace dualpad::haptics
         float intensityHint{ 1.0f };
         std::uint32_t formId{ 0 };
         std::uint32_t actorId{ 0 };
+
+        // 新增
+        float semanticConfidence{ 0.5f };
+        float semanticWeight{ 0.5f };
+        std::uint16_t semanticFlags{ 0 };
     };
 
     struct AudioChunkFeature

@@ -106,6 +106,46 @@ namespace dualpad::haptics
             return path;
         }
 
+        static std::uint32_t EstimateDurationUsFromBytesPCM16(
+            std::uint32_t audioBytes,
+            std::uint32_t sampleRate,
+            std::uint32_t channels,
+            const XAUDIO2_BUFFER* pBuffer)
+        {
+            if (sampleRate == 0) sampleRate = 48000;
+            if (channels == 0) channels = 1;
+
+            const std::uint32_t bytesPerFrame = channels * 2; // PCM16
+            if (bytesPerFrame == 0) return 40'000;
+
+            const std::uint64_t framesByBytes = audioBytes / bytesPerFrame;
+            std::uint64_t frames = framesByBytes;
+
+            if (pBuffer && pBuffer->PlayLength > 0 && framesByBytes > 0) {
+                const std::uint64_t pl = pBuffer->PlayLength;
+                // 只有与 bytes 推导接近时才信任 PlayLength
+                if (pl >= framesByBytes / 2 && pl <= framesByBytes * 2) {
+                    frames = pl;
+                }
+            }
+
+            if (frames == 0) return 40'000;
+
+            std::uint64_t us = (frames * 1'000'000ull) / sampleRate;
+
+            if (pBuffer) {
+                if (pBuffer->LoopCount == XAUDIO2_LOOP_INFINITE) {
+                    us = std::min<std::uint64_t>(us, 180'000ull);
+                }
+                else if (pBuffer->LoopCount > 0) {
+                    us = std::min<std::uint64_t>(us * (static_cast<std::uint64_t>(pBuffer->LoopCount) + 1ull), 180'000ull);
+                }
+            }
+
+            us = std::clamp<std::uint64_t>(us, 8'000ull, 180'000ull);
+            return static_cast<std::uint32_t>(us);
+        }
+
         static bool LooksLikeXAudioObject(void* obj)
         {
             if (!obj) {
@@ -161,7 +201,6 @@ namespace dualpad::haptics
                 return orig ? orig(self, pBuffer, pBufferWMA) : E_FAIL;
             }
 
-            // 压缩流（xWMA等）暂不解码，跳过特征提取
             if (pBufferWMA != nullptr) {
                 g_submitCompressedSkipped.fetch_add(1, std::memory_order_relaxed);
                 if (hit <= 40 || (hit % 200) == 0) {
@@ -180,50 +219,76 @@ namespace dualpad::haptics
                 return orig ? orig(self, pBuffer, pBufferWMA) : E_FAIL;
             }
 
-            // 当前按 int16 PCM 计算简单特征（后续可按 voice format增强）
-            const auto sampleCount = bytes / sizeof(std::int16_t);
-            if (sampleCount >= 32) {
+            XAUDIO2_VOICE_DETAILS vd{};
+            self->GetVoiceDetails(&vd);
+
+            const std::uint32_t channels = std::clamp<std::uint32_t>(vd.InputChannels, 1u, 8u);
+            const std::uint32_t sampleRate = (vd.InputSampleRate > 0) ? vd.InputSampleRate : 48000u;
+            const std::uint32_t durUs = EstimateDurationUsFromBytesPCM16(
+                static_cast<std::uint32_t>(bytes),
+                sampleRate,
+                channels,
+                pBuffer);
+            // 仍按 int16 PCM 路径抽特征（与你现有实现保持一致）
+            const auto totalSamples = bytes / sizeof(std::int16_t);
+            if (totalSamples >= 32) {
                 const auto* s16 = reinterpret_cast<const std::int16_t*>(data);
+                const std::size_t frameCount = totalSamples / channels;
+                if (frameCount > 0) {
+                    double sumL = 0.0, sumR = 0.0, sumM = 0.0;
+                    float peak = 0.0f;
 
-                double sum = 0.0;
-                float peak = 0.0f;
+                    const std::size_t step = (frameCount > 4096) ? 4 : 1;
+                    std::size_t used = 0;
 
-                const std::size_t step = (sampleCount > 4096) ? 4 : 1;
-                std::size_t used = 0;
-                for (std::size_t i = 0; i < sampleCount; i += step) {
-                    const float v = static_cast<float>(s16[i]) / 32768.0f;
-                    sum += static_cast<double>(v) * static_cast<double>(v);
-                    peak = std::max(peak, std::abs(v));
-                    ++used;
-                }
+                    for (std::size_t f = 0; f < frameCount; f += step) {
+                        const std::size_t base = f * channels;
 
-                if (used > 0) {
-                    const float rms = static_cast<float>(std::sqrt(sum / static_cast<double>(used)));
+                        const float l = static_cast<float>(s16[base + 0]) / 32768.0f;
+                        const float r = (channels >= 2)
+                            ? static_cast<float>(s16[base + 1]) / 32768.0f
+                            : l;
 
-                    if (rms > 0.0005f || peak > 0.0015f) {
-                        AudioFeatureMsg msg{};
-                        msg.qpcStart = ToQPC(Now());
-                        msg.qpcEnd = msg.qpcStart + 5000; // 先给短窗估计
-                        msg.voiceId = 0;
-                        msg.sampleRate = 48000;
-                        msg.channels = 1;
+                        const float m = 0.5f * (l + r);
 
-                        msg.rms = rms;
-                        msg.peak = peak;
-                        msg.attack = peak;
-                        msg.energyL = rms;
-                        msg.energyR = rms;
-                        msg.bandLow = rms;
-                        msg.bandMid = rms;
-                        msg.bandHigh = rms;
+                        sumL += static_cast<double>(l) * static_cast<double>(l);
+                        sumR += static_cast<double>(r) * static_cast<double>(r);
+                        sumM += static_cast<double>(m) * static_cast<double>(m);
 
-                        if (VoiceManager::GetSingleton().PushAudioFeature(msg)) {
-                            g_submitFeaturesPushed.fetch_add(1, std::memory_order_relaxed);
-                        }
+                        peak = std::max(peak, std::max(std::abs(l), std::abs(r)));
+                        ++used;
+                    }
 
-                        if (hit <= 40 || (hit % 200) == 0) {
-                            logger::info("[Haptics][SubmitTap] feature pushed rms={:.4f} peak={:.4f} bytes={}",
-                                rms, peak, bytes);
+                    if (used > 0) {
+                        const float rmsL = static_cast<float>(std::sqrt(sumL / static_cast<double>(used)));
+                        const float rmsR = static_cast<float>(std::sqrt(sumR / static_cast<double>(used)));
+                        const float rms = static_cast<float>(std::sqrt(sumM / static_cast<double>(used)));
+
+                        if (rms > 0.0005f || peak > 0.0015f) {
+                            AudioFeatureMsg msg{};
+                            msg.qpcStart = ToQPC(Now());
+                            msg.qpcEnd = msg.qpcStart + durUs;  // 关键：真实时长
+                            msg.voiceId = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(self));
+                            msg.sampleRate = sampleRate;
+                            msg.channels = channels;
+
+                            msg.rms = rms;
+                            msg.peak = peak;
+                            msg.attack = peak;
+                            msg.energyL = rmsL;
+                            msg.energyR = rmsR;
+                            msg.bandLow = rms;
+                            msg.bandMid = rms;
+                            msg.bandHigh = rms;
+
+                            if (VoiceManager::GetSingleton().PushAudioFeature(msg)) {
+                                g_submitFeaturesPushed.fetch_add(1, std::memory_order_relaxed);
+                            }
+
+                            if (hit <= 40 || (hit % 200) == 0) {
+                                logger::info("[Haptics][SubmitTap] feature pushed rms={:.4f} peak={:.4f} ch={} sr={} dur={}us bytes={}",
+                                    rms, peak, channels, sampleRate, durUs, bytes);
+                            }
                         }
                     }
                 }
