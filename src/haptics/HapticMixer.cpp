@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "haptics/HapticMixer.h"
-
+#include "haptics/DecisionEngine.h"
 #include "haptics/AudioOnlyScorer.h"
 #include "haptics/HapticsConfig.h"
 #include "haptics/HidOutput.h"
@@ -43,6 +43,7 @@ namespace dualpad::haptics
         _focusManager.SetDuckingRules(config.duckingRules);
 
         AudioOnlyScorer::GetSingleton().Initialize();
+        DecisionEngine::GetSingleton().Initialize();
 
         _thread = std::jthread([this](std::stop_token st) {
             (void)st;
@@ -58,6 +59,8 @@ namespace dualpad::haptics
             return;
         }
 
+
+
         logger::info("[Haptics][Mixer] Stopping mixer thread...");
 
         if (_thread.joinable()) {
@@ -65,6 +68,7 @@ namespace dualpad::haptics
             _thread.join();
         }
 
+        DecisionEngine::GetSingleton().Shutdown();
         AudioOnlyScorer::GetSingleton().Shutdown();
 
         {
@@ -83,12 +87,12 @@ namespace dualpad::haptics
 
         auto& config = HapticsConfig::GetSingleton();
 
-        // NativeOnly ÏÂÓ¦µ±²»»á½øÀ´£¬ÕâÀïÔÙ·ÀÓùÒ»´Î
+        // NativeOnly ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ù·ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
         if (config.IsNativeOnly()) {
             return;
         }
 
-        // ¶Ô Unknown ÊÂ¼þ£¨´¿ÒôÆµ£©Ò²ÔÊÐíÍ¨¹ý
+        // ï¿½ï¿½ Unknown ï¿½Â¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½Ò²ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½
         if (msg.eventType != EventType::Unknown && !config.IsEventAllowed(msg.eventType)) {
             return;
         }
@@ -150,8 +154,24 @@ namespace dualpad::haptics
         auto nextStatsLog = std::chrono::steady_clock::now() + std::chrono::seconds(1);
 
         while (_running.load(std::memory_order_acquire)) {
+            static uint64_t beatA = 0;
+            if ((++beatA % 500) == 0) {
+                logger::info("[Haptics][Mixer] heartbeat A");
+            }
+
             HidFrame frame = ProcessTick();
+
+            static uint64_t beatB = 0;
+            if ((++beatB % 500) == 0) {
+                logger::info("[Haptics][Mixer] heartbeat B (before send)");
+            }
+
             HidOutput::GetSingleton().SendFrame(frame);
+
+            static uint64_t beatC = 0;
+            if ((++beatC % 500) == 0) {
+                logger::info("[Haptics][Mixer] heartbeat C (after send)");
+            }
 
             _totalTicks.fetch_add(1, std::memory_order_relaxed);
             _framesOutput.fetch_add(1, std::memory_order_relaxed);
@@ -173,27 +193,47 @@ namespace dualpad::haptics
                 const auto tap = EngineAudioTap::GetStats();
                 const auto aos = AudioOnlyScorer::GetSingleton().GetStats();
                 const auto mixer = GetStats();
+                const auto dec = DecisionEngine::GetSingleton().GetStats();
                 const auto hid = HidOutput::GetSingleton().GetStats();
                 const auto voice = VoiceManager::GetSingleton().GetStats();
 
                 logger::info(
                     "[Haptics][AudioOnly] SubmitTap(calls={} pushed={} skipCmp={}) "
                     "AudioOnly(pulled={} produced={} lowDrop={}) "
+                    "Decision(l1={} l2={} l3={} noCand={} lowFb={}) "
+                    "FormSemantic(hit={} miss={}) "
+                    "Trace(bindHit={}) "
                     "Mixer(active={} frames={} ticks={} src={}) "
-                    "HID(frames={} fail={}) Voice(drop={})",
+                    "HID(frames={} fail={} ok={} noDev={} writeFail={}) "
+                    "Voice(drop={}) NoCandSplit(tickNoAudio={} audioNoMatch={}) TraceMiss(unbound={} expired={})",
                     tap.submitCalls,
                     tap.submitFeaturesPushed,
                     tap.submitCompressedSkipped,
                     aos.featuresPulled,
                     aos.sourcesProduced,
                     aos.lowEnergyDropped,
+                    dec.l1Count,
+                    dec.l2Count,
+                    dec.l3Count,
+                    dec.noCandidate,
+                    dec.lowScoreFallback,
+                    dec.l1FormSemanticHit,
+                    dec.l1FormSemanticMiss,
+                    dec.traceBindHit,
                     mixer.activeSources,
                     mixer.framesOutput,
                     mixer.totalTicks,
                     mixer.totalSourcesAdded,
                     hid.totalFramesSent,
                     hid.sendFailures,
-                    voice.featuresDropped);
+                    hid.sendWriteOk,
+                    hid.sendNoDevice,
+                    hid.sendWriteFail,
+                    voice.featuresDropped,
+                    dec.tickNoAudio,
+                    dec.audioPresentNoMatch,
+                    dec.traceBindMissUnbound,
+                    dec.traceBindMissExpired);
             }
         }
 
@@ -204,9 +244,9 @@ namespace dualpad::haptics
     {
         _focusManager.Update();
 
-        auto newSources = AudioOnlyScorer::GetSingleton().Update();
-        for (auto& source : newSources) {
-            AddSource(source);
+        auto decisions = DecisionEngine::GetSingleton().Update();
+        for (auto& d : decisions) {
+            AddSource(d.source);
         }
 
         UpdateActiveSources();

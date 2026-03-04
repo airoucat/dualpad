@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <cstdint>
 #include <chrono>
 #include <string_view>
@@ -65,17 +65,16 @@ namespace dualpad::haptics
         std::uint32_t formId{ 0 };
         SemanticGroup semanticHint{ SemanticGroup::Unknown };
 
-        // ÐÂÔö
-        float semanticConfidence{ 0.5f };  // 0..1
-        float semanticWeight{ 0.5f };      // 0..1
-        std::uint16_t semanticFlags{ 0 };  // SemanticFlags bitmask
+        float semanticConfidence{ 0.5f };
+        float semanticWeight{ 0.5f };
+        std::uint16_t semanticFlags{ 0 };
     };
 
     struct AudioFeatureMsg
     {
         std::uint64_t qpcStart{ 0 };
         std::uint64_t qpcEnd{ 0 };
-        std::uint32_t voiceId{ 0 };
+        std::uint64_t voiceId{ 0 };
         std::uint32_t sampleRate{ 48000 };
         std::uint16_t channels{ 2 };
         float rms{ 0.0f };
@@ -105,7 +104,6 @@ namespace dualpad::haptics
         std::uint32_t formId{ 0 };
         std::uint32_t actorId{ 0 };
 
-        // ÐÂÔö
         float semanticConfidence{ 0.5f };
         float semanticWeight{ 0.5f };
         std::uint16_t semanticFlags{ 0 };
@@ -131,6 +129,8 @@ namespace dualpad::haptics
     struct HapticSourceMsg
     {
         std::uint64_t qpc{ 0 };
+        std::uint64_t sourceVoiceId{ 0 };
+        std::uint32_t sourceFormId{ 0 };
         SourceType type{ SourceType::BaseEvent };
         EventType eventType{ EventType::Unknown };
         float left{ 0.0f };

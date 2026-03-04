@@ -1,4 +1,4 @@
-#include "pch.h"
+Ôªø#include "pch.h"
 #include "haptics/HapticsConfig.h"
 
 #include <SKSE/SKSE.h>
@@ -74,7 +74,6 @@ namespace dualpad::haptics
 
         if (!std::filesystem::exists(cfgPath)) {
             logger::warn("[Haptics][Config] file not found, using defaults");
-            // ƒ¨»œƒ£ Ωœ¬“≤ ‰≥ˆÕ≥“ª”Ô“Â»’÷æ
             logger::info("[Haptics][Config] Mode={}", ModeToString(hapticsMode));
             return false;
         }
@@ -92,7 +91,6 @@ namespace dualpad::haptics
             return false;
         }
 
-        // ∑¿÷π»»÷ÿ‘ÿ¿€º”
         eventConfigs.clear();
         duckingRules.clear();
 
@@ -204,6 +202,9 @@ namespace dualpad::haptics
                 else if (sec == "LowLatency") {
                     LoadLowLatencyConfig(kv);
                 }
+                else if (sec == "SemanticCache" || sec == "Semantic") {
+                    LoadSemanticConfig(kv);
+                }
                 else if (sec == "Mode") {
                     LoadModeConfig(kv);
                 }
@@ -238,7 +239,6 @@ namespace dualpad::haptics
                 hapticsMode = HapticsMode::AudioDriven;
             }
             else if (mode == "hybrid") {
-                // ºÊ»›æ…≈‰÷√£∫µ±«∞æ´ºÚΩ◊∂ŒÕ≥“ª”≥…‰Œ™ CustomAudio
                 hapticsMode = HapticsMode::AudioDriven;
                 logger::warn("[Haptics][Config] haptics_mode=hybrid is legacy, remapped to CustomAudio(AudioDriven)");
             }
@@ -279,8 +279,7 @@ namespace dualpad::haptics
             int allowDuck = 1;
             int reqAudio = 0;
 
-            // ∏Ò Ω: priority, ttl_ms, focus_window_ms, ducking_strength, allow_ducking, requires_audio
-            if (std::sscanf(v.c_str(), "%hhu, %u, %u, %f, %d, %d",
+            if (::sscanf_s(v.c_str(), "%hhu, %u, %u, %f, %d, %d",
                 &cfg.priority, &cfg.ttlMs, &cfg.focusWindowMs, &cfg.duckingStrength, &allowDuck, &reqAudio) == 6) {
                 cfg.allowDucking = (allowDuck != 0);
                 cfg.requiresAudio = (reqAudio != 0);
@@ -330,6 +329,39 @@ namespace dualpad::haptics
         if (values.count("immediate_gain")) immediateGain = std::stof(values.at("immediate_gain"));
         if (values.count("correction_gain")) correctionGain = std::stof(values.at("correction_gain"));
         if (values.count("enable_ambient_passthrough")) enableAmbientPassthrough = ParseBool(values.at("enable_ambient_passthrough"), enableAmbientPassthrough);
+        if (values.count("trace_binding_ttl_ms")) traceBindingTtlMs = std::stoul(values.at("trace_binding_ttl_ms"));
+    }
+
+    void HapticsConfig::LoadSemanticConfig(const std::unordered_map<std::string, std::string>& values)
+    {
+        if (values.count("enable_form_semantic_cache")) {
+            enableFormSemanticCache = ParseBool(values.at("enable_form_semantic_cache"), enableFormSemanticCache);
+        }
+        if (values.count("enable_l1_form_semantic")) {
+            enableL1FormSemantic = ParseBool(values.at("enable_l1_form_semantic"), enableL1FormSemantic);
+        }
+        if (values.count("l1_form_semantic_min_confidence")) {
+            l1FormSemanticMinConfidence = std::clamp(
+                std::stof(values.at("l1_form_semantic_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("semantic_rules_path")) {
+            semanticRulesPath = values.at("semantic_rules_path");
+        }
+        if (values.count("semantic_cache_path")) {
+            semanticCachePath = values.at("semantic_cache_path");
+        }
+        if (values.count("semantic_force_rebuild")) {
+            semanticForceRebuild = ParseBool(values.at("semantic_force_rebuild"), semanticForceRebuild);
+        }
+
+        logger::info(
+            "[Haptics][Config] Semantic cache={} l1={} minConf={:.2f} rules={} cache={} forceRebuild={}",
+            enableFormSemanticCache,
+            enableL1FormSemantic,
+            l1FormSemanticMinConfidence,
+            semanticRulesPath,
+            semanticCachePath,
+            semanticForceRebuild);
     }
 
     void HapticsConfig::LoadExtensionConfig(const std::unordered_map<std::string, std::string>& values)
@@ -350,7 +382,6 @@ namespace dualpad::haptics
 
     bool HapticsConfig::IsEventAllowed(EventType type) const
     {
-        // NativeOnly ƒ£ Ωœ¬£¨±æ≤Âº˛≤ª”¶…˙≥…»Œ∫Œ◊‘∂®“Â ¬º˛ ‰≥ˆ
         if (IsNativeOnly()) {
             return false;
         }
@@ -365,7 +396,6 @@ namespace dualpad::haptics
             return true;
         }
 
-        // requiresAudio=true  ±£¨µ±«∞Œ™ CustomAudio ƒ£ Ω -> ‘ –Ì
         if (IsCustomAudioMode()) {
             return true;
         }

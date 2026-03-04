@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "hardOverrides": {
+    "0x00012E46": { "group": "WeaponSwing", "confidence": 1.0, "baseWeight": 0.9 }
+  },
+  "exactMatch": {
+    "WPNSwingSD": { "group": "WeaponSwing", "confidence": 0.95, "baseWeight": 0.78, "texturePresetId": 1 },
+    "NPCHumanFootstepWalk": { "group": "Footstep", "confidence": 0.90, "baseWeight": 0.56, "texturePresetId": 2 }
+  },
+  "keywordScoring": {
+    "WeaponSwing": {
+      "positive": ["swing", "swish", "whoosh"],
+      "negative": ["impact", "hit"],
+      "weight": 0.8
+    },
+    "Hit": {
+      "positive": ["impact", "hit", "strike"],
+      "negative": ["swing", "swish"],
+      "weight": 1.0
+    },
+    "Footstep": {
+      "positive": ["foot", "step", "walk", "run", "land"],
+      "negative": ["ui", "music"],
+      "weight": 0.72
+    },
+    "Ambient": {
+      "positive": ["ambient", "wind", "water", "rain", "loop"],
+      "negative": ["hit", "swing"],
+      "weight": 0.45
+    }
+  },
+  "formTypeHints": {
+    "kSound": 0.50,
+    "kSoundRecord": 0.55,
+    "kSoundCategory": 0.30,
+    "kMusicType": 0.60,
+    "kFootstepSet": 0.62,
+    "kImpactDataSet": 0.66
+  }
+}

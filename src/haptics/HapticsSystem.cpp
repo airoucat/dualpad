@@ -7,6 +7,7 @@
 #include "haptics/HidOutput.h"
 #include "haptics/EngineAudioTap.h"
 #include "haptics/AudioOnlyScorer.h"
+#include "haptics/FormSemanticCache.h"
 
 #include <SKSE/SKSE.h>
 
@@ -37,6 +38,12 @@ namespace dualpad::haptics
         }
 
         auto& config = HapticsConfig::GetSingleton();
+        if (config.enableFormSemanticCache) {
+            if (!FormSemanticCache::GetSingleton().Initialize()) {
+                logger::warn("[Haptics][System] FormSemanticCache init failed, continue fail-open");
+            }
+        }
+
         if (config.IsNativeOnly()) {
             _corePipelineInitialized.store(false, std::memory_order_release);
             _initialized = true;
@@ -196,6 +203,14 @@ namespace dualpad::haptics
             audioStats.featuresPulled,
             audioStats.sourcesProduced,
             audioStats.lowEnergyDropped);
+
+        auto semanticStats = FormSemanticCache::GetSingleton().GetStats();
+        logger::info("[Haptics][FormSemantic] entries={} hits={} misses={} loads={} rebuilds={}",
+            FormSemanticCache::GetSingleton().Size(),
+            semanticStats.hits,
+            semanticStats.misses,
+            semanticStats.loads,
+            semanticStats.rebuilds);
 
         auto mixerStats = HapticMixer::GetSingleton().GetStats();
         logger::info("[Haptics][Mixer] Active={} Frames={} Ticks={} Sources={} PeakL={:.3f} PeakR={:.3f}",
