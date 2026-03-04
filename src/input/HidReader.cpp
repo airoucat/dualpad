@@ -189,7 +189,7 @@ namespace
             if (n > 0) {
                 dse::State state{};
                 if (!dse::ParseReport01(buf, n, state)) {
-                    continue;
+                    // continue;
                 }
 
                 // ¹¹½¨°´¼üÑÚÂë
@@ -302,6 +302,7 @@ namespace
                 dev = nullptr;
                 std::this_thread::sleep_for(500ms);
             }
+            dualpad::haptics::HidOutput::GetSingleton().FlushPendingOnReaderThread(dev);
         }
 
         if (dev) {

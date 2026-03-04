@@ -119,6 +119,7 @@ namespace dualpad::haptics
         s.qpc = (a.qpcStart != 0) ? a.qpcStart : ToQPC(Now());
         s.type = SourceType::AudioMod;
         s.eventType = EventType::Unknown;
+        s.sourceVoiceId = a.voiceId;
         s.left = Clamp01(amp * (1.0f - pan));
         s.right = Clamp01(amp * (1.0f + pan));
         s.confidence = std::max(0.35f, Clamp01(0.50f + 0.50f * loud));

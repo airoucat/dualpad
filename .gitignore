@@ -10,4 +10,5 @@ vs*/
 lib/
 # files
 *.zip
+.codex
 compile_commands.json

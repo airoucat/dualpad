@@ -22,6 +22,12 @@ namespace dualpad::haptics
         // 发送震动帧
         bool SendFrame(const HidFrame& frame);
 
+        // Mixer线程调用：仅提交目标值，不直接写设备
+        bool SubmitFrameNonBlocking(const HidFrame& frame);
+
+        // HID Reader线程调用：真正执行hid_write（同线程读写）
+        void FlushPendingOnReaderThread(hid_device* device);
+
         // 停止震动
         void StopVibration();
 
@@ -33,6 +39,9 @@ namespace dualpad::haptics
             std::uint32_t totalFramesSent{ 0 };
             std::uint32_t totalBytesSent{ 0 };
             std::uint32_t sendFailures{ 0 };
+            std::uint32_t sendNoDevice{ 0 };
+            std::uint32_t sendWriteFail{ 0 };
+            std::uint32_t sendWriteOk{ 0 };
         };
 
         Stats GetStats() const;
@@ -57,9 +66,17 @@ namespace dualpad::haptics
 
         mutable std::mutex _mutex;
 
+        std::atomic<std::uint32_t> _sendNoDevice{ 0 };
+        std::atomic<std::uint32_t> _sendWriteFail{ 0 };
+        std::atomic<std::uint32_t> _sendWriteOk{ 0 };
+
         // 统计
         std::atomic<std::uint32_t> _totalFramesSent{ 0 };
         std::atomic<std::uint32_t> _totalBytesSent{ 0 };
         std::atomic<std::uint32_t> _sendFailures{ 0 };
+
+        std::atomic<std::uint8_t> _pendingLeft{ 0 };
+        std::atomic<std::uint8_t> _pendingRight{ 0 };
+        std::atomic<bool> _pendingDirty{ false };
     };
 }

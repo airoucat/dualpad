@@ -2,7 +2,7 @@
 #include "haptics/EngineAudioTap.h"
 #include "haptics/VoiceManager.h"
 #include "haptics/HapticsTypes.h"
-
+#include "haptics/VoiceBindingMap.h"
 #include <SKSE/SKSE.h>
 #include <Windows.h>
 #include <xaudio2.h>
@@ -47,6 +47,8 @@ namespace dualpad::haptics
 
         std::atomic<bool> g_installed{ false };
 
+        std::atomic<std::uint64_t> g_nextInstanceId{ 1 };
+
         std::atomic<std::uint64_t> g_hookHits{ 0 };
         std::atomic<std::uint64_t> g_submitCalls{ 0 };
         std::atomic<std::uint64_t> g_submitFeaturesPushed{ 0 };
@@ -82,6 +84,25 @@ namespace dualpad::haptics
             const auto e = s + bytes;
             const auto r = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
             return e <= r;
+        }
+
+        static void EnsureVoiceBound(IXAudio2SourceVoice* voice)
+        {
+            if (!voice) {
+                return;
+            }
+
+            const auto vp = reinterpret_cast<std::uintptr_t>(voice);
+            auto& map = VoiceBindingMap::GetSingleton();
+
+            // 已绑定就不重复绑
+            if (map.TryGet(vp).has_value()) {
+                return;
+            }
+
+            const auto gen = map.BumpGeneration(vp);
+            const auto iid = g_nextInstanceId.fetch_add(1, std::memory_order_relaxed);
+            map.Bind(vp, gen, iid, ToQPC(Now()));
         }
 
         static bool SafeReadPtr(const void* addr, void*& out)
@@ -374,6 +395,7 @@ namespace dualpad::haptics
             }
 
             if (voice && vtblHits >= kMinVtableHitsBeforeHook) {
+                EnsureVoiceBound(voice);
                 (void)HookSubmitSlotFromVoice(voice);
             }
 

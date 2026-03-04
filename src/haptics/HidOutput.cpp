@@ -45,9 +45,11 @@ namespace dualpad::haptics
         else if (!device && _device) {
             logger::info("[Haptics][HidOutput] Device disconnected");
             // 注意：这里已持锁，必须调用 Unlocked 版本，避免自死锁
-            (void)SendVibrateCommandUnlocked(0, 0);
+            // (void)SendVibrateCommandUnlocked(0, 0);
         }
-
+        if (device != _device) {
+            logger::info("[Haptics][HidOutput] SetDevice ptr=0x{:X}", reinterpret_cast<std::uintptr_t>(device));
+        }
         _device = device;
     }
 
@@ -57,25 +59,53 @@ namespace dualpad::haptics
         return _device != nullptr;
     }
 
+    bool HidOutput::SubmitFrameNonBlocking(const HidFrame& frame)
+    {
+        _pendingLeft.store(frame.leftMotor, std::memory_order_relaxed);
+        _pendingRight.store(frame.rightMotor, std::memory_order_relaxed);
+        _pendingDirty.store(true, std::memory_order_release);
+        return true;
+    }
+
     bool HidOutput::SendFrame(const HidFrame& frame)
     {
-        const bool success = SendVibrateCommand(frame.leftMotor, frame.rightMotor);
-
-        if (success) {
-            _totalFramesSent.fetch_add(1, std::memory_order_relaxed);
-            _totalBytesSent.fetch_add(48, std::memory_order_relaxed);  // 报文长度
-        }
-        else {
-            _sendFailures.fetch_add(1, std::memory_order_relaxed);
-        }
-
-        return success;
+        return SubmitFrameNonBlocking(frame);
     }
 
     void HidOutput::StopVibration()
     {
         logger::info("[Haptics][HidOutput] Stopping vibration...");
-        (void)SendVibrateCommand(0, 0);
+        HidFrame f{};
+        f.leftMotor = 0;
+        f.rightMotor = 0;
+        (void)SubmitFrameNonBlocking(f);
+    }
+
+    void HidOutput::FlushPendingOnReaderThread(hid_device* device)
+    {
+        if (!device) {
+            return;
+        }
+        if (!_pendingDirty.exchange(false, std::memory_order_acq_rel)) {
+            return;
+        }
+
+        const auto l = _pendingLeft.load(std::memory_order_relaxed);
+        const auto r = _pendingRight.load(std::memory_order_relaxed);
+
+        std::scoped_lock lock(_mutex);
+        _device = device; // 同步当前句柄
+
+        const bool ok = SendVibrateCommandUnlocked(l, r);
+        if (ok) {
+            _totalFramesSent.fetch_add(1, std::memory_order_relaxed);
+            _totalBytesSent.fetch_add(48, std::memory_order_relaxed);
+            _sendWriteOk.fetch_add(1, std::memory_order_relaxed);
+        }
+        else {
+            _sendFailures.fetch_add(1, std::memory_order_relaxed);
+            // 失败分型仍在 SendVibrateCommandUnlocked 里维护
+        }
     }
 
     HidOutput::Stats HidOutput::GetStats() const
@@ -84,6 +114,9 @@ namespace dualpad::haptics
         s.totalFramesSent = _totalFramesSent.load(std::memory_order_relaxed);
         s.totalBytesSent = _totalBytesSent.load(std::memory_order_relaxed);
         s.sendFailures = _sendFailures.load(std::memory_order_relaxed);
+        s.sendNoDevice = _sendNoDevice.load(std::memory_order_relaxed);
+        s.sendWriteFail = _sendWriteFail.load(std::memory_order_relaxed);
+        s.sendWriteOk = _sendWriteOk.load(std::memory_order_relaxed);
         return s;
     }
 
@@ -96,6 +129,12 @@ namespace dualpad::haptics
     bool HidOutput::SendVibrateCommandUnlocked(std::uint8_t leftMotor, std::uint8_t rightMotor)
     {
         if (!_device) {
+            static std::atomic_uint32_t s_noDevLog{ 0 };
+            auto n = s_noDevLog.fetch_add(1);
+            if (n < 5 || (n % 500) == 0) {
+                logger::warn("[Haptics][HidOutput] send skipped: no device");
+            }
+            _sendNoDevice.fetch_add(1, std::memory_order_relaxed);
             return false;
         }
 
@@ -110,10 +149,12 @@ namespace dualpad::haptics
         const int written = hid_write(_device, buf, static_cast<size_t>(sizeof(buf)));
         if (written < 0) {
             const wchar_t* err = hid_error(_device);
+            _sendWriteFail.fetch_add(1, std::memory_order_relaxed);
             logger::warn("[Haptics][HidOutput] hid_write failed: {}", WideToUtf8(err));
             return false;
         }
 
+        // _sendWriteOk.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
 }
