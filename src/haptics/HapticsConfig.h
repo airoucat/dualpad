@@ -13,9 +13,9 @@ namespace dualpad::haptics
     {
         enum class HapticsMode
         {
-            NativeOnly,
-            Hybrid,
-            AudioDriven
+            NativeOnly,   // 仅原生震动
+            Hybrid,       // 兼容旧配置：加载时会映射为 AudioDriven
+            AudioDriven   // 你当前的自定义音频驱动模式（即 CustomAudio）
         };
 
         struct EventConfig
@@ -35,7 +35,7 @@ namespace dualpad::haptics
         bool hotReload{ true };
 
         // Mode
-        HapticsMode hapticsMode{ HapticsMode::Hybrid };
+        HapticsMode hapticsMode{ HapticsMode::AudioDriven };
         bool allowSubtleEventsWithoutAudio{ false };
 
         // AudioTap
@@ -114,6 +114,10 @@ namespace dualpad::haptics
         bool IsEventAllowed(EventType type) const;
         const EventConfig* GetEventConfig(EventType type) const;
         EventType StringToEventType(const std::string& str) const;
+
+        // 新增：统一模式语义（推荐后续全工程用这两个）
+        bool IsNativeOnly() const { return hapticsMode == HapticsMode::NativeOnly; }
+        bool IsCustomAudioMode() const { return hapticsMode != HapticsMode::NativeOnly; }
 
     private:
         HapticsConfig() = default;

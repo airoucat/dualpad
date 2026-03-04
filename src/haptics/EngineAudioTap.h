@@ -10,12 +10,12 @@ namespace dualpad::haptics
         {
             std::uint64_t hookHits{ 0 };
 
-            // Submit Â·¾¶
+            // Submit path
             std::uint64_t submitCalls{ 0 };
             std::uint64_t submitFeaturesPushed{ 0 };
             std::uint64_t submitCompressedSkipped{ 0 };
 
-            // ¼æÈÝ¾É×Ö¶Î£¨ÒÑ·ÏÆú£¬¹Ì¶¨Îª0£©
+            // Legacy fields (kept for compatibility, always 0)
             std::uint64_t attachAttempts{ 0 };
             std::uint64_t attachSuccess{ 0 };
             std::uint64_t attachFailed{ 0 };

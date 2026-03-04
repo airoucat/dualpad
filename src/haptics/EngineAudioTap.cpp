@@ -26,13 +26,19 @@ namespace dualpad::haptics
     {
         using InitSound_t = std::int64_t(__fastcall*)(std::uintptr_t a1);
         inline InitSound_t g_origInitSound{ nullptr };
-
+        constexpr bool kLogCompressedSkip = false;
         // SkyrimSE 1.5.97
         constexpr std::uintptr_t kRva_Sub_140BFD780 = 0x00BFD780;
 
-        // 已验证：slot21 是 SubmitSourceBuffer 路径
+        // Verified: slot21 is SubmitSourceBuffer path
         constexpr std::size_t kSubmitSlot = 21;
         constexpr std::uint32_t kMinVtableHitsBeforeHook = 1;
+
+        // Log throttling knobs
+        constexpr std::uint64_t kLogInitHitFirstN = 5;
+        constexpr std::uint64_t kLogInitHitEveryN = 2000;
+        constexpr std::uint64_t kLogCompressedSkipFirstN = 3;
+        constexpr std::uint64_t kLogCompressedSkipEveryN = 500;
 
         using ProbeSubmit_t = HRESULT(STDMETHODCALLTYPE*)(
             IXAudio2SourceVoice*,
@@ -123,7 +129,6 @@ namespace dualpad::haptics
 
             if (pBuffer && pBuffer->PlayLength > 0 && framesByBytes > 0) {
                 const std::uint64_t pl = pBuffer->PlayLength;
-                // 只有与 bytes 推导接近时才信任 PlayLength
                 if (pl >= framesByBytes / 2 && pl <= framesByBytes * 2) {
                     frames = pl;
                 }
@@ -182,7 +187,7 @@ namespace dualpad::haptics
             const XAUDIO2_BUFFER_WMA* pBufferWMA)
         {
             g_submitCalls.fetch_add(1, std::memory_order_relaxed);
-            const auto hit = g_probeHits.fetch_add(1, std::memory_order_relaxed) + 1;
+            g_probeHits.fetch_add(1, std::memory_order_relaxed);
 
             ProbeSubmit_t orig = nullptr;
             if (self && IsReadablePtr(self, sizeof(void*))) {
@@ -203,13 +208,7 @@ namespace dualpad::haptics
 
             if (pBufferWMA != nullptr) {
                 g_submitCompressedSkipped.fetch_add(1, std::memory_order_relaxed);
-                if (hit <= 40 || (hit % 200) == 0) {
-                    logger::info("[Haptics][SubmitTap] compressed skip self=0x{:X} bytes={} pWma=0x{:X}",
-                        reinterpret_cast<std::uintptr_t>(self),
-                        pBuffer->AudioBytes,
-                        reinterpret_cast<std::uintptr_t>(pBufferWMA));
-                }
-                return orig ? orig(self, pBuffer, pBufferWMA) : E_FAIL;
+                return orig ? orig(self, pBuffer, pBufferWMA) : S_OK;
             }
 
             const auto* data = pBuffer->pAudioData;
@@ -229,7 +228,7 @@ namespace dualpad::haptics
                 sampleRate,
                 channels,
                 pBuffer);
-            // 仍按 int16 PCM 路径抽特征（与你现有实现保持一致）
+
             const auto totalSamples = bytes / sizeof(std::int16_t);
             if (totalSamples >= 32) {
                 const auto* s16 = reinterpret_cast<const std::int16_t*>(data);
@@ -267,7 +266,7 @@ namespace dualpad::haptics
                         if (rms > 0.0005f || peak > 0.0015f) {
                             AudioFeatureMsg msg{};
                             msg.qpcStart = ToQPC(Now());
-                            msg.qpcEnd = msg.qpcStart + durUs;  // 关键：真实时长
+                            msg.qpcEnd = msg.qpcStart + durUs;
                             msg.voiceId = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(self));
                             msg.sampleRate = sampleRate;
                             msg.channels = channels;
@@ -283,11 +282,6 @@ namespace dualpad::haptics
 
                             if (VoiceManager::GetSingleton().PushAudioFeature(msg)) {
                                 g_submitFeaturesPushed.fetch_add(1, std::memory_order_relaxed);
-                            }
-
-                            if (hit <= 40 || (hit % 200) == 0) {
-                                logger::info("[Haptics][SubmitTap] feature pushed rms={:.4f} peak={:.4f} ch={} sr={} dur={}us bytes={}",
-                                    rms, peak, channels, sampleRate, durUs, bytes);
                             }
                         }
                     }
@@ -369,12 +363,14 @@ namespace dualpad::haptics
                 vtblHits = ++g_vtblSeenCount[rawVtAddr];
             }
 
-            if (n <= 40 || (n % 500) == 0) {
+            if (n <= kLogInitHitFirstN || (n % kLogInitHitEveryN) == 0) {
                 logger::info(
-                    "[Haptics][EngineAudioTap] hit={} a1=0x{:X} raw_ok={} raw=0x{:X} rawVt=0x{:X} rawMod={} resolved=0x{:X} vtblHits={}",
-                    n, a1, okRaw ? 1 : 0, reinterpret_cast<std::uintptr_t>(raw), rawVtAddr,
-                    ModuleNameFromAddr(reinterpret_cast<void*>(rawVtAddr)),
-                    reinterpret_cast<std::uintptr_t>(voice), vtblHits);
+                    "[Haptics][EngineAudioTap] hit={} raw_ok={} raw=0x{:X} rawVt=0x{:X} resolved=0x{:X} vtblHits={}",
+                    n, okRaw ? 1 : 0,
+                    reinterpret_cast<std::uintptr_t>(raw),
+                    rawVtAddr,
+                    reinterpret_cast<std::uintptr_t>(voice),
+                    vtblHits);
             }
 
             if (voice && vtblHits >= kMinVtableHitsBeforeHook) {
@@ -430,8 +426,6 @@ namespace dualpad::haptics
 
         logger::info("[Haptics][EngineAudioTap] Uninstall begin");
 
-        // 保持“快速退出”策略，避免停服阶段卡死；
-        // 进程结束时 OS 回收 hook 资源。
         {
             std::scoped_lock lk(g_probeMx);
             g_probeTargets.clear();
@@ -457,7 +451,6 @@ namespace dualpad::haptics
         s.submitFeaturesPushed = g_submitFeaturesPushed.load(std::memory_order_relaxed);
         s.submitCompressedSkipped = g_submitCompressedSkipped.load(std::memory_order_relaxed);
 
-        // 兼容旧字段
         s.attachAttempts = 0;
         s.attachSuccess = 0;
         s.attachFailed = 0;

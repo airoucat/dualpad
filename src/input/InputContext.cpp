@@ -3,7 +3,77 @@
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 
+#include <chrono>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
 namespace logger = SKSE::log;
+
+namespace
+{
+    using Clock = std::chrono::steady_clock;
+
+    constexpr auto kMenuLogMinInterval = std::chrono::milliseconds(500);
+    constexpr auto kSuppressedSummaryInterval = std::chrono::seconds(3);
+
+    struct MenuLogThrottleState
+    {
+        std::mutex mutex;
+        std::unordered_map<std::string, Clock::time_point> lastLogByKey;
+        std::uint64_t suppressedCount{ 0 };
+        Clock::time_point lastSummaryTime{};
+    };
+
+    MenuLogThrottleState g_menuLogThrottle{};
+
+    bool ShouldLogMenuEvent(std::string_view eventTag, std::string_view menuName)
+    {
+        const auto now = Clock::now();
+        const std::string key = std::string(eventTag) + "|" + std::string(menuName);
+
+        std::scoped_lock lock(g_menuLogThrottle.mutex);
+
+        auto it = g_menuLogThrottle.lastLogByKey.find(key);
+        if (it == g_menuLogThrottle.lastLogByKey.end()) {
+            g_menuLogThrottle.lastLogByKey.emplace(key, now);
+            return true;
+        }
+
+        if (now - it->second >= kMenuLogMinInterval) {
+            it->second = now;
+            return true;
+        }
+
+        ++g_menuLogThrottle.suppressedCount;
+        return false;
+    }
+
+    void MaybeLogSuppressedSummary()
+    {
+        const auto now = Clock::now();
+
+        std::uint64_t suppressedToPrint = 0;
+        {
+            std::scoped_lock lock(g_menuLogThrottle.mutex);
+
+            if (g_menuLogThrottle.suppressedCount == 0) {
+                return;
+            }
+
+            if (g_menuLogThrottle.lastSummaryTime.time_since_epoch().count() != 0 &&
+                now - g_menuLogThrottle.lastSummaryTime < kSuppressedSummaryInterval) {
+                return;
+            }
+
+            suppressedToPrint = g_menuLogThrottle.suppressedCount;
+            g_menuLogThrottle.suppressedCount = 0;
+            g_menuLogThrottle.lastSummaryTime = now;
+        }
+
+        logger::info("[DualPad][Context] Menu logs suppressed={} (throttled)", suppressedToPrint);
+    }
+}
 
 namespace dualpad::input
 {
@@ -20,13 +90,11 @@ namespace dualpad::input
 
     InputContext ContextManager::MenuNameToContext(std::string_view menuName) const
     {
-        // 主要菜单
         if (menuName == RE::InventoryMenu::MENU_NAME) return InputContext::InventoryMenu;
         if (menuName == RE::MagicMenu::MENU_NAME) return InputContext::MagicMenu;
         if (menuName == RE::MapMenu::MENU_NAME) return InputContext::MapMenu;
         if (menuName == RE::JournalMenu::MENU_NAME) return InputContext::JournalMenu;
 
-        // 其他菜单
         if (menuName == "DialogueMenu") return InputContext::DialogueMenu;
         if (menuName == "FavoritesMenu") return InputContext::FavoritesMenu;
         if (menuName == "TweenMenu") return InputContext::TweenMenu;
@@ -43,12 +111,10 @@ namespace dualpad::input
         if (menuName == "GiftMenu") return InputContext::GiftMenu;
         if (menuName == "Creations Menu") return InputContext::CreationsMenu;
 
-        // 特殊菜单
         if (menuName == "Console") return InputContext::Console;
         if (menuName == "Lockpicking Menu") return InputContext::Lockpicking;
         if (menuName == "Loading Menu") return InputContext::Menu;
 
-        // 默认为通用菜单
         return InputContext::Menu;
     }
 
@@ -59,12 +125,10 @@ namespace dualpad::input
             return InputContext::Gameplay;
         }
 
-        // 死亡
         if (player->IsDead()) {
             return InputContext::Death;
         }
 
-        // 濒死（检查生命值）
         if (player->AsActorValueOwner()) {
             auto health = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             if (health <= 0.0f && !player->IsDead()) {
@@ -72,17 +136,14 @@ namespace dualpad::input
             }
         }
 
-        // 布娃娃
         if (player->IsInRagdollState()) {
             return InputContext::Ragdoll;
         }
 
-        // 处决动画
         if (player->IsInKillMove()) {
             return InputContext::KillMove;
         }
 
-        // 变身状态（通过 race 检查）
         auto* race = player->GetRace();
         if (race) {
             auto raceName = race->GetFormEditorID();
@@ -94,24 +155,19 @@ namespace dualpad::input
             }
         }
 
-        // 骑马
         if (player->IsOnMount()) {
             return InputContext::Riding;
         }
 
-        // 潜行
         if (player->IsSneaking()) {
             return InputContext::Sneaking;
         }
-
-        // 战斗状态由战斗事件处理
 
         return InputContext::Gameplay;
     }
 
     void ContextManager::UpdateGameplayContext()
     {
-        // 如果当前在菜单中,不更新游戏状态
         auto ctxValue = static_cast<std::uint16_t>(_currentContext);
         if ((ctxValue >= 100 && ctxValue < 2000) || ctxValue == 200) {
             return;
@@ -123,23 +179,28 @@ namespace dualpad::input
                 ToString(_currentContext), ToString(newContext));
             _currentContext = newContext;
         }
+
+        MaybeLogSuppressedSummary();
     }
 
     void ContextManager::OnMenuOpen(std::string_view menuName)
     {
         auto newContext = MenuNameToContext(menuName);
 
-        logger::info("[DualPad][Context] Menu opened: {} -> Context: {}",
-            menuName, ToString(newContext));
-
         _contextStack.push_back(_currentContext);
         _currentContext = newContext;
+
+        if (ShouldLogMenuEvent("open", menuName)) {
+            logger::info("[DualPad][Context] Menu opened: {} -> Context: {}",
+                menuName, ToString(newContext));
+        }
+        else {
+            MaybeLogSuppressedSummary();
+        }
     }
 
     void ContextManager::OnMenuClose(std::string_view menuName)
     {
-        logger::info("[DualPad][Context] Menu closed: {}", menuName);
-
         if (!_contextStack.empty()) {
             _currentContext = _contextStack.back();
             _contextStack.pop_back();
@@ -148,8 +209,13 @@ namespace dualpad::input
             _currentContext = DetectGameplayContext();
         }
 
-        logger::info("[DualPad][Context] Context restored to: {}",
-            ToString(_currentContext));
+        if (ShouldLogMenuEvent("close", menuName)) {
+            logger::info("[DualPad][Context] Menu closed: {} -> Restored: {}",
+                menuName, ToString(_currentContext));
+        }
+        else {
+            MaybeLogSuppressedSummary();
+        }
     }
 
     void ContextManager::PushContext(InputContext context)

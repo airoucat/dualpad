@@ -1,18 +1,14 @@
 ﻿#include "pch.h"
 #include "haptics/HapticsSystem.h"
+
 #include "haptics/HapticsConfig.h"
-#include "haptics/SemanticWarmupService.h"
 #include "haptics/VoiceManager.h"
-#include "haptics/EventQueue.h"
-#include "haptics/EventWindowScorer.h"
 #include "haptics/HapticMixer.h"
 #include "haptics/HidOutput.h"
 #include "haptics/EngineAudioTap.h"
-#include "haptics/FormSemanticCache.h"
-#include "haptics/HapticTemplateCache.h"
+#include "haptics/AudioOnlyScorer.h"
 
 #include <SKSE/SKSE.h>
-#include <atomic>
 
 namespace logger = SKSE::log;
 
@@ -40,25 +36,28 @@ namespace dualpad::haptics
             return false;
         }
 
-        if (!InitializeQueues()) {
-            logger::error("[Haptics][System] Failed to initialize queues");
+        auto& config = HapticsConfig::GetSingleton();
+        if (config.IsNativeOnly()) {
+            _corePipelineInitialized.store(false, std::memory_order_release);
+            _initialized = true;
+
+            logger::info("[Haptics][System] NativeOnly: skip custom core pipeline initialization");
+            logger::info("[Haptics][System] ========================================");
+            logger::info("[Haptics][System] Haptics System Initialized (NativeOnly)");
+            logger::info("[Haptics][System] ========================================");
+            return true;
+        }
+
+        if (!InitializeCorePipeline()) {
+            logger::error("[Haptics][System] Failed to initialize core pipeline");
             return false;
         }
 
-        if (!InitializeManagers()) {
-            logger::error("[Haptics][System] Failed to initialize managers");
-            return false;
-        }
-
-        if (!EngineAudioTap::Install()) {
-            logger::error("[Haptics][System] EngineAudioTap install failed");
-            return false;
-        }
-
+        _corePipelineInitialized.store(true, std::memory_order_release);
         _initialized = true;
 
         logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Haptics System Initialized");
+        logger::info("[Haptics][System] Haptics System Initialized (CustomAudio)");
         logger::info("[Haptics][System] ========================================");
         return true;
     }
@@ -80,27 +79,44 @@ namespace dualpad::haptics
         logger::info("[Haptics][System] ========================================");
 
         auto& config = HapticsConfig::GetSingleton();
+        if (config.IsNativeOnly()) {
+            _customPipelineActive.store(false, std::memory_order_release);
 
-        if (config.hapticsMode == HapticsConfig::HapticsMode::NativeOnly) {
-            logger::info("[Haptics][System] Mode is NativeOnly, skipping custom haptics");
+            logger::info("[Haptics][System] Mode=NativeOnly");
+            logger::info("[Haptics][System] Custom pipeline disabled: no tap / no mixer / no custom HID output");
             logger::info("[Haptics][System] ========================================");
             logger::info("[Haptics][System] Haptics System Started (NativeOnly Mode)");
             logger::info("[Haptics][System] ========================================");
             return true;
         }
 
-        if (!InitializeThreads()) {
-            logger::error("[Haptics][System] Failed to start threads");
-            _running.store(false);
+        if (!_corePipelineInitialized.load(std::memory_order_acquire)) {
+            logger::error("[Haptics][System] core pipeline not initialized in CustomAudio mode");
+            _running.store(false, std::memory_order_release);
             return false;
         }
 
+        if (!EngineAudioTap::Install()) {
+            logger::error("[Haptics][System] EngineAudioTap install failed");
+            _running.store(false, std::memory_order_release);
+            _customPipelineActive.store(false, std::memory_order_release);
+            return false;
+        }
+
+        if (!InitializeThreads()) {
+            logger::error("[Haptics][System] Failed to start threads");
+            EngineAudioTap::Uninstall();
+            _running.store(false, std::memory_order_release);
+            _customPipelineActive.store(false, std::memory_order_release);
+            return false;
+        }
+
+        _customPipelineActive.store(true, std::memory_order_release);
+
         logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Haptics System Started (Mode: {})",
-            static_cast<int>(config.hapticsMode));
+        logger::info("[Haptics][System] Haptics System Started (CustomAudio)");
         PrintStats();
         logger::info("[Haptics][System] ========================================");
-
         return true;
     }
 
@@ -114,8 +130,12 @@ namespace dualpad::haptics
         logger::info("[Haptics][System] Stopping Haptics System...");
         logger::info("[Haptics][System] ========================================");
 
-        StopThreads();
-        HidOutput::GetSingleton().StopVibration();
+        const bool customActive = _customPipelineActive.exchange(false, std::memory_order_acq_rel);
+        if (customActive) {
+            StopThreads();
+            HidOutput::GetSingleton().StopVibration();
+            EngineAudioTap::Uninstall();
+        }
 
         logger::info("[Haptics][System] ========================================");
         logger::info("[Haptics][System] Haptics System Stopped");
@@ -133,8 +153,10 @@ namespace dualpad::haptics
         logger::info("[Haptics][System] ========================================");
 
         Stop();
-        EngineAudioTap::Uninstall();
-        ShutdownManagers();
+
+        if (_corePipelineInitialized.exchange(false, std::memory_order_acq_rel)) {
+            ShutdownCorePipeline();
+        }
 
         _initialized = false;
 
@@ -150,8 +172,13 @@ namespace dualpad::haptics
             return;
         }
 
+        if (!_corePipelineInitialized.load(std::memory_order_acquire)) {
+            logger::info("[Haptics][System] NativeOnly stats: custom pipeline not initialized");
+            return;
+        }
+
         logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Haptics System Statistics");
+        logger::info("[Haptics][System] Haptics System Statistics (AudioOnly)");
         logger::info("[Haptics][System] ========================================");
 
         auto tapStats = EngineAudioTap::GetStats();
@@ -164,15 +191,11 @@ namespace dualpad::haptics
         logger::info("[Haptics][VoiceManager] pushed={} dropped={}",
             voiceStats.featuresPushed, voiceStats.featuresDropped);
 
-        auto scorerStats = EventWindowScorer::GetSingleton().GetStats();
-        logger::info("[Haptics][Scorer] Pulled audio features={} Produced sources={} Passthrough={} Events={} Matched={} Unmatched={} Active={}",
-            scorerStats.audioFeaturesPulled,
-            scorerStats.sourcesProduced,
-            scorerStats.passthroughSources,
-            scorerStats.totalEvents,
-            scorerStats.totalMatched,
-            scorerStats.totalUnmatched,
-            scorerStats.activeWindows);
+        auto audioStats = AudioOnlyScorer::GetSingleton().GetStats();
+        logger::info("[Haptics][AudioOnlyScorer] pulled={} produced={} lowEnergyDropped={}",
+            audioStats.featuresPulled,
+            audioStats.sourcesProduced,
+            audioStats.lowEnergyDropped);
 
         auto mixerStats = HapticMixer::GetSingleton().GetStats();
         logger::info("[Haptics][Mixer] Active={} Frames={} Ticks={} Sources={} PeakL={:.3f} PeakR={:.3f}",
@@ -192,7 +215,7 @@ namespace dualpad::haptics
 
     bool HapticsSystem::InitializeConfig()
     {
-        logger::info("[Haptics][System] [1/4] Loading configuration...");
+        logger::info("[Haptics][System] [1/3] Loading configuration...");
 
         auto& config = HapticsConfig::GetSingleton();
         config.Load();
@@ -209,34 +232,17 @@ namespace dualpad::haptics
         return true;
     }
 
-    bool HapticsSystem::InitializeQueues()
+    bool HapticsSystem::InitializeCorePipeline()
     {
-        logger::info("[Haptics][System] [2/4] Initializing queues...");
+        logger::info("[Haptics][System] [2/3] Initializing audio core pipeline...");
         VoiceManager::GetSingleton().Initialize();
-        EventQueue::GetSingleton().Initialize();
-        logger::info("[Haptics][System] Queues initialized");
-        return true;
-    }
-
-    bool HapticsSystem::InitializeManagers()
-    {
-        logger::info("[Haptics][System] [3/4] Initializing managers...");
-
-        FormSemanticCache::GetSingleton().WarmupDefaults();
-        HapticTemplateCache::GetSingleton().WarmupDefaults();
-
-        // 新增：全量声音相关 Form 语义预热（加载或重建）
-        (void)SemanticWarmupService::GetSingleton().Boot();
-
-        EventWindowScorer::GetSingleton().Initialize();
-
-        logger::info("[Haptics][System] Managers initialized");
+        logger::info("[Haptics][System] Audio core pipeline initialized");
         return true;
     }
 
     bool HapticsSystem::InitializeThreads()
     {
-        logger::info("[Haptics][System] [4/4] Starting threads...");
+        logger::info("[Haptics][System] [3/3] Starting threads...");
         HapticMixer::GetSingleton().Start();
         logger::info("[Haptics][System] Threads started");
         return true;
@@ -249,11 +255,10 @@ namespace dualpad::haptics
         logger::info("[Haptics][System] Threads stopped");
     }
 
-    void HapticsSystem::ShutdownManagers()
+    void HapticsSystem::ShutdownCorePipeline()
     {
-        logger::info("[Haptics][System] Shutting down managers...");
-        EventWindowScorer::GetSingleton().Shutdown();
+        logger::info("[Haptics][System] Shutting down audio core pipeline...");
         VoiceManager::GetSingleton().Shutdown();
-        logger::info("[Haptics][System] Managers shutdown");
+        logger::info("[Haptics][System] Audio core pipeline shutdown");
     }
 }

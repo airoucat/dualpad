@@ -1,12 +1,11 @@
 #include "pch.h"
 #include "haptics/HapticMixer.h"
-#include "haptics/EventWindowScorer.h"
+
+#include "haptics/AudioOnlyScorer.h"
 #include "haptics/HapticsConfig.h"
 #include "haptics/HidOutput.h"
 #include "haptics/EngineAudioTap.h"
 #include "haptics/VoiceManager.h"
-#include "haptics/EventQueue.h"
-#include "haptics/HapticsMetrics.h"
 
 #include <SKSE/SKSE.h>
 #include <algorithm>
@@ -36,14 +35,14 @@ namespace dualpad::haptics
 
         logger::info("[Haptics][Mixer] Starting mixer thread...");
 
-        _activeSources.reserve(32);
+        _activeSources.reserve(64);
         _lastLeft = 0.0f;
         _lastRight = 0.0f;
 
-        HapticsMetrics::GetSingleton().Reset();
-
         auto& config = HapticsConfig::GetSingleton();
         _focusManager.SetDuckingRules(config.duckingRules);
+
+        AudioOnlyScorer::GetSingleton().Initialize();
 
         _thread = std::jthread([this](std::stop_token st) {
             (void)st;
@@ -66,6 +65,8 @@ namespace dualpad::haptics
             _thread.join();
         }
 
+        AudioOnlyScorer::GetSingleton().Shutdown();
+
         {
             std::scoped_lock lock(_mutex);
             _activeSources.clear();
@@ -81,7 +82,14 @@ namespace dualpad::haptics
         }
 
         auto& config = HapticsConfig::GetSingleton();
-        if (!config.IsEventAllowed(msg.eventType)) {
+
+        // NativeOnly 下应当不会进来，这里再防御一次
+        if (config.IsNativeOnly()) {
+            return;
+        }
+
+        // 对 Unknown 事件（纯音频）也允许通过
+        if (msg.eventType != EventType::Unknown && !config.IsEventAllowed(msg.eventType)) {
             return;
         }
 
@@ -100,20 +108,12 @@ namespace dualpad::haptics
 
         {
             std::scoped_lock lock(_mutex);
-            // 按 priority 降序插入，避免 MixSources 每tick排序
             auto pos = std::find_if(_activeSources.begin(), _activeSources.end(),
                 [&](const ActiveSource& a) { return a.msg.priority < source.msg.priority; });
             _activeSources.insert(pos, std::move(source));
         }
 
         _totalSourcesAdded.fetch_add(1, std::memory_order_relaxed);
-
-        HapticsMetrics::GetSingleton().OnSourceAdded(msg, ToQPC(Now()));
-
-        const auto* eventConfig = config.GetEventConfig(msg.eventType);
-        if (eventConfig && eventConfig->focusWindowMs > 0) {
-            _focusManager.SetFocus(msg.eventType, eventConfig->focusWindowMs);
-        }
 
         if constexpr (kVerboseSourceLogs) {
             logger::info("[Haptics][Mixer] Source added: srcType={} eventType={} L={:.3f} R={:.3f} priority={}",
@@ -141,7 +141,6 @@ namespace dualpad::haptics
 
     void HapticMixer::MixerThreadLoop()
     {
-        logger::info("[Haptics][Mixer] metrics build marker v3");
         auto& config = HapticsConfig::GetSingleton();
         const auto tickDuration = std::chrono::milliseconds(config.tickMs);
 
@@ -152,7 +151,6 @@ namespace dualpad::haptics
 
         while (_running.load(std::memory_order_acquire)) {
             HidFrame frame = ProcessTick();
-
             HidOutput::GetSingleton().SendFrame(frame);
 
             _totalTicks.fetch_add(1, std::memory_order_relaxed);
@@ -173,44 +171,29 @@ namespace dualpad::haptics
                 nextStatsLog = now + std::chrono::seconds(1);
 
                 const auto tap = EngineAudioTap::GetStats();
-                const auto scorer = EventWindowScorer::GetSingleton().GetStats();
+                const auto aos = AudioOnlyScorer::GetSingleton().GetStats();
                 const auto mixer = GetStats();
                 const auto hid = HidOutput::GetSingleton().GetStats();
                 const auto voice = VoiceManager::GetSingleton().GetStats();
 
-                HapticsMetrics::GetSingleton().OnScorerStats(scorer);
-                HapticsMetrics::GetSingleton().OnQueueStats(
-                    EventQueue::GetSingleton().SizeApprox(),
-                    EventQueue::GetSingleton().Capacity(),
-                    VoiceManager::GetSingleton().GetQueueSize(),
-                    VoiceManager::GetSingleton().GetQueueCapacity());
-
-                const auto m = HapticsMetrics::GetSingleton().GetSnapshot();
-
-                const float matchPct = m.matchRate * 100.0f;
-                const float fallbackPct = m.fallbackRate * 100.0f;
-                const auto cacheDen = scorer.cacheHits + scorer.cacheMisses;
-                const float cacheHitPct = (cacheDen > 0)
-                    ? (100.0f * static_cast<float>(scorer.cacheHits) / static_cast<float>(cacheDen))
-                    : 0.0f;
-
                 logger::info(
-                    "[Haptics][MVP] SubmitTap={} Pulled={} Active={} Frames={} HidFrames={} VoiceDrop={} | "
-                    "Lat(Base P50/P95={:.1f}/{:.1f}ms, AudioMod P50/P95={:.1f}/{:.1f}ms) "
-                    "Match={:.1f}% Fallback={:.1f}% Q(E:{}/{} V:{}/{}) "
-                    "Cache(H/M/P={}/{}/{} Hit={:.1f}%)",
+                    "[Haptics][AudioOnly] SubmitTap(calls={} pushed={} skipCmp={}) "
+                    "AudioOnly(pulled={} produced={} lowDrop={}) "
+                    "Mixer(active={} frames={} ticks={} src={}) "
+                    "HID(frames={} fail={}) Voice(drop={})",
+                    tap.submitCalls,
                     tap.submitFeaturesPushed,
-                    scorer.audioFeaturesPulled,
+                    tap.submitCompressedSkipped,
+                    aos.featuresPulled,
+                    aos.sourcesProduced,
+                    aos.lowEnergyDropped,
                     mixer.activeSources,
                     mixer.framesOutput,
+                    mixer.totalTicks,
+                    mixer.totalSourcesAdded,
                     hid.totalFramesSent,
-                    voice.featuresDropped,
-                    m.baseP50Ms, m.baseP95Ms,
-                    m.audioModP50Ms, m.audioModP95Ms,
-                    matchPct, fallbackPct,
-                    m.eventQueueSize, m.eventQueueCap,
-                    m.voiceQueueSize, m.voiceQueueCap,
-                    scorer.cacheHits, scorer.cacheMisses, scorer.cachePuts, cacheHitPct);
+                    hid.sendFailures,
+                    voice.featuresDropped);
             }
         }
 
@@ -221,8 +204,7 @@ namespace dualpad::haptics
     {
         _focusManager.Update();
 
-        auto newSources = EventWindowScorer::GetSingleton().Update();
-
+        auto newSources = AudioOnlyScorer::GetSingleton().Update();
         for (auto& source : newSources) {
             AddSource(source);
         }
@@ -251,7 +233,6 @@ namespace dualpad::haptics
         auto now = Now();
 
         std::scoped_lock lock(_mutex);
-
         auto it = _activeSources.begin();
         while (it != _activeSources.end()) {
             if (now > it->expireTime) {
@@ -269,20 +250,17 @@ namespace dualpad::haptics
         outRight = 0.0f;
 
         std::scoped_lock lock(_mutex);
-
         if (_activeSources.empty()) {
             return;
         }
 
         float totalWeight = 0.0f;
-
         for (const auto& src : _activeSources) {
             float duckFactor = 1.0f;
 
             if (_focusManager.HasFocus()) {
                 EventType srcType = src.msg.eventType;
                 EventType focusType = _focusManager.GetCurrentFocus();
-
                 if (srcType != focusType) {
                     duckFactor = _focusManager.GetDuckFactorFor(srcType);
                 }
@@ -324,7 +302,6 @@ namespace dualpad::haptics
     void HapticMixer::ApplyLimiter(float& left, float& right)
     {
         auto& config = HapticsConfig::GetSingleton();
-
         left = std::clamp(left, 0.0f, config.limiter);
         right = std::clamp(right, 0.0f, config.limiter);
     }
@@ -369,13 +346,11 @@ namespace dualpad::haptics
         auto& config = HapticsConfig::GetSingleton();
 
         std::scoped_lock lock(_mutex);
-
         for (const auto& src : _activeSources) {
             if (src.msg.priority >= config.priorityHit) {
                 return true;
             }
         }
-
         return false;
     }
 

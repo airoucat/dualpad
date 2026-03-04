@@ -44,6 +44,16 @@ namespace dualpad::haptics
             if (v == "0" || v == "false" || v == "no" || v == "off") return false;
             return defaultValue;
         }
+
+        inline const char* ModeToString(HapticsConfig::HapticsMode m)
+        {
+            switch (m) {
+            case HapticsConfig::HapticsMode::NativeOnly: return "NativeOnly";
+            case HapticsConfig::HapticsMode::Hybrid:     return "Hybrid(legacy)";
+            case HapticsConfig::HapticsMode::AudioDriven:return "CustomAudio(AudioDriven)";
+            default:                                     return "Unknown";
+            }
+        }
     }
 
     HapticsConfig& HapticsConfig::GetSingleton()
@@ -64,10 +74,14 @@ namespace dualpad::haptics
 
         if (!std::filesystem::exists(cfgPath)) {
             logger::warn("[Haptics][Config] file not found, using defaults");
+            // 默认模式下也输出统一语义日志
+            logger::info("[Haptics][Config] Mode={}", ModeToString(hapticsMode));
             return false;
         }
 
-        return ParseIniFile(cfgPath);
+        const bool ok = ParseIniFile(cfgPath);
+        logger::info("[Haptics][Config] Final Mode={}", ModeToString(hapticsMode));
+        return ok;
     }
 
     bool HapticsConfig::ParseIniFile(const std::filesystem::path& path)
@@ -78,7 +92,7 @@ namespace dualpad::haptics
             return false;
         }
 
-        // 防止热重载残留
+        // 防止热重载累加
         eventConfigs.clear();
         duckingRules.clear();
 
@@ -143,7 +157,6 @@ namespace dualpad::haptics
                     if (kv.count("weight_spectrum")) weightSpectrum = std::stof(kv.at("weight_spectrum"));
                     if (kv.count("weight_duration")) weightDuration = std::stof(kv.at("weight_duration"));
                     if (kv.count("weight_channel")) weightChannel = std::stof(kv.at("weight_channel"));
-                    if (kv.count("weight_meta")) weightMeta = std::stof(kv.at("weight_meta"));
                     if (kv.count("weight_meta")) weightMeta = std::stof(kv.at("weight_meta"));
                 }
                 else if (sec == "Mixer") {
@@ -217,14 +230,21 @@ namespace dualpad::haptics
     {
         if (values.count("haptics_mode")) {
             const auto mode = ToLower(values.at("haptics_mode"));
-            if (mode == "nativeonly") {
+
+            if (mode == "nativeonly" || mode == "native_only") {
                 hapticsMode = HapticsMode::NativeOnly;
             }
-            else if (mode == "audiodriven") {
+            else if (mode == "customaudio" || mode == "custom_audio" || mode == "audiodriven" || mode == "audio_driven") {
                 hapticsMode = HapticsMode::AudioDriven;
             }
+            else if (mode == "hybrid") {
+                // 兼容旧配置：当前精简阶段统一映射为 CustomAudio
+                hapticsMode = HapticsMode::AudioDriven;
+                logger::warn("[Haptics][Config] haptics_mode=hybrid is legacy, remapped to CustomAudio(AudioDriven)");
+            }
             else {
-                hapticsMode = HapticsMode::Hybrid;
+                logger::warn("[Haptics][Config] unknown haptics_mode='{}', fallback to CustomAudio(AudioDriven)", mode);
+                hapticsMode = HapticsMode::AudioDriven;
             }
         }
 
@@ -241,7 +261,7 @@ namespace dualpad::haptics
         }
 
         logger::info("[Haptics][Config] Mode={} subtleNoAudio={} preferAudioOnly={} fallbackNoMatch={}",
-            static_cast<int>(hapticsMode),
+            ModeToString(hapticsMode),
             allowSubtleEventsWithoutAudio,
             audioDrivenPreferAudioOnly,
             fallbackBaseWhenNoMatch);
@@ -330,6 +350,11 @@ namespace dualpad::haptics
 
     bool HapticsConfig::IsEventAllowed(EventType type) const
     {
+        // NativeOnly 模式下，本插件不应生成任何自定义事件输出
+        if (IsNativeOnly()) {
+            return false;
+        }
+
         auto it = eventConfigs.find(type);
         if (it == eventConfigs.end()) {
             return true;
@@ -340,7 +365,8 @@ namespace dualpad::haptics
             return true;
         }
 
-        if (hapticsMode == HapticsMode::AudioDriven) {
+        // requiresAudio=true 时，当前为 CustomAudio 模式 -> 允许
+        if (IsCustomAudioMode()) {
             return true;
         }
 
