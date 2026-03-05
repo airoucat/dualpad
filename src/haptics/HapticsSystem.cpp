@@ -31,6 +31,88 @@ namespace dualpad::haptics
             }
             return (100.0f * static_cast<float>(part)) / static_cast<float>(total);
         }
+
+        void LogSystemDivider()
+        {
+            logger::info("[Haptics][System] ========================================");
+        }
+
+        void LogSystemBanner(const char* text)
+        {
+            LogSystemDivider();
+            logger::info("[Haptics][System] {}", text);
+            LogSystemDivider();
+        }
+
+        void LogPlayPathStats(const PlayPathHook::Stats& playStats)
+        {
+            logger::info(
+                "[Haptics][PlayPath] initCalls={} initResolved={} submitCalls={} submitResolved={} noContext={} noForm={} noForm1={} noFormR={} scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} skipInit={} skipSub={} skipOth={} retry={} skipRL={} skipMax={} traceHit={} traceMiss={} bindMiss={} upserts={}",
+                playStats.initCalls,
+                playStats.initResolved,
+                playStats.submitCalls,
+                playStats.submitResolved,
+                playStats.submitNoContext,
+                playStats.submitNoForm,
+                playStats.submitNoFormFirstScan,
+                playStats.submitNoFormRetry,
+                playStats.submitScanExecuted,
+                playStats.submitResolvedOnRetry,
+                playStats.submitNoContextScan,
+                playStats.submitNoContextResolved,
+                playStats.submitNoContextNoInitPtr,
+                playStats.submitNoContextDeepScan,
+                playStats.submitNoContextDeepResolved,
+                playStats.submitSkipResolved,
+                playStats.submitSkipResolvedFromInit,
+                playStats.submitSkipResolvedFromSubmit,
+                playStats.submitSkipResolvedOther,
+                playStats.submitRetryScans,
+                playStats.submitSkipRateLimit,
+                playStats.submitSkipMaxAttempts,
+                playStats.submitTraceMetaHit,
+                playStats.submitTraceMetaMiss,
+                playStats.bindingMisses,
+                playStats.traceUpserts);
+        }
+
+        void LogSessionPlayPathSummary(
+            const PlayPathHook::Stats& play,
+            const EventNormalizer::Stats& norm)
+        {
+            logger::info(
+                "[Haptics][SessionSummary] playPath initResolved={}/{} ({:.1f}%) submitResolved={}/{} ({:.1f}%) noCtx={} noForm={} (first={} retry={}) scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} (init={} submit={} other={}) retry={} skipRL={} skipMax={} traceMeta(hit={} miss={}) patchForm={} patchEvent={} traceMiss={} bindMiss={}",
+                play.initResolved,
+                play.initCalls,
+                PercentOf(play.initResolved, play.initCalls),
+                play.submitResolved,
+                play.submitCalls,
+                PercentOf(play.submitResolved, play.submitCalls),
+                play.submitNoContext,
+                play.submitNoForm,
+                play.submitNoFormFirstScan,
+                play.submitNoFormRetry,
+                play.submitScanExecuted,
+                play.submitResolvedOnRetry,
+                play.submitNoContextScan,
+                play.submitNoContextResolved,
+                play.submitNoContextNoInitPtr,
+                play.submitNoContextDeepScan,
+                play.submitNoContextDeepResolved,
+                play.submitSkipResolved,
+                play.submitSkipResolvedFromInit,
+                play.submitSkipResolvedFromSubmit,
+                play.submitSkipResolvedOther,
+                play.submitRetryScans,
+                play.submitSkipRateLimit,
+                play.submitSkipMaxAttempts,
+                play.submitTraceMetaHit,
+                play.submitTraceMetaMiss,
+                norm.patchedFormID,
+                norm.patchedEventType,
+                norm.traceMiss,
+                norm.bindingMiss);
+        }
     }
 
     HapticsSystem& HapticsSystem::GetSingleton()
@@ -46,9 +128,7 @@ namespace dualpad::haptics
             return true;
         }
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Initializing Haptics System...");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Initializing Haptics System...");
 
         if (!InitializeConfig()) {
             logger::error("[Haptics][System] Failed to initialize config");
@@ -67,9 +147,7 @@ namespace dualpad::haptics
             _initialized = true;
 
             logger::info("[Haptics][System] NativeOnly: skip custom core pipeline initialization");
-            logger::info("[Haptics][System] ========================================");
-            logger::info("[Haptics][System] Haptics System Initialized (NativeOnly)");
-            logger::info("[Haptics][System] ========================================");
+            LogSystemBanner("Haptics System Initialized (NativeOnly)");
             return true;
         }
 
@@ -81,9 +159,7 @@ namespace dualpad::haptics
         _corePipelineInitialized.store(true, std::memory_order_release);
         _initialized = true;
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Haptics System Initialized (CustomAudio)");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Haptics System Initialized (CustomAudio)");
         return true;
     }
 
@@ -99,9 +175,7 @@ namespace dualpad::haptics
             return true;
         }
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Starting Haptics System...");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Starting Haptics System...");
 
         auto& config = HapticsConfig::GetSingleton();
         if (config.IsNativeOnly()) {
@@ -109,9 +183,7 @@ namespace dualpad::haptics
 
             logger::info("[Haptics][System] Mode=NativeOnly");
             logger::info("[Haptics][System] Custom pipeline disabled: no tap / no mixer / no custom HID output");
-            logger::info("[Haptics][System] ========================================");
-            logger::info("[Haptics][System] Haptics System Started (NativeOnly Mode)");
-            logger::info("[Haptics][System] ========================================");
+            LogSystemBanner("Haptics System Started (NativeOnly Mode)");
             return true;
         }
 
@@ -138,10 +210,10 @@ namespace dualpad::haptics
 
         _customPipelineActive.store(true, std::memory_order_release);
 
-        logger::info("[Haptics][System] ========================================");
+        LogSystemDivider();
         logger::info("[Haptics][System] Haptics System Started (CustomAudio)");
         PrintStats();
-        logger::info("[Haptics][System] ========================================");
+        LogSystemDivider();
         return true;
     }
 
@@ -151,9 +223,7 @@ namespace dualpad::haptics
             return;
         }
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Stopping Haptics System...");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Stopping Haptics System...");
 
         const bool customActive = _customPipelineActive.exchange(false, std::memory_order_acq_rel);
         if (customActive) {
@@ -163,9 +233,7 @@ namespace dualpad::haptics
             EngineAudioTap::Uninstall();
         }
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Haptics System Stopped");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Haptics System Stopped");
     }
 
     void HapticsSystem::Shutdown()
@@ -174,9 +242,7 @@ namespace dualpad::haptics
             return;
         }
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Shutting down Haptics System...");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Shutting down Haptics System...");
 
         Stop();
 
@@ -186,9 +252,7 @@ namespace dualpad::haptics
 
         _initialized = false;
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Haptics System Shutdown Complete");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Haptics System Shutdown Complete");
     }
 
     void HapticsSystem::PrintStats()
@@ -203,9 +267,7 @@ namespace dualpad::haptics
             return;
         }
 
-        logger::info("[Haptics][System] ========================================");
-        logger::info("[Haptics][System] Haptics System Statistics (AudioOnly)");
-        logger::info("[Haptics][System] ========================================");
+        LogSystemBanner("Haptics System Statistics (AudioOnly)");
 
         auto tapStats = EngineAudioTap::GetStats();
         logger::info("[Haptics][SubmitTap] calls={} feature_pushed={} compressed_skip={}",
@@ -218,33 +280,7 @@ namespace dualpad::haptics
             voiceStats.featuresPushed, voiceStats.featuresDropped);
 
         auto playStats = PlayPathHook::GetSingleton().GetStats();
-        logger::info("[Haptics][PlayPath] initCalls={} initResolved={} submitCalls={} submitResolved={} noContext={} noForm={} noForm1={} noFormR={} scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} skipInit={} skipSub={} skipOth={} retry={} skipRL={} skipMax={} traceHit={} traceMiss={} bindMiss={} upserts={}",
-            playStats.initCalls,
-            playStats.initResolved,
-            playStats.submitCalls,
-            playStats.submitResolved,
-            playStats.submitNoContext,
-            playStats.submitNoForm,
-            playStats.submitNoFormFirstScan,
-            playStats.submitNoFormRetry,
-            playStats.submitScanExecuted,
-            playStats.submitResolvedOnRetry,
-            playStats.submitNoContextScan,
-            playStats.submitNoContextResolved,
-            playStats.submitNoContextNoInitPtr,
-            playStats.submitNoContextDeepScan,
-            playStats.submitNoContextDeepResolved,
-            playStats.submitSkipResolved,
-            playStats.submitSkipResolvedFromInit,
-            playStats.submitSkipResolvedFromSubmit,
-            playStats.submitSkipResolvedOther,
-            playStats.submitRetryScans,
-            playStats.submitSkipRateLimit,
-            playStats.submitSkipMaxAttempts,
-            playStats.submitTraceMetaHit,
-            playStats.submitTraceMetaMiss,
-            playStats.bindingMisses,
-            playStats.traceUpserts);
+        LogPlayPathStats(playStats);
 
         auto audioStats = AudioOnlyScorer::GetSingleton().GetStats();
         logger::info("[Haptics][AudioOnlyScorer] pulled={} produced={} lowEnergyDropped={}",
@@ -325,7 +361,7 @@ namespace dualpad::haptics
         logger::info("[Haptics][HidOutput] Frames={} Bytes={} Failures={}",
             hidStats.totalFramesSent, hidStats.totalBytesSent, hidStats.sendFailures);
 
-        logger::info("[Haptics][System] ========================================");
+        LogSystemDivider();
     }
 
     void HapticsSystem::PrintSessionSummary()
@@ -392,38 +428,7 @@ namespace dualpad::haptics
             dec.dynamicPoolHit,
             dec.dynamicPoolMiss);
 
-        logger::info(
-            "[Haptics][SessionSummary] playPath initResolved={}/{} ({:.1f}%) submitResolved={}/{} ({:.1f}%) noCtx={} noForm={} (first={} retry={}) scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} (init={} submit={} other={}) retry={} skipRL={} skipMax={} traceMeta(hit={} miss={}) patchForm={} patchEvent={} traceMiss={} bindMiss={}",
-            play.initResolved,
-            play.initCalls,
-            PercentOf(play.initResolved, play.initCalls),
-            play.submitResolved,
-            play.submitCalls,
-            PercentOf(play.submitResolved, play.submitCalls),
-            play.submitNoContext,
-            play.submitNoForm,
-            play.submitNoFormFirstScan,
-            play.submitNoFormRetry,
-            play.submitScanExecuted,
-            play.submitResolvedOnRetry,
-            play.submitNoContextScan,
-            play.submitNoContextResolved,
-            play.submitNoContextNoInitPtr,
-            play.submitNoContextDeepScan,
-            play.submitNoContextDeepResolved,
-            play.submitSkipResolved,
-            play.submitSkipResolvedFromInit,
-            play.submitSkipResolvedFromSubmit,
-            play.submitSkipResolvedOther,
-            play.submitRetryScans,
-            play.submitSkipRateLimit,
-            play.submitSkipMaxAttempts,
-            play.submitTraceMetaHit,
-            play.submitTraceMetaMiss,
-            norm.patchedFormID,
-            norm.patchedEventType,
-            norm.traceMiss,
-            norm.bindingMiss);
+        LogSessionPlayPathSummary(play, norm);
 
         logger::info(
             "[Haptics][SessionSummary] dynamicPool size={} admitted={} rejNoKey={} rejLow={} shadowHit={} shadowMiss={} l3Hit={} l3Miss={} rejMinHit={} rejLowIn={} l2Learn={} l2SkipNoKey={} l2SkipScore={}",

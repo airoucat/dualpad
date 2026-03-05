@@ -23,6 +23,153 @@ namespace dualpad::haptics
     namespace
     {
         constexpr bool kVerboseSourceLogs = false;
+
+        struct PeriodicLogSnapshot
+        {
+            EngineAudioTap::Stats tap{};
+            AudioOnlyScorer::Stats audioOnly{};
+            HapticMixer::Stats mixer{};
+            DecisionEngine::Stats decision{};
+            HidOutput::Stats hid{};
+            VoiceManager::Stats voice{};
+            PlayPathHook::Stats playPath{};
+            EventNormalizer::Stats normalizer{};
+            DynamicHapticPool::Stats dynamicPool{};
+            MetricsReporter::Snapshot metrics{};
+        };
+
+        PeriodicLogSnapshot CollectPeriodicLogSnapshot(HapticMixer& mixer)
+        {
+            PeriodicLogSnapshot snap{};
+            snap.tap = EngineAudioTap::GetStats();
+            snap.audioOnly = AudioOnlyScorer::GetSingleton().GetStats();
+            snap.mixer = mixer.GetStats();
+            snap.decision = DecisionEngine::GetSingleton().GetStats();
+            snap.hid = HidOutput::GetSingleton().GetStats();
+            snap.voice = VoiceManager::GetSingleton().GetStats();
+            snap.playPath = PlayPathHook::GetSingleton().GetStats();
+            snap.normalizer = EventNormalizer::GetSingleton().GetStats();
+            snap.dynamicPool = DynamicHapticPool::GetSingleton().GetStats();
+            snap.metrics = MetricsReporter::GetSingleton().SnapshotAndReset(
+                VoiceManager::GetSingleton().GetQueueSize(),
+                snap.voice.featuresDropped);
+            return snap;
+        }
+
+        void LogPeriodicStats(const PeriodicLogSnapshot& s)
+        {
+            logger::info(
+                "[Haptics][AudioOnly] SubmitTap(calls={} pushed={} skipCmp={}) "
+                "PlayPath(init={} initRes={} submit={} submitRes={} skipRes={} retry={} skipRL={} skipMax={} scan={} retryRes={} noForm1={} noFormR={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipInit={} skipSub={} skipOth={} traceHit={} traceMiss={} upsert={} bindMiss={}) "
+                "Normalize(noVoice={} bindMiss={} traceMiss={} traceHit={} patchForm={} patchEvt={}) "
+                "AudioOnly(pulled={} produced={} lowDrop={}) "
+                "Decision(l1={} l2={} l3={} noCand={} lowFb={} dynHit={} dynMiss={}) "
+                "Reason(l2High={} l2Mid={} l2LowPass={}) "
+                "Reject(normNoVoice={} normBindMiss={} normTraceMiss={} semNoForm={} semCacheMiss={} semLowConf={} traceUnbound={} traceExpired={} traceDisabled={}) "
+                "DynLearn(l2={} noKey={} lowScore={}) "
+                "FormSemantic(hit={} miss={} noForm={} cacheMiss={} lowConf={}) "
+                "DynPool(size={} admit={} rejKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} rejMinHit={} rejLowIn={} evict={}) "
+                "Metrics(latP50={}us latP95={}us samples={} unknown={:.2f} metaMis={:.2f} qDepth={} drop={}) "
+                "Trace(bindHit={}) "
+                "Mixer(active={} frames={} ticks={} src={}) "
+                "HID(frames={} fail={} ok={} noDev={} writeFail={}) "
+                "Voice(drop={}) NoCandSplit(tickNoAudio={} audioNoMatch={})",
+                s.tap.submitCalls,
+                s.tap.submitFeaturesPushed,
+                s.tap.submitCompressedSkipped,
+                s.playPath.initCalls,
+                s.playPath.initResolved,
+                s.playPath.submitCalls,
+                s.playPath.submitResolved,
+                s.playPath.submitSkipResolved,
+                s.playPath.submitRetryScans,
+                s.playPath.submitSkipRateLimit,
+                s.playPath.submitSkipMaxAttempts,
+                s.playPath.submitScanExecuted,
+                s.playPath.submitResolvedOnRetry,
+                s.playPath.submitNoFormFirstScan,
+                s.playPath.submitNoFormRetry,
+                s.playPath.submitNoContextScan,
+                s.playPath.submitNoContextResolved,
+                s.playPath.submitNoContextNoInitPtr,
+                s.playPath.submitNoContextDeepScan,
+                s.playPath.submitNoContextDeepResolved,
+                s.playPath.submitSkipResolvedFromInit,
+                s.playPath.submitSkipResolvedFromSubmit,
+                s.playPath.submitSkipResolvedOther,
+                s.playPath.submitTraceMetaHit,
+                s.playPath.submitTraceMetaMiss,
+                s.playPath.traceUpserts,
+                s.playPath.bindingMisses,
+                s.normalizer.noVoiceID,
+                s.normalizer.bindingMiss,
+                s.normalizer.traceMiss,
+                s.normalizer.traceHit,
+                s.normalizer.patchedFormID,
+                s.normalizer.patchedEventType,
+                s.audioOnly.featuresPulled,
+                s.audioOnly.sourcesProduced,
+                s.audioOnly.lowEnergyDropped,
+                s.decision.l1Count,
+                s.decision.l2Count,
+                s.decision.l3Count,
+                s.decision.noCandidate,
+                s.decision.lowScoreFallback,
+                s.decision.dynamicPoolHit,
+                s.decision.dynamicPoolMiss,
+                s.decision.l2HighScore,
+                s.decision.l2MidScore,
+                s.decision.l2LowScorePass,
+                s.normalizer.noVoiceID,
+                s.normalizer.bindingMiss,
+                s.normalizer.traceMiss,
+                s.decision.l1FormSemanticNoFormID,
+                s.decision.l1FormSemanticCacheMiss,
+                s.decision.l1FormSemanticLowConfidence,
+                s.decision.traceBindMissUnbound,
+                s.decision.traceBindMissExpired,
+                s.decision.traceBindBypassDisabled,
+                s.decision.dynamicPoolLearnFromL2,
+                s.decision.dynamicPoolLearnFromL2NoKey,
+                s.decision.dynamicPoolLearnFromL2LowScore,
+                s.decision.l1FormSemanticHit,
+                s.decision.l1FormSemanticMiss,
+                s.decision.l1FormSemanticNoFormID,
+                s.decision.l1FormSemanticCacheMiss,
+                s.decision.l1FormSemanticLowConfidence,
+                s.dynamicPool.currentSize,
+                s.dynamicPool.admitted,
+                s.dynamicPool.rejectedNoKey,
+                s.dynamicPool.rejectedLowConfidence,
+                s.dynamicPool.shadowCalls,
+                s.dynamicPool.shadowHits,
+                s.dynamicPool.shadowMisses,
+                s.dynamicPool.resolveHits,
+                s.dynamicPool.resolveMisses,
+                s.dynamicPool.resolveRejectMinHits,
+                s.dynamicPool.resolveRejectLowInput,
+                s.dynamicPool.evicted,
+                s.metrics.latencyP50Us,
+                s.metrics.latencyP95Us,
+                s.metrics.sampleCount,
+                s.metrics.unknownRatio,
+                s.metrics.metaMismatchRatio,
+                s.metrics.queueDepth,
+                s.metrics.dropCount,
+                s.decision.traceBindHit,
+                s.mixer.activeSources,
+                s.mixer.framesOutput,
+                s.mixer.totalTicks,
+                s.mixer.totalSourcesAdded,
+                s.hid.totalFramesSent,
+                s.hid.sendFailures,
+                s.hid.sendWriteOk,
+                s.hid.sendNoDevice,
+                s.hid.sendWriteFail,
+                s.voice.featuresDropped,
+                s.decision.tickNoAudio,
+                s.decision.audioPresentNoMatch);
+        }
     }
 
     HapticMixer& HapticMixer::GetSingleton()
@@ -70,8 +217,6 @@ namespace dualpad::haptics
             return;
         }
 
-
-
         logger::info("[Haptics][Mixer] Stopping mixer thread...");
 
         if (_thread.joinable()) {
@@ -98,12 +243,10 @@ namespace dualpad::haptics
 
         auto& config = HapticsConfig::GetSingleton();
 
-        // NativeOnly ��Ӧ����������������ٷ���һ��
         if (config.IsNativeOnly()) {
             return;
         }
 
-        // �� Unknown �¼�������Ƶ��Ҳ����ͨ��
         if (msg.eventType != EventType::Unknown && !config.IsEventAllowed(msg.eventType)) {
             return;
         }
@@ -185,131 +328,7 @@ namespace dualpad::haptics
 
             if (now >= nextStatsLog) {
                 nextStatsLog = now + std::chrono::seconds(1);
-
-                const auto tap = EngineAudioTap::GetStats();
-                const auto aos = AudioOnlyScorer::GetSingleton().GetStats();
-                const auto mixer = GetStats();
-                const auto dec = DecisionEngine::GetSingleton().GetStats();
-                const auto hid = HidOutput::GetSingleton().GetStats();
-                const auto voice = VoiceManager::GetSingleton().GetStats();
-                const auto play = PlayPathHook::GetSingleton().GetStats();
-                const auto norm = EventNormalizer::GetSingleton().GetStats();
-                const auto dyn = DynamicHapticPool::GetSingleton().GetStats();
-                const auto metrics = MetricsReporter::GetSingleton().SnapshotAndReset(
-                    VoiceManager::GetSingleton().GetQueueSize(),
-                    voice.featuresDropped);
-
-                logger::info(
-                    "[Haptics][AudioOnly] SubmitTap(calls={} pushed={} skipCmp={}) "
-                    "PlayPath(init={} initRes={} submit={} submitRes={} skipRes={} retry={} skipRL={} skipMax={} scan={} retryRes={} noForm1={} noFormR={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipInit={} skipSub={} skipOth={} traceHit={} traceMiss={} upsert={} bindMiss={}) "
-                    "Normalize(noVoice={} bindMiss={} traceMiss={} traceHit={} patchForm={} patchEvt={}) "
-                    "AudioOnly(pulled={} produced={} lowDrop={}) "
-                    "Decision(l1={} l2={} l3={} noCand={} lowFb={} dynHit={} dynMiss={}) "
-                    "Reason(l2High={} l2Mid={} l2LowPass={}) "
-                    "Reject(normNoVoice={} normBindMiss={} normTraceMiss={} semNoForm={} semCacheMiss={} semLowConf={} traceUnbound={} traceExpired={} traceDisabled={}) "
-                    "DynLearn(l2={} noKey={} lowScore={}) "
-                    "FormSemantic(hit={} miss={} noForm={} cacheMiss={} lowConf={}) "
-                    "DynPool(size={} admit={} rejKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} rejMinHit={} rejLowIn={} evict={}) "
-                    "Metrics(latP50={}us latP95={}us samples={} unknown={:.2f} metaMis={:.2f} qDepth={} drop={}) "
-                    "Trace(bindHit={}) "
-                    "Mixer(active={} frames={} ticks={} src={}) "
-                    "HID(frames={} fail={} ok={} noDev={} writeFail={}) "
-                    "Voice(drop={}) NoCandSplit(tickNoAudio={} audioNoMatch={})",
-                    tap.submitCalls,
-                    tap.submitFeaturesPushed,
-                    tap.submitCompressedSkipped,
-                    play.initCalls,
-                    play.initResolved,
-                    play.submitCalls,
-                    play.submitResolved,
-                    play.submitSkipResolved,
-                    play.submitRetryScans,
-                    play.submitSkipRateLimit,
-                    play.submitSkipMaxAttempts,
-                    play.submitScanExecuted,
-                    play.submitResolvedOnRetry,
-                    play.submitNoFormFirstScan,
-                    play.submitNoFormRetry,
-                    play.submitNoContextScan,
-                    play.submitNoContextResolved,
-                    play.submitNoContextNoInitPtr,
-                    play.submitNoContextDeepScan,
-                    play.submitNoContextDeepResolved,
-                    play.submitSkipResolvedFromInit,
-                    play.submitSkipResolvedFromSubmit,
-                    play.submitSkipResolvedOther,
-                    play.submitTraceMetaHit,
-                    play.submitTraceMetaMiss,
-                    play.traceUpserts,
-                    play.bindingMisses,
-                    norm.noVoiceID,
-                    norm.bindingMiss,
-                    norm.traceMiss,
-                    norm.traceHit,
-                    norm.patchedFormID,
-                    norm.patchedEventType,
-                    aos.featuresPulled,
-                    aos.sourcesProduced,
-                    aos.lowEnergyDropped,
-                    dec.l1Count,
-                    dec.l2Count,
-                    dec.l3Count,
-                    dec.noCandidate,
-                    dec.lowScoreFallback,
-                    dec.dynamicPoolHit,
-                    dec.dynamicPoolMiss,
-                    dec.l2HighScore,
-                    dec.l2MidScore,
-                    dec.l2LowScorePass,
-                    norm.noVoiceID,
-                    norm.bindingMiss,
-                    norm.traceMiss,
-                    dec.l1FormSemanticNoFormID,
-                    dec.l1FormSemanticCacheMiss,
-                    dec.l1FormSemanticLowConfidence,
-                    dec.traceBindMissUnbound,
-                    dec.traceBindMissExpired,
-                    dec.traceBindBypassDisabled,
-                    dec.dynamicPoolLearnFromL2,
-                    dec.dynamicPoolLearnFromL2NoKey,
-                    dec.dynamicPoolLearnFromL2LowScore,
-                    dec.l1FormSemanticHit,
-                    dec.l1FormSemanticMiss,
-                    dec.l1FormSemanticNoFormID,
-                    dec.l1FormSemanticCacheMiss,
-                    dec.l1FormSemanticLowConfidence,
-                    dyn.currentSize,
-                    dyn.admitted,
-                    dyn.rejectedNoKey,
-                    dyn.rejectedLowConfidence,
-                    dyn.shadowCalls,
-                    dyn.shadowHits,
-                    dyn.shadowMisses,
-                    dyn.resolveHits,
-                    dyn.resolveMisses,
-                    dyn.resolveRejectMinHits,
-                    dyn.resolveRejectLowInput,
-                    dyn.evicted,
-                    metrics.latencyP50Us,
-                    metrics.latencyP95Us,
-                    metrics.sampleCount,
-                    metrics.unknownRatio,
-                    metrics.metaMismatchRatio,
-                    metrics.queueDepth,
-                    metrics.dropCount,
-                    dec.traceBindHit,
-                    mixer.activeSources,
-                    mixer.framesOutput,
-                    mixer.totalTicks,
-                    mixer.totalSourcesAdded,
-                    hid.totalFramesSent,
-                    hid.sendFailures,
-                    hid.sendWriteOk,
-                    hid.sendNoDevice,
-                    hid.sendWriteFail,
-                    voice.featuresDropped,
-                    dec.tickNoAudio,
-                    dec.audioPresentNoMatch);
+                LogPeriodicStats(CollectPeriodicLogSnapshot(*this));
             }
         }
 

@@ -523,68 +523,17 @@ namespace dualpad::haptics
     PlayPathHook::Stats PlayPathHook::GetStats() const
     {
         Stats s{};
-        s.initCalls = _counters.initCalls.load(std::memory_order_relaxed);
-        s.initResolved = _counters.initResolved.load(std::memory_order_relaxed);
-        s.initNoForm = _counters.initNoForm.load(std::memory_order_relaxed);
+        #define X(name) s.name = _counters.name.load(std::memory_order_relaxed);
+        #include "haptics/PlayPathCounterFields.def"
+        #undef X
 
-        s.submitCalls = _counters.submitCalls.load(std::memory_order_relaxed);
-        s.submitResolved = _counters.submitResolved.load(std::memory_order_relaxed);
-        s.submitNoContext = _counters.submitNoContext.load(std::memory_order_relaxed);
-        s.submitNoForm = _counters.submitNoForm.load(std::memory_order_relaxed);
-        s.submitSkipResolved = _counters.submitSkipResolved.load(std::memory_order_relaxed);
-        s.submitRetryScans = _counters.submitRetryScans.load(std::memory_order_relaxed);
-        s.submitSkipRateLimit = _counters.submitSkipRateLimit.load(std::memory_order_relaxed);
-        s.submitSkipMaxAttempts = _counters.submitSkipMaxAttempts.load(std::memory_order_relaxed);
-        s.submitTraceMetaHit = _counters.submitTraceMetaHit.load(std::memory_order_relaxed);
-        s.submitTraceMetaMiss = _counters.submitTraceMetaMiss.load(std::memory_order_relaxed);
-        s.submitScanExecuted = _counters.submitScanExecuted.load(std::memory_order_relaxed);
-        s.submitResolvedOnRetry = _counters.submitResolvedOnRetry.load(std::memory_order_relaxed);
-        s.submitNoFormFirstScan = _counters.submitNoFormFirstScan.load(std::memory_order_relaxed);
-        s.submitNoFormRetry = _counters.submitNoFormRetry.load(std::memory_order_relaxed);
-        s.submitNoContextScan = _counters.submitNoContextScan.load(std::memory_order_relaxed);
-        s.submitNoContextResolved = _counters.submitNoContextResolved.load(std::memory_order_relaxed);
-        s.submitNoContextNoInitPtr = _counters.submitNoContextNoInitPtr.load(std::memory_order_relaxed);
-        s.submitNoContextDeepScan = _counters.submitNoContextDeepScan.load(std::memory_order_relaxed);
-        s.submitNoContextDeepResolved = _counters.submitNoContextDeepResolved.load(std::memory_order_relaxed);
-        s.submitSkipResolvedFromInit = _counters.submitSkipResolvedFromInit.load(std::memory_order_relaxed);
-        s.submitSkipResolvedFromSubmit = _counters.submitSkipResolvedFromSubmit.load(std::memory_order_relaxed);
-        s.submitSkipResolvedOther = _counters.submitSkipResolvedOther.load(std::memory_order_relaxed);
-
-        s.bindingMisses = _counters.bindingMisses.load(std::memory_order_relaxed);
-        s.traceUpserts = _counters.traceUpserts.load(std::memory_order_relaxed);
         return s;
     }
 
     void PlayPathHook::ResetStats()
     {
-        _counters.initCalls.store(0, std::memory_order_relaxed);
-        _counters.initResolved.store(0, std::memory_order_relaxed);
-        _counters.initNoForm.store(0, std::memory_order_relaxed);
-
-        _counters.submitCalls.store(0, std::memory_order_relaxed);
-        _counters.submitResolved.store(0, std::memory_order_relaxed);
-        _counters.submitNoContext.store(0, std::memory_order_relaxed);
-        _counters.submitNoForm.store(0, std::memory_order_relaxed);
-        _counters.submitSkipResolved.store(0, std::memory_order_relaxed);
-        _counters.submitRetryScans.store(0, std::memory_order_relaxed);
-        _counters.submitSkipRateLimit.store(0, std::memory_order_relaxed);
-        _counters.submitSkipMaxAttempts.store(0, std::memory_order_relaxed);
-        _counters.submitTraceMetaHit.store(0, std::memory_order_relaxed);
-        _counters.submitTraceMetaMiss.store(0, std::memory_order_relaxed);
-        _counters.submitScanExecuted.store(0, std::memory_order_relaxed);
-        _counters.submitResolvedOnRetry.store(0, std::memory_order_relaxed);
-        _counters.submitNoFormFirstScan.store(0, std::memory_order_relaxed);
-        _counters.submitNoFormRetry.store(0, std::memory_order_relaxed);
-        _counters.submitNoContextScan.store(0, std::memory_order_relaxed);
-        _counters.submitNoContextResolved.store(0, std::memory_order_relaxed);
-        _counters.submitNoContextNoInitPtr.store(0, std::memory_order_relaxed);
-        _counters.submitNoContextDeepScan.store(0, std::memory_order_relaxed);
-        _counters.submitNoContextDeepResolved.store(0, std::memory_order_relaxed);
-        _counters.submitSkipResolvedFromInit.store(0, std::memory_order_relaxed);
-        _counters.submitSkipResolvedFromSubmit.store(0, std::memory_order_relaxed);
-        _counters.submitSkipResolvedOther.store(0, std::memory_order_relaxed);
-
-        _counters.bindingMisses.store(0, std::memory_order_relaxed);
-        _counters.traceUpserts.store(0, std::memory_order_relaxed);
+        #define X(name) _counters.name.store(0, std::memory_order_relaxed);
+        #include "haptics/PlayPathCounterFields.def"
+        #undef X
     }
 }
