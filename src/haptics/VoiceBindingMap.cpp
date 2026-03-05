@@ -28,6 +28,22 @@ namespace dualpad::haptics
         _binds.fetch_add(1, std::memory_order_relaxed);
     }
 
+    bool VoiceBindingMap::Touch(std::uintptr_t voicePtr, std::uint64_t nowUs)
+    {
+        std::unique_lock lk(_mx, std::try_to_lock);
+        if (!lk.owns_lock()) {
+            return false;
+        }
+
+        auto it = _map.find(voicePtr);
+        if (it == _map.end()) {
+            return false;
+        }
+
+        it->second.tsUs = nowUs;
+        return true;
+    }
+
     std::optional<VoiceBinding> VoiceBindingMap::TryGet(std::uintptr_t voicePtr) const
     {
         std::shared_lock lk(_mx);

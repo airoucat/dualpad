@@ -10,7 +10,7 @@
 ---
 
 ## 一、硬约束（必须遵守）
-
+- 由用户自己手动进行编译
 - ✅ 不用机器学习
 - ✅ 不走 XAPO
 - ✅ 保留 Submit hook 路线
@@ -175,22 +175,47 @@
 - 缓存热加载链路：二次启动命中 `loaded cache path`
 - 规则文件接入：`DualPadSemanticRules.json` 已在运行路径加载
 - 运行时日志：已输出 `FormSemantic(hit/miss)`、`cache_version`、`fingerprint`
+- P2 阴影评估：`DynamicHapticPool::ShadowCanResolve` 已接入（不改输出），新增 `shCall/shHit/shMiss`
+- P2 可观测增强：`[Haptics][AudioOnly]` 与 `[Haptics][DynamicPool]` 已包含动态池 shadow 指标
+- P2 动态学习闭环：已支持 `L2 -> DynamicPool` 可选学习（`enable_dynamic_pool_learn_from_l2`），并验证 `l2Learn=560 admitted=560 l3Hit=59 l3Miss=18`
+- 日志降噪：`EngineAudioTap/SafeProbe` 已改为默认静默（`kVerboseProbeLogs=false`）
 
 ### 当前现状
 - 主链路稳定：`Submit -> AudioOnlyScorer -> DecisionEngine -> Mixer -> HID` 可运行
-- `FormSemantic` 统计仍偏低（多数为 `hit=0 miss=0`），说明运行时 `sourceFormId` 仍未稳定注入到热路径
+- **P0 已完成**：`PlayPathHook` 已接入并打通 `voice+generation -> instanceId -> source/sound formId -> DecisionEngine`
+- 运行时语义命中已转正：最新日志（2026-03-05 10:51）持续出现 `FormSemantic(hit=84 miss=0)`，`Decision(l1=84 l2=0 l3=0)`
+- 当前主要走 `L1FormSemantic`，`L2/L3` 作为兜底分支保留
+- `DynamicPool` 已打通 `L2学习 -> L3命中` 闭环；默认仍保守（`enable_dynamic_pool_learn_from_l2=false`），建议按场景灰度开启
 
-### 下一步优先级（P0 -> P2）
-1. **P0**：打通 `PlayPathHook`，将 `voice+generation -> instanceId -> source/sound formId` 接入 `DecisionEngine` L1
-2. **P1**：补 `EventNormalizer`、`SemanticResolver`，完成运行时纯查表语义分辨（禁字符串匹配）
-3. **P1**：完善 reason code 与 reject/fallback 分型，补齐指标口径
-4. **P2**：实现 `DynamicHapticPool`（会话内 Top-K 严格准入）
-5. **P2**：实现 `MetricsReporter`（p50/p95、unknown_ratio 等）
+### 下一步优先级（P1 -> P2）
+1. **P1**：补 `EventNormalizer`、`SemanticResolver`，完成运行时纯查表语义分辨（禁字符串匹配）
+2. **P1**：完善 reason code 与 reject/fallback 分型，补齐指标口径
+3. **P2**：基于 `shHit/shMiss` 数据调参（优先评估 `dynamic_pool_min_confidence`）
+4. **P2**：灰度放开 `fallbackBaseWhenNoMatch=true` 场景，验证 `dynamicPoolHit` 提升与误触风险
+5. **P2（可选）**：继续提升 `SubmitContext` 路径命中率（当前 `initRes` 已能支撑主命中，`submitRes` 可后续优化）
 
 ### 回滚与开关
 - `enableFormSemanticCache`
 - `enableL1FormSemantic`
 - `semanticForceRebuild`
+- `enableDynamicPoolLearnFromL2`
+- `dynamicPoolMinConfidence` / `dynamicPoolL2MinConfidence`（当前默认收敛到 `0.62 / 0.62`）
 - 任一异常保持 fail-open，不阻断 HID 主输出
-```
 
+---
+
+## 十三、FAQ（防遗忘）
+
+### Q1：为什么运行时禁止 EditorID 字符串匹配？它不是有助于提高命中吗？
+- EditorID 对语义分类很有价值，但应放在**启动期/离线构建期**使用
+- 热路径（Submit/Scorer/Mixer）做字符串匹配会带来额外 CPU 抖动、分支不稳定和线程风险
+- 运行时需要可重复、低锁、可解释：因此统一用 `FormID/InstanceID/Voice+Generation` 查表
+- 结论：**不是不用 EditorID，而是把它前移到预热阶段**
+
+### Q2：启动期用 EditorID 全量预热后，运行时是怎么起作用的？
+1. 启动扫描声音相关 Form，基于 `EditorID + 规则` 分类，生成 `FormID -> SemanticMeta`
+2. 结果持久化到 `DualPadSemanticCache.bin`，并通过 fingerprint 校验一致性
+3. 运行时通过 `PlayPathHook + InstanceTraceCache` 拿到 `source/sound formId`
+4. `DecisionEngine` 用 `FormID` O(1) 查 `FormSemanticCache`，命中即走 `L1FormSemantic`
+5. 全流程不依赖运行时字符串匹配，兼顾命中率与稳定性
+```

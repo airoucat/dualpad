@@ -29,6 +29,7 @@ namespace dualpad::haptics
     {
         Unknown = 0,
         Footstep, WeaponSwing, HitImpact, SpellCast, SpellImpact, BowRelease, Jump, Land, Block, Shout,
+        UI, Music, Ambient,
         CustomEventStart = 128, CustomEventEnd = 255
     };
 
@@ -45,6 +46,9 @@ namespace dualpad::haptics
         case EventType::Land:        return "Land";
         case EventType::Block:       return "Block";
         case EventType::Shout:       return "Shout";
+        case EventType::UI:          return "UI";
+        case EventType::Music:       return "Music";
+        case EventType::Ambient:     return "Ambient";
         default:                     return "Unknown";
         }
     }

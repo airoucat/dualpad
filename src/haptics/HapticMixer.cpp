@@ -2,9 +2,14 @@
 #include "haptics/HapticMixer.h"
 #include "haptics/DecisionEngine.h"
 #include "haptics/AudioOnlyScorer.h"
+#include "haptics/DynamicHapticPool.h"
 #include "haptics/HapticsConfig.h"
 #include "haptics/HidOutput.h"
 #include "haptics/EngineAudioTap.h"
+#include "haptics/EventNormalizer.h"
+#include "haptics/MetricsReporter.h"
+#include "haptics/PlayPathHook.h"
+#include "haptics/SemanticResolver.h"
 #include "haptics/VoiceManager.h"
 
 #include <SKSE/SKSE.h>
@@ -44,6 +49,12 @@ namespace dualpad::haptics
 
         AudioOnlyScorer::GetSingleton().Initialize();
         DecisionEngine::GetSingleton().Initialize();
+        EventNormalizer::GetSingleton().ResetStats();
+        SemanticResolver::GetSingleton().ResetStats();
+        PlayPathHook::GetSingleton().ResetStats();
+        DynamicHapticPool::GetSingleton().Clear();
+        DynamicHapticPool::GetSingleton().ResetStats();
+        MetricsReporter::GetSingleton().Reset();
 
         _thread = std::jthread([this](std::stop_token st) {
             (void)st;
@@ -154,24 +165,9 @@ namespace dualpad::haptics
         auto nextStatsLog = std::chrono::steady_clock::now() + std::chrono::seconds(1);
 
         while (_running.load(std::memory_order_acquire)) {
-            static uint64_t beatA = 0;
-            if ((++beatA % 500) == 0) {
-                logger::info("[Haptics][Mixer] heartbeat A");
-            }
-
             HidFrame frame = ProcessTick();
 
-            static uint64_t beatB = 0;
-            if ((++beatB % 500) == 0) {
-                logger::info("[Haptics][Mixer] heartbeat B (before send)");
-            }
-
             HidOutput::GetSingleton().SendFrame(frame);
-
-            static uint64_t beatC = 0;
-            if ((++beatC % 500) == 0) {
-                logger::info("[Haptics][Mixer] heartbeat C (after send)");
-            }
 
             _totalTicks.fetch_add(1, std::memory_order_relaxed);
             _framesOutput.fetch_add(1, std::memory_order_relaxed);
@@ -196,19 +192,40 @@ namespace dualpad::haptics
                 const auto dec = DecisionEngine::GetSingleton().GetStats();
                 const auto hid = HidOutput::GetSingleton().GetStats();
                 const auto voice = VoiceManager::GetSingleton().GetStats();
+                const auto play = PlayPathHook::GetSingleton().GetStats();
+                const auto norm = EventNormalizer::GetSingleton().GetStats();
+                const auto dyn = DynamicHapticPool::GetSingleton().GetStats();
+                const auto metrics = MetricsReporter::GetSingleton().SnapshotAndReset(
+                    VoiceManager::GetSingleton().GetQueueSize(),
+                    voice.featuresDropped);
 
                 logger::info(
                     "[Haptics][AudioOnly] SubmitTap(calls={} pushed={} skipCmp={}) "
+                    "PlayPath(init={} initRes={} submit={} submitRes={} upsert={} bindMiss={}) "
+                    "Normalize(patchForm={} patchEvt={} bindMiss={} traceMiss={}) "
                     "AudioOnly(pulled={} produced={} lowDrop={}) "
-                    "Decision(l1={} l2={} l3={} noCand={} lowFb={}) "
-                    "FormSemantic(hit={} miss={}) "
+                    "Decision(l1={} l2={} l3={} noCand={} lowFb={} dynHit={} dynMiss={}) "
+                    "DynLearn(l2={} noKey={} lowScore={}) "
+                    "FormSemantic(hit={} miss={} noForm={} cacheMiss={} lowConf={}) "
+                    "DynPool(size={} admit={} rejKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} evict={}) "
+                    "Metrics(latP50={}us latP95={}us samples={} unknown={:.2f} metaMis={:.2f} qDepth={} drop={}) "
                     "Trace(bindHit={}) "
                     "Mixer(active={} frames={} ticks={} src={}) "
                     "HID(frames={} fail={} ok={} noDev={} writeFail={}) "
-                    "Voice(drop={}) NoCandSplit(tickNoAudio={} audioNoMatch={}) TraceMiss(unbound={} expired={})",
+                    "Voice(drop={}) NoCandSplit(tickNoAudio={} audioNoMatch={}) TraceMiss(unbound={} expired={} disabled={})",
                     tap.submitCalls,
                     tap.submitFeaturesPushed,
                     tap.submitCompressedSkipped,
+                    play.initCalls,
+                    play.initResolved,
+                    play.submitCalls,
+                    play.submitResolved,
+                    play.traceUpserts,
+                    play.bindingMisses,
+                    norm.patchedFormID,
+                    norm.patchedEventType,
+                    norm.bindingMiss,
+                    norm.traceMiss,
                     aos.featuresPulled,
                     aos.sourcesProduced,
                     aos.lowEnergyDropped,
@@ -217,8 +234,33 @@ namespace dualpad::haptics
                     dec.l3Count,
                     dec.noCandidate,
                     dec.lowScoreFallback,
+                    dec.dynamicPoolHit,
+                    dec.dynamicPoolMiss,
+                    dec.dynamicPoolLearnFromL2,
+                    dec.dynamicPoolLearnFromL2NoKey,
+                    dec.dynamicPoolLearnFromL2LowScore,
                     dec.l1FormSemanticHit,
                     dec.l1FormSemanticMiss,
+                    dec.l1FormSemanticNoFormID,
+                    dec.l1FormSemanticCacheMiss,
+                    dec.l1FormSemanticLowConfidence,
+                    dyn.currentSize,
+                    dyn.admitted,
+                    dyn.rejectedNoKey,
+                    dyn.rejectedLowConfidence,
+                    dyn.shadowCalls,
+                    dyn.shadowHits,
+                    dyn.shadowMisses,
+                    dyn.resolveHits,
+                    dyn.resolveMisses,
+                    dyn.evicted,
+                    metrics.latencyP50Us,
+                    metrics.latencyP95Us,
+                    metrics.sampleCount,
+                    metrics.unknownRatio,
+                    metrics.metaMismatchRatio,
+                    metrics.queueDepth,
+                    metrics.dropCount,
                     dec.traceBindHit,
                     mixer.activeSources,
                     mixer.framesOutput,
@@ -233,7 +275,8 @@ namespace dualpad::haptics
                     dec.tickNoAudio,
                     dec.audioPresentNoMatch,
                     dec.traceBindMissUnbound,
-                    dec.traceBindMissExpired);
+                    dec.traceBindMissExpired,
+                    dec.traceBindBypassDisabled);
             }
         }
 
@@ -245,6 +288,7 @@ namespace dualpad::haptics
         _focusManager.Update();
 
         auto decisions = DecisionEngine::GetSingleton().Update();
+        MetricsReporter::GetSingleton().OnDecisions(decisions, ToQPC(Now()));
         for (auto& d : decisions) {
             AddSource(d.source);
         }

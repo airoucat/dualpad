@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "input/InputContext.h"
+#include "input/RaceTypeCache.h"
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 
@@ -146,11 +147,11 @@ namespace dualpad::input
 
         auto* race = player->GetRace();
         if (race) {
-            auto raceName = race->GetFormEditorID();
-            if (raceName && std::string_view(raceName).find("Werewolf") != std::string_view::npos) {
+            const auto raceType = RaceTypeCache::GetSingleton().Resolve(race->GetFormID());
+            if (raceType == RaceType::Werewolf) {
                 return InputContext::Werewolf;
             }
-            if (raceName && std::string_view(raceName).find("VampireLord") != std::string_view::npos) {
+            if (raceType == RaceType::VampireLord) {
                 return InputContext::VampireLord;
             }
         }

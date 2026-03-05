@@ -10,10 +10,39 @@
 #include "haptics/HapticsSystem.h"
 #include "haptics/HapticsConfig.h"
 
+#include <atomic>
+#include <cstdlib>
+
 namespace logger = SKSE::log;
 
 namespace
 {
+    std::atomic_bool g_shutdownDone{ false };
+
+    void ShutdownSystems(const char* reason)
+    {
+        if (g_shutdownDone.exchange(true)) {
+            return;
+        }
+
+        logger::info("[DualPad] Shutdown begin ({})", reason ? reason : "unknown");
+
+        auto& hapticsSystem = dualpad::haptics::HapticsSystem::GetSingleton();
+        if (hapticsSystem.IsInitialized()) {
+            hapticsSystem.Shutdown();
+        }
+
+        dualpad::input::StopHidReader();
+        dualpad::utils::ScreenshotManager::GetSingleton().Stop();
+
+        logger::info("[DualPad] Shutdown complete ({})", reason ? reason : "unknown");
+    }
+
+    void ShutdownAtExit()
+    {
+        ShutdownSystems("atexit");
+    }
+
     void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
     {
         if (!msg) {
@@ -73,6 +102,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::Init(skse);
 
     logger::info("DualPad v1.0.0 loaded");
+
+    std::atexit(ShutdownAtExit);
 
     if (auto* messaging = SKSE::GetMessagingInterface(); messaging) {
         if (!messaging->RegisterListener(OnSKSEMessage)) {

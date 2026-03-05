@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "haptics/EngineAudioTap.h"
+#include "haptics/PlayPathHook.h"
 #include "haptics/VoiceManager.h"
 #include "haptics/HapticsTypes.h"
 #include "haptics/VoiceBindingMap.h"
@@ -13,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,6 +29,7 @@ namespace dualpad::haptics
         using InitSound_t = std::int64_t(__fastcall*)(std::uintptr_t a1);
         inline InitSound_t g_origInitSound{ nullptr };
         constexpr bool kLogCompressedSkip = false;
+        constexpr bool kVerboseProbeLogs = false;
         // SkyrimSE 1.5.97
         constexpr std::uintptr_t kRva_Sub_140BFD780 = 0x00BFD780;
 
@@ -86,23 +89,41 @@ namespace dualpad::haptics
             return e <= r;
         }
 
-        static void EnsureVoiceBound(IXAudio2SourceVoice* voice)
+        struct EnsureBindResult
+        {
+            bool ok{ false };
+            bool createdNewBinding{ false };
+            VoiceBinding binding{};
+        };
+
+        static EnsureBindResult EnsureVoiceBound(IXAudio2SourceVoice* voice)
         {
             if (!voice) {
-                return;
+                return {};
             }
 
             const auto vp = reinterpret_cast<std::uintptr_t>(voice);
             auto& map = VoiceBindingMap::GetSingleton();
 
             // 已绑定就不重复绑
-            if (map.TryGet(vp).has_value()) {
-                return;
+            if (auto existing = map.TryGet(vp); existing.has_value()) {
+                return EnsureBindResult{ true, false, *existing };
             }
 
             const auto gen = map.BumpGeneration(vp);
             const auto iid = g_nextInstanceId.fetch_add(1, std::memory_order_relaxed);
-            map.Bind(vp, gen, iid, ToQPC(Now()));
+            const auto nowUs = ToQPC(Now());
+            map.Bind(vp, gen, iid, nowUs);
+            return EnsureBindResult{
+                true,
+                true,
+                VoiceBinding{
+                    vp,
+                    gen,
+                    iid,
+                    nowUs
+                }
+            };
         }
 
         static bool SafeReadPtr(const void* addr, void*& out)
@@ -227,6 +248,12 @@ namespace dualpad::haptics
                 return orig ? orig(self, pBuffer, pBufferWMA) : E_FAIL;
             }
 
+            const auto nowUs = ToQPC(Now());
+            // Keep binding fresh on each submit so L1 trace TTL reflects active audio flow.
+            (void)VoiceBindingMap::GetSingleton().Touch(
+                reinterpret_cast<std::uintptr_t>(self), nowUs);
+            PlayPathHook::GetSingleton().OnSubmitContext(self, pBuffer, nowUs);
+
             if (pBufferWMA != nullptr) {
                 g_submitCompressedSkipped.fetch_add(1, std::memory_order_relaxed);
                 return orig ? orig(self, pBuffer, pBufferWMA) : S_OK;
@@ -286,7 +313,7 @@ namespace dualpad::haptics
 
                         if (rms > 0.0005f || peak > 0.0015f) {
                             AudioFeatureMsg msg{};
-                            msg.qpcStart = ToQPC(Now());
+                            msg.qpcStart = nowUs;
                             msg.qpcEnd = msg.qpcStart + durUs;
                             msg.voiceId = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(self));
                             msg.sampleRate = sampleRate;
@@ -336,8 +363,10 @@ namespace dualpad::haptics
                 return true;
             }
 
-            logger::info("[Haptics][SafeProbe] install submit hook: vtbl=0x{:X} slot{}=0x{:X} mod={}",
-                vtblAddr, kSubmitSlot, reinterpret_cast<std::uintptr_t>(target), ModuleNameFromAddr(target));
+            if constexpr (kVerboseProbeLogs) {
+                logger::info("[Haptics][SafeProbe] install submit hook: vtbl=0x{:X} slot{}=0x{:X} mod={}",
+                    vtblAddr, kSubmitSlot, reinterpret_cast<std::uintptr_t>(target), ModuleNameFromAddr(target));
+            }
 
             ProbeSubmit_t orig = nullptr;
             auto ch = MH_CreateHook(target, &Hook_SubmitSlot_AsSubmit, reinterpret_cast<void**>(&orig));
@@ -356,8 +385,10 @@ namespace dualpad::haptics
             g_probeTargets.push_back(target);
             g_hookedVtables.insert(vtblAddr);
 
-            logger::info("[Haptics][SafeProbe] submit hook installed OK slot={} vtbl=0x{:X}",
-                kSubmitSlot, vtblAddr);
+            if constexpr (kVerboseProbeLogs) {
+                logger::info("[Haptics][SafeProbe] submit hook installed OK slot={} vtbl=0x{:X}",
+                    kSubmitSlot, vtblAddr);
+            }
             return true;
         }
 
@@ -384,18 +415,27 @@ namespace dualpad::haptics
                 vtblHits = ++g_vtblSeenCount[rawVtAddr];
             }
 
-            if (n <= kLogInitHitFirstN || (n % kLogInitHitEveryN) == 0) {
-                logger::info(
-                    "[Haptics][EngineAudioTap] hit={} raw_ok={} raw=0x{:X} rawVt=0x{:X} resolved=0x{:X} vtblHits={}",
-                    n, okRaw ? 1 : 0,
-                    reinterpret_cast<std::uintptr_t>(raw),
-                    rawVtAddr,
-                    reinterpret_cast<std::uintptr_t>(voice),
-                    vtblHits);
+            if constexpr (kVerboseProbeLogs) {
+                if (n <= kLogInitHitFirstN || (n % kLogInitHitEveryN) == 0) {
+                    logger::info(
+                        "[Haptics][EngineAudioTap] hit={} raw_ok={} raw=0x{:X} rawVt=0x{:X} resolved=0x{:X} vtblHits={}",
+                        n, okRaw ? 1 : 0,
+                        reinterpret_cast<std::uintptr_t>(raw),
+                        rawVtAddr,
+                        reinterpret_cast<std::uintptr_t>(voice),
+                        vtblHits);
+                }
             }
 
             if (voice && vtblHits >= kMinVtableHitsBeforeHook) {
-                EnsureVoiceBound(voice);
+                const auto bind = EnsureVoiceBound(voice);
+                if (bind.ok && bind.createdNewBinding) {
+                    PlayPathHook::GetSingleton().OnInitSoundObject(
+                        a1,
+                        bind.binding.voicePtr,
+                        bind.binding.instanceId,
+                        bind.binding.tsUs);
+                }
                 (void)HookSubmitSlotFromVoice(voice);
             }
 

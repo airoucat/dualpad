@@ -80,6 +80,15 @@ namespace dualpad::haptics
         bool audioDrivenPreferAudioOnly{ true };
         bool fallbackBaseWhenNoMatch{ true };
 
+        // Dynamic pool (session-only Top-K)
+        bool enableDynamicHapticPool{ true };
+        std::uint32_t dynamicPoolTopK{ 64 };
+        float dynamicPoolMinConfidence{ 0.62f };
+        float dynamicPoolOutputCap{ 0.75f };
+        bool enableDynamicPoolShadowProbe{ true };
+        bool enableDynamicPoolLearnFromL2{ false };
+        float dynamicPoolL2MinConfidence{ 0.62f };
+
         // Device
         std::string outputBackend{ "hid" };
         std::uint32_t retryCount{ 3 };
@@ -98,6 +107,7 @@ namespace dualpad::haptics
         // Semantic cache
         bool enableFormSemanticCache{ true };
         bool enableL1FormSemantic{ true };
+        bool enableL1VoiceTrace{ true };
         float l1FormSemanticMinConfidence{ 0.70f };
         std::string semanticRulesPath{ "Data/SKSE/Plugins/DualPadSemanticRules.json" };
         std::string semanticCachePath{ "Data/SKSE/Plugins/DualPadSemanticCache.bin" };
@@ -137,6 +147,7 @@ namespace dualpad::haptics
         void LoadModeConfig(const std::unordered_map<std::string, std::string>& values);
         void LoadEventPriorityConfig(const std::unordered_map<std::string, std::string>& values);
         void LoadDuckingMatrix(const std::unordered_map<std::string, std::string>& values);
+        void LoadDynamicPoolConfig(const std::unordered_map<std::string, std::string>& values);
         void LoadExtensionConfig(const std::unordered_map<std::string, std::string>& values);
     };
 }

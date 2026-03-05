@@ -15,11 +15,15 @@ namespace dualpad::haptics
     enum class DecisionReason : std::uint8_t
     {
         L1FormSemantic,
+        L1FormSemanticNoFormID,
+        L1FormSemanticCacheMiss,
+        L1FormSemanticLowConfidence,
         L1TraceHit,
         L1TraceMiss,
         L2HighScore,
         L2MidScore,
         L2LowScorePass,
+        L3DynamicPoolHit,
         L3LowScoreFallback,
         L1Disabled,
         NoCandidate,
@@ -58,8 +62,17 @@ namespace dualpad::haptics
             std::uint64_t audioPresentNoMatch{ 0 };
             std::uint64_t traceBindMissUnbound{ 0 };
             std::uint64_t traceBindMissExpired{ 0 };
+            std::uint64_t traceBindBypassDisabled{ 0 };
             std::uint64_t l1FormSemanticHit{ 0 };
             std::uint64_t l1FormSemanticMiss{ 0 };
+            std::uint64_t l1FormSemanticNoFormID{ 0 };
+            std::uint64_t l1FormSemanticCacheMiss{ 0 };
+            std::uint64_t l1FormSemanticLowConfidence{ 0 };
+            std::uint64_t dynamicPoolHit{ 0 };
+            std::uint64_t dynamicPoolMiss{ 0 };
+            std::uint64_t dynamicPoolLearnFromL2{ 0 };
+            std::uint64_t dynamicPoolLearnFromL2NoKey{ 0 };
+            std::uint64_t dynamicPoolLearnFromL2LowScore{ 0 };
         };
         Stats GetStats() const;
         void ResetStats();
@@ -80,7 +93,16 @@ namespace dualpad::haptics
         std::atomic<std::uint64_t> _audioPresentNoMatch{ 0 };
         std::atomic<std::uint64_t> _traceBindMissUnbound{ 0 };
         std::atomic<std::uint64_t> _traceBindMissExpired{ 0 };
+        std::atomic<std::uint64_t> _traceBindBypassDisabled{ 0 };
         std::atomic<std::uint64_t> _l1FormSemanticHit{ 0 };
         std::atomic<std::uint64_t> _l1FormSemanticMiss{ 0 };
+        std::atomic<std::uint64_t> _l1FormSemanticNoFormID{ 0 };
+        std::atomic<std::uint64_t> _l1FormSemanticCacheMiss{ 0 };
+        std::atomic<std::uint64_t> _l1FormSemanticLowConfidence{ 0 };
+        std::atomic<std::uint64_t> _dynamicPoolHit{ 0 };
+        std::atomic<std::uint64_t> _dynamicPoolMiss{ 0 };
+        std::atomic<std::uint64_t> _dynamicPoolLearnFromL2{ 0 };
+        std::atomic<std::uint64_t> _dynamicPoolLearnFromL2NoKey{ 0 };
+        std::atomic<std::uint64_t> _dynamicPoolLearnFromL2LowScore{ 0 };
     };
 }

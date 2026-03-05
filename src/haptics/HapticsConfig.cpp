@@ -214,6 +214,9 @@ namespace dualpad::haptics
                 else if (sec == "DuckingMatrix") {
                     LoadDuckingMatrix(kv);
                 }
+                else if (sec == "DynamicPool") {
+                    LoadDynamicPoolConfig(kv);
+                }
                 else if (sec == "ExtensionAPI") {
                     LoadExtensionConfig(kv);
                 }
@@ -332,6 +335,46 @@ namespace dualpad::haptics
         if (values.count("trace_binding_ttl_ms")) traceBindingTtlMs = std::stoul(values.at("trace_binding_ttl_ms"));
     }
 
+    void HapticsConfig::LoadDynamicPoolConfig(const std::unordered_map<std::string, std::string>& values)
+    {
+        if (values.count("enable_dynamic_haptic_pool")) {
+            enableDynamicHapticPool = ParseBool(values.at("enable_dynamic_haptic_pool"), enableDynamicHapticPool);
+        }
+        if (values.count("dynamic_pool_top_k")) {
+            dynamicPoolTopK = std::max<std::uint32_t>(1, std::stoul(values.at("dynamic_pool_top_k")));
+        }
+        if (values.count("dynamic_pool_min_confidence")) {
+            dynamicPoolMinConfidence = std::clamp(
+                std::stof(values.at("dynamic_pool_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("dynamic_pool_output_cap")) {
+            dynamicPoolOutputCap = std::clamp(
+                std::stof(values.at("dynamic_pool_output_cap")), 0.0f, 1.0f);
+        }
+        if (values.count("enable_dynamic_pool_shadow_probe")) {
+            enableDynamicPoolShadowProbe = ParseBool(
+                values.at("enable_dynamic_pool_shadow_probe"), enableDynamicPoolShadowProbe);
+        }
+        if (values.count("enable_dynamic_pool_learn_from_l2")) {
+            enableDynamicPoolLearnFromL2 = ParseBool(
+                values.at("enable_dynamic_pool_learn_from_l2"), enableDynamicPoolLearnFromL2);
+        }
+        if (values.count("dynamic_pool_l2_min_confidence")) {
+            dynamicPoolL2MinConfidence = std::clamp(
+                std::stof(values.at("dynamic_pool_l2_min_confidence")), 0.0f, 1.0f);
+        }
+
+        logger::info(
+            "[Haptics][Config] DynamicPool enabled={} topK={} minConf={:.2f} outputCap={:.2f} shadowProbe={} learnL2={} l2Min={:.2f}",
+            enableDynamicHapticPool,
+            dynamicPoolTopK,
+            dynamicPoolMinConfidence,
+            dynamicPoolOutputCap,
+            enableDynamicPoolShadowProbe,
+            enableDynamicPoolLearnFromL2,
+            dynamicPoolL2MinConfidence);
+    }
+
     void HapticsConfig::LoadSemanticConfig(const std::unordered_map<std::string, std::string>& values)
     {
         if (values.count("enable_form_semantic_cache")) {
@@ -339,6 +382,9 @@ namespace dualpad::haptics
         }
         if (values.count("enable_l1_form_semantic")) {
             enableL1FormSemantic = ParseBool(values.at("enable_l1_form_semantic"), enableL1FormSemantic);
+        }
+        if (values.count("enable_l1_voice_trace")) {
+            enableL1VoiceTrace = ParseBool(values.at("enable_l1_voice_trace"), enableL1VoiceTrace);
         }
         if (values.count("l1_form_semantic_min_confidence")) {
             l1FormSemanticMinConfidence = std::clamp(
@@ -355,9 +401,10 @@ namespace dualpad::haptics
         }
 
         logger::info(
-            "[Haptics][Config] Semantic cache={} l1={} minConf={:.2f} rules={} cache={} forceRebuild={}",
+            "[Haptics][Config] Semantic cache={} l1={} l1VoiceTrace={} minConf={:.2f} rules={} cache={} forceRebuild={}",
             enableFormSemanticCache,
             enableL1FormSemantic,
+            enableL1VoiceTrace,
             l1FormSemanticMinConfidence,
             semanticRulesPath,
             semanticCachePath,
@@ -421,7 +468,10 @@ namespace dualpad::haptics
             {"jump", EventType::Jump},
             {"footstep", EventType::Footstep},
             {"bow_release", EventType::BowRelease},
-            {"shout", EventType::Shout}
+            {"shout", EventType::Shout},
+            {"ui", EventType::UI},
+            {"music", EventType::Music},
+            {"ambient", EventType::Ambient}
         };
 
         auto key = ToLower(str);

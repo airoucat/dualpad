@@ -36,5 +36,6 @@ namespace dualpad::haptics
 
         void StopThreads();
         void ShutdownCorePipeline();
+        void PrintSessionSummary();
     };
 }

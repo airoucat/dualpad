@@ -22,6 +22,7 @@ namespace dualpad::haptics
 
         std::uint32_t BumpGeneration(std::uintptr_t voicePtr);
         void Bind(std::uintptr_t voicePtr, std::uint32_t generation, std::uint64_t instanceId, std::uint64_t nowUs);
+        bool Touch(std::uintptr_t voicePtr, std::uint64_t nowUs);
         std::optional<VoiceBinding> TryGet(std::uintptr_t voicePtr) const;
         void Unbind(std::uintptr_t voicePtr);
         void Clear();
