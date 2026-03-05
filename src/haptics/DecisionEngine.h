@@ -55,6 +55,9 @@ namespace dualpad::haptics
             std::uint64_t l1Count{ 0 };
             std::uint64_t l2Count{ 0 };
             std::uint64_t l3Count{ 0 };
+            std::uint64_t l2HighScore{ 0 };
+            std::uint64_t l2MidScore{ 0 };
+            std::uint64_t l2LowScorePass{ 0 };
             std::uint64_t noCandidate{ 0 };
             std::uint64_t lowScoreFallback{ 0 };
             std::uint64_t traceBindHit{ 0 };
@@ -85,6 +88,9 @@ namespace dualpad::haptics
         std::atomic<std::uint64_t> _l1Count{ 0 };
         std::atomic<std::uint64_t> _l2Count{ 0 };
         std::atomic<std::uint64_t> _l3Count{ 0 };
+        std::atomic<std::uint64_t> _l2HighScore{ 0 };
+        std::atomic<std::uint64_t> _l2MidScore{ 0 };
+        std::atomic<std::uint64_t> _l2LowScorePass{ 0 };
         std::atomic<std::uint64_t> _noCandidate{ 0 };
         std::atomic<std::uint64_t> _lowScoreFallback{ 0 };
         std::atomic<std::uint64_t> _traceBindHit{ 0 };

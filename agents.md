@@ -178,6 +178,9 @@
 - P2 阴影评估：`DynamicHapticPool::ShadowCanResolve` 已接入（不改输出），新增 `shCall/shHit/shMiss`
 - P2 可观测增强：`[Haptics][AudioOnly]` 与 `[Haptics][DynamicPool]` 已包含动态池 shadow 指标
 - P2 动态学习闭环：已支持 `L2 -> DynamicPool` 可选学习（`enable_dynamic_pool_learn_from_l2`），并验证 `l2Learn=560 admitted=560 l3Hit=59 l3Miss=18`
+- P1 口径补齐：`DecisionEngine/HapticMixer/SessionSummary` 已补充 `reason/reject/fallback` 分型字段（含 `l2High/l2Mid/l2LowPass` 与 `norm/semantic/trace` reject 细分）
+- P2 灰度保护：`DynamicPool` 新增 `dynamic_pool_resolve_min_hits` 与 `dynamic_pool_resolve_min_input_energy`，并新增 `rejMinHit/rejLowIn` 统计用于误触风险观测
+- P2 Submit补强：`PlayPathHook::OnSubmitContext` 支持限次重扫与间隔重扫（新增 `retry/skipRL/skipMax` 统计），避免 submit 路径一次 miss 后永久不再尝试
 - 日志降噪：`EngineAudioTap/SafeProbe` 已改为默认静默（`kVerboseProbeLogs=false`）
 
 ### 当前现状
@@ -189,10 +192,9 @@
 
 ### 下一步优先级（P1 -> P2）
 1. **P1**：补 `EventNormalizer`、`SemanticResolver`，完成运行时纯查表语义分辨（禁字符串匹配）
-2. **P1**：完善 reason code 与 reject/fallback 分型，补齐指标口径
-3. **P2**：基于 `shHit/shMiss` 数据调参（优先评估 `dynamic_pool_min_confidence`）
-4. **P2**：灰度放开 `fallbackBaseWhenNoMatch=true` 场景，验证 `dynamicPoolHit` 提升与误触风险
-5. **P2（可选）**：继续提升 `SubmitContext` 路径命中率（当前 `initRes` 已能支撑主命中，`submitRes` 可后续优化）
+2. **P2**：基于 `shHit/shMiss` 与 `reason/reject/fallback` 数据调参（优先评估 `dynamic_pool_min_confidence`）
+3. **P2**：灰度放开 `fallbackBaseWhenNoMatch=true` 场景，验证 `dynamicPoolHit` 提升与误触风险
+4. **P2（可选）**：继续提升 `SubmitContext` 路径命中率（当前 `initRes` 已能支撑主命中，`submitRes` 可后续优化）
 
 ### 回滚与开关
 - `enableFormSemanticCache`
@@ -200,6 +202,8 @@
 - `semanticForceRebuild`
 - `enableDynamicPoolLearnFromL2`
 - `dynamicPoolMinConfidence` / `dynamicPoolL2MinConfidence`（当前默认收敛到 `0.62 / 0.62`）
+- `dynamic_pool_resolve_min_hits` / `dynamic_pool_resolve_min_input_energy`（当前默认 `2 / 0.04`）
+- submit 重扫参数（当前代码常量）：`maxAttempts=3`，`retryInterval=120ms`
 - 任一异常保持 fail-open，不阻断 HID 主输出
 
 ---

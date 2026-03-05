@@ -23,6 +23,20 @@ namespace dualpad::haptics
         constexpr std::uint16_t kFlagSubmitScanned = 1u << 1;
         constexpr std::uint16_t kFlagResolvedFromInit = 1u << 2;
         constexpr std::uint16_t kFlagResolvedFromSubmit = 1u << 3;
+        constexpr std::uint16_t kSubmitScanAttemptsMask = 0x0F00u;
+        constexpr std::uint8_t kSubmitScanAttemptsShift = 8;
+
+        std::uint8_t GetSubmitScanAttempts(std::uint16_t flags)
+        {
+            return static_cast<std::uint8_t>((flags & kSubmitScanAttemptsMask) >> kSubmitScanAttemptsShift);
+        }
+
+        void SetSubmitScanAttempts(std::uint16_t& flags, std::uint8_t attempts)
+        {
+            const auto clamped = static_cast<std::uint8_t>(std::min<std::uint8_t>(attempts, 0x0F));
+            flags = static_cast<std::uint16_t>(flags & ~kSubmitScanAttemptsMask);
+            flags = static_cast<std::uint16_t>(flags | (static_cast<std::uint16_t>(clamped) << kSubmitScanAttemptsShift));
+        }
 
         EventType SemanticToEventType(SemanticGroup group)
         {
@@ -86,6 +100,7 @@ namespace dualpad::haptics
                 a.preferredEvent == b.preferredEvent &&
                 a.semantic == b.semantic &&
                 a.confidence == b.confidence &&
+                a.initObjectPtr == b.initObjectPtr &&
                 a.flags == b.flags &&
                 a.tsUs == b.tsUs;
         }
@@ -250,6 +265,66 @@ namespace dualpad::haptics
             return resolvedCount;
         }
 
+        std::uint32_t ProbePointerNeighborhoodForSemanticForms(
+            std::uintptr_t rootPtr,
+            std::size_t rootBytes,
+            TraceMeta& io,
+            bool preferSource)
+        {
+            if (rootPtr == 0 || rootBytes == 0) {
+                return 0;
+            }
+
+            const auto* root = reinterpret_cast<const std::uint8_t*>(rootPtr);
+            const auto rootReadable = GetReadableSpan(root, rootBytes);
+            if (rootReadable < sizeof(std::uintptr_t)) {
+                return 0;
+            }
+
+            std::uint32_t resolvedCount = 0;
+            for (std::size_t off = 0; off + sizeof(std::uintptr_t) <= rootReadable; off += sizeof(std::uintptr_t)) {
+                std::uintptr_t p1 = 0;
+                if (!ReadValue(root, rootReadable, off, p1)) {
+                    continue;
+                }
+                if (p1 == 0 || p1 == rootPtr) {
+                    continue;
+                }
+
+                resolvedCount += ProbeMemoryForSemanticForms(
+                    p1,
+                    kSubmitContextScanBytes,
+                    io,
+                    preferSource);
+                if (io.sourceFormId != 0 && io.soundFormId != 0) {
+                    return resolvedCount;
+                }
+
+                const auto* lvl1 = reinterpret_cast<const std::uint8_t*>(p1);
+                const auto lvl1Readable = GetReadableSpan(lvl1, kNestedScanBytes);
+                for (std::size_t off1 = 0; off1 + sizeof(std::uintptr_t) <= lvl1Readable; off1 += sizeof(std::uintptr_t)) {
+                    std::uintptr_t p2 = 0;
+                    if (!ReadValue(lvl1, lvl1Readable, off1, p2)) {
+                        continue;
+                    }
+                    if (p2 == 0 || p2 == rootPtr || p2 == p1) {
+                        continue;
+                    }
+
+                    resolvedCount += ProbeMemoryForSemanticForms(
+                        p2,
+                        kSubmitContextScanBytes,
+                        io,
+                        preferSource);
+                    if (io.sourceFormId != 0 && io.soundFormId != 0) {
+                        return resolvedCount;
+                    }
+                }
+            }
+
+            return resolvedCount;
+        }
+
         void UpsertTraceIfChanged(
             const std::optional<TraceMeta>& oldMeta,
             const TraceMeta& newMeta,
@@ -292,6 +367,7 @@ namespace dualpad::haptics
         TraceMeta next = oldMeta.value_or(TraceMeta{});
         next.instanceId = instanceId;
         next.tsUs = nowUs;
+        next.initObjectPtr = initSoundObject;
         next.flags |= kFlagInitScanned;
 
         const auto resolved = ProbeMemoryForSemanticForms(initSoundObject, kInitScanBytes, next, true);
@@ -319,8 +395,11 @@ namespace dualpad::haptics
 
         _counters.submitCalls.fetch_add(1, std::memory_order_relaxed);
 
-        if (!voice || !buffer || buffer->pContext == nullptr) {
+        const bool hasSubmitContext = (buffer != nullptr && buffer->pContext != nullptr);
+        if (!hasSubmitContext) {
             _counters.submitNoContext.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (!voice) {
             return;
         }
 
@@ -332,33 +411,110 @@ namespace dualpad::haptics
         }
 
         auto oldMeta = InstanceTraceCache::GetSingleton().TryGet(binding->instanceId);
+        if (oldMeta.has_value()) {
+            _counters.submitTraceMetaHit.fetch_add(1, std::memory_order_relaxed);
+        }
+        else {
+            _counters.submitTraceMetaMiss.fetch_add(1, std::memory_order_relaxed);
+        }
+
         TraceMeta next = oldMeta.value_or(TraceMeta{});
         next.instanceId = binding->instanceId;
+        const auto prevTsUs = next.tsUs;
         next.tsUs = nowUs;
+
+        const auto maxAttempts = static_cast<std::uint8_t>(
+            std::clamp<std::uint32_t>(cfg.submitSemanticScanMaxAttempts, 1u, 15u));
+        const auto retryIntervalUs =
+            static_cast<std::uint64_t>(std::max<std::uint32_t>(1u, cfg.submitSemanticRetryIntervalMs)) * 1000ull;
 
         if (next.sourceFormId != 0 || next.soundFormId != 0) {
             _counters.submitSkipResolved.fetch_add(1, std::memory_order_relaxed);
+            if ((next.flags & kFlagResolvedFromInit) != 0) {
+                _counters.submitSkipResolvedFromInit.fetch_add(1, std::memory_order_relaxed);
+            }
+            else if ((next.flags & kFlagResolvedFromSubmit) != 0) {
+                _counters.submitSkipResolvedFromSubmit.fetch_add(1, std::memory_order_relaxed);
+            }
+            else {
+                _counters.submitSkipResolvedOther.fetch_add(1, std::memory_order_relaxed);
+            }
             return;
         }
-        if ((next.flags & kFlagSubmitScanned) != 0) {
+
+        std::uintptr_t scanPtr = 0;
+        std::size_t scanBytes = kSubmitContextScanBytes;
+        bool preferSource = false;
+        bool usedNoContextFallback = false;
+        if (hasSubmitContext) {
+            scanPtr = reinterpret_cast<std::uintptr_t>(buffer->pContext);
+        }
+        else {
+            if (!cfg.enableSubmitNoContextFallback) {
+                return;
+            }
+            if (next.initObjectPtr == 0) {
+                _counters.submitNoContextNoInitPtr.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            scanPtr = next.initObjectPtr;
+            scanBytes = kInitScanBytes;
+            preferSource = true;
+            usedNoContextFallback = true;
+            _counters.submitNoContextScan.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        const auto attempts = GetSubmitScanAttempts(next.flags);
+        if (attempts >= maxAttempts) {
+            _counters.submitSkipMaxAttempts.fetch_add(1, std::memory_order_relaxed);
             _counters.submitSkipResolved.fetch_add(1, std::memory_order_relaxed);
             return;
         }
+        if (attempts > 0) {
+            const auto deltaUs = (nowUs > prevTsUs) ? (nowUs - prevTsUs) : 0ull;
+            if (deltaUs < retryIntervalUs) {
+                _counters.submitSkipRateLimit.fetch_add(1, std::memory_order_relaxed);
+                _counters.submitSkipResolved.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            _counters.submitRetryScans.fetch_add(1, std::memory_order_relaxed);
+        }
 
         next.flags |= kFlagSubmitScanned;
+        SetSubmitScanAttempts(next.flags, static_cast<std::uint8_t>(attempts + 1));
+        _counters.submitScanExecuted.fetch_add(1, std::memory_order_relaxed);
 
-        const auto resolved = ProbeMemoryForSemanticForms(
-            reinterpret_cast<std::uintptr_t>(buffer->pContext),
-            kSubmitContextScanBytes,
-            next,
-            false);
+        auto resolved = ProbeMemoryForSemanticForms(scanPtr, scanBytes, next, preferSource);
+        if (resolved == 0 && usedNoContextFallback && cfg.enableSubmitNoContextDeepFallback) {
+            _counters.submitNoContextDeepScan.fetch_add(1, std::memory_order_relaxed);
+            resolved = ProbePointerNeighborhoodForSemanticForms(
+                scanPtr,
+                kInitScanBytes,
+                next,
+                preferSource);
+            if (resolved > 0) {
+                _counters.submitNoContextDeepResolved.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
 
         if (resolved > 0) {
             next.flags |= kFlagResolvedFromSubmit;
             _counters.submitResolved.fetch_add(1, std::memory_order_relaxed);
+            if (usedNoContextFallback) {
+                _counters.submitNoContextResolved.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (attempts > 0) {
+                _counters.submitResolvedOnRetry.fetch_add(1, std::memory_order_relaxed);
+            }
         }
         else {
             _counters.submitNoForm.fetch_add(1, std::memory_order_relaxed);
+            if (attempts == 0) {
+                _counters.submitNoFormFirstScan.fetch_add(1, std::memory_order_relaxed);
+            }
+            else {
+                _counters.submitNoFormRetry.fetch_add(1, std::memory_order_relaxed);
+            }
         }
 
         UpsertTraceIfChanged(oldMeta, next, _counters.traceUpserts);
@@ -376,6 +532,23 @@ namespace dualpad::haptics
         s.submitNoContext = _counters.submitNoContext.load(std::memory_order_relaxed);
         s.submitNoForm = _counters.submitNoForm.load(std::memory_order_relaxed);
         s.submitSkipResolved = _counters.submitSkipResolved.load(std::memory_order_relaxed);
+        s.submitRetryScans = _counters.submitRetryScans.load(std::memory_order_relaxed);
+        s.submitSkipRateLimit = _counters.submitSkipRateLimit.load(std::memory_order_relaxed);
+        s.submitSkipMaxAttempts = _counters.submitSkipMaxAttempts.load(std::memory_order_relaxed);
+        s.submitTraceMetaHit = _counters.submitTraceMetaHit.load(std::memory_order_relaxed);
+        s.submitTraceMetaMiss = _counters.submitTraceMetaMiss.load(std::memory_order_relaxed);
+        s.submitScanExecuted = _counters.submitScanExecuted.load(std::memory_order_relaxed);
+        s.submitResolvedOnRetry = _counters.submitResolvedOnRetry.load(std::memory_order_relaxed);
+        s.submitNoFormFirstScan = _counters.submitNoFormFirstScan.load(std::memory_order_relaxed);
+        s.submitNoFormRetry = _counters.submitNoFormRetry.load(std::memory_order_relaxed);
+        s.submitNoContextScan = _counters.submitNoContextScan.load(std::memory_order_relaxed);
+        s.submitNoContextResolved = _counters.submitNoContextResolved.load(std::memory_order_relaxed);
+        s.submitNoContextNoInitPtr = _counters.submitNoContextNoInitPtr.load(std::memory_order_relaxed);
+        s.submitNoContextDeepScan = _counters.submitNoContextDeepScan.load(std::memory_order_relaxed);
+        s.submitNoContextDeepResolved = _counters.submitNoContextDeepResolved.load(std::memory_order_relaxed);
+        s.submitSkipResolvedFromInit = _counters.submitSkipResolvedFromInit.load(std::memory_order_relaxed);
+        s.submitSkipResolvedFromSubmit = _counters.submitSkipResolvedFromSubmit.load(std::memory_order_relaxed);
+        s.submitSkipResolvedOther = _counters.submitSkipResolvedOther.load(std::memory_order_relaxed);
 
         s.bindingMisses = _counters.bindingMisses.load(std::memory_order_relaxed);
         s.traceUpserts = _counters.traceUpserts.load(std::memory_order_relaxed);
@@ -393,6 +566,23 @@ namespace dualpad::haptics
         _counters.submitNoContext.store(0, std::memory_order_relaxed);
         _counters.submitNoForm.store(0, std::memory_order_relaxed);
         _counters.submitSkipResolved.store(0, std::memory_order_relaxed);
+        _counters.submitRetryScans.store(0, std::memory_order_relaxed);
+        _counters.submitSkipRateLimit.store(0, std::memory_order_relaxed);
+        _counters.submitSkipMaxAttempts.store(0, std::memory_order_relaxed);
+        _counters.submitTraceMetaHit.store(0, std::memory_order_relaxed);
+        _counters.submitTraceMetaMiss.store(0, std::memory_order_relaxed);
+        _counters.submitScanExecuted.store(0, std::memory_order_relaxed);
+        _counters.submitResolvedOnRetry.store(0, std::memory_order_relaxed);
+        _counters.submitNoFormFirstScan.store(0, std::memory_order_relaxed);
+        _counters.submitNoFormRetry.store(0, std::memory_order_relaxed);
+        _counters.submitNoContextScan.store(0, std::memory_order_relaxed);
+        _counters.submitNoContextResolved.store(0, std::memory_order_relaxed);
+        _counters.submitNoContextNoInitPtr.store(0, std::memory_order_relaxed);
+        _counters.submitNoContextDeepScan.store(0, std::memory_order_relaxed);
+        _counters.submitNoContextDeepResolved.store(0, std::memory_order_relaxed);
+        _counters.submitSkipResolvedFromInit.store(0, std::memory_order_relaxed);
+        _counters.submitSkipResolvedFromSubmit.store(0, std::memory_order_relaxed);
+        _counters.submitSkipResolvedOther.store(0, std::memory_order_relaxed);
 
         _counters.bindingMisses.store(0, std::memory_order_relaxed);
         _counters.traceUpserts.store(0, std::memory_order_relaxed);

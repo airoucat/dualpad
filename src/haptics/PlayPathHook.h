@@ -20,6 +20,23 @@ namespace dualpad::haptics
             std::uint64_t submitNoContext{ 0 };
             std::uint64_t submitNoForm{ 0 };
             std::uint64_t submitSkipResolved{ 0 };
+            std::uint64_t submitRetryScans{ 0 };
+            std::uint64_t submitSkipRateLimit{ 0 };
+            std::uint64_t submitSkipMaxAttempts{ 0 };
+            std::uint64_t submitTraceMetaHit{ 0 };
+            std::uint64_t submitTraceMetaMiss{ 0 };
+            std::uint64_t submitScanExecuted{ 0 };
+            std::uint64_t submitResolvedOnRetry{ 0 };
+            std::uint64_t submitNoFormFirstScan{ 0 };
+            std::uint64_t submitNoFormRetry{ 0 };
+            std::uint64_t submitNoContextScan{ 0 };
+            std::uint64_t submitNoContextResolved{ 0 };
+            std::uint64_t submitNoContextNoInitPtr{ 0 };
+            std::uint64_t submitNoContextDeepScan{ 0 };
+            std::uint64_t submitNoContextDeepResolved{ 0 };
+            std::uint64_t submitSkipResolvedFromInit{ 0 };
+            std::uint64_t submitSkipResolvedFromSubmit{ 0 };
+            std::uint64_t submitSkipResolvedOther{ 0 };
 
             std::uint64_t bindingMisses{ 0 };
             std::uint64_t traceUpserts{ 0 };
@@ -57,6 +74,23 @@ namespace dualpad::haptics
             std::atomic<std::uint64_t> submitNoContext{ 0 };
             std::atomic<std::uint64_t> submitNoForm{ 0 };
             std::atomic<std::uint64_t> submitSkipResolved{ 0 };
+            std::atomic<std::uint64_t> submitRetryScans{ 0 };
+            std::atomic<std::uint64_t> submitSkipRateLimit{ 0 };
+            std::atomic<std::uint64_t> submitSkipMaxAttempts{ 0 };
+            std::atomic<std::uint64_t> submitTraceMetaHit{ 0 };
+            std::atomic<std::uint64_t> submitTraceMetaMiss{ 0 };
+            std::atomic<std::uint64_t> submitScanExecuted{ 0 };
+            std::atomic<std::uint64_t> submitResolvedOnRetry{ 0 };
+            std::atomic<std::uint64_t> submitNoFormFirstScan{ 0 };
+            std::atomic<std::uint64_t> submitNoFormRetry{ 0 };
+            std::atomic<std::uint64_t> submitNoContextScan{ 0 };
+            std::atomic<std::uint64_t> submitNoContextResolved{ 0 };
+            std::atomic<std::uint64_t> submitNoContextNoInitPtr{ 0 };
+            std::atomic<std::uint64_t> submitNoContextDeepScan{ 0 };
+            std::atomic<std::uint64_t> submitNoContextDeepResolved{ 0 };
+            std::atomic<std::uint64_t> submitSkipResolvedFromInit{ 0 };
+            std::atomic<std::uint64_t> submitSkipResolvedFromSubmit{ 0 };
+            std::atomic<std::uint64_t> submitSkipResolvedOther{ 0 };
 
             std::atomic<std::uint64_t> bindingMisses{ 0 };
             std::atomic<std::uint64_t> traceUpserts{ 0 };

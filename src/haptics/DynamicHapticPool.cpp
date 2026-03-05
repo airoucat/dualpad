@@ -38,13 +38,17 @@ namespace dualpad::haptics
         bool enabled,
         std::uint32_t topK,
         float minConfidence,
-        float outputCap)
+        float outputCap,
+        std::uint32_t resolveMinHits,
+        float resolveMinInputEnergy)
     {
         std::scoped_lock lock(_mutex);
         _enabled = enabled;
         _topK = std::max<std::uint32_t>(1, topK);
         _minConfidence = Clamp01(minConfidence);
         _outputCap = Clamp01(outputCap);
+        _resolveMinHits = std::max<std::uint32_t>(1, resolveMinHits);
+        _resolveMinInputEnergy = Clamp01(resolveMinInputEnergy);
     }
 
     void DynamicHapticPool::EvictOneLocked()
@@ -177,6 +181,18 @@ namespace dualpad::haptics
         }
 
         auto& e = it->second;
+        if (e.hits < _resolveMinHits) {
+            _resolveRejectMinHits.fetch_add(1, std::memory_order_relaxed);
+            _resolveMisses.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+
+        if (std::max(input.left, input.right) < _resolveMinInputEnergy) {
+            _resolveRejectLowInput.fetch_add(1, std::memory_order_relaxed);
+            _resolveMisses.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+
         e.hits += 1;
         e.lastSeenUs = ToQPC(Now());
 
@@ -212,6 +228,8 @@ namespace dualpad::haptics
         s.resolveCalls = _resolveCalls.load(std::memory_order_relaxed);
         s.resolveHits = _resolveHits.load(std::memory_order_relaxed);
         s.resolveMisses = _resolveMisses.load(std::memory_order_relaxed);
+        s.resolveRejectMinHits = _resolveRejectMinHits.load(std::memory_order_relaxed);
+        s.resolveRejectLowInput = _resolveRejectLowInput.load(std::memory_order_relaxed);
         s.evicted = _evicted.load(std::memory_order_relaxed);
         s.currentSize = static_cast<std::uint64_t>(_entries.size());
         return s;
@@ -229,6 +247,8 @@ namespace dualpad::haptics
         _resolveCalls.store(0, std::memory_order_relaxed);
         _resolveHits.store(0, std::memory_order_relaxed);
         _resolveMisses.store(0, std::memory_order_relaxed);
+        _resolveRejectMinHits.store(0, std::memory_order_relaxed);
+        _resolveRejectLowInput.store(0, std::memory_order_relaxed);
         _evicted.store(0, std::memory_order_relaxed);
     }
 

@@ -201,18 +201,20 @@ namespace dualpad::haptics
 
                 logger::info(
                     "[Haptics][AudioOnly] SubmitTap(calls={} pushed={} skipCmp={}) "
-                    "PlayPath(init={} initRes={} submit={} submitRes={} upsert={} bindMiss={}) "
-                    "Normalize(patchForm={} patchEvt={} bindMiss={} traceMiss={}) "
+                    "PlayPath(init={} initRes={} submit={} submitRes={} skipRes={} retry={} skipRL={} skipMax={} scan={} retryRes={} noForm1={} noFormR={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipInit={} skipSub={} skipOth={} traceHit={} traceMiss={} upsert={} bindMiss={}) "
+                    "Normalize(noVoice={} bindMiss={} traceMiss={} traceHit={} patchForm={} patchEvt={}) "
                     "AudioOnly(pulled={} produced={} lowDrop={}) "
                     "Decision(l1={} l2={} l3={} noCand={} lowFb={} dynHit={} dynMiss={}) "
+                    "Reason(l2High={} l2Mid={} l2LowPass={}) "
+                    "Reject(normNoVoice={} normBindMiss={} normTraceMiss={} semNoForm={} semCacheMiss={} semLowConf={} traceUnbound={} traceExpired={} traceDisabled={}) "
                     "DynLearn(l2={} noKey={} lowScore={}) "
                     "FormSemantic(hit={} miss={} noForm={} cacheMiss={} lowConf={}) "
-                    "DynPool(size={} admit={} rejKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} evict={}) "
+                    "DynPool(size={} admit={} rejKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} rejMinHit={} rejLowIn={} evict={}) "
                     "Metrics(latP50={}us latP95={}us samples={} unknown={:.2f} metaMis={:.2f} qDepth={} drop={}) "
                     "Trace(bindHit={}) "
                     "Mixer(active={} frames={} ticks={} src={}) "
                     "HID(frames={} fail={} ok={} noDev={} writeFail={}) "
-                    "Voice(drop={}) NoCandSplit(tickNoAudio={} audioNoMatch={}) TraceMiss(unbound={} expired={} disabled={})",
+                    "Voice(drop={}) NoCandSplit(tickNoAudio={} audioNoMatch={})",
                     tap.submitCalls,
                     tap.submitFeaturesPushed,
                     tap.submitCompressedSkipped,
@@ -220,12 +222,32 @@ namespace dualpad::haptics
                     play.initResolved,
                     play.submitCalls,
                     play.submitResolved,
+                    play.submitSkipResolved,
+                    play.submitRetryScans,
+                    play.submitSkipRateLimit,
+                    play.submitSkipMaxAttempts,
+                    play.submitScanExecuted,
+                    play.submitResolvedOnRetry,
+                    play.submitNoFormFirstScan,
+                    play.submitNoFormRetry,
+                    play.submitNoContextScan,
+                    play.submitNoContextResolved,
+                    play.submitNoContextNoInitPtr,
+                    play.submitNoContextDeepScan,
+                    play.submitNoContextDeepResolved,
+                    play.submitSkipResolvedFromInit,
+                    play.submitSkipResolvedFromSubmit,
+                    play.submitSkipResolvedOther,
+                    play.submitTraceMetaHit,
+                    play.submitTraceMetaMiss,
                     play.traceUpserts,
                     play.bindingMisses,
-                    norm.patchedFormID,
-                    norm.patchedEventType,
+                    norm.noVoiceID,
                     norm.bindingMiss,
                     norm.traceMiss,
+                    norm.traceHit,
+                    norm.patchedFormID,
+                    norm.patchedEventType,
                     aos.featuresPulled,
                     aos.sourcesProduced,
                     aos.lowEnergyDropped,
@@ -236,6 +258,18 @@ namespace dualpad::haptics
                     dec.lowScoreFallback,
                     dec.dynamicPoolHit,
                     dec.dynamicPoolMiss,
+                    dec.l2HighScore,
+                    dec.l2MidScore,
+                    dec.l2LowScorePass,
+                    norm.noVoiceID,
+                    norm.bindingMiss,
+                    norm.traceMiss,
+                    dec.l1FormSemanticNoFormID,
+                    dec.l1FormSemanticCacheMiss,
+                    dec.l1FormSemanticLowConfidence,
+                    dec.traceBindMissUnbound,
+                    dec.traceBindMissExpired,
+                    dec.traceBindBypassDisabled,
                     dec.dynamicPoolLearnFromL2,
                     dec.dynamicPoolLearnFromL2NoKey,
                     dec.dynamicPoolLearnFromL2LowScore,
@@ -253,6 +287,8 @@ namespace dualpad::haptics
                     dyn.shadowMisses,
                     dyn.resolveHits,
                     dyn.resolveMisses,
+                    dyn.resolveRejectMinHits,
+                    dyn.resolveRejectLowInput,
                     dyn.evicted,
                     metrics.latencyP50Us,
                     metrics.latencyP95Us,
@@ -273,10 +309,7 @@ namespace dualpad::haptics
                     hid.sendWriteFail,
                     voice.featuresDropped,
                     dec.tickNoAudio,
-                    dec.audioPresentNoMatch,
-                    dec.traceBindMissUnbound,
-                    dec.traceBindMissExpired,
-                    dec.traceBindBypassDisabled);
+                    dec.audioPresentNoMatch);
             }
         }
 

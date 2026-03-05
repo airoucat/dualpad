@@ -84,7 +84,9 @@ namespace dualpad::haptics
             cfg.enableDynamicHapticPool,
             cfg.dynamicPoolTopK,
             cfg.dynamicPoolMinConfidence,
-            cfg.dynamicPoolOutputCap);
+            cfg.dynamicPoolOutputCap,
+            cfg.dynamicPoolResolveMinHits,
+            cfg.dynamicPoolResolveMinInputEnergy);
         const bool enableShadowProbe = cfg.enableDynamicHapticPool && cfg.enableDynamicPoolShadowProbe;
         const bool enableL2Learn = cfg.enableDynamicHapticPool && cfg.enableDynamicPoolLearnFromL2;
         const float l2LearnMinScore = std::clamp(cfg.dynamicPoolL2MinConfidence, 0.0f, 1.0f);
@@ -209,6 +211,7 @@ namespace dualpad::haptics
             if (r.matchScore >= kHigh) {
                 r.reason = DecisionReason::L2HighScore;
                 _l2Count.fetch_add(1, std::memory_order_relaxed);
+                _l2HighScore.fetch_add(1, std::memory_order_relaxed);
                 if (enableShadowProbe) {
                     (void)dynamicPool.ShadowCanResolve(r.source);
                 }
@@ -217,6 +220,7 @@ namespace dualpad::haptics
             else if (r.matchScore >= kMid) {
                 r.reason = DecisionReason::L2MidScore;
                 _l2Count.fetch_add(1, std::memory_order_relaxed);
+                _l2MidScore.fetch_add(1, std::memory_order_relaxed);
                 if (enableShadowProbe) {
                     (void)dynamicPool.ShadowCanResolve(r.source);
                 }
@@ -245,6 +249,7 @@ namespace dualpad::haptics
                 else {
                     r.reason = DecisionReason::L2LowScorePass;
                     _l2Count.fetch_add(1, std::memory_order_relaxed);
+                    _l2LowScorePass.fetch_add(1, std::memory_order_relaxed);
                     if (enableShadowProbe) {
                         (void)dynamicPool.ShadowCanResolve(r.source);
                     }
@@ -266,6 +271,9 @@ namespace dualpad::haptics
         s.l1Count = _l1Count.load(std::memory_order_relaxed);
         s.l2Count = _l2Count.load(std::memory_order_relaxed);
         s.l3Count = _l3Count.load(std::memory_order_relaxed);
+        s.l2HighScore = _l2HighScore.load(std::memory_order_relaxed);
+        s.l2MidScore = _l2MidScore.load(std::memory_order_relaxed);
+        s.l2LowScorePass = _l2LowScorePass.load(std::memory_order_relaxed);
         s.noCandidate = _noCandidate.load(std::memory_order_relaxed);
         s.lowScoreFallback = _lowScoreFallback.load(std::memory_order_relaxed);
         s.traceBindHit = _traceBindHit.load(std::memory_order_relaxed);
@@ -292,6 +300,9 @@ namespace dualpad::haptics
         _l1Count.store(0, std::memory_order_relaxed);
         _l2Count.store(0, std::memory_order_relaxed);
         _l3Count.store(0, std::memory_order_relaxed);
+        _l2HighScore.store(0, std::memory_order_relaxed);
+        _l2MidScore.store(0, std::memory_order_relaxed);
+        _l2LowScorePass.store(0, std::memory_order_relaxed);
         _noCandidate.store(0, std::memory_order_relaxed);
         _lowScoreFallback.store(0, std::memory_order_relaxed);
         _traceBindHit.store(0, std::memory_order_relaxed);

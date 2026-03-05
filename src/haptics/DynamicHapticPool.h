@@ -24,6 +24,8 @@ namespace dualpad::haptics
             std::uint64_t resolveCalls{ 0 };
             std::uint64_t resolveHits{ 0 };
             std::uint64_t resolveMisses{ 0 };
+            std::uint64_t resolveRejectMinHits{ 0 };
+            std::uint64_t resolveRejectLowInput{ 0 };
             std::uint64_t evicted{ 0 };
             std::uint64_t currentSize{ 0 };
         };
@@ -34,7 +36,9 @@ namespace dualpad::haptics
             bool enabled,
             std::uint32_t topK,
             float minConfidence,
-            float outputCap);
+            float outputCap,
+            std::uint32_t resolveMinHits,
+            float resolveMinInputEnergy);
 
         void ObserveL1(const HapticSourceMsg& source, float matchScore);
         bool ShadowCanResolve(const HapticSourceMsg& input);
@@ -73,6 +77,8 @@ namespace dualpad::haptics
         std::uint32_t _topK{ 64 };
         float _minConfidence{ 0.80f };
         float _outputCap{ 0.75f };
+        std::uint32_t _resolveMinHits{ 2 };
+        float _resolveMinInputEnergy{ 0.04f };
 
         std::atomic<std::uint64_t> _observeCalls{ 0 };
         std::atomic<std::uint64_t> _admitted{ 0 };
@@ -84,6 +90,8 @@ namespace dualpad::haptics
         std::atomic<std::uint64_t> _resolveCalls{ 0 };
         std::atomic<std::uint64_t> _resolveHits{ 0 };
         std::atomic<std::uint64_t> _resolveMisses{ 0 };
+        std::atomic<std::uint64_t> _resolveRejectMinHits{ 0 };
+        std::atomic<std::uint64_t> _resolveRejectLowInput{ 0 };
         std::atomic<std::uint64_t> _evicted{ 0 };
     };
 }

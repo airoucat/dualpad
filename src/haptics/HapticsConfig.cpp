@@ -363,16 +363,26 @@ namespace dualpad::haptics
             dynamicPoolL2MinConfidence = std::clamp(
                 std::stof(values.at("dynamic_pool_l2_min_confidence")), 0.0f, 1.0f);
         }
+        if (values.count("dynamic_pool_resolve_min_hits")) {
+            dynamicPoolResolveMinHits = std::max<std::uint32_t>(
+                1, std::stoul(values.at("dynamic_pool_resolve_min_hits")));
+        }
+        if (values.count("dynamic_pool_resolve_min_input_energy")) {
+            dynamicPoolResolveMinInputEnergy = std::clamp(
+                std::stof(values.at("dynamic_pool_resolve_min_input_energy")), 0.0f, 1.0f);
+        }
 
         logger::info(
-            "[Haptics][Config] DynamicPool enabled={} topK={} minConf={:.2f} outputCap={:.2f} shadowProbe={} learnL2={} l2Min={:.2f}",
+            "[Haptics][Config] DynamicPool enabled={} topK={} minConf={:.2f} outputCap={:.2f} shadowProbe={} learnL2={} l2Min={:.2f} resolveMinHits={} resolveMinInput={:.2f}",
             enableDynamicHapticPool,
             dynamicPoolTopK,
             dynamicPoolMinConfidence,
             dynamicPoolOutputCap,
             enableDynamicPoolShadowProbe,
             enableDynamicPoolLearnFromL2,
-            dynamicPoolL2MinConfidence);
+            dynamicPoolL2MinConfidence,
+            dynamicPoolResolveMinHits,
+            dynamicPoolResolveMinInputEnergy);
     }
 
     void HapticsConfig::LoadSemanticConfig(const std::unordered_map<std::string, std::string>& values)
@@ -386,9 +396,25 @@ namespace dualpad::haptics
         if (values.count("enable_l1_voice_trace")) {
             enableL1VoiceTrace = ParseBool(values.at("enable_l1_voice_trace"), enableL1VoiceTrace);
         }
+        if (values.count("enable_submit_nocontext_fallback")) {
+            enableSubmitNoContextFallback = ParseBool(
+                values.at("enable_submit_nocontext_fallback"), enableSubmitNoContextFallback);
+        }
+        if (values.count("enable_submit_nocontext_deep_fallback")) {
+            enableSubmitNoContextDeepFallback = ParseBool(
+                values.at("enable_submit_nocontext_deep_fallback"), enableSubmitNoContextDeepFallback);
+        }
         if (values.count("l1_form_semantic_min_confidence")) {
             l1FormSemanticMinConfidence = std::clamp(
                 std::stof(values.at("l1_form_semantic_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("submit_semantic_max_attempts")) {
+            submitSemanticScanMaxAttempts = std::clamp<std::uint32_t>(
+                std::stoul(values.at("submit_semantic_max_attempts")), 1u, 15u);
+        }
+        if (values.count("submit_semantic_retry_interval_ms")) {
+            submitSemanticRetryIntervalMs = std::max<std::uint32_t>(
+                1u, std::stoul(values.at("submit_semantic_retry_interval_ms")));
         }
         if (values.count("semantic_rules_path")) {
             semanticRulesPath = values.at("semantic_rules_path");
@@ -401,11 +427,15 @@ namespace dualpad::haptics
         }
 
         logger::info(
-            "[Haptics][Config] Semantic cache={} l1={} l1VoiceTrace={} minConf={:.2f} rules={} cache={} forceRebuild={}",
+            "[Haptics][Config] Semantic cache={} l1={} l1VoiceTrace={} noCtxFallback={} noCtxDeepFallback={} minConf={:.2f} submitRetry(max={} interval={}ms) rules={} cache={} forceRebuild={}",
             enableFormSemanticCache,
             enableL1FormSemantic,
             enableL1VoiceTrace,
+            enableSubmitNoContextFallback,
+            enableSubmitNoContextDeepFallback,
             l1FormSemanticMinConfidence,
+            submitSemanticScanMaxAttempts,
+            submitSemanticRetryIntervalMs,
             semanticRulesPath,
             semanticCachePath,
             semanticForceRebuild);

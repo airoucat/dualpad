@@ -16,6 +16,7 @@ namespace dualpad::haptics
         EventType preferredEvent{ EventType::Unknown };
         SemanticGroup semantic{ SemanticGroup::Unknown };
         float confidence{ 0.5f };
+        std::uintptr_t initObjectPtr{ 0 };
         std::uint16_t flags{ 0 };
         std::uint64_t tsUs{ 0 };
     };

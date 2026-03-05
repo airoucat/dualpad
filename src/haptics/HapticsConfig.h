@@ -88,6 +88,8 @@ namespace dualpad::haptics
         bool enableDynamicPoolShadowProbe{ true };
         bool enableDynamicPoolLearnFromL2{ false };
         float dynamicPoolL2MinConfidence{ 0.62f };
+        std::uint32_t dynamicPoolResolveMinHits{ 2 };
+        float dynamicPoolResolveMinInputEnergy{ 0.04f };
 
         // Device
         std::string outputBackend{ "hid" };
@@ -108,7 +110,11 @@ namespace dualpad::haptics
         bool enableFormSemanticCache{ true };
         bool enableL1FormSemantic{ true };
         bool enableL1VoiceTrace{ true };
+        bool enableSubmitNoContextFallback{ true };
+        bool enableSubmitNoContextDeepFallback{ true };
         float l1FormSemanticMinConfidence{ 0.70f };
+        std::uint32_t submitSemanticScanMaxAttempts{ 3 };
+        std::uint32_t submitSemanticRetryIntervalMs{ 120 };
         std::string semanticRulesPath{ "Data/SKSE/Plugins/DualPadSemanticRules.json" };
         std::string semanticCachePath{ "Data/SKSE/Plugins/DualPadSemanticCache.bin" };
         bool semanticForceRebuild{ false };

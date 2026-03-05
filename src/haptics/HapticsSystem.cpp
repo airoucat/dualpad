@@ -218,14 +218,31 @@ namespace dualpad::haptics
             voiceStats.featuresPushed, voiceStats.featuresDropped);
 
         auto playStats = PlayPathHook::GetSingleton().GetStats();
-        logger::info("[Haptics][PlayPath] initCalls={} initResolved={} submitCalls={} submitResolved={} noContext={} noForm={} skipResolved={} bindMiss={} upserts={}",
+        logger::info("[Haptics][PlayPath] initCalls={} initResolved={} submitCalls={} submitResolved={} noContext={} noForm={} noForm1={} noFormR={} scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} skipInit={} skipSub={} skipOth={} retry={} skipRL={} skipMax={} traceHit={} traceMiss={} bindMiss={} upserts={}",
             playStats.initCalls,
             playStats.initResolved,
             playStats.submitCalls,
             playStats.submitResolved,
             playStats.submitNoContext,
             playStats.submitNoForm,
+            playStats.submitNoFormFirstScan,
+            playStats.submitNoFormRetry,
+            playStats.submitScanExecuted,
+            playStats.submitResolvedOnRetry,
+            playStats.submitNoContextScan,
+            playStats.submitNoContextResolved,
+            playStats.submitNoContextNoInitPtr,
+            playStats.submitNoContextDeepScan,
+            playStats.submitNoContextDeepResolved,
             playStats.submitSkipResolved,
+            playStats.submitSkipResolvedFromInit,
+            playStats.submitSkipResolvedFromSubmit,
+            playStats.submitSkipResolvedOther,
+            playStats.submitRetryScans,
+            playStats.submitSkipRateLimit,
+            playStats.submitSkipMaxAttempts,
+            playStats.submitTraceMetaHit,
+            playStats.submitTraceMetaMiss,
             playStats.bindingMisses,
             playStats.traceUpserts);
 
@@ -236,12 +253,14 @@ namespace dualpad::haptics
             audioStats.lowEnergyDropped);
 
         auto normStats = EventNormalizer::GetSingleton().GetStats();
-        logger::info("[Haptics][EventNormalizer] inputs={} patchForm={} patchEvent={} bindMiss={} traceMiss={}",
+        logger::info("[Haptics][EventNormalizer] inputs={} noVoice={} bindMiss={} traceMiss={} traceHit={} patchForm={} patchEvent={}",
             normStats.inputs,
-            normStats.patchedFormID,
-            normStats.patchedEventType,
+            normStats.noVoiceID,
             normStats.bindingMiss,
-            normStats.traceMiss);
+            normStats.traceMiss,
+            normStats.traceHit,
+            normStats.patchedFormID,
+            normStats.patchedEventType);
 
         auto resolverStats = SemanticResolver::GetSingleton().GetStats();
         logger::info("[Haptics][SemanticResolver] lookups={} hits={} noForm={} cacheMiss={} lowConfidence={}",
@@ -267,7 +286,7 @@ namespace dualpad::haptics
         auto decStats = DecisionEngine::GetSingleton().GetStats();
         auto dynamicStats = DynamicHapticPool::GetSingleton().GetStats();
         logger::info(
-            "[Haptics][DynamicPool] size={} observe={} admitted={} rejNoKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} evicted={} learnL2={} learnNoKey={} learnLowScore={}",
+            "[Haptics][DynamicPool] size={} observe={} admitted={} rejNoKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} rejMinHit={} rejLowIn={} evicted={} learnL2={} learnNoKey={} learnLowScore={}",
             dynamicStats.currentSize,
             dynamicStats.observeCalls,
             dynamicStats.admitted,
@@ -278,6 +297,8 @@ namespace dualpad::haptics
             dynamicStats.shadowMisses,
             dynamicStats.resolveHits,
             dynamicStats.resolveMisses,
+            dynamicStats.resolveRejectMinHits,
+            dynamicStats.resolveRejectLowInput,
             dynamicStats.evicted,
             decStats.dynamicPoolLearnFromL2,
             decStats.dynamicPoolLearnFromL2NoKey,
@@ -332,6 +353,14 @@ namespace dualpad::haptics
             dec.l3Count, PercentOf(dec.l3Count, totalDecisions));
 
         logger::info(
+            "[Haptics][SessionSummary] reason l2High={} l2Mid={} l2LowPass={} l1TraceHit={} l1SemanticHit={}",
+            dec.l2HighScore,
+            dec.l2MidScore,
+            dec.l2LowScorePass,
+            dec.traceBindHit,
+            dec.l1FormSemanticHit);
+
+        logger::info(
             "[Haptics][SessionSummary] noHit tickNoAudio={} audioNoMatch={} traceMiss={} (unbound={} expired={} disabled={})",
             dec.tickNoAudio,
             dec.audioPresentNoMatch,
@@ -341,6 +370,15 @@ namespace dualpad::haptics
             dec.traceBindBypassDisabled);
 
         logger::info(
+            "[Haptics][SessionSummary] reject norm(noVoice={} bindMiss={} traceMiss={}) sem(noForm={} cacheMiss={} lowConf={})",
+            norm.noVoiceID,
+            norm.bindingMiss,
+            norm.traceMiss,
+            dec.l1FormSemanticNoFormID,
+            dec.l1FormSemanticCacheMiss,
+            dec.l1FormSemanticLowConfidence);
+
+        logger::info(
             "[Haptics][SessionSummary] semantic miss={} (noForm={} cacheMiss={} lowConf={})",
             dec.l1FormSemanticMiss,
             dec.l1FormSemanticNoFormID,
@@ -348,20 +386,47 @@ namespace dualpad::haptics
             dec.l1FormSemanticLowConfidence);
 
         logger::info(
-            "[Haptics][SessionSummary] playPath initResolved={}/{} ({:.1f}%) submitResolved={}/{} ({:.1f}%) patchForm={} patchEvent={} traceMiss={} bindMiss={}",
+            "[Haptics][SessionSummary] fallback noAudio={} lowScore={} dynHit={} dynMiss={}",
+            dec.tickNoAudio,
+            dec.lowScoreFallback,
+            dec.dynamicPoolHit,
+            dec.dynamicPoolMiss);
+
+        logger::info(
+            "[Haptics][SessionSummary] playPath initResolved={}/{} ({:.1f}%) submitResolved={}/{} ({:.1f}%) noCtx={} noForm={} (first={} retry={}) scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} (init={} submit={} other={}) retry={} skipRL={} skipMax={} traceMeta(hit={} miss={}) patchForm={} patchEvent={} traceMiss={} bindMiss={}",
             play.initResolved,
             play.initCalls,
             PercentOf(play.initResolved, play.initCalls),
             play.submitResolved,
             play.submitCalls,
             PercentOf(play.submitResolved, play.submitCalls),
+            play.submitNoContext,
+            play.submitNoForm,
+            play.submitNoFormFirstScan,
+            play.submitNoFormRetry,
+            play.submitScanExecuted,
+            play.submitResolvedOnRetry,
+            play.submitNoContextScan,
+            play.submitNoContextResolved,
+            play.submitNoContextNoInitPtr,
+            play.submitNoContextDeepScan,
+            play.submitNoContextDeepResolved,
+            play.submitSkipResolved,
+            play.submitSkipResolvedFromInit,
+            play.submitSkipResolvedFromSubmit,
+            play.submitSkipResolvedOther,
+            play.submitRetryScans,
+            play.submitSkipRateLimit,
+            play.submitSkipMaxAttempts,
+            play.submitTraceMetaHit,
+            play.submitTraceMetaMiss,
             norm.patchedFormID,
             norm.patchedEventType,
             norm.traceMiss,
             norm.bindingMiss);
 
         logger::info(
-            "[Haptics][SessionSummary] dynamicPool size={} admitted={} rejNoKey={} rejLow={} shadowHit={} shadowMiss={} l3Hit={} l3Miss={} l2Learn={} l2SkipNoKey={} l2SkipScore={}",
+            "[Haptics][SessionSummary] dynamicPool size={} admitted={} rejNoKey={} rejLow={} shadowHit={} shadowMiss={} l3Hit={} l3Miss={} rejMinHit={} rejLowIn={} l2Learn={} l2SkipNoKey={} l2SkipScore={}",
             dyn.currentSize,
             dyn.admitted,
             dyn.rejectedNoKey,
@@ -370,6 +435,8 @@ namespace dualpad::haptics
             dyn.shadowMisses,
             dec.dynamicPoolHit,
             dec.dynamicPoolMiss,
+            dyn.resolveRejectMinHits,
+            dyn.resolveRejectLowInput,
             dec.dynamicPoolLearnFromL2,
             dec.dynamicPoolLearnFromL2NoKey,
             dec.dynamicPoolLearnFromL2LowScore);
