@@ -1,7 +1,9 @@
 #include "pch.h"
 #include "haptics/FootstepTruthProbe.h"
+#include "haptics/FootstepTruthSessionShadow.h"
 
 #include "haptics/FootstepAudioMatcher.h"
+#include "haptics/FootstepTagNormalizer.h"
 #include "haptics/FootstepTruthBridge.h"
 #include "haptics/HapticsConfig.h"
 #include "haptics/HidOutput.h"
@@ -299,6 +301,7 @@ namespace dualpad::haptics
 
         const auto nowUs = ToQPC(Now());
         const auto tagView = TrimTag(event->tag.c_str());
+        const auto normalizedTag = NormalizeFootstepTruthTag(tagView);
         const auto& cfg = HapticsConfig::GetSingleton();
         auto& ctxMgr = dualpad::input::ContextManager::GetSingleton();
         const auto currentContext = ctxMgr.GetCurrentContext();
@@ -332,11 +335,18 @@ namespace dualpad::haptics
             });
             FootstepAudioMatcher::GetSingleton().ObserveTruthEvent(nowUs, tagView);
             FootstepTruthBridge::GetSingleton().ObserveTruthToken(nowUs, tagView);
+            FootstepTruthSessionShadow::GetSingleton().ObserveTruthToken(
+                nowUs,
+                normalizedTag.valid ? normalizedTag.canonicalTag : tagView,
+                normalizedTag.gait,
+                normalizedTag.side);
         }
 
         if (admissible && cfg.enableStateTrackFootstepTruthTrigger) {
-            const bool isLeft = tagView.find("Left") != std::string_view::npos;
-            const bool isRight = tagView.find("Right") != std::string_view::npos;
+            const bool isLeft = normalizedTag.side == FootstepTruthSide::Left ||
+                (!normalizedTag.valid && tagView.find("Left") != std::string_view::npos);
+            const bool isRight = normalizedTag.side == FootstepTruthSide::Right ||
+                (!normalizedTag.valid && tagView.find("Right") != std::string_view::npos);
             const auto basePulse = std::clamp(
                 cfg.basePulseFootstep,
                 0.08f,
@@ -359,6 +369,13 @@ namespace dualpad::haptics
                     0.0f,
                     255.0f));
             }
+            if (!cfg.enableStateTrackFootstepTruthAttack && cfg.enableFootstepRecentModifierMemory) {
+                (void)FootstepAudioMatcher::GetSingleton().PrimeRecentMemoryPatchForTruth(nowUs, tagView, nowUs);
+            }
+            if (!cfg.enableStateTrackFootstepTruthAttack) {
+                leftMotor = 0;
+                rightMotor = 0;
+            }
 
             HidFrame frame{};
             frame.qpc = nowUs;
@@ -373,6 +390,8 @@ namespace dualpad::haptics
             frame.foregroundHint = true;
             frame.leftMotor = leftMotor;
             frame.rightMotor = rightMotor;
+            frame.footstepGait = normalizedTag.gait;
+            frame.footstepSide = normalizedTag.side;
             (void)HidOutput::GetSingleton().SubmitFrameNonBlocking(frame);
         }
 

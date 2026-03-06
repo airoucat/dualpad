@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "haptics/FootstepTagNormalizer.h"
 #include <cstdint>
 #include <chrono>
 #include <string_view>
@@ -167,5 +168,40 @@ namespace dualpad::haptics
         bool foregroundHint{ false };
         std::uint8_t leftMotor{ 0 };
         std::uint8_t rightMotor{ 0 };
+        FootstepTruthGait footstepGait{ FootstepTruthGait::Unknown };
+        FootstepTruthSide footstepSide{ FootstepTruthSide::Unknown };
+    };
+
+    enum class StructuredRendererKind : std::uint8_t
+    {
+        None = 0,
+        FootstepStride
+    };
+
+    struct StructuredModifierState
+    {
+        float ampScale{ 1.0f };
+        float panSigned{ 0.0f };
+        std::uint16_t scorePermille{ 0 };
+        std::uint64_t targetEndUs{ 0 };
+        bool provisional{ false };
+        std::uint64_t revisionApplied{ 0 };
+    };
+
+    struct FootstepStrideState
+    {
+        std::uint8_t seedLeft{ 0 };
+        std::uint8_t seedRight{ 0 };
+        FootstepTruthGait gait{ FootstepTruthGait::Unknown };
+        FootstepTruthSide side{ FootstepTruthSide::Unknown };
+        FootstepTexturePreset texturePreset{ FootstepTexturePreset::None };
+        std::uint64_t patchLeaseExpireUs{ 0 };
+        StructuredModifierState modifier{};
+    };
+
+    struct StructuredEventState
+    {
+        StructuredRendererKind renderer{ StructuredRendererKind::None };
+        FootstepStrideState footstep{};
     };
 }

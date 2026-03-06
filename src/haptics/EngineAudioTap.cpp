@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "haptics/EngineAudioTap.h"
 #include "haptics/FootstepAudioMatcher.h"
+#include "haptics/FootstepCandidateReservoir.h"
+#include "haptics/FootstepTruthSessionShadow.h"
+#include "haptics/InstanceTraceCache.h"
 #include "haptics/PlayPathHook.h"
 #include "haptics/VoiceManager.h"
 #include "haptics/HapticsTypes.h"
@@ -214,6 +217,21 @@ namespace dualpad::haptics
                 mod.find("xaudio2_9") != std::string::npos;
         }
 
+        static bool IsFootstepTraceForReservoir(const TraceMeta& trace)
+        {
+            if (trace.preferredEvent == EventType::Footstep) {
+                return true;
+            }
+            return trace.semantic == SemanticGroup::Footstep && trace.confidence >= 0.40f;
+        }
+
+        static float ComputeTapCandidateConfidence(const AudioFeatureMsg& msg)
+        {
+            const float rmsScore = std::clamp(msg.rms * 6.0f, 0.0f, 1.0f);
+            const float peakScore = std::clamp(msg.peak * 2.0f, 0.0f, 1.0f);
+            return std::clamp(0.35f * rmsScore + 0.65f * peakScore, 0.10f, 1.0f);
+        }
+
         static IXAudio2SourceVoice* ResolveVoicePtr(void* raw)
         {
             if (!raw) {
@@ -335,6 +353,19 @@ namespace dualpad::haptics
                             msg.bandMid = rms;
                             msg.bandHigh = rms;
                             FootstepAudioMatcher::GetSingleton().ObserveAudioFeature(msg);
+                            FootstepTruthSessionShadow::GetSingleton().ObserveAudioFeature(msg);
+                            if (msg.instanceId != 0 && msg.voiceGeneration != 0) {
+                                if (auto trace = InstanceTraceCache::GetSingleton().TryGet(msg.instanceId);
+                                    trace.has_value() && IsFootstepTraceForReservoir(*trace)) {
+                                    FootstepCandidateReservoir::GetSingleton().ObserveCandidate(
+                                        msg.instanceId,
+                                        static_cast<std::uintptr_t>(msg.voiceId),
+                                        msg.voiceGeneration,
+                                        msg.qpcStart,
+                                        FootstepCandidateReservoir::Source::Tap,
+                                        ComputeTapCandidateConfidence(msg));
+                                }
+                            }
 
                             if (VoiceManager::GetSingleton().PushAudioFeature(msg)) {
                                 g_submitFeaturesPushed.fetch_add(1, std::memory_order_relaxed);

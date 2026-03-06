@@ -13,10 +13,74 @@
 
 #include <algorithm>
 
+namespace logger = SKSE::log;
+
 namespace dualpad::haptics
 {
     namespace
     {
+        bool IsStructuredCombatEvent(EventType type)
+        {
+            switch (type) {
+            case EventType::WeaponSwing:
+            case EventType::HitImpact:
+            case EventType::Block:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        const char* DecisionLayerLabel(DecisionLayer layer)
+        {
+            switch (layer) {
+            case DecisionLayer::L1Trace:
+                return "L1";
+            case DecisionLayer::L2Match:
+                return "L2";
+            case DecisionLayer::L3Fallback:
+                return "L3";
+            default:
+                return "UNK";
+            }
+        }
+
+        const char* DecisionReasonLabel(DecisionReason reason)
+        {
+            switch (reason) {
+            case DecisionReason::L1FormSemantic:          return "L1FormSemantic";
+            case DecisionReason::L1TraceHit:              return "L1TraceHit";
+            case DecisionReason::L1TraceMiss:             return "L1TraceMiss";
+            case DecisionReason::L2HighScore:             return "L2High";
+            case DecisionReason::L2MidScore:              return "L2Mid";
+            case DecisionReason::L2LowScorePass:          return "L2LowPass";
+            case DecisionReason::L3DynamicPoolHit:        return "L3Dyn";
+            case DecisionReason::L3LowScoreFallback:      return "L3Fallback";
+            case DecisionReason::GateUnknownBlocked:      return "GateUnknown";
+            case DecisionReason::GateBackgroundBlocked:   return "GateBackground";
+            case DecisionReason::GateNoTraceContext:      return "GateNoTrace";
+            case DecisionReason::GateLowSemanticConfidence:return "GateLowSem";
+            case DecisionReason::GateLowRelativeEnergy:   return "GateLowRel";
+            case DecisionReason::GateRefractoryBlocked:   return "GateRefractory";
+            default:
+                return "Other";
+            }
+        }
+
+        bool ShouldEmitWindowedProbe(
+            std::atomic<std::uint64_t>& windowUs,
+            std::atomic<std::uint32_t>& windowLines,
+            std::uint64_t tsUs,
+            std::uint32_t maxLinesPerSec)
+        {
+            auto win = windowUs.load(std::memory_order_relaxed);
+            if (win == 0 || tsUs < win || (tsUs - win) >= 1000000ull) {
+                windowUs.store(tsUs, std::memory_order_relaxed);
+                windowLines.store(0, std::memory_order_relaxed);
+            }
+            return windowLines.fetch_add(1, std::memory_order_relaxed) < maxLinesPerSec;
+        }
+
         EventType SemanticToEventType(SemanticGroup group)
         {
             switch (group) {
@@ -191,6 +255,9 @@ namespace dualpad::haptics
 
     std::vector<DecisionResult> DecisionEngine::Update()
     {
+        static std::atomic<std::uint64_t> s_attackDecisionProbeWindowUs{ 0 };
+        static std::atomic<std::uint32_t> s_attackDecisionProbeLines{ 0 };
+
         std::vector<DecisionResult> out;
         if (!_initialized.load(std::memory_order_acquire)) {
             return out;
@@ -373,6 +440,17 @@ namespace dualpad::haptics
                 }
             }
 
+            const bool combatTraceHint =
+                normalized.trace.has_value() &&
+                IsStructuredCombatEvent(normalized.trace->preferredEvent);
+            const bool combatSemanticHint =
+                semHint.matched &&
+                IsStructuredCombatEvent(SemanticToEventType(semHint.meta.group));
+            const bool combatLikeEvent =
+                IsStructuredCombatEvent(r.source.eventType) ||
+                combatTraceHint ||
+                combatSemanticHint;
+
             const auto gate = HapticEligibilityEngine::GetSingleton().Evaluate(
                 r.source,
                 gateCtx,
@@ -403,6 +481,27 @@ namespace dualpad::haptics
                     break;
                 default:
                     break;
+                }
+                if (combatLikeEvent &&
+                    ShouldEmitWindowedProbe(
+                        s_attackDecisionProbeWindowUs,
+                        s_attackDecisionProbeLines,
+                        nowUs,
+                        12)) {
+                    logger::info(
+                        "[Haptics][ProbeAttack] site=attack/decision_reject evt={} reason={} match={:.2f} conf={:.2f} form=0x{:08X} voice=0x{:X} bind={} trace={} semHint={} rel={:.2f} motor={:.2f}/{:.2f}",
+                        ToString(r.source.eventType),
+                        DecisionReasonLabel(r.reason),
+                        r.matchScore,
+                        r.source.confidence,
+                        r.source.sourceFormId,
+                        voicePtr,
+                        binding.has_value() ? 1 : 0,
+                        normalized.trace.has_value() ? 1 : 0,
+                        combatSemanticHint ? 1 : 0,
+                        r.source.relativeEnergy,
+                        r.source.left,
+                        r.source.right);
                 }
                 continue;
             }
@@ -437,6 +536,28 @@ namespace dualpad::haptics
                     ++batchL1Hits;
 
                     ApplyEventProfile(r.source, cfg);
+                    if (combatLikeEvent &&
+                        ShouldEmitWindowedProbe(
+                            s_attackDecisionProbeWindowUs,
+                            s_attackDecisionProbeLines,
+                            nowUs,
+                            12)) {
+                        logger::info(
+                            "[Haptics][ProbeAttack] site=attack/decision_accept evt={} layer={} reason={} match={:.2f} conf={:.2f} form=0x{:08X} voice=0x{:X} bind={} trace={} rel={:.2f} ttl={}ms motor={:.2f}/{:.2f}",
+                            ToString(r.source.eventType),
+                            DecisionLayerLabel(r.layer),
+                            DecisionReasonLabel(r.reason),
+                            r.matchScore,
+                            r.source.confidence,
+                            r.source.sourceFormId,
+                            voicePtr,
+                            binding.has_value() ? 1 : 0,
+                            normalized.trace.has_value() ? 1 : 0,
+                            r.source.relativeEnergy,
+                            r.source.ttlMs,
+                            r.source.left,
+                            r.source.right);
+                    }
                     out.push_back(r);
                     continue;
                 }
@@ -506,6 +627,28 @@ namespace dualpad::haptics
                         ++batchL1Hits;
 
                         ApplyEventProfile(r.source, cfg);
+                        if (combatLikeEvent &&
+                            ShouldEmitWindowedProbe(
+                                s_attackDecisionProbeWindowUs,
+                                s_attackDecisionProbeLines,
+                                nowUs,
+                                12)) {
+                            logger::info(
+                                "[Haptics][ProbeAttack] site=attack/decision_accept evt={} layer={} reason={} match={:.2f} conf={:.2f} form=0x{:08X} voice=0x{:X} bind={} trace={} rel={:.2f} ttl={}ms motor={:.2f}/{:.2f}",
+                                ToString(r.source.eventType),
+                                DecisionLayerLabel(r.layer),
+                                DecisionReasonLabel(r.reason),
+                                r.matchScore,
+                                r.source.confidence,
+                                r.source.sourceFormId,
+                                voicePtr,
+                                binding.has_value() ? 1 : 0,
+                                normalized.trace.has_value() ? 1 : 0,
+                                r.source.relativeEnergy,
+                                r.source.ttlMs,
+                                r.source.left,
+                                r.source.right);
+                        }
                         out.push_back(r);
                         continue;
                     }
@@ -630,6 +773,28 @@ namespace dualpad::haptics
                 }
             }
 
+            if (combatLikeEvent &&
+                ShouldEmitWindowedProbe(
+                    s_attackDecisionProbeWindowUs,
+                    s_attackDecisionProbeLines,
+                    nowUs,
+                    12)) {
+                logger::info(
+                    "[Haptics][ProbeAttack] site=attack/decision_accept evt={} layer={} reason={} match={:.2f} conf={:.2f} form=0x{:08X} voice=0x{:X} bind={} trace={} rel={:.2f} ttl={}ms motor={:.2f}/{:.2f}",
+                    ToString(r.source.eventType),
+                    DecisionLayerLabel(r.layer),
+                    DecisionReasonLabel(r.reason),
+                    r.matchScore,
+                    r.source.confidence,
+                    r.source.sourceFormId,
+                    voicePtr,
+                    binding.has_value() ? 1 : 0,
+                    normalized.trace.has_value() ? 1 : 0,
+                    r.source.relativeEnergy,
+                    r.source.ttlMs,
+                    r.source.left,
+                    r.source.right);
+            }
             out.push_back(r);
         }
 

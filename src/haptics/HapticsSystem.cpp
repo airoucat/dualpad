@@ -10,11 +10,15 @@
 #include "haptics/EngineAudioTap.h"
 #include "haptics/EventNormalizer.h"
 #include "haptics/FootstepAudioMatcher.h"
+#include "haptics/FootstepCandidateReservoir.h"
 #include "haptics/FootstepTruthBridge.h"
 #include "haptics/FootstepTruthProbe.h"
+#include "haptics/FootstepTruthSessionShadow.h"
 #include "haptics/HapticEligibilityEngine.h"
+#include "haptics/HitImpactTruthProbe.h"
 #include "haptics/MetricsReporter.h"
 #include "haptics/PlayPathHook.h"
+#include "haptics/WeaponSwingTruthProbe.h"
 #include "haptics/AudioOnlyScorer.h"
 #include "haptics/FormSemanticCache.h"
 #include "haptics/SemanticResolver.h"
@@ -391,8 +395,16 @@ namespace dualpad::haptics
         if (!FootstepTruthProbe::GetSingleton().Register()) {
             logger::warn("[Haptics][System] FootstepTruthProbe register failed, continue fail-open");
         }
+        if (!HitImpactTruthProbe::GetSingleton().Register()) {
+            logger::warn("[Haptics][System] HitImpactTruthProbe register failed, continue fail-open");
+        }
+        if (!WeaponSwingTruthProbe::GetSingleton().Register()) {
+            logger::warn("[Haptics][System] WeaponSwingTruthProbe register failed, continue fail-open");
+        }
         FootstepTruthBridge::GetSingleton().Reset();
+        FootstepCandidateReservoir::GetSingleton().Reset();
         FootstepAudioMatcher::GetSingleton().Reset();
+        FootstepTruthSessionShadow::GetSingleton().Reset();
 
         _customPipelineActive.store(true, std::memory_order_release);
 
@@ -414,6 +426,8 @@ namespace dualpad::haptics
         const bool customActive = _customPipelineActive.exchange(false, std::memory_order_acq_rel);
         if (customActive) {
             FootstepTruthProbe::GetSingleton().Unregister();
+            HitImpactTruthProbe::GetSingleton().Unregister();
+            WeaponSwingTruthProbe::GetSingleton().Unregister();
             StopThreads();
             PrintSessionSummary();
             HidOutput::GetSingleton().StopVibration();
@@ -607,8 +621,12 @@ namespace dualpad::haptics
 
         auto hidStats = HidOutput::GetSingleton().GetStats();
         auto footTruth = FootstepTruthProbe::GetSingleton().GetStats();
+        auto hitTruth = HitImpactTruthProbe::GetSingleton().GetStats();
+        auto swingTruth = WeaponSwingTruthProbe::GetSingleton().GetStats();
         auto footBridge = FootstepTruthBridge::GetSingleton().GetStats();
+        auto footCand = FootstepCandidateReservoir::GetSingleton().GetStats();
         auto footAudio = FootstepAudioMatcher::GetSingleton().GetStats();
+        auto footSession = FootstepTruthSessionShadow::GetSingleton().GetStats();
         logger::info(
             "[Haptics][HidOutput] Frames={} Bytes={} Failures={} sendOk={} sendFail={} noDev={} writeFail={} qDepth(FG/BG)={}/{}",
             hidStats.totalFramesSent,
@@ -663,6 +681,23 @@ namespace dualpad::haptics
             footTruth.shadowRenderDeltaSamples,
             footTruth.shadowPendingTruth);
         logger::info(
+            "[Haptics][HitTruth] total={} player={} cause={} target={} hit(match/sub)={}/{} block(match/sub)={}/{}",
+            hitTruth.totalEvents,
+            hitTruth.playerEvents,
+            hitTruth.playerCauseEvents,
+            hitTruth.playerTargetEvents,
+            hitTruth.hitMatched,
+            hitTruth.hitSubmitted,
+            hitTruth.blockMatched,
+            hitTruth.blockSubmitted);
+        logger::info(
+            "[Haptics][SwingTruth] total={} player={} matched={} submitted={} rejAttackLike={}",
+            swingTruth.totalEvents,
+            swingTruth.playerEvents,
+            swingTruth.swingMatched,
+            swingTruth.swingSubmitted,
+            swingTruth.attackLikeRejected);
+        logger::info(
             "[Haptics][FootBridge] truths={} inst={} claims={} init={} submit={} miss(truth/inst)={}/{} deltaP50={}us deltaP95={}us samples={} pending(t/i/b)={}/{}/{}",
             footBridge.truthsObserved,
             footBridge.instancesObserved,
@@ -678,10 +713,16 @@ namespace dualpad::haptics
             footBridge.pendingInstances,
             footBridge.activeBindings);
         logger::info(
-            "[Haptics][FootAudio] features={} truths={} matched={} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
+            "[Haptics][FootAudio] features={} truths={} matched={} live(q/ap/ex)={}/{}/{} mem(h/m/s)={}/{}/{} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
             footAudio.featuresObserved,
             footAudio.truthsObserved,
             footAudio.truthsMatched,
+            footAudio.livePatchesQueued,
+            footAudio.livePatchesApplied,
+            footAudio.livePatchesExpired,
+            footAudio.recentMemoryHits,
+            footAudio.recentMemoryMisses,
+            footAudio.recentMemorySamples,
             footAudio.truthBridgeBound,
             footAudio.truthBridgeMatched,
             footAudio.truthBridgeNoFeature,
@@ -701,6 +742,41 @@ namespace dualpad::haptics
             static_cast<float>(footAudio.matchPanAbsP50Permille) / 1000.0f,
             static_cast<float>(footAudio.matchPanAbsP95Permille) / 1000.0f,
             footAudio.pendingTruths);
+        logger::info(
+            "[Haptics][FootSession] truths={} inst={} feat={} patched={} expired={} noCand/noFeat={}/{} candAssign={} patch(exact/voice)={}/{} candP50={} candP95={} truthToPatchP50={}us truthToPatchP95={}us claimToPatchP50={}us claimToPatchP95={}us samples={} active={}",
+            footSession.truthsObserved,
+            footSession.instancesObserved,
+            footSession.featuresObserved,
+            footSession.sessionsPatched,
+            footSession.sessionsExpired,
+            footSession.sessionsExpiredNoCandidate,
+            footSession.sessionsExpiredNoFeature,
+            footSession.candidateAssignments,
+            footSession.patchedExactInstance,
+            footSession.patchedVoiceFallback,
+            footSession.candidateP50,
+            footSession.candidateP95,
+            footSession.truthToPatchDeltaP50Us,
+            footSession.truthToPatchDeltaP95Us,
+            footSession.claimToPatchDeltaP50Us,
+            footSession.claimToPatchDeltaP95Us,
+            footSession.samples,
+            footSession.activeSessions);
+        logger::info(
+            "[Haptics][FootSessionLive] q/ap/ex={}/{}/{}",
+            footSession.livePatchesQueued,
+            footSession.livePatchesApplied,
+            footSession.livePatchesExpired);
+        logger::info(
+            "[Haptics][FootCand] obs={} init={} submit={} tap={} expired={} snap={} returned={} active={}",
+            footCand.observed,
+            footCand.observedInit,
+            footCand.observedSubmit,
+            footCand.observedTap,
+            footCand.expired,
+            footCand.snapshotCalls,
+            footCand.returnedCandidates,
+            footCand.active);
 
         LogSystemDivider();
     }
@@ -718,8 +794,12 @@ namespace dualpad::haptics
         auto mixer = HapticMixer::GetSingleton().GetStats();
         auto eligibility = HapticEligibilityEngine::GetSingleton().GetStats();
         auto footTruth = FootstepTruthProbe::GetSingleton().GetStats();
+        auto hitTruth = HitImpactTruthProbe::GetSingleton().GetStats();
+        auto swingTruth = WeaponSwingTruthProbe::GetSingleton().GetStats();
         auto footBridge = FootstepTruthBridge::GetSingleton().GetStats();
+        auto footCand = FootstepCandidateReservoir::GetSingleton().GetStats();
         auto footAudio = FootstepAudioMatcher::GetSingleton().GetStats();
+        auto footSession = FootstepTruthSessionShadow::GetSingleton().GetStats();
 
         const std::uint64_t totalDecisions = dec.l1Count + dec.l2Count + dec.l3Count;
         const std::uint64_t traceMissTotal =
@@ -853,10 +933,16 @@ namespace dualpad::haptics
             footBridge.pendingInstances,
             footBridge.activeBindings);
         logger::info(
-            "[Haptics][SessionSummary] footAudio features={} truths={} matched={} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
+            "[Haptics][SessionSummary] footAudio features={} truths={} matched={} live(q/ap/ex)={}/{}/{} mem(h/m/s)={}/{}/{} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
             footAudio.featuresObserved,
             footAudio.truthsObserved,
             footAudio.truthsMatched,
+            footAudio.livePatchesQueued,
+            footAudio.livePatchesApplied,
+            footAudio.livePatchesExpired,
+            footAudio.recentMemoryHits,
+            footAudio.recentMemoryMisses,
+            footAudio.recentMemorySamples,
             footAudio.truthBridgeBound,
             footAudio.truthBridgeMatched,
             footAudio.truthBridgeNoFeature,
@@ -877,6 +963,41 @@ namespace dualpad::haptics
             static_cast<float>(footAudio.matchPanAbsP95Permille) / 1000.0f,
             footAudio.pendingTruths);
         logger::info(
+            "[Haptics][SessionSummary] footSession truths={} inst={} feat={} patched={} expired={} noCand/noFeat={}/{} candAssign={} patch(exact/voice)={}/{} candP50={} candP95={} truthToPatchP50={}us truthToPatchP95={}us claimToPatchP50={}us claimToPatchP95={}us samples={} active={}",
+            footSession.truthsObserved,
+            footSession.instancesObserved,
+            footSession.featuresObserved,
+            footSession.sessionsPatched,
+            footSession.sessionsExpired,
+            footSession.sessionsExpiredNoCandidate,
+            footSession.sessionsExpiredNoFeature,
+            footSession.candidateAssignments,
+            footSession.patchedExactInstance,
+            footSession.patchedVoiceFallback,
+            footSession.candidateP50,
+            footSession.candidateP95,
+            footSession.truthToPatchDeltaP50Us,
+            footSession.truthToPatchDeltaP95Us,
+            footSession.claimToPatchDeltaP50Us,
+            footSession.claimToPatchDeltaP95Us,
+            footSession.samples,
+            footSession.activeSessions);
+        logger::info(
+            "[Haptics][SessionSummary] footSessionLive q/ap/ex={}/{}/{}",
+            footSession.livePatchesQueued,
+            footSession.livePatchesApplied,
+            footSession.livePatchesExpired);
+        logger::info(
+            "[Haptics][SessionSummary] footCand obs={} init={} submit={} tap={} expired={} snap={} returned={} active={}",
+            footCand.observed,
+            footCand.observedInit,
+            footCand.observedSubmit,
+            footCand.observedTap,
+            footCand.expired,
+            footCand.snapshotCalls,
+            footCand.returnedCandidates,
+            footCand.active);
+        logger::info(
             "[Haptics][SessionSummary] footTruth total={} actorResolved={} player={} nonPlayer={} ctxAllow={} ctxBlock={} moving={} recent={} admissible={} shadow(match={} truthMiss={} renderMiss={} deltaP50={}us deltaP95={}us samples={} pending={})",
             footTruth.totalEvents,
             footTruth.actorResolvedEvents,
@@ -894,6 +1015,23 @@ namespace dualpad::haptics
             footTruth.shadowRenderDeltaP95Us,
             footTruth.shadowRenderDeltaSamples,
             footTruth.shadowPendingTruth);
+        logger::info(
+            "[Haptics][SessionSummary] hitTruth total={} player={} cause={} target={} hit(match/sub)={}/{} block(match/sub)={}/{}",
+            hitTruth.totalEvents,
+            hitTruth.playerEvents,
+            hitTruth.playerCauseEvents,
+            hitTruth.playerTargetEvents,
+            hitTruth.hitMatched,
+            hitTruth.hitSubmitted,
+            hitTruth.blockMatched,
+            hitTruth.blockSubmitted);
+        logger::info(
+            "[Haptics][SessionSummary] swingTruth total={} player={} matched={} submitted={} rejAttackLike={}",
+            swingTruth.totalEvents,
+            swingTruth.playerEvents,
+            swingTruth.swingMatched,
+            swingTruth.swingSubmitted,
+            swingTruth.attackLikeRejected);
         logger::info(
             "[Haptics][SessionSummary] tx q(FG/BG)={}/{} dq(FG/BG)={}/{} dropFull(FG/BG)={}/{} dropStale(FG/BG)={}/{} merge(FG/BG)={}/{} sendOk={} sendFail={} noDev={} depth(FG/BG)={}/{} renderP50={}us renderP95={}us renderN={} firstP50={}us firstP95={}us firstN={} skipRpt={} stopFlush={} route(fg/bg={}/{}, fgZero/hint/prio/evt={}/{}/{}/{}, bgUnk/bgEvt={}/{}) select(forceFg/bgWhileFg={}/{}) state(upFg/upBg={}/{}, ovFg/ovBg={}/{}, carryQ(FG/BG)={}/{}, carryDrop(FG/BG)={}/{}, carryUse(FG/BG)={}/{}, expDrop={} futSkip={})",
             hid.txQueuedFg,

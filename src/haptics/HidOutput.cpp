@@ -2,6 +2,8 @@
 #include "haptics/HidOutput.h"
 
 #include "haptics/HapticsConfig.h"
+#include "haptics/FootstepAudioMatcher.h"
+#include "haptics/FootstepTruthSessionShadow.h"
 #include "haptics/FootstepTruthProbe.h"
 #include "input/InputContext.h"
 
@@ -18,6 +20,7 @@ namespace dualpad::haptics
     namespace
     {
         constexpr std::size_t kLatencySampleCap = 2048;
+        constexpr std::uint64_t kFootstepStrideUpgradeCoalesceUs = 6000ull;
 
         enum class RouteReason : std::uint8_t
         {
@@ -77,6 +80,18 @@ namespace dualpad::haptics
             return false;
         }
 
+        bool IsStructuredCombatEvent(EventType type)
+        {
+            switch (type) {
+            case EventType::WeaponSwing:
+            case EventType::HitImpact:
+            case EventType::Block:
+                return true;
+            default:
+                return false;
+            }
+        }
+
         bool IsTokenTrackLane(const HapticsConfig& cfg, std::uint8_t index)
         {
             return index == 2 &&
@@ -87,6 +102,263 @@ namespace dualpad::haptics
         bool UsesCadenceLiveness(const HapticsConfig& cfg, std::uint8_t index)
         {
             return IsTokenTrackLane(cfg, index);
+        }
+
+        std::uint32_t FootstepPatchLeaseUs(const HapticsConfig& cfg, FootstepTruthGait gait)
+        {
+            const auto sprintLeaseBoostUs =
+                (gait == FootstepTruthGait::Sprint) ? 40000ull : 0ull;
+            return static_cast<std::uint32_t>(std::min<std::uint64_t>(
+                static_cast<std::uint64_t>(cfg.stateTrackFootstepPatchLeaseUs) + sprintLeaseBoostUs,
+                220000ull));
+        }
+
+        std::uint64_t FootstepTargetEndDeltaUs(const HapticsConfig& cfg, FootstepTruthGait gait)
+        {
+            const auto patchLeaseUs = static_cast<std::uint64_t>(FootstepPatchLeaseUs(cfg, gait));
+            switch (gait) {
+            case FootstepTruthGait::Sprint:
+                return std::min<std::uint64_t>(160000ull, patchLeaseUs);
+            case FootstepTruthGait::JumpUp:
+            case FootstepTruthGait::JumpDown:
+                return std::min<std::uint64_t>(130000ull, patchLeaseUs);
+            case FootstepTruthGait::Walk:
+            default:
+                return std::min<std::uint64_t>(110000ull, patchLeaseUs);
+            }
+        }
+
+        float FootstepProvisionalAmpScale(FootstepTruthGait gait)
+        {
+            switch (gait) {
+            case FootstepTruthGait::Sprint:
+                return 1.00f;
+            case FootstepTruthGait::JumpUp:
+            case FootstepTruthGait::JumpDown:
+                return 1.04f;
+            case FootstepTruthGait::Walk:
+            default:
+                return 0.96f;
+            }
+        }
+
+        std::pair<std::uint8_t, std::uint8_t> ResolveFootstepStrideMotors(
+            const HapticsConfig& cfg,
+            std::uint8_t seedLeft,
+            std::uint8_t seedRight,
+            float ampScaleValue,
+            float panSigned)
+        {
+            const auto seedLeftBase = (seedLeft != 0) ?
+                seedLeft :
+                static_cast<std::uint8_t>(std::clamp(cfg.basePulseFootstep * 255.0f, 0.0f, 255.0f));
+            const auto seedRightBase = (seedRight != 0) ?
+                seedRight :
+                static_cast<std::uint8_t>(std::clamp(cfg.basePulseFootstep * 255.0f, 0.0f, 255.0f));
+
+            const float ampScale = std::clamp(ampScaleValue, 0.90f, 1.24f);
+            const float panMix = 0.20f;
+            const float leftScale = std::clamp(
+                ampScale * (1.0f - panSigned * panMix),
+                0.75f,
+                1.30f);
+            const float rightScale = std::clamp(
+                ampScale * (1.0f + panSigned * panMix),
+                0.75f,
+                1.30f);
+
+            const auto left = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(seedLeftBase) * leftScale,
+                0.0f,
+                255.0f));
+            const auto right = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(seedRightBase) * rightScale,
+                0.0f,
+                255.0f));
+            return { left, right };
+        }
+
+        FootstepTexturePreset DefaultFootstepTexturePresetForGait(FootstepTruthGait gait)
+        {
+            switch (gait) {
+            case FootstepTruthGait::Sprint:
+                return FootstepTexturePreset::SprintDrive;
+            case FootstepTruthGait::JumpUp:
+                return FootstepTexturePreset::JumpLift;
+            case FootstepTruthGait::JumpDown:
+                return FootstepTexturePreset::LandSlam;
+            case FootstepTruthGait::Walk:
+            default:
+                return FootstepTexturePreset::WalkSoft;
+            }
+        }
+
+        float ClampUnit(float value)
+        {
+            return std::clamp(value, 0.0f, 1.0f);
+        }
+
+        float SmoothStep(float edge0, float edge1, float x)
+        {
+            if (edge0 == edge1) {
+                return (x >= edge1) ? 1.0f : 0.0f;
+            }
+            const float t = ClampUnit((x - edge0) / (edge1 - edge0));
+            return t * t * (3.0f - 2.0f * t);
+        }
+
+        float TrianglePulse(float phase, float center, float halfWidth)
+        {
+            if (halfWidth <= 0.0f) {
+                return 0.0f;
+            }
+            return ClampUnit(1.0f - std::fabs(phase - center) / halfWidth);
+        }
+
+        float WindowBand(float phase, float start, float end)
+        {
+            if (end <= start) {
+                return 0.0f;
+            }
+            const float mid = (start + end) * 0.5f;
+            return SmoothStep(start, mid, phase) * (1.0f - SmoothStep(mid, end, phase));
+        }
+
+        struct FootstepTextureRender
+        {
+            std::uint8_t left{ 0 };
+            std::uint8_t right{ 0 };
+            std::uint64_t effectiveEndUs{ 0 };
+        };
+
+        FootstepTextureRender RenderFootstepTexture(
+            const HapticsConfig& cfg,
+            std::uint64_t truthUs,
+            std::uint64_t releaseEndUs,
+            std::uint64_t targetEndUs,
+            std::uint8_t seedLeft,
+            std::uint8_t seedRight,
+            FootstepTruthGait gait,
+            FootstepTruthSide side,
+            FootstepTexturePreset preset,
+            float ampScale,
+            float panSigned,
+            std::uint16_t scorePermille,
+            bool provisional,
+            std::uint64_t nowUs)
+        {
+            const auto [baseLeft, baseRight] = ResolveFootstepStrideMotors(
+                cfg,
+                seedLeft,
+                seedRight,
+                ampScale,
+                panSigned);
+
+            const auto gaitPreset = (preset != FootstepTexturePreset::None) ?
+                preset :
+                DefaultFootstepTexturePresetForGait(gait);
+            const auto nominalTextureSpanUs = [&]() -> std::uint64_t {
+                switch (gaitPreset) {
+                case FootstepTexturePreset::SprintDrive:
+                    return 150000ull;
+                case FootstepTexturePreset::JumpLift:
+                    return 126000ull;
+                case FootstepTexturePreset::LandSlam:
+                    return 152000ull;
+                case FootstepTexturePreset::WalkSoft:
+                default:
+                    return 112000ull;
+                }
+            }();
+
+            const auto effectiveEndUs = std::max(
+                std::max(releaseEndUs, targetEndUs),
+                truthUs + nominalTextureSpanUs);
+            if (truthUs == 0 || nowUs <= truthUs) {
+                return { baseLeft, baseRight, effectiveEndUs };
+            }
+
+            const auto totalSpanUs = std::max<std::uint64_t>(effectiveEndUs - truthUs, 1ull);
+            const auto elapsedUs = std::min<std::uint64_t>(nowUs - truthUs, totalSpanUs);
+            const float phase = ClampUnit(static_cast<float>(elapsedUs) / static_cast<float>(totalSpanUs));
+            const float detail = ClampUnit((static_cast<float>(scorePermille) - 520.0f) / 360.0f);
+            const float definition = provisional ? (0.72f + 0.10f * detail) : (0.94f + 0.06f * detail);
+            const float tail = ClampUnit(1.0f - phase);
+
+            float leadEnv = 0.0f;
+            float trailEnv = 0.0f;
+
+            switch (gaitPreset) {
+            case FootstepTexturePreset::SprintDrive: {
+                const float bed = (0.18f + 0.05f * detail) * tail;
+                const float impact = TrianglePulse(phase, 0.05f, 0.08f) * (0.98f + 0.12f * detail);
+                const float rebound = TrianglePulse(phase, 0.18f, 0.11f) * (0.48f + 0.12f * detail);
+                const float grit = WindowBand(phase, 0.06f, 0.62f) * tail * (0.24f + 0.04f * detail);
+                leadEnv = bed + impact + rebound * 0.34f + grit * 0.72f;
+                trailEnv = bed * 0.96f + impact * 0.86f + rebound * 0.56f + grit * 0.82f;
+                break;
+            }
+            case FootstepTexturePreset::JumpLift: {
+                const float bed = (0.09f + 0.03f * detail) * tail;
+                const float push = TrianglePulse(phase, 0.16f, 0.16f) * (0.74f + 0.10f * detail);
+                const float lift = WindowBand(phase, 0.18f, 0.78f) * tail * (0.22f + 0.05f * detail);
+                leadEnv = bed + push + lift * 0.88f;
+                trailEnv = bed * 0.92f + push * 0.92f + lift;
+                break;
+            }
+            case FootstepTexturePreset::LandSlam: {
+                const float bed = (0.20f + 0.04f * detail) * tail;
+                const float slam = TrianglePulse(phase, 0.04f, 0.08f) * (1.08f + 0.10f * detail);
+                const float aftershock = TrianglePulse(phase, 0.22f, 0.14f) * (0.46f + 0.08f * detail);
+                const float rattle = WindowBand(phase, 0.05f, 0.54f) * tail * (0.26f + 0.04f * detail);
+                leadEnv = bed + slam + aftershock * 0.54f + rattle;
+                trailEnv = bed * 0.96f + slam * 0.94f + aftershock * 0.66f + rattle * 0.86f;
+                break;
+            }
+            case FootstepTexturePreset::WalkSoft:
+            default: {
+                const float bed = (0.12f + 0.04f * detail) * tail;
+                const float heel = TrianglePulse(phase, 0.08f, 0.11f) * (0.76f + 0.10f * detail);
+                const float toe = TrianglePulse(phase, 0.28f, 0.15f) * (0.34f + 0.10f * detail);
+                const float brush = WindowBand(phase, 0.14f, 0.78f) * tail * (0.17f + 0.03f * detail);
+                leadEnv = bed + heel + toe * 0.24f + brush * 0.94f;
+                trailEnv = bed * 0.94f + heel * 0.74f + toe * 0.44f + brush * 1.08f;
+                break;
+            }
+            }
+
+            leadEnv *= definition;
+            trailEnv *= definition;
+
+            float leftEnv = 0.0f;
+            float rightEnv = 0.0f;
+            switch (side) {
+            case FootstepTruthSide::Left:
+                leftEnv = leadEnv;
+                rightEnv = trailEnv;
+                break;
+            case FootstepTruthSide::Right:
+                leftEnv = trailEnv;
+                rightEnv = leadEnv;
+                break;
+            case FootstepTruthSide::Unknown:
+            default: {
+                const float merged = (leadEnv + trailEnv) * 0.5f;
+                leftEnv = merged;
+                rightEnv = merged;
+                break;
+            }
+            }
+
+            const auto left = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(baseLeft) * std::clamp(leftEnv, 0.0f, 1.35f),
+                0.0f,
+                255.0f));
+            const auto right = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(baseRight) * std::clamp(rightEnv, 0.0f, 1.35f),
+                0.0f,
+                255.0f));
+            return { left, right, effectiveEndUs };
         }
 
         bool ClassifyForegroundFrame(const HidFrame& frame, int prioritySwing, RouteReason& reason)
@@ -829,16 +1101,31 @@ namespace dualpad::haptics
                     static_cast<float>(slot.baseLeft), 0.0f, 255.0f));
                 const auto right = static_cast<std::uint8_t>(std::clamp(
                     static_cast<float>(slot.baseRight), 0.0f, 255.0f));
-                if (left == 0 && right == 0) {
+                const bool silentFootstepSeed =
+                    renderedLane &&
+                    slot.eventType == EventType::Footstep &&
+                    slot.sourceQpc != 0 &&
+                    slot.structured.footstep.patchLeaseExpireUs != 0 &&
+                    nowUs < slot.structured.footstep.patchLeaseExpireUs;
+                const bool silentSessionPatchReady =
+                    silentFootstepSeed &&
+                    cfg.enableFootstepAudioModifierLivePatch &&
+                    cfg.enableFootstepTruthSessionLivePatch &&
+                    FootstepTruthSessionShadow::GetSingleton().HasLivePatchForTruth(
+                        slot.sourceQpc,
+                        slot.structured.footstep.modifier.revisionApplied,
+                        nowUs);
+                if (left == 0 && right == 0 && !silentSessionPatchReady) {
                     continue;
                 }
 
                 std::uint64_t readyUs = 0;
                 if (renderedLane) {
-                    if (activeValid) {
+                    if (silentSessionPatchReady) {
+                        readyUs = nowUs;
+                    } else if (activeValid) {
                         readyUs = (track.nextReadyUs != 0) ? track.nextReadyUs : deadlineUs;
-                    }
-                    else {
+                    } else {
                         readyUs = (track.nextReadyUs != 0) ?
                             std::max(deadlineUs, track.nextReadyUs) :
                             deadlineUs;
@@ -895,6 +1182,10 @@ namespace dualpad::haptics
         static std::atomic<std::uint32_t> s_trackAdmissionProbeLines{ 0 };
         static std::atomic<std::uint64_t> s_trackTruthSuppressProbeWindowUs{ 0 };
         static std::atomic<std::uint32_t> s_trackTruthSuppressProbeLines{ 0 };
+        static std::atomic<std::uint64_t> s_trackShoutSuppressProbeWindowUs{ 0 };
+        static std::atomic<std::uint32_t> s_trackShoutSuppressProbeLines{ 0 };
+        static std::atomic<std::uint64_t> s_attackSubmitProbeWindowUs{ 0 };
+        static std::atomic<std::uint32_t> s_attackSubmitProbeLines{ 0 };
 
         HidFrame out = frame;
         if (out.qpc == 0) {
@@ -917,11 +1208,21 @@ namespace dualpad::haptics
         const auto dueWindowUs = std::max<std::uint64_t>(
             static_cast<std::uint64_t>(cfg.hidSchedulerLookaheadUs),
             static_cast<std::uint64_t>(cfg.stateTrackLookaheadMinUs));
+        const bool footstepTruthSilentSeed =
+            cfg.enableStateTrackFootstepTruthTrigger &&
+            !cfg.enableStateTrackFootstepTruthAttack &&
+            isZeroFrame &&
+            out.eventType == EventType::Footstep &&
+            out.sourceType == SourceType::BaseEvent;
+        const bool structuredCombatEvent = IsStructuredCombatEvent(out.eventType);
         const bool truthFirstFootstepAudioSuppressed =
             cfg.enableStateTrackFootstepTruthTrigger &&
             out.eventType == EventType::Footstep &&
             out.sourceType == SourceType::AudioMod &&
             !isZeroFrame;
+        const bool shoutLiveSuppressed =
+            out.eventType == EventType::Shout &&
+            !cfg.enableStateTrackShoutLiveOutput;
 
         if (truthFirstFootstepAudioSuppressed) {
             if (ShouldEmitWindowedProbe(
@@ -941,6 +1242,49 @@ namespace dualpad::haptics
                     submitLeadUs);
             }
             return true;
+        }
+
+        if (shoutLiveSuppressed) {
+            if (ShouldEmitWindowedProbe(
+                    s_trackShoutSuppressProbeWindowUs,
+                    s_trackShoutSuppressProbeLines,
+                    nowUs,
+                    8)) {
+                logger::info(
+                    "[Haptics][ProbeTrack] site=track/shout_suppress lane={} evt={} src={} motor={}/{} conf={:.2f} prio={} lead={}us",
+                    static_cast<int>(trackIndex),
+                    ToString(out.eventType),
+                    static_cast<int>(out.sourceType),
+                    static_cast<int>(out.leftMotor),
+                    static_cast<int>(out.rightMotor),
+                    out.confidence,
+                    static_cast<int>(out.priority),
+                    submitLeadUs);
+            }
+            return true;
+        }
+
+        if (structuredCombatEvent &&
+            ShouldEmitWindowedProbe(
+                s_attackSubmitProbeWindowUs,
+                s_attackSubmitProbeLines,
+                nowUs,
+                16)) {
+            logger::info(
+                "[Haptics][ProbeAttack] site=attack/submit lane={} evt={} fg={} route={} src={} motor={}/{} conf={:.2f} prio={} lead={}us dueWin={}us zero={} trackRendered={}",
+                static_cast<int>(trackIndex),
+                ToString(out.eventType),
+                foreground ? 1 : 0,
+                RouteReasonLabel(routeReason),
+                static_cast<int>(out.sourceType),
+                static_cast<int>(out.leftMotor),
+                static_cast<int>(out.rightMotor),
+                out.confidence,
+                static_cast<int>(out.priority),
+                submitLeadUs,
+                dueWindowUs,
+                isZeroFrame ? 1 : 0,
+                IsRenderedTrackLane(cfg, trackIndex) ? 1 : 0);
         }
 
         const auto cadenceQuietWindowUsForGap =
@@ -1005,7 +1349,7 @@ namespace dualpad::haptics
         }
 
         bool handledStructuredStop = false;
-        if (isZeroFrame) {
+        if (isZeroFrame && !footstepTruthSilentSeed) {
             std::uint32_t fgDepth = 0;
             std::uint32_t bgDepth = 0;
             bool dropZeroNoop = false;
@@ -1172,6 +1516,7 @@ namespace dualpad::haptics
 
         if (_lastSubmittedValid) {
             const bool sameSignal =
+                !footstepTruthSilentSeed &&
                 (out.leftMotor == _lastSubmittedLeft) &&
                 (out.rightMotor == _lastSubmittedRight) &&
                 (out.eventType == _lastSubmittedEvent);
@@ -1253,6 +1598,18 @@ namespace dualpad::haptics
                     const auto prevSourceQpc = slot.sourceQpc;
                     const auto prevLastUpdateUs = slot.lastUpdateUs;
                     const auto prevReleaseEndUs = slot.releaseEndUs;
+                    const auto prevPatchLeaseExpireUs = slot.structured.footstep.patchLeaseExpireUs;
+                    const auto prevFootstepSeedLeft = slot.structured.footstep.seedLeft;
+                    const auto prevFootstepSeedRight = slot.structured.footstep.seedRight;
+                    const auto prevFootstepGait = slot.structured.footstep.gait;
+                    const auto prevFootstepSide = slot.structured.footstep.side;
+                    const auto prevFootstepTexturePreset = slot.structured.footstep.texturePreset;
+                    const auto prevFootstepModifierAmpScale = slot.structured.footstep.modifier.ampScale;
+                    const auto prevFootstepModifierPanSigned = slot.structured.footstep.modifier.panSigned;
+                    const auto prevFootstepModifierScorePermille = slot.structured.footstep.modifier.scorePermille;
+                    const auto prevFootstepTargetEndUs = slot.structured.footstep.modifier.targetEndUs;
+                    const auto prevFootstepModifierProvisional = slot.structured.footstep.modifier.provisional;
+                    const auto prevFootstepSessionRevisionApplied = slot.structured.footstep.modifier.revisionApplied;
                     const auto prevEpoch = slot.epoch;
                     const auto prevSupersededAtUs = slot.supersededAtUs;
 
@@ -1297,8 +1654,80 @@ namespace dualpad::haptics
                     }
 
                     const auto releaseAnchorUs = std::max(slot.deadlineUs, track.nextReadyUs);
-                    const auto releaseEndUs = releaseAnchorUs + releaseWindowForEvent(slot.eventType);
+                    const auto releaseWindowUs = releaseWindowForEvent(slot.eventType);
+                    const auto releaseEndUs =
+                        (slot.eventType == EventType::Footstep && slot.sourceQpc != 0) ?
+                            (slot.sourceQpc + releaseWindowUs) :
+                            (releaseAnchorUs + releaseWindowUs);
                     slot.releaseEndUs = hadValid ? std::max(prevReleaseEndUs, releaseEndUs) : releaseEndUs;
+                    if (slot.eventType == EventType::Footstep && slot.sourceQpc != 0) {
+                        const auto leaseEndUs = slot.sourceQpc + static_cast<std::uint64_t>(cfg.stateTrackFootstepPatchLeaseUs);
+                        const auto defaultLeaseUs = static_cast<std::uint64_t>(
+                            FootstepPatchLeaseUs(cfg, out.footstepGait));
+                        const auto defaultTargetEndUs = slot.sourceQpc + FootstepTargetEndDeltaUs(cfg, out.footstepGait);
+                        const auto leaseExpireUs = slot.sourceQpc + defaultLeaseUs;
+                        slot.structured.footstep.patchLeaseExpireUs = hadValid ?
+                            std::max(prevPatchLeaseExpireUs, std::max(leaseEndUs, leaseExpireUs)) :
+                            std::max(leaseEndUs, leaseExpireUs);
+                        if (hadValid) {
+                            slot.structured.footstep.seedLeft = prevFootstepSeedLeft;
+                            slot.structured.footstep.seedRight = prevFootstepSeedRight;
+                            slot.structured.renderer = StructuredRendererKind::FootstepStride;
+                            slot.structured.footstep.gait = (out.footstepGait != FootstepTruthGait::Unknown) ?
+                                out.footstepGait :
+                                prevFootstepGait;
+                            slot.structured.footstep.side = (out.footstepSide != FootstepTruthSide::Unknown) ?
+                                out.footstepSide :
+                                prevFootstepSide;
+                            slot.structured.footstep.texturePreset = (slot.structured.footstep.gait != prevFootstepGait ||
+                                    prevFootstepTexturePreset == FootstepTexturePreset::None) ?
+                                DefaultFootstepTexturePresetForGait(slot.structured.footstep.gait) :
+                                prevFootstepTexturePreset;
+                            slot.structured.footstep.modifier.ampScale = std::max(
+                                prevFootstepModifierAmpScale,
+                                FootstepProvisionalAmpScale(slot.structured.footstep.gait));
+                            slot.structured.footstep.modifier.panSigned = prevFootstepModifierPanSigned;
+                            slot.structured.footstep.modifier.scorePermille = std::max<std::uint16_t>(
+                                prevFootstepModifierScorePermille,
+                                static_cast<std::uint16_t>(prevFootstepModifierProvisional ? 560 : 620));
+                            slot.structured.footstep.modifier.targetEndUs = std::max(prevFootstepTargetEndUs, defaultTargetEndUs);
+                            slot.structured.footstep.modifier.provisional = prevFootstepModifierProvisional;
+                            slot.structured.footstep.modifier.revisionApplied = prevFootstepSessionRevisionApplied;
+                        } else {
+                            const auto seedBase = static_cast<std::uint8_t>(std::clamp(
+                                cfg.basePulseFootstep * 255.0f,
+                                0.0f,
+                                255.0f));
+                            slot.structured.footstep.seedLeft = (out.leftMotor != 0) ? out.leftMotor : seedBase;
+                            slot.structured.footstep.seedRight = (out.rightMotor != 0) ? out.rightMotor : seedBase;
+                            slot.structured.renderer = StructuredRendererKind::FootstepStride;
+                            slot.structured.footstep.gait = out.footstepGait;
+                            slot.structured.footstep.side = out.footstepSide;
+                            slot.structured.footstep.texturePreset = DefaultFootstepTexturePresetForGait(out.footstepGait);
+                            slot.structured.footstep.modifier.ampScale = FootstepProvisionalAmpScale(out.footstepGait);
+                            slot.structured.footstep.modifier.panSigned = 0.0f;
+                            slot.structured.footstep.modifier.scorePermille = 560;
+                            slot.structured.footstep.modifier.targetEndUs = defaultTargetEndUs;
+                            slot.structured.footstep.modifier.provisional = true;
+                            slot.structured.footstep.modifier.revisionApplied = 0;
+                        }
+                        slot.releaseEndUs = std::max(slot.releaseEndUs, slot.structured.footstep.modifier.targetEndUs);
+                    }
+                    else {
+                        slot.structured.renderer = StructuredRendererKind::None;
+                        slot.structured.footstep.patchLeaseExpireUs = 0;
+                        slot.structured.footstep.seedLeft = 0;
+                        slot.structured.footstep.seedRight = 0;
+                        slot.structured.footstep.gait = FootstepTruthGait::Unknown;
+                        slot.structured.footstep.side = FootstepTruthSide::Unknown;
+                        slot.structured.footstep.texturePreset = FootstepTexturePreset::None;
+                        slot.structured.footstep.modifier.ampScale = 1.0f;
+                        slot.structured.footstep.modifier.panSigned = 0.0f;
+                        slot.structured.footstep.modifier.scorePermille = 0;
+                        slot.structured.footstep.modifier.targetEndUs = 0;
+                        slot.structured.footstep.modifier.provisional = false;
+                        slot.structured.footstep.modifier.revisionApplied = 0;
+                    }
                 };
 
                 auto promotePendingToActive = [&]() {
@@ -1313,14 +1742,49 @@ namespace dualpad::haptics
                     return true;
                 };
 
+                auto sameStrideSprintUpgrade = [&](TrackSlotState& slot) {
+                    if (!tokenLane ||
+                        !slot.valid ||
+                        slot.eventType != EventType::Footstep ||
+                        out.eventType != EventType::Footstep ||
+                        out.footstepGait != FootstepTruthGait::Sprint ||
+                        slot.structured.footstep.gait == FootstepTruthGait::Sprint ||
+                        slot.structured.footstep.side == FootstepTruthSide::Unknown ||
+                        out.footstepSide == FootstepTruthSide::Unknown ||
+                        slot.structured.footstep.side != out.footstepSide ||
+                        !SameStrideFamily(slot.structured.footstep.gait, out.footstepGait)) {
+                        return false;
+                    }
+
+                    const auto strideDeltaUs = (slot.sourceQpc != 0 && nowUs >= slot.sourceQpc) ?
+                        (nowUs - slot.sourceQpc) :
+                        0ull;
+                    if (strideDeltaUs > kFootstepStrideUpgradeCoalesceUs) {
+                        return false;
+                    }
+
+                    mergeIntoSlot(slot, false, false);
+                    track.nextReadyUs = nowUs;
+                    return true;
+                };
+
+                const auto leaseKeepsSlotAlive = [&](const TrackSlotState& slot) {
+                    return slot.valid &&
+                        slot.eventType == EventType::Footstep &&
+                        slot.structured.footstep.patchLeaseExpireUs != 0 &&
+                        nowUs < slot.structured.footstep.patchLeaseExpireUs;
+                };
+
                 if (track.active.valid &&
                     track.active.releaseEndUs != 0 &&
-                    nowUs >= track.active.releaseEndUs) {
+                    nowUs >= track.active.releaseEndUs &&
+                    !leaseKeepsSlotAlive(track.active)) {
                     track.active = TrackSlotState{};
                 }
                 if (track.pending.valid &&
                     track.pending.releaseEndUs != 0 &&
-                    nowUs >= track.pending.releaseEndUs) {
+                    nowUs >= track.pending.releaseEndUs &&
+                    !leaseKeepsSlotAlive(track.pending)) {
                     track.pending = TrackSlotState{};
                 }
                 if (!track.active.valid && !track.pending.valid) {
@@ -1350,7 +1814,13 @@ namespace dualpad::haptics
                 }
 
                 const bool laneCoolingDown = (track.nextReadyUs != 0 && nowUs < track.nextReadyUs);
-                if (!track.active.valid && !laneCoolingDown) {
+                if (sameStrideSprintUpgrade(track.active)) {
+                    mergedPending = false;
+                }
+                else if (sameStrideSprintUpgrade(track.pending)) {
+                    mergedPending = true;
+                }
+                else if (!track.active.valid && !laneCoolingDown) {
                     (void)promotePendingToActive();
                 }
 
@@ -1592,10 +2062,18 @@ namespace dualpad::haptics
             _txQueueDepthBg.store(bgDepth, std::memory_order_relaxed);
         };
 
+        auto patchLeaseAlive = [&](const TrackSlotState& slot, std::uint64_t tsUs) {
+            return slot.valid &&
+                slot.eventType == EventType::Footstep &&
+                slot.structured.footstep.patchLeaseExpireUs != 0 &&
+                tsUs < slot.structured.footstep.patchLeaseExpireUs;
+        };
+
         auto pruneExpiredSlot = [&](TrackSlotState& slot, std::uint64_t nowUs) {
             if (slot.valid &&
                 slot.releaseEndUs != 0 &&
-                nowUs >= slot.releaseEndUs) {
+                nowUs >= slot.releaseEndUs &&
+                !patchLeaseAlive(slot, nowUs)) {
                 slot = TrackSlotState{};
                 _txTrackDrop.fetch_add(1, std::memory_order_relaxed);
             }
@@ -1796,6 +2274,27 @@ namespace dualpad::haptics
                     active.releaseEndUs = std::max(
                         active.releaseEndUs,
                         std::max(active.deadlineUs, track.nextReadyUs) + TrackReleaseWindowUs(active.eventType));
+                    active.structured.footstep.gait = (pending.structured.footstep.gait != FootstepTruthGait::Unknown) ?
+                        pending.structured.footstep.gait :
+                        active.structured.footstep.gait;
+                    active.structured.footstep.side = (pending.structured.footstep.side != FootstepTruthSide::Unknown) ?
+                        pending.structured.footstep.side :
+                        active.structured.footstep.side;
+                    active.structured.footstep.texturePreset = (pending.structured.footstep.texturePreset != FootstepTexturePreset::None) ?
+                        pending.structured.footstep.texturePreset :
+                        active.structured.footstep.texturePreset;
+                    active.structured.footstep.modifier.ampScale = std::max(
+                        active.structured.footstep.modifier.ampScale,
+                        pending.structured.footstep.modifier.ampScale);
+                    active.structured.footstep.modifier.panSigned = pending.structured.footstep.modifier.panSigned;
+                    active.structured.footstep.modifier.scorePermille = std::max(
+                        active.structured.footstep.modifier.scorePermille,
+                        pending.structured.footstep.modifier.scorePermille);
+                    active.structured.footstep.modifier.targetEndUs = std::max(
+                        active.structured.footstep.modifier.targetEndUs,
+                        pending.structured.footstep.modifier.targetEndUs);
+                    active.structured.footstep.modifier.provisional =
+                        active.structured.footstep.modifier.provisional || pending.structured.footstep.modifier.provisional;
                     active.seq = pending.seq;
                     active.epoch = pending.epoch;
                     active.supersededAtUs = 0;
@@ -1812,6 +2311,138 @@ namespace dualpad::haptics
                             static_cast<int>(index),
                             ToString(active.eventType),
                             active.seq);
+                    }
+                    return true;
+                };
+
+                auto maybeApplyFootstepLivePatch = [&](std::uint8_t index) {
+                    if (index != 2 || !cfg.enableFootstepAudioModifierLivePatch) {
+                        return false;
+                    }
+
+                    auto& track = _trackStates[index];
+                    auto& active = track.active;
+                    const bool silentSeedCandidate =
+                        active.valid &&
+                        active.eventType == EventType::Footstep &&
+                        !active.renderedOnce &&
+                        active.baseLeft == 0 &&
+                        active.baseRight == 0 &&
+                        active.sourceQpc != 0;
+                    if (!active.valid ||
+                        active.eventType != EventType::Footstep ||
+                        active.sourceQpc == 0) {
+                        return false;
+                    }
+                    if (!active.renderedOnce && !silentSeedCandidate) {
+                        return false;
+                    }
+
+                    std::uint64_t patchTruthUs = 0;
+                    std::uint64_t patchTargetEndUs = 0;
+                    float patchAmpScale = 1.0f;
+                    float patchPanSigned = 0.0f;
+                    std::uint32_t patchLeaseUs = 0;
+                    std::uint16_t patchScorePermille = 0;
+                    const char* patchSource = nullptr;
+
+                    std::uint64_t sessionPatchRevision = 0;
+                    if (cfg.enableFootstepTruthSessionLivePatch) {
+                        auto sessionPatch = FootstepTruthSessionShadow::GetSingleton().TryGetLivePatchForTruth(
+                            active.sourceQpc,
+                            active.structured.footstep.modifier.revisionApplied,
+                            nowUs);
+                        if (sessionPatch.has_value()) {
+                            patchTruthUs = sessionPatch->truthUs;
+                            patchTargetEndUs = sessionPatch->targetEndUs;
+                            patchAmpScale = sessionPatch->ampScale;
+                            patchPanSigned = sessionPatch->panSigned;
+                            patchLeaseUs = sessionPatch->patchLeaseUs;
+                            patchScorePermille = sessionPatch->scorePermille;
+                            sessionPatchRevision = sessionPatch->revision;
+                            patchSource = sessionPatch->provisional ? "session_provisional" : "session_patch";
+                        }
+                    }
+
+                    if (patchSource == nullptr) {
+                        auto patch = FootstepAudioMatcher::GetSingleton().TryConsumeLivePatchForTruth(
+                            active.sourceQpc,
+                            nowUs);
+                        if (!patch.has_value()) {
+                            return false;
+                        }
+                        patchTruthUs = patch->truthUs;
+                        patchTargetEndUs = patch->targetEndUs;
+                        patchAmpScale = patch->ampScale;
+                        patchPanSigned = patch->panSigned;
+                        patchLeaseUs = patch->patchLeaseUs;
+                        patchScorePermille = patch->scorePermille;
+                        patchSource = patch->fromRecentMemory ? "recent_memory" : "audio_patch";
+                    }
+
+                    const auto [prevLeft, prevRight] = ResolveFootstepStrideMotors(
+                        cfg,
+                        active.structured.footstep.seedLeft,
+                        active.structured.footstep.seedRight,
+                        active.structured.footstep.modifier.ampScale,
+                        active.structured.footstep.modifier.panSigned);
+                    const bool silentSeed = !active.renderedOnce && prevLeft == 0 && prevRight == 0;
+                    active.structured.footstep.modifier.ampScale = patchAmpScale;
+                    active.structured.footstep.modifier.panSigned = patchPanSigned;
+                    active.structured.footstep.modifier.scorePermille = std::max(
+                        active.structured.footstep.modifier.scorePermille,
+                        patchScorePermille);
+                    active.structured.footstep.modifier.targetEndUs = std::max(active.structured.footstep.modifier.targetEndUs, patchTargetEndUs);
+                    active.structured.footstep.modifier.provisional = std::strcmp(patchSource, "session_patch") != 0 &&
+                        std::strcmp(patchSource, "audio_patch") != 0;
+                    const auto [nextLeft, nextRight] = ResolveFootstepStrideMotors(
+                        cfg,
+                        active.structured.footstep.seedLeft,
+                        active.structured.footstep.seedRight,
+                        active.structured.footstep.modifier.ampScale,
+                        active.structured.footstep.modifier.panSigned);
+                    if (silentSeed) {
+                        active.deadlineUs = nowUs;
+                    }
+
+                    active.structured.footstep.patchLeaseExpireUs = std::max(
+                        active.structured.footstep.patchLeaseExpireUs,
+                        active.sourceQpc + static_cast<std::uint64_t>(patchLeaseUs));
+                    active.releaseEndUs = std::max(
+                        active.releaseEndUs,
+                        std::max(patchTargetEndUs, active.structured.footstep.modifier.targetEndUs));
+                    active.lastUpdateUs = nowUs;
+                    if (track.nextReadyUs > nowUs) {
+                        track.nextReadyUs = nowUs;
+                    }
+                    if (sessionPatchRevision != 0) {
+                        active.structured.footstep.modifier.revisionApplied = sessionPatchRevision;
+                        FootstepTruthSessionShadow::GetSingleton().NoteLivePatchApplied(
+                            patchTruthUs,
+                            sessionPatchRevision);
+                    }
+
+                    if (ShouldEmitWindowedProbe(
+                            s_trackPromoteProbeWindowUs,
+                            s_trackPromoteProbeLines,
+                            nowUs,
+                            6)) {
+                        logger::info(
+                            "[Haptics][ProbeTrack] site=track/live_patch lane={} seq={} truth={} source={} score={:.2f} amp={:.2f} pan={:.2f} texture={} targetEndDelta={}us lease={}us motor={}/{}->{}/{}",
+                            static_cast<int>(index),
+                            active.seq,
+                            patchTruthUs,
+                            patchSource,
+                            static_cast<float>(patchScorePermille) / 1000.0f,
+                            patchAmpScale,
+                            patchPanSigned,
+                            ToString(active.structured.footstep.texturePreset),
+                            (patchTargetEndUs > patchTruthUs) ? (patchTargetEndUs - patchTruthUs) : 0ull,
+                            patchLeaseUs,
+                            static_cast<int>(prevLeft),
+                            static_cast<int>(prevRight),
+                            static_cast<int>(nextLeft),
+                            static_cast<int>(nextRight));
                     }
                     return true;
                 };
@@ -1862,6 +2493,10 @@ namespace dualpad::haptics
                              track.pending.valid &&
                              (track.nextReadyUs == 0 || nowUs >= track.nextReadyUs)) {
                         (void)maybePromotePending(i, "ready_switch");
+                    }
+
+                    if (renderedLane) {
+                        (void)maybeApplyFootstepLivePatch(i);
                     }
 
                     const bool laneValid = track.active.valid || track.pending.valid;
@@ -1936,21 +2571,66 @@ namespace dualpad::haptics
 
                     float gain = 1.0f;
                     std::uint64_t overdueUs = 0;
+                    std::uint64_t effectiveReleaseEndUs = active.releaseEndUs;
+                    std::uint8_t renderBaseLeft = active.baseLeft;
+                    std::uint8_t renderBaseRight = active.baseRight;
+                    if (active.eventType == EventType::Footstep) {
+                        if (cfg.enableStateTrackFootstepTextureRenderer) {
+                            const auto textured = RenderFootstepTexture(
+                                cfg,
+                                active.sourceQpc,
+                                active.releaseEndUs,
+                                active.structured.footstep.modifier.targetEndUs,
+                                active.structured.footstep.seedLeft,
+                                active.structured.footstep.seedRight,
+                                active.structured.footstep.gait,
+                                active.structured.footstep.side,
+                                active.structured.footstep.texturePreset,
+                                active.structured.footstep.modifier.ampScale,
+                                active.structured.footstep.modifier.panSigned,
+                                active.structured.footstep.modifier.scorePermille,
+                                active.structured.footstep.modifier.provisional,
+                                nowUs);
+                            renderBaseLeft = textured.left;
+                            renderBaseRight = textured.right;
+                            effectiveReleaseEndUs = std::max(effectiveReleaseEndUs, textured.effectiveEndUs);
+                        }
+                        else {
+                            const auto motors = ResolveFootstepStrideMotors(
+                                cfg,
+                                active.structured.footstep.seedLeft,
+                                active.structured.footstep.seedRight,
+                                active.structured.footstep.modifier.ampScale,
+                                active.structured.footstep.modifier.panSigned);
+                            renderBaseLeft = motors.first;
+                            renderBaseRight = motors.second;
+                            effectiveReleaseEndUs = std::max(
+                                effectiveReleaseEndUs,
+                                active.structured.footstep.modifier.targetEndUs);
+                        }
+                    }
                     if (nowUs > deadlineUs) {
                         overdueUs = nowUs - deadlineUs;
-                        const auto releaseSpanUs = (active.releaseEndUs > deadlineUs) ?
-                            (active.releaseEndUs - deadlineUs) :
+                        const auto releaseSpanUs = (effectiveReleaseEndUs > deadlineUs) ?
+                            (effectiveReleaseEndUs - deadlineUs) :
                             1ull;
+                        const float minGain = (active.eventType == EventType::Footstep) ? 0.0f : 0.12f;
                         gain = std::clamp(
                             1.0f - (static_cast<float>(overdueUs) / static_cast<float>(releaseSpanUs)),
-                            0.12f,
+                            minGain,
                             1.0f);
                     }
                     const auto left = static_cast<std::uint8_t>(std::clamp(
-                        static_cast<float>(active.baseLeft) * gain, 0.0f, 255.0f));
+                        static_cast<float>(renderBaseLeft) * gain, 0.0f, 255.0f));
                     const auto right = static_cast<std::uint8_t>(std::clamp(
-                        static_cast<float>(active.baseRight) * gain, 0.0f, 255.0f));
+                        static_cast<float>(renderBaseRight) * gain, 0.0f, 255.0f));
                     if (left == 0 && right == 0) {
+                        if (patchLeaseAlive(active, nowUs)) {
+                            if (track.nextReadyUs == 0 || track.nextReadyUs > (nowUs + 4000ull)) {
+                                track.nextReadyUs = nowUs + 4000ull;
+                            }
+                            continue;
+                        }
                         if (overdueUs > static_cast<std::uint64_t>(cfg.stateTrackRepeatKeepMaxOverdueUs)) {
                             active = TrackSlotState{};
                             _txTrackDrop.fetch_add(1, std::memory_order_relaxed);
@@ -2135,7 +2815,9 @@ namespace dualpad::haptics
                         firstRenderLatencyUs = static_cast<std::uint32_t>(sendUs - active.sourceQpc);
                     }
                     active.renderedOnce = true;
-                    if (active.releaseEndUs != 0 && sendUs >= active.releaseEndUs) {
+                    if (active.releaseEndUs != 0 &&
+                        sendUs >= active.releaseEndUs &&
+                        !patchLeaseAlive(active, sendUs)) {
                         if (ShouldEmitWindowedProbe(
                                 s_trackReleaseDropProbeWindowUs,
                                 s_trackReleaseDropProbeLines,
@@ -3906,3 +4588,4 @@ namespace dualpad::haptics
         return true;
     }
 }
+

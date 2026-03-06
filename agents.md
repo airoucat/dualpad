@@ -268,6 +268,11 @@
 4. `DynamicHapticPool`：扩展为“deadline-aware 回放候选”（仅在主链 miss 且不破坏截止时间时介入）。
 5. `MetricsReporter/SessionSummary`：新增 deadline 口径指标（`deadlineHitRate`、`deadlineMissP95`、`noSelectFutureOnlyRatio`、`capHitBudgetPressure`）。
 
+### 已确认临时隔离项（2026-03-06）
+1. `Shout/Voice` 当前会在 `lane=1` 形成高频 live 输出，已确认会造成乱震。
+2. 在未建立单独 `truth + renderer` 路径前，`Shout` 先做 live 硬隔离，避免污染 `Footstep/Combat` 体感。
+3. 后续若恢复，必须走独立事件策略，不再复用当前 `swing/utility` 共享行为。
+
 ### Truth + ModifierResolver 扩充计划（新的重构指导）
 1. `Footstep` 先补 `FootstepAudioMatcher shadow`，验证 truth 后短窗音频修饰匹配率
 2. `Footstep` 再接 `L1Exact / L2Stat / L3Template` 修饰层，不改 truth 主触发
@@ -551,6 +556,198 @@
   - validate whether `Footstep` can move from `TruthTrigger + default template` to `TruthTrigger + L1 exact modifier`
   - keep live `truth-first Footstep` output unchanged while measuring `FootBridge` claim quality and `FootAudio` bridge-backed match quality
 
+### Phase B17 (Done - 2026-03-06)
+- Replace the bridge-side `FootstepAudioMatcher` logic with a patch-bus shadow flow:
+  - `TruthToken -> BridgeClaim -> PendingPatch -> first fresh exact instance/voice feature`
+- Fallback policy:
+  - bridge-bound truths first wait for a causally-bound audio patch
+  - only after patch expiry do they fall back to the old short-window matcher
+- Why this exists:
+  - stop selecting multi-second stale audio features after a valid causal bridge already exists
+  - make `Footstep` modifier resolution closer to the final `TruthTrigger + ModifierResolver + LaneRenderer` architecture
+- Current role:
+  - keep live `truth-first Footstep` output unchanged
+  - preserve comparable shadow counters: `matched / noWin / noSem / lowScore / bridge(bound/match/noFeat)`
+
+### Phase B18 (Done - 2026-03-06)
+- Upgrade `Footstep` from `truth-first + shadow modifier` to `truth-first + live late-patch`:
+  - keep first attack owned by `FootstepTruthProbe`
+  - let causal audio patch only modify `lane=2` sustain/release/pan/amp after first render
+- Live patch policy:
+  - only bridge-backed matches can enter live patch bus
+  - short-window matcher remains shadow/fallback and does not touch live output
+  - patch target is exact `truthUs`, not nearest-window guessing
+- Why this exists:
+  - preserve `100% correct trigger` from truth-first path
+  - add audio texture without reintroducing false trigger / late trigger / double trigger
+  - make `ModifierResolver` converge to `causal patch bus` instead of retrospective ring scoring
+
+### Phase B19 (Done - 2026-03-06)
+- Add `Footstep patchable lease` and truth-anchored tail target:
+  - `leaseExpireUs` keeps a rendered `Footstep` lane alive for late audio patching, but does not imply a long strong vibration by itself
+  - `targetEndUs` is now anchored to `truthUs + matchDeltaUs + matchDurationUs`, not `patchArriveUs + hold`
+- Renderer policy:
+  - after `releaseEndUs`, `lane=2` can enter a dormant-but-patchable state until lease expiry
+  - late patch may revive or extend only the tail portion of the same step
+  - first attack remains truth-owned and must never be retriggered by audio
+- Why this exists:
+  - bridge-backed audio modifiers currently arrive tens of milliseconds later than the truth trigger
+  - patchable lease absorbs that delay without handing trigger ownership back to audio
+  - truth-anchored end time keeps total haptic duration aligned to the matched audio segment instead of drifting with patch arrival time
+
+### Phase B20 (Done - 2026-03-06)
+- Add `Footstep recent modifier memory` as the secondary fallback for audio-only testing:
+  - cache only recent modifier parameters (`ampScale / pan / targetEndDelta`), never replay old motor output
+  - when `enable_state_track_footstep_truth_attack=false` and a live patch misses, silent truth seeds may be lit by `recent_memory`
+- Safety policy:
+  - this is parameter memory, not event replay, so it does not substitute the current step with the previous step's full waveform
+  - it exists to keep audio-only test mode closer to final handfeel without reintroducing old-step ghosting
+
+### Phase B21 (Done - 2026-03-06)
+- Move `recent modifier memory` from flush-time probing to truth-time priming:
+  - when a player `Footstep truth` arrives in `truthAttack=false` mode, prime a `recent_memory` live patch immediately if recent modifier samples exist
+  - later causal `audio_patch` may still override the same truth token
+- Why this exists:
+  - flush-time fallback was too late and produced large miss counters without actually rescuing whole silent steps
+  - truth-time priming turns fallback into a per-step guarantee instead of a per-tick retry
+
+### Phase B22 (Recorded - future silence-compensation generalization)
+- Generalize `recent modifier memory` into a shared fallback pattern for truth-backed structured events:
+  - reuse only recent modifier parameters such as `amp/pan/targetEndDelta/texture`
+  - never replay previous motor output verbatim
+  - only engage when `TruthTrigger` exists but live modifier patch misses or arrives too late
+- Intended targets:
+  - `Footstep` first
+  - later `Hit/Block/Swing` once those event families move to `TruthTrigger + ModifierResolver + LaneRenderer`
+- Design goal:
+  - smooth unavoidable silence without reintroducing false triggers, phase drift, or previous-event ghosting
+
+### Phase B23 (Done - 2026-03-06)
+- Upgrade `Footstep recent modifier memory` from flat averaging to bucketed predictive memory:
+  - separate `FootLeft / FootRight / JumpUp / JumpDown`
+  - prefer exact-bucket samples; allow limited walk-family fallback only between left/right
+  - use robust aggregation (`weighted median` for amp/targetEnd, trimmed weighted mean for pan) instead of plain averaging
+  - fold in truth-gap similarity so memory prefers samples from a similar cadence
+- Safety rule:
+  - only real `audio_patch` updates the memory pool
+  - `recent_memory` patch itself does not recursively write back, to avoid self-reinforcing drift
+
+### Phase B24 (Done - 2026-03-06)
+- Add `FootstepTruthSessionShadow` as the shadow prototype for `TruthSession + CandidateBus`:
+  - create an active truth session when a player `Footstep` truth arrives
+  - append Top-K `instance/voice/generation` candidates into that session instead of relying only on one-shot pairing
+  - consume audio features incrementally from a lock-free ring and finalize sessions by event flow, not by per-truth full ring rescans
+- Current role:
+  - shadow-only, does not modify the stable live `truth-first + patch bus` output
+  - measures whether session-driven finalization can improve claim coverage and reduce `no_window`
+- New metrics:
+  - `FootSession truths/inst/feat/patched/expired/noCand/noFeat`
+  - `candP50/P95`
+  - `truthToPatchP50/P95`
+  - `claimToPatchP50/P95`
+
+### Phase B25 (Done - 2026-03-06)
+- Add `FootstepCandidateReservoir` as the current candidate-coverage upgrade for `TruthSession`:
+  - collect recent footstep-like candidates from `PlayPath init`, `PlayPath submit`, and `EngineAudioTap` feature-side observations
+  - seed each new truth session from the reservoir before waiting for later incremental candidates
+  - keep the current live `truth-first` / `late-patch` path unchanged while evaluating whether `noCand` drops
+- New metrics:
+  - `FootCand obs/init/submit/tap`
+  - `expired/snap/returned/active`
+
+### Phase B26 (Done - 2026-03-06)
+- Add `FootstepTagNormalizer` on the `truth -> shadow session` path:
+  - normalize `FootLeft/FootSprintLeft` into the same stride family (`StrideLeft`)
+  - normalize `FootRight/FootSprintRight` into the same stride family (`StrideRight`)
+  - keep `JumpUp/JumpDown` separate
+- Split `FootstepTruthSessionShadow` policy by gait:
+  - `Sprint` sessions now use a wider candidate acceptance window and a longer session lifetime
+  - `Walk/Sprint` dual tags inside a short window collapse into one stride session, with `Sprint` taking precedence
+- Scope:
+  - shadow/session side only
+  - current live `truth-first` trigger remains unchanged until sprint coverage is revalidated
+
+### Phase B27 (Done - 2026-03-06)
+- Promote `FootstepTruthSessionShadow` into the primary live audio-modifier source for `lane=2`:
+  - `TruthSession`-finalized features now enqueue `session_patch` live patches directly
+  - `HidOutput` applies `session_patch` before consulting the older matcher-owned live patch queue
+- Keep rollback and safety:
+  - `FootstepAudioMatcher` still owns `recent_memory` and remains the fallback when `session_patch` is unavailable
+  - `enable_footstep_truth_session_live_patch=false` restores the older matcher-owned live patch path
+- Goal:
+  - let the stronger `Walk/Sprint`-aware session model improve sprint coverage in live output without disturbing the stable `truth-first` trigger
+
+### Phase B28 (Done - 2026-03-06)
+- Move `Footstep` live modifier handling one step closer to `StrideState`:
+  - `session_patch` is no longer treated as a one-shot consume-and-drop payload
+  - each `truthUs` now owns a persistent session modifier state with a monotonic revision
+  - `HidOutput lane=2` pulls newer revisions by `truthUs` and reapplies them from the footstep seed base instead of compounding patch scales
+- Add claim-time provisional modifier:
+  - when a stride session receives its first viable candidate, it can publish a `session_provisional` modifier immediately
+  - later feature finalization upgrades the same truth-owned modifier state to a stronger `session_patch`
+- Design intent:
+  - reduce `q/ap/ex` loss caused by late queue consumption
+  - make `truth_attack=false` test mode less dependent on a final audio feature arriving in time
+
+### Phase B29 (Done - 2026-03-06)
+- Pull `session_provisional` forward from `first candidate` to `truth arrival` for zero-attack test mode:
+  - when `enable_state_track_footstep_truth_attack=false`, `FootstepTruthSessionShadow` now seeds a provisional live modifier at truth time instead of waiting for `claim`
+  - candidate/feature arrival still upgrades the same truth-owned state later
+- Make silent footstep seeds wake the reader as soon as a session live patch is already available:
+  - `GetReaderPollTimeoutMsStateTrack()` now treats `lane=2` silent seeds with a ready session patch as immediately due
+- Design intent:
+  - cut `truth -> session_provisional` latency in zero-attack mode
+  - improve sprint coverage without disturbing the normal `truth-first` product path
+
+### Phase B30 (Done - 2026-03-06)
+- Start collapsing `Footstep` from external patch handoff into `lane=2` stride state:
+  - `TrackSlotState` now owns `footstepGait/footstepSide`
+  - provisional/final modifier fields (`amp/pan/targetEnd`) now live with the stride slot
+- `truth_attack=false` no longer depends on an external patch message to let a stride light up:
+  - truth seeds a gait-aware provisional stride state immediately
+  - `session/audio/recent_memory` now refine the same stride state instead of deciding whether the step exists
+- `Walk/Sprint/Jump` provisional defaults are split by gait, so sprint no longer inherits walk assumptions by default
+- Design intent:
+  - remove remaining `sessionLive expired` handoff losses
+  - make zero-attack test mode closer to the final truth-backed architecture without reintroducing old audio-only trigger problems
+
+### Phase B31 (Done - 2026-03-06)
+- Move same-side `Walk -> Sprint` upgrade into the truth/live submit boundary:
+  - when `FootLeft + FootSprintLeft` or `FootRight + FootSprintRight` arrive inside a short coalesce window, `lane=2` now upgrades the existing stride state to `Sprint` immediately
+  - no longer wait for a later `session_patch` to correct an already-seeded walk provisional
+- Scope:
+  - same-side stride family only
+  - upgrade is limited to a short near-truth window, so unrelated later steps cannot hijack the current stride
+- Design intent:
+  - restore sprint coverage in zero-attack mode
+  - keep gait selection as an upstream truth/live decision instead of a downstream patch repair
+
+### Phase B32 (Done - 2026-03-06)
+- Convert `FootSession` live modifier storage from an external consume-and-drop patch queue into a persistent truth-owned modifier state:
+  - each `truthUs` now keeps the latest modifier revision alive until its own expiry window
+  - `lane=2` reads the current modifier state by `truthUs + revision`, instead of depending on queue timing
+- Update rules:
+  - provisional and final session modifiers both upsert the same truth-owned state
+  - expiring an unapplied revision still counts as live expiry, but later revisions for the same stride are no longer lost just because an earlier queue item was consumed or popped
+- Design intent:
+  - remove remaining handoff-driven `sessionLive expired` losses
+  - move `Footstep` closer to full `StrideState` ownership, where modifier lifetime follows the stride itself
+
+### Truth-backed Renderer Template (Recorded)
+- `Truth-owned provisional renderer`
+  - not Footstep-specific; same pattern can be promoted to other truth-backed events
+  - future targets: `Hit/Block/Swing`
+- `Predictive/recent modifier memory`
+  - also reusable for other truth-backed events
+  - only reuses modifier parameters
+  - never replays old full motor output
+  - intended to lower unavoidable silence probability, not replace the truth trigger
+
+### Future Candidate Coverage Plan (Recorded)
+- Preferred end-state after B25 is an upstream causal handshake:
+  - `TruthToken -> PlayInstance` direct ownership binding, instead of probabilistic candidate collection
+  - once a stable play-creation hook is found, candidate coverage should stop depending on windows/reservoirs and move to deterministic ownership transfer
+
 ### Phase C3 (Recorded - future typed truth probe family)
 - Generalize the same typed-event probe pattern to other structured events:
   - `Footstep`: `BGSFootstepManager -> BGSFootstepEvent`
@@ -560,3 +757,51 @@
   - first find a typed event source or stable engine consumer
   - then validate ownership and cadence with a probe
   - only after truth quality is confirmed, promote it into the main trigger path
+
+### Phase B33 (Done - 2026-03-06)
+- Record the remaining `coverage / noCand / live-expired` cleanup as a later pass; current priority shifts to reducing `Footstep` haptic homogeneity without disturbing the truth-first trigger path.
+- Add `TextureRenderer v1` to `lane=2`:
+  - preserve the existing `TruthTrigger + StrideState` correctness path
+  - replace the old single-pulse `amp/pan/end` feel with gait-owned texture envelopes
+  - introduce `WalkSoft / SprintDrive / JumpLift / LandSlam` as the first stride texture families inside `HidOutput`
+- Add rollback flag:
+  - `enable_state_track_footstep_texture_renderer`
+
+### Phase B34 (Done - 2026-03-06)
+- Add `WeaponSwingTruthProbe` as the first combat truth-first entry point.
+- Current scope is intentionally narrow:
+  - player-only `BSAnimationGraphEvent`
+  - only mapped `WeaponSwing` family tags submit live `EventType::WeaponSwing`
+  - `Block/HitImpact` are deferred so attack truth can be verified in isolation
+- Add low-noise probe logs:
+  - `site=truth/submit`
+  - `site=truth/reject reason=unmapped_attack_like`
+- Add feature flag:
+  - `enable_state_track_weapon_swing_truth_trigger`
+
+### Phase B35 (Done - 2026-03-06)
+- Add `HitImpactTruthProbe` on `TESHitEvent` as the first stable combat truth-backed path.
+- Scope:
+  - player-caused or player-targeted `TESHitEvent`
+  - blocked hits promote to `EventType::Block`
+  - non-blocked hits promote to `EventType::HitImpact`
+  - both submit directly as `BaseEvent` into `lane=0`
+- Goal:
+  - get stable impact-lane combat vibration working before chasing a better `WeaponSwing` truth source
+  - separate "combat truth never arrived" from "impact lane renderer failed"
+- Add feature flag:
+  - `enable_state_track_hit_truth_trigger`
+
+### Phase B36 (Done - 2026-03-06)
+- Start the `StructuredEventPolicy` shell extraction from the existing `Footstep` lane instead of growing more lane-local ad-hoc fields:
+  - add `StructuredModifierState`
+  - add `FootstepStrideState`
+  - add `StructuredEventState`
+- `lane=2` now stores `seed / gait / side / texture / modifier / lease` under `TrackSlotState::structured`, instead of scattering Footstep-only fields across the slot.
+- Design intent:
+  - make the current `Footstep` implementation match the documented `TruthTrigger + ModifierResolver + Renderer-owned Lane` architecture more closely
+  - create the data-layout shell that `Hit / Block / Swing` can reuse later, instead of cloning another Footstep-specific field pack
+- Scope:
+  - this pass is structural only
+  - live behavior should remain functionally equivalent
+  - remaining `coverage / noCand / live-expired` cleanup stays deferred as already recorded above

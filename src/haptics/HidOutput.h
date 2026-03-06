@@ -118,6 +118,7 @@ namespace dualpad::haptics
             std::uint64_t releaseEndUs{ 0 };
             std::uint64_t seq{ 0 };
             bool renderedOnce{ false };
+            StructuredEventState structured{};
             std::uint64_t epoch{ 0 };
             std::uint64_t supersededAtUs{ 0 };
         };

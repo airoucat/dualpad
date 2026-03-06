@@ -452,6 +452,20 @@ namespace dualpad::haptics
             enableStateTrackSwingRenderer = ParseBool(
                 values.at("enable_state_track_swing_renderer"), enableStateTrackSwingRenderer);
         }
+        if (values.count("enable_state_track_weapon_swing_truth_trigger")) {
+            enableStateTrackWeaponSwingTruthTrigger = ParseBool(
+                values.at("enable_state_track_weapon_swing_truth_trigger"),
+                enableStateTrackWeaponSwingTruthTrigger);
+        }
+        if (values.count("enable_state_track_hit_truth_trigger")) {
+            enableStateTrackHitTruthTrigger = ParseBool(
+                values.at("enable_state_track_hit_truth_trigger"),
+                enableStateTrackHitTruthTrigger);
+        }
+        if (values.count("enable_state_track_shout_live_output")) {
+            enableStateTrackShoutLiveOutput = ParseBool(
+                values.at("enable_state_track_shout_live_output"), enableStateTrackShoutLiveOutput);
+        }
         if (values.count("enable_state_track_footstep_renderer")) {
             enableStateTrackFootstepRenderer = ParseBool(
                 values.at("enable_state_track_footstep_renderer"), enableStateTrackFootstepRenderer);
@@ -463,6 +477,14 @@ namespace dualpad::haptics
         if (values.count("enable_state_track_footstep_truth_trigger")) {
             enableStateTrackFootstepTruthTrigger = ParseBool(
                 values.at("enable_state_track_footstep_truth_trigger"), enableStateTrackFootstepTruthTrigger);
+        }
+        if (values.count("enable_state_track_footstep_truth_attack")) {
+            enableStateTrackFootstepTruthAttack = ParseBool(
+                values.at("enable_state_track_footstep_truth_attack"), enableStateTrackFootstepTruthAttack);
+        }
+        if (values.count("enable_state_track_footstep_texture_renderer")) {
+            enableStateTrackFootstepTextureRenderer = ParseBool(
+                values.at("enable_state_track_footstep_texture_renderer"), enableStateTrackFootstepTextureRenderer);
         }
         if (values.count("enable_state_track_footstep_context_gate")) {
             enableStateTrackFootstepContextGate = ParseBool(
@@ -479,6 +501,26 @@ namespace dualpad::haptics
         if (values.count("enable_footstep_audio_matcher_shadow")) {
             enableFootstepAudioMatcherShadow = ParseBool(
                 values.at("enable_footstep_audio_matcher_shadow"), enableFootstepAudioMatcherShadow);
+        }
+        if (values.count("enable_footstep_audio_modifier_live_patch")) {
+            enableFootstepAudioModifierLivePatch = ParseBool(
+                values.at("enable_footstep_audio_modifier_live_patch"), enableFootstepAudioModifierLivePatch);
+        }
+        if (values.count("enable_footstep_truth_session_live_patch")) {
+            enableFootstepTruthSessionLivePatch = ParseBool(
+                values.at("enable_footstep_truth_session_live_patch"), enableFootstepTruthSessionLivePatch);
+        }
+        if (values.count("enable_footstep_recent_modifier_memory")) {
+            enableFootstepRecentModifierMemory = ParseBool(
+                values.at("enable_footstep_recent_modifier_memory"), enableFootstepRecentModifierMemory);
+        }
+        if (values.count("state_track_footstep_patch_lease_us")) {
+            stateTrackFootstepPatchLeaseUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_footstep_patch_lease_us")), 40000u, 300000u);
+        }
+        if (values.count("footstep_recent_modifier_memory_max_age_us")) {
+            footstepRecentModifierMemoryMaxAgeUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_recent_modifier_memory_max_age_us")), 40000u, 1000000u);
         }
         if (values.count("footstep_audio_matcher_lookback_us")) {
             footstepAudioMatcherLookbackUs = std::clamp<std::uint32_t>(
@@ -833,6 +875,16 @@ namespace dualpad::haptics
             enableStateTrackSwingRenderer = ParseBool(
                 values.at("enable_state_track_swing_renderer"), enableStateTrackSwingRenderer);
         }
+        if (values.count("enable_state_track_weapon_swing_truth_trigger")) {
+            enableStateTrackWeaponSwingTruthTrigger = ParseBool(
+                values.at("enable_state_track_weapon_swing_truth_trigger"),
+                enableStateTrackWeaponSwingTruthTrigger);
+        }
+        if (values.count("enable_state_track_hit_truth_trigger")) {
+            enableStateTrackHitTruthTrigger = ParseBool(
+                values.at("enable_state_track_hit_truth_trigger"),
+                enableStateTrackHitTruthTrigger);
+        }
         if (values.count("enable_state_track_footstep_renderer")) {
             enableStateTrackFootstepRenderer = ParseBool(
                 values.at("enable_state_track_footstep_renderer"), enableStateTrackFootstepRenderer);
@@ -844,6 +896,14 @@ namespace dualpad::haptics
         if (values.count("enable_state_track_footstep_truth_trigger")) {
             enableStateTrackFootstepTruthTrigger = ParseBool(
                 values.at("enable_state_track_footstep_truth_trigger"), enableStateTrackFootstepTruthTrigger);
+        }
+        if (values.count("enable_state_track_footstep_truth_attack")) {
+            enableStateTrackFootstepTruthAttack = ParseBool(
+                values.at("enable_state_track_footstep_truth_attack"), enableStateTrackFootstepTruthAttack);
+        }
+        if (values.count("enable_state_track_footstep_texture_renderer")) {
+            enableStateTrackFootstepTextureRenderer = ParseBool(
+                values.at("enable_state_track_footstep_texture_renderer"), enableStateTrackFootstepTextureRenderer);
         }
         if (values.count("enable_state_track_footstep_context_gate")) {
             enableStateTrackFootstepContextGate = ParseBool(
@@ -860,6 +920,26 @@ namespace dualpad::haptics
         if (values.count("enable_footstep_audio_matcher_shadow")) {
             enableFootstepAudioMatcherShadow = ParseBool(
                 values.at("enable_footstep_audio_matcher_shadow"), enableFootstepAudioMatcherShadow);
+        }
+        if (values.count("enable_footstep_audio_modifier_live_patch")) {
+            enableFootstepAudioModifierLivePatch = ParseBool(
+                values.at("enable_footstep_audio_modifier_live_patch"), enableFootstepAudioModifierLivePatch);
+        }
+        if (values.count("enable_footstep_truth_session_live_patch")) {
+            enableFootstepTruthSessionLivePatch = ParseBool(
+                values.at("enable_footstep_truth_session_live_patch"), enableFootstepTruthSessionLivePatch);
+        }
+        if (values.count("enable_footstep_recent_modifier_memory")) {
+            enableFootstepRecentModifierMemory = ParseBool(
+                values.at("enable_footstep_recent_modifier_memory"), enableFootstepRecentModifierMemory);
+        }
+        if (values.count("state_track_footstep_patch_lease_us")) {
+            stateTrackFootstepPatchLeaseUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_footstep_patch_lease_us")), 40000u, 300000u);
+        }
+        if (values.count("footstep_recent_modifier_memory_max_age_us")) {
+            footstepRecentModifierMemoryMaxAgeUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_recent_modifier_memory_max_age_us")), 40000u, 1000000u);
         }
         if (values.count("footstep_audio_matcher_lookback_us")) {
             footstepAudioMatcherLookbackUs = std::clamp<std::uint32_t>(
@@ -919,7 +999,7 @@ namespace dualpad::haptics
         }
 
         logger::info(
-            "[Haptics][Config] HidTx fgCap={} bgCap={} stale={}us mergeFg={}us mergeBg={}us lookahead={}us bgBudget={} fgPreempt={} maxSend={} minRepeat={}us idleRepeat={}us stopClear={} track(en={} impactRender={} swingRender={} footRender={} footToken={} footTruth={} footCtxGate={} footMotionGate={} footRecent={}ms footAudioShadow={} footAudioWin={}/{}us footAudioMaxCand={} footAudioMin={:.2f} footBridge(en={} win={}/{}us ttl={}ms) lookMin={}us keepOverMax={}us rel(hit/swing/foot/util)={}/{}/{}/{})",
+            "[Haptics][Config] HidTx fgCap={} bgCap={} stale={}us mergeFg={}us mergeBg={}us lookahead={}us bgBudget={} fgPreempt={} maxSend={} minRepeat={}us idleRepeat={}us stopClear={} track(en={} impactRender={} swingRender={} shoutLive={} footRender={} footToken={} footTruth={} footAttack={} footTexture={} footCtxGate={} footMotionGate={} footRecent={}ms footAudioShadow={} footAudioLivePatch={} footRecentMem={} footPatchLease={}us footMemAge={}us footAudioWin={}/{}us footAudioMaxCand={} footAudioMin={:.2f} footBridge(en={} win={}/{}us ttl={}ms) lookMin={}us keepOverMax={}us rel(hit/swing/foot/util)={}/{}/{}/{})",
             hidTxFgCapacity,
             hidTxBgCapacity,
             hidStaleUs,
@@ -935,13 +1015,20 @@ namespace dualpad::haptics
             enableStateTrackScheduler,
             enableStateTrackImpactRenderer,
             enableStateTrackSwingRenderer,
+            enableStateTrackShoutLiveOutput,
             enableStateTrackFootstepRenderer,
             enableStateTrackFootstepTokenRenderer,
             enableStateTrackFootstepTruthTrigger,
+            enableStateTrackFootstepTruthAttack,
+            enableStateTrackFootstepTextureRenderer,
             enableStateTrackFootstepContextGate,
             enableStateTrackFootstepMotionGate,
             stateTrackFootstepRecentMoveMs,
             enableFootstepAudioMatcherShadow,
+            enableFootstepAudioModifierLivePatch,
+            enableFootstepRecentModifierMemory,
+            stateTrackFootstepPatchLeaseUs,
+            footstepRecentModifierMemoryMaxAgeUs,
             footstepAudioMatcherLookbackUs,
             footstepAudioMatcherLookaheadUs,
             footstepAudioMatcherMaxCandidates,

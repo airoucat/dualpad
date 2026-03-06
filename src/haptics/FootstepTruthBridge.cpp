@@ -1,7 +1,9 @@
 #include "pch.h"
 #include "haptics/FootstepTruthBridge.h"
 
+#include "haptics/FootstepCandidateReservoir.h"
 #include "haptics/HapticsConfig.h"
+#include "haptics/FootstepTruthSessionShadow.h"
 #include "haptics/HapticsTypes.h"
 
 #include <SKSE/SKSE.h>
@@ -117,6 +119,19 @@ namespace dualpad::haptics
         }
 
         _instancesObserved.fetch_add(1, std::memory_order_relaxed);
+        FootstepTruthSessionShadow::GetSingleton().ObserveFootstepInstance(
+            instanceId,
+            voicePtr,
+            generation,
+            observedUs,
+            viaSubmit);
+        FootstepCandidateReservoir::GetSingleton().ObserveCandidate(
+            instanceId,
+            voicePtr,
+            generation,
+            observedUs,
+            viaSubmit ? FootstepCandidateReservoir::Source::Submit : FootstepCandidateReservoir::Source::Init,
+            viaSubmit ? 1.0f : 0.85f);
 
         std::scoped_lock lock(_mutex);
         ExpireLocked(observedUs);

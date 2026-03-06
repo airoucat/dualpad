@@ -8,8 +8,10 @@
 #include "haptics/EngineAudioTap.h"
 #include "haptics/EventNormalizer.h"
 #include "haptics/FootstepAudioMatcher.h"
+#include "haptics/FootstepCandidateReservoir.h"
 #include "haptics/FootstepTruthBridge.h"
 #include "haptics/FootstepTruthProbe.h"
+#include "haptics/FootstepTruthSessionShadow.h"
 #include "haptics/HapticEligibilityEngine.h"
 #include "haptics/MetricsReporter.h"
 #include "haptics/PlayPathHook.h"
@@ -285,6 +287,8 @@ namespace dualpad::haptics
             FootstepTruthProbe::Stats footTruth{};
             FootstepAudioMatcher::Stats footAudio{};
             FootstepTruthBridge::Stats footBridge{};
+            FootstepCandidateReservoir::Stats footCand{};
+            FootstepTruthSessionShadow::Stats footSession{};
         };
 
         PeriodicLogSnapshot CollectPeriodicLogSnapshot(HapticMixer& mixer)
@@ -307,6 +311,8 @@ namespace dualpad::haptics
             snap.footTruth = FootstepTruthProbe::GetSingleton().GetStats();
             snap.footAudio = FootstepAudioMatcher::GetSingleton().GetStats();
             snap.footBridge = FootstepTruthBridge::GetSingleton().GetStats();
+            snap.footCand = FootstepCandidateReservoir::GetSingleton().GetStats();
+            snap.footSession = FootstepTruthSessionShadow::GetSingleton().GetStats();
             return snap;
         }
 
@@ -592,10 +598,16 @@ namespace dualpad::haptics
                 s.footBridge.pendingInstances,
                 s.footBridge.activeBindings);
             logger::info(
-                "[Haptics][FootAudio] features={} truths={} matched={} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
+                "[Haptics][FootAudio] features={} truths={} matched={} live(q/ap/ex)={}/{}/{} mem(h/m/s)={}/{}/{} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
                 s.footAudio.featuresObserved,
                 s.footAudio.truthsObserved,
                 s.footAudio.truthsMatched,
+                s.footAudio.livePatchesQueued,
+                s.footAudio.livePatchesApplied,
+                s.footAudio.livePatchesExpired,
+                s.footAudio.recentMemoryHits,
+                s.footAudio.recentMemoryMisses,
+                s.footAudio.recentMemorySamples,
                 s.footAudio.truthBridgeBound,
                 s.footAudio.truthBridgeMatched,
                 s.footAudio.truthBridgeNoFeature,
@@ -615,6 +627,41 @@ namespace dualpad::haptics
                 static_cast<float>(s.footAudio.matchPanAbsP50Permille) / 1000.0f,
                 static_cast<float>(s.footAudio.matchPanAbsP95Permille) / 1000.0f,
                 s.footAudio.pendingTruths);
+            logger::info(
+                "[Haptics][FootSession] truths={} inst={} feat={} patched={} expired={} noCand/noFeat={}/{} candAssign={} patch(exact/voice)={}/{} candP50={} candP95={} truthToPatchP50={}us truthToPatchP95={}us claimToPatchP50={}us claimToPatchP95={}us samples={} active={}",
+                s.footSession.truthsObserved,
+                s.footSession.instancesObserved,
+                s.footSession.featuresObserved,
+                s.footSession.sessionsPatched,
+                s.footSession.sessionsExpired,
+                s.footSession.sessionsExpiredNoCandidate,
+                s.footSession.sessionsExpiredNoFeature,
+                s.footSession.candidateAssignments,
+                s.footSession.patchedExactInstance,
+                s.footSession.patchedVoiceFallback,
+                s.footSession.candidateP50,
+                s.footSession.candidateP95,
+                s.footSession.truthToPatchDeltaP50Us,
+                s.footSession.truthToPatchDeltaP95Us,
+                s.footSession.claimToPatchDeltaP50Us,
+                s.footSession.claimToPatchDeltaP95Us,
+                s.footSession.samples,
+                s.footSession.activeSessions);
+            logger::info(
+                "[Haptics][FootSessionLive] q/ap/ex={}/{}/{}",
+                s.footSession.livePatchesQueued,
+                s.footSession.livePatchesApplied,
+                s.footSession.livePatchesExpired);
+            logger::info(
+                "[Haptics][FootCand] obs={} init={} submit={} tap={} expired={} snap={} returned={} active={}",
+                s.footCand.observed,
+                s.footCand.observedInit,
+                s.footCand.observedSubmit,
+                s.footCand.observedTap,
+                s.footCand.expired,
+                s.footCand.snapshotCalls,
+                s.footCand.returnedCandidates,
+                s.footCand.active);
 
             const auto fgRouteTotal = s.hid.txRouteFg;
             const auto deqTotal = s.hid.txDequeuedFg + s.hid.txDequeuedBg;
@@ -1175,6 +1222,7 @@ namespace dualpad::haptics
             HidOutput::GetSingleton().SendFrame(frame);
             FootstepTruthBridge::GetSingleton().Tick(ToQPC(Now()));
             FootstepAudioMatcher::GetSingleton().Tick(ToQPC(Now()));
+            FootstepTruthSessionShadow::GetSingleton().Tick(ToQPC(Now()));
 
             _totalTicks.fetch_add(1, std::memory_order_relaxed);
             _framesOutput.fetch_add(1, std::memory_order_relaxed);
