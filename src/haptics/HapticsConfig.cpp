@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "haptics/HapticsConfig.h"
 
 #include <SKSE/SKSE.h>
@@ -53,6 +53,29 @@ namespace dualpad::haptics
             case HapticsConfig::HapticsMode::AudioDriven:return "CustomAudio(AudioDriven)";
             default:                                     return "Unknown";
             }
+        }
+
+        inline const char* MixerModeToString(HapticsConfig::MixerSameGroupMode mode)
+        {
+            switch (mode) {
+            case HapticsConfig::MixerSameGroupMode::Avg: return "avg";
+            case HapticsConfig::MixerSameGroupMode::Max: return "max";
+            default:                                     return "max";
+            }
+        }
+
+        inline HapticsConfig::MixerSameGroupMode ParseMixerMode(
+            const std::string& value,
+            HapticsConfig::MixerSameGroupMode fallback)
+        {
+            const auto mode = ToLower(Trim(value));
+            if (mode == "avg") {
+                return HapticsConfig::MixerSameGroupMode::Avg;
+            }
+            if (mode == "max") {
+                return HapticsConfig::MixerSameGroupMode::Max;
+            }
+            return fallback;
         }
     }
 
@@ -220,6 +243,15 @@ namespace dualpad::haptics
                 else if (sec == "ExtensionAPI") {
                     LoadExtensionConfig(kv);
                 }
+                else if (sec == "Gate") {
+                    LoadGateConfig(kv);
+                }
+                else if (sec == "Budget") {
+                    LoadBudgetConfig(kv);
+                }
+                else if (sec == "HidTx" || sec == "OutputScheduler") {
+                    LoadHidTxConfig(kv);
+                }
             }
             catch (const std::exception& e) {
                 logger::warn("[Haptics][Config] parse error [{}]: {}", sec, e.what());
@@ -332,7 +364,178 @@ namespace dualpad::haptics
         if (values.count("immediate_gain")) immediateGain = std::stof(values.at("immediate_gain"));
         if (values.count("correction_gain")) correctionGain = std::stof(values.at("correction_gain"));
         if (values.count("enable_ambient_passthrough")) enableAmbientPassthrough = ParseBool(values.at("enable_ambient_passthrough"), enableAmbientPassthrough);
+        if (values.count("allow_unknown_audio_event")) allowUnknownAudioEvent = ParseBool(values.at("allow_unknown_audio_event"), allowUnknownAudioEvent);
+        if (values.count("enable_unknown_semantic_gate")) enableUnknownSemanticGate = ParseBool(values.at("enable_unknown_semantic_gate"), enableUnknownSemanticGate);
+        if (values.count("allow_unknown_footstep")) allowUnknownFootstep = ParseBool(values.at("allow_unknown_footstep"), allowUnknownFootstep);
+        if (values.count("unknown_min_input_level")) unknownMinInputLevel = std::clamp(std::stof(values.at("unknown_min_input_level")), 0.0f, 1.0f);
+        if (values.count("unknown_semantic_min_confidence")) unknownSemanticMinConfidence = std::clamp(std::stof(values.at("unknown_semantic_min_confidence")), 0.0f, 1.0f);
+        if (values.count("allow_background_event")) allowBackgroundEvent = ParseBool(values.at("allow_background_event"), allowBackgroundEvent);
+        if (values.count("enable_unknown_promotion")) enableUnknownPromotion = ParseBool(values.at("enable_unknown_promotion"), enableUnknownPromotion);
+        if (values.count("unknown_promotion_min_confidence")) {
+            unknownPromotionMinConfidence = std::clamp(std::stof(values.at("unknown_promotion_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("relative_energy_ratio_threshold")) {
+            relativeEnergyRatioThreshold = std::clamp(std::stof(values.at("relative_energy_ratio_threshold")), 1.0f, 8.0f);
+        }
+        if (values.count("refractory_hit_ms")) refractoryHitMs = std::stoul(values.at("refractory_hit_ms"));
+        if (values.count("refractory_swing_ms")) refractorySwingMs = std::stoul(values.at("refractory_swing_ms"));
+        if (values.count("refractory_footstep_ms")) refractoryFootstepMs = std::stoul(values.at("refractory_footstep_ms"));
         if (values.count("trace_binding_ttl_ms")) traceBindingTtlMs = std::stoul(values.at("trace_binding_ttl_ms"));
+        if (values.count("enable_audio_lock_binding")) {
+            enableAudioLockBinding = ParseBool(values.at("enable_audio_lock_binding"), enableAudioLockBinding);
+        }
+        if (values.count("audio_lock_start_min_confidence")) {
+            audioLockStartMinConfidence = std::clamp(
+                std::stof(values.at("audio_lock_start_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("audio_lock_unknown_start_min_confidence")) {
+            audioLockUnknownStartMinConfidence = std::clamp(
+                std::stof(values.at("audio_lock_unknown_start_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("audio_lock_extend_min_confidence")) {
+            audioLockExtendMinConfidence = std::clamp(
+                std::stof(values.at("audio_lock_extend_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("audio_lock_extend_grace_ms")) {
+            audioLockExtendGraceMs = std::max<std::uint32_t>(
+                0u, std::stoul(values.at("audio_lock_extend_grace_ms")));
+        }
+
+        if (values.count("hid_tx_fg_capacity")) {
+            hidTxFgCapacity = std::max<std::uint32_t>(8u, std::stoul(values.at("hid_tx_fg_capacity")));
+        }
+        if (values.count("hid_tx_bg_capacity")) {
+            hidTxBgCapacity = std::max<std::uint32_t>(8u, std::stoul(values.at("hid_tx_bg_capacity")));
+        }
+        if (values.count("hid_stale_us")) {
+            hidStaleUs = std::max<std::uint32_t>(1000u, std::stoul(values.at("hid_stale_us")));
+        }
+        if (values.count("hid_merge_window_fg_us")) {
+            hidMergeWindowFgUs = std::max<std::uint32_t>(0u, std::stoul(values.at("hid_merge_window_fg_us")));
+        }
+        if (values.count("hid_merge_window_bg_us")) {
+            hidMergeWindowBgUs = std::max<std::uint32_t>(0u, std::stoul(values.at("hid_merge_window_bg_us")));
+        }
+        if (values.count("hid_scheduler_lookahead_us")) {
+            hidSchedulerLookaheadUs = std::max<std::uint32_t>(0u, std::stoul(values.at("hid_scheduler_lookahead_us")));
+        }
+        if (values.count("hid_bg_budget")) {
+            hidBgBudget = std::max<std::uint32_t>(1u, std::stoul(values.at("hid_bg_budget")));
+        }
+        if (values.count("hid_fg_preempt")) {
+            hidFgPreempt = ParseBool(values.at("hid_fg_preempt"), hidFgPreempt);
+        }
+        if (values.count("hid_max_send_per_flush")) {
+            hidMaxSendPerFlush = std::clamp<std::uint32_t>(
+                std::stoul(values.at("hid_max_send_per_flush")), 1u, 8u);
+        }
+        if (values.count("hid_min_repeat_interval_us")) {
+            hidMinRepeatIntervalUs = std::max<std::uint32_t>(
+                1000u, std::stoul(values.at("hid_min_repeat_interval_us")));
+        }
+        if (values.count("hid_idle_repeat_interval_us")) {
+            hidIdleRepeatIntervalUs = std::max<std::uint32_t>(
+                2000u, std::stoul(values.at("hid_idle_repeat_interval_us")));
+        }
+        if (values.count("hid_stop_clears_queue")) {
+            hidStopClearsQueue = ParseBool(values.at("hid_stop_clears_queue"), hidStopClearsQueue);
+        }
+        if (values.count("enable_state_track_scheduler")) {
+            enableStateTrackScheduler = ParseBool(
+                values.at("enable_state_track_scheduler"), enableStateTrackScheduler);
+        }
+        if (values.count("enable_state_track_impact_renderer")) {
+            enableStateTrackImpactRenderer = ParseBool(
+                values.at("enable_state_track_impact_renderer"), enableStateTrackImpactRenderer);
+        }
+        if (values.count("enable_state_track_swing_renderer")) {
+            enableStateTrackSwingRenderer = ParseBool(
+                values.at("enable_state_track_swing_renderer"), enableStateTrackSwingRenderer);
+        }
+        if (values.count("enable_state_track_footstep_renderer")) {
+            enableStateTrackFootstepRenderer = ParseBool(
+                values.at("enable_state_track_footstep_renderer"), enableStateTrackFootstepRenderer);
+        }
+        if (values.count("enable_state_track_footstep_token_renderer")) {
+            enableStateTrackFootstepTokenRenderer = ParseBool(
+                values.at("enable_state_track_footstep_token_renderer"), enableStateTrackFootstepTokenRenderer);
+        }
+        if (values.count("enable_state_track_footstep_truth_trigger")) {
+            enableStateTrackFootstepTruthTrigger = ParseBool(
+                values.at("enable_state_track_footstep_truth_trigger"), enableStateTrackFootstepTruthTrigger);
+        }
+        if (values.count("enable_state_track_footstep_context_gate")) {
+            enableStateTrackFootstepContextGate = ParseBool(
+                values.at("enable_state_track_footstep_context_gate"), enableStateTrackFootstepContextGate);
+        }
+        if (values.count("enable_state_track_footstep_motion_gate")) {
+            enableStateTrackFootstepMotionGate = ParseBool(
+                values.at("enable_state_track_footstep_motion_gate"), enableStateTrackFootstepMotionGate);
+        }
+        if (values.count("state_track_footstep_recent_move_ms")) {
+            stateTrackFootstepRecentMoveMs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_footstep_recent_move_ms")), 0u, 5000u);
+        }
+        if (values.count("enable_footstep_audio_matcher_shadow")) {
+            enableFootstepAudioMatcherShadow = ParseBool(
+                values.at("enable_footstep_audio_matcher_shadow"), enableFootstepAudioMatcherShadow);
+        }
+        if (values.count("footstep_audio_matcher_lookback_us")) {
+            footstepAudioMatcherLookbackUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_audio_matcher_lookback_us")), 0u, 120000u);
+        }
+        if (values.count("footstep_audio_matcher_lookahead_us")) {
+            footstepAudioMatcherLookaheadUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_audio_matcher_lookahead_us")), 0u, 120000u);
+        }
+        if (values.count("footstep_audio_matcher_max_candidates")) {
+            footstepAudioMatcherMaxCandidates = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_audio_matcher_max_candidates")), 4u, 512u);
+        }
+        if (values.count("footstep_audio_matcher_min_score")) {
+            footstepAudioMatcherMinScore = std::clamp(
+                std::stof(values.at("footstep_audio_matcher_min_score")), 0.0f, 1.0f);
+        }
+        if (values.count("enable_footstep_truth_bridge_shadow")) {
+            enableFootstepTruthBridgeShadow = ParseBool(
+                values.at("enable_footstep_truth_bridge_shadow"), enableFootstepTruthBridgeShadow);
+        }
+        if (values.count("footstep_truth_bridge_lookback_us")) {
+            footstepTruthBridgeLookbackUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_truth_bridge_lookback_us")), 1000u, 600000u);
+        }
+        if (values.count("footstep_truth_bridge_lookahead_us")) {
+            footstepTruthBridgeLookaheadUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_truth_bridge_lookahead_us")), 1000u, 800000u);
+        }
+        if (values.count("footstep_truth_bridge_binding_ttl_ms")) {
+            footstepTruthBridgeBindingTtlMs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_truth_bridge_binding_ttl_ms")), 100u, 10000u);
+        }
+        if (values.count("state_track_lookahead_min_us")) {
+            stateTrackLookaheadMinUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_lookahead_min_us")), 800u, 12000u);
+        }
+        if (values.count("state_track_repeat_keep_max_overdue_us")) {
+            stateTrackRepeatKeepMaxOverdueUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_repeat_keep_max_overdue_us")), 0u, 20000u);
+        }
+        if (values.count("state_track_release_hit_us")) {
+            stateTrackReleaseHitUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_hit_us")), 12000u, 300000u);
+        }
+        if (values.count("state_track_release_swing_us")) {
+            stateTrackReleaseSwingUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_swing_us")), 12000u, 300000u);
+        }
+        if (values.count("state_track_release_footstep_us")) {
+            stateTrackReleaseFootstepUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_footstep_us")), 8000u, 300000u);
+        }
+        if (values.count("state_track_release_utility_us")) {
+            stateTrackReleaseUtilityUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_utility_us")), 8000u, 300000u);
+        }
     }
 
     void HapticsConfig::LoadDynamicPoolConfig(const std::unordered_map<std::string, std::string>& values)
@@ -408,6 +611,18 @@ namespace dualpad::haptics
             l1FormSemanticMinConfidence = std::clamp(
                 std::stof(values.at("l1_form_semantic_min_confidence")), 0.0f, 1.0f);
         }
+        if (values.count("trace_preferred_event_min_confidence")) {
+            tracePreferredEventMinConfidence = std::clamp(
+                std::stof(values.at("trace_preferred_event_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("trace_background_event_min_confidence")) {
+            traceBackgroundEventMinConfidence = std::clamp(
+                std::stof(values.at("trace_background_event_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("trace_allow_background_event")) {
+            traceAllowBackgroundEvent = ParseBool(
+                values.at("trace_allow_background_event"), traceAllowBackgroundEvent);
+        }
         if (values.count("submit_semantic_max_attempts")) {
             submitSemanticScanMaxAttempts = std::clamp<std::uint32_t>(
                 std::stoul(values.at("submit_semantic_max_attempts")), 1u, 15u);
@@ -427,13 +642,20 @@ namespace dualpad::haptics
         }
 
         logger::info(
-            "[Haptics][Config] Semantic cache={} l1={} l1VoiceTrace={} noCtxFallback={} noCtxDeepFallback={} minConf={:.2f} submitRetry(max={} interval={}ms) rules={} cache={} forceRebuild={}",
+            "[Haptics][Config] Semantic cache={} l1={} l1VoiceTrace={} noCtxFallback={} noCtxDeepFallback={} minConf={:.2f} traceEvtMin={:.2f} traceBgMin={:.2f} traceBgAllow={} unkGate={} unkFootstep={} unkMinIn={:.2f} unkSemMin={:.2f} submitRetry(max={} interval={}ms) rules={} cache={} forceRebuild={}",
             enableFormSemanticCache,
             enableL1FormSemantic,
             enableL1VoiceTrace,
             enableSubmitNoContextFallback,
             enableSubmitNoContextDeepFallback,
             l1FormSemanticMinConfidence,
+            tracePreferredEventMinConfidence,
+            traceBackgroundEventMinConfidence,
+            traceAllowBackgroundEvent,
+            enableUnknownSemanticGate,
+            allowUnknownFootstep,
+            unknownMinInputLevel,
+            unknownSemanticMinConfidence,
             submitSemanticScanMaxAttempts,
             submitSemanticRetryIntervalMs,
             semanticRulesPath,
@@ -455,6 +677,285 @@ namespace dualpad::haptics
 
         logger::info("[Haptics][Config] Extension API: enabled={} maxCustom={} basePri={}",
             enableCustomEvents, maxCustomEvents, customEventPriorityBase);
+    }
+
+    void HapticsConfig::LoadGateConfig(const std::unordered_map<std::string, std::string>& values)
+    {
+        if (values.count("allow_unknown_audio_event")) {
+            allowUnknownAudioEvent = ParseBool(values.at("allow_unknown_audio_event"), allowUnknownAudioEvent);
+        }
+        if (values.count("allow_background_event")) {
+            allowBackgroundEvent = ParseBool(values.at("allow_background_event"), allowBackgroundEvent);
+        }
+        if (values.count("allow_unknown_footstep")) {
+            allowUnknownFootstep = ParseBool(values.at("allow_unknown_footstep"), allowUnknownFootstep);
+        }
+        if (values.count("enable_unknown_semantic_gate")) {
+            enableUnknownSemanticGate = ParseBool(values.at("enable_unknown_semantic_gate"), enableUnknownSemanticGate);
+        }
+        if (values.count("unknown_semantic_min_confidence")) {
+            unknownSemanticMinConfidence = std::clamp(
+                std::stof(values.at("unknown_semantic_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("unknown_min_input_level")) {
+            unknownMinInputLevel = std::clamp(std::stof(values.at("unknown_min_input_level")), 0.0f, 1.0f);
+        }
+        if (values.count("enable_unknown_promotion")) {
+            enableUnknownPromotion = ParseBool(values.at("enable_unknown_promotion"), enableUnknownPromotion);
+        }
+        if (values.count("unknown_promotion_min_confidence")) {
+            unknownPromotionMinConfidence = std::clamp(
+                std::stof(values.at("unknown_promotion_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("relative_energy_ratio_threshold")) {
+            relativeEnergyRatioThreshold = std::clamp(
+                std::stof(values.at("relative_energy_ratio_threshold")), 1.0f, 8.0f);
+        }
+        if (values.count("refractory_hit_ms")) {
+            refractoryHitMs = std::stoul(values.at("refractory_hit_ms"));
+        }
+        if (values.count("refractory_swing_ms")) {
+            refractorySwingMs = std::stoul(values.at("refractory_swing_ms"));
+        }
+        if (values.count("refractory_footstep_ms")) {
+            refractoryFootstepMs = std::stoul(values.at("refractory_footstep_ms"));
+        }
+        if (values.count("enable_audio_lock_binding")) {
+            enableAudioLockBinding = ParseBool(values.at("enable_audio_lock_binding"), enableAudioLockBinding);
+        }
+        if (values.count("audio_lock_start_min_confidence")) {
+            audioLockStartMinConfidence = std::clamp(
+                std::stof(values.at("audio_lock_start_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("audio_lock_unknown_start_min_confidence")) {
+            audioLockUnknownStartMinConfidence = std::clamp(
+                std::stof(values.at("audio_lock_unknown_start_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("audio_lock_extend_min_confidence")) {
+            audioLockExtendMinConfidence = std::clamp(
+                std::stof(values.at("audio_lock_extend_min_confidence")), 0.0f, 1.0f);
+        }
+        if (values.count("audio_lock_extend_grace_ms")) {
+            audioLockExtendGraceMs = std::max<std::uint32_t>(
+                0u, std::stoul(values.at("audio_lock_extend_grace_ms")));
+        }
+
+        logger::info(
+            "[Haptics][Config] Gate unkAllow={} bgAllow={} unkFootstep={} unkSemGate={} unkSemMin={:.2f} unkMinIn={:.2f} unkPromotion={} unkPromMin={:.2f} relEnergyRatio={:.2f} refr(hit/swing/foot)={}/{}/{}ms audioLock(en={},start={:.2f},unkStart={:.2f},extend={:.2f},grace={}ms)",
+            allowUnknownAudioEvent,
+            allowBackgroundEvent,
+            allowUnknownFootstep,
+            enableUnknownSemanticGate,
+            unknownSemanticMinConfidence,
+            unknownMinInputLevel,
+            enableUnknownPromotion,
+            unknownPromotionMinConfidence,
+            relativeEnergyRatioThreshold,
+            refractoryHitMs,
+            refractorySwingMs,
+            refractoryFootstepMs,
+            enableAudioLockBinding,
+            audioLockStartMinConfidence,
+            audioLockUnknownStartMinConfidence,
+            audioLockExtendMinConfidence,
+            audioLockExtendGraceMs);
+    }
+
+    void HapticsConfig::LoadBudgetConfig(const std::unordered_map<std::string, std::string>& values)
+    {
+        if (values.count("mixer_foreground_top_n")) {
+            mixerForegroundTopN = std::max<std::uint32_t>(1u, std::stoul(values.at("mixer_foreground_top_n")));
+        }
+        if (values.count("mixer_background_budget")) {
+            mixerBackgroundBudget = std::clamp(std::stof(values.at("mixer_background_budget")), 0.0f, 1.0f);
+        }
+        if (values.count("mixer_same_group_mode")) {
+            mixerSameGroupMode = ParseMixerMode(values.at("mixer_same_group_mode"), mixerSameGroupMode);
+        }
+
+        logger::info(
+            "[Haptics][Config] Budget fgTopN={} bgBudget={:.2f} sameGroup={}",
+            mixerForegroundTopN,
+            mixerBackgroundBudget,
+            MixerModeToString(mixerSameGroupMode));
+    }
+
+    void HapticsConfig::LoadHidTxConfig(const std::unordered_map<std::string, std::string>& values)
+    {
+        if (values.count("hid_tx_fg_capacity")) {
+            hidTxFgCapacity = std::max<std::uint32_t>(8u, std::stoul(values.at("hid_tx_fg_capacity")));
+        }
+        if (values.count("hid_tx_bg_capacity")) {
+            hidTxBgCapacity = std::max<std::uint32_t>(8u, std::stoul(values.at("hid_tx_bg_capacity")));
+        }
+        if (values.count("hid_stale_us")) {
+            hidStaleUs = std::max<std::uint32_t>(1000u, std::stoul(values.at("hid_stale_us")));
+        }
+        if (values.count("hid_merge_window_fg_us")) {
+            hidMergeWindowFgUs = std::max<std::uint32_t>(0u, std::stoul(values.at("hid_merge_window_fg_us")));
+        }
+        if (values.count("hid_merge_window_bg_us")) {
+            hidMergeWindowBgUs = std::max<std::uint32_t>(0u, std::stoul(values.at("hid_merge_window_bg_us")));
+        }
+        if (values.count("hid_scheduler_lookahead_us")) {
+            hidSchedulerLookaheadUs = std::max<std::uint32_t>(0u, std::stoul(values.at("hid_scheduler_lookahead_us")));
+        }
+        if (values.count("hid_bg_budget")) {
+            hidBgBudget = std::max<std::uint32_t>(1u, std::stoul(values.at("hid_bg_budget")));
+        }
+        if (values.count("hid_fg_preempt")) {
+            hidFgPreempt = ParseBool(values.at("hid_fg_preempt"), hidFgPreempt);
+        }
+        if (values.count("hid_max_send_per_flush")) {
+            hidMaxSendPerFlush = std::clamp<std::uint32_t>(
+                std::stoul(values.at("hid_max_send_per_flush")), 1u, 8u);
+        }
+        if (values.count("hid_min_repeat_interval_us")) {
+            hidMinRepeatIntervalUs = std::max<std::uint32_t>(
+                1000u, std::stoul(values.at("hid_min_repeat_interval_us")));
+        }
+        if (values.count("hid_idle_repeat_interval_us")) {
+            hidIdleRepeatIntervalUs = std::max<std::uint32_t>(
+                2000u, std::stoul(values.at("hid_idle_repeat_interval_us")));
+        }
+        if (values.count("hid_stop_clears_queue")) {
+            hidStopClearsQueue = ParseBool(values.at("hid_stop_clears_queue"), hidStopClearsQueue);
+        }
+        if (values.count("enable_state_track_scheduler")) {
+            enableStateTrackScheduler = ParseBool(
+                values.at("enable_state_track_scheduler"), enableStateTrackScheduler);
+        }
+        if (values.count("enable_state_track_impact_renderer")) {
+            enableStateTrackImpactRenderer = ParseBool(
+                values.at("enable_state_track_impact_renderer"), enableStateTrackImpactRenderer);
+        }
+        if (values.count("enable_state_track_swing_renderer")) {
+            enableStateTrackSwingRenderer = ParseBool(
+                values.at("enable_state_track_swing_renderer"), enableStateTrackSwingRenderer);
+        }
+        if (values.count("enable_state_track_footstep_renderer")) {
+            enableStateTrackFootstepRenderer = ParseBool(
+                values.at("enable_state_track_footstep_renderer"), enableStateTrackFootstepRenderer);
+        }
+        if (values.count("enable_state_track_footstep_token_renderer")) {
+            enableStateTrackFootstepTokenRenderer = ParseBool(
+                values.at("enable_state_track_footstep_token_renderer"), enableStateTrackFootstepTokenRenderer);
+        }
+        if (values.count("enable_state_track_footstep_truth_trigger")) {
+            enableStateTrackFootstepTruthTrigger = ParseBool(
+                values.at("enable_state_track_footstep_truth_trigger"), enableStateTrackFootstepTruthTrigger);
+        }
+        if (values.count("enable_state_track_footstep_context_gate")) {
+            enableStateTrackFootstepContextGate = ParseBool(
+                values.at("enable_state_track_footstep_context_gate"), enableStateTrackFootstepContextGate);
+        }
+        if (values.count("enable_state_track_footstep_motion_gate")) {
+            enableStateTrackFootstepMotionGate = ParseBool(
+                values.at("enable_state_track_footstep_motion_gate"), enableStateTrackFootstepMotionGate);
+        }
+        if (values.count("state_track_footstep_recent_move_ms")) {
+            stateTrackFootstepRecentMoveMs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_footstep_recent_move_ms")), 0u, 5000u);
+        }
+        if (values.count("enable_footstep_audio_matcher_shadow")) {
+            enableFootstepAudioMatcherShadow = ParseBool(
+                values.at("enable_footstep_audio_matcher_shadow"), enableFootstepAudioMatcherShadow);
+        }
+        if (values.count("footstep_audio_matcher_lookback_us")) {
+            footstepAudioMatcherLookbackUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_audio_matcher_lookback_us")), 0u, 120000u);
+        }
+        if (values.count("footstep_audio_matcher_lookahead_us")) {
+            footstepAudioMatcherLookaheadUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_audio_matcher_lookahead_us")), 0u, 120000u);
+        }
+        if (values.count("footstep_audio_matcher_max_candidates")) {
+            footstepAudioMatcherMaxCandidates = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_audio_matcher_max_candidates")), 4u, 512u);
+        }
+        if (values.count("footstep_audio_matcher_min_score")) {
+            footstepAudioMatcherMinScore = std::clamp(
+                std::stof(values.at("footstep_audio_matcher_min_score")), 0.0f, 1.0f);
+        }
+        if (values.count("enable_footstep_truth_bridge_shadow")) {
+            enableFootstepTruthBridgeShadow = ParseBool(
+                values.at("enable_footstep_truth_bridge_shadow"), enableFootstepTruthBridgeShadow);
+        }
+        if (values.count("footstep_truth_bridge_lookback_us")) {
+            footstepTruthBridgeLookbackUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_truth_bridge_lookback_us")), 1000u, 600000u);
+        }
+        if (values.count("footstep_truth_bridge_lookahead_us")) {
+            footstepTruthBridgeLookaheadUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_truth_bridge_lookahead_us")), 1000u, 800000u);
+        }
+        if (values.count("footstep_truth_bridge_binding_ttl_ms")) {
+            footstepTruthBridgeBindingTtlMs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("footstep_truth_bridge_binding_ttl_ms")), 100u, 10000u);
+        }
+        if (values.count("state_track_lookahead_min_us")) {
+            stateTrackLookaheadMinUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_lookahead_min_us")), 800u, 12000u);
+        }
+        if (values.count("state_track_repeat_keep_max_overdue_us")) {
+            stateTrackRepeatKeepMaxOverdueUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_repeat_keep_max_overdue_us")), 0u, 20000u);
+        }
+        if (values.count("state_track_release_hit_us")) {
+            stateTrackReleaseHitUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_hit_us")), 12000u, 300000u);
+        }
+        if (values.count("state_track_release_swing_us")) {
+            stateTrackReleaseSwingUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_swing_us")), 12000u, 300000u);
+        }
+        if (values.count("state_track_release_footstep_us")) {
+            stateTrackReleaseFootstepUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_footstep_us")), 8000u, 300000u);
+        }
+        if (values.count("state_track_release_utility_us")) {
+            stateTrackReleaseUtilityUs = std::clamp<std::uint32_t>(
+                std::stoul(values.at("state_track_release_utility_us")), 8000u, 300000u);
+        }
+
+        logger::info(
+            "[Haptics][Config] HidTx fgCap={} bgCap={} stale={}us mergeFg={}us mergeBg={}us lookahead={}us bgBudget={} fgPreempt={} maxSend={} minRepeat={}us idleRepeat={}us stopClear={} track(en={} impactRender={} swingRender={} footRender={} footToken={} footTruth={} footCtxGate={} footMotionGate={} footRecent={}ms footAudioShadow={} footAudioWin={}/{}us footAudioMaxCand={} footAudioMin={:.2f} footBridge(en={} win={}/{}us ttl={}ms) lookMin={}us keepOverMax={}us rel(hit/swing/foot/util)={}/{}/{}/{})",
+            hidTxFgCapacity,
+            hidTxBgCapacity,
+            hidStaleUs,
+            hidMergeWindowFgUs,
+            hidMergeWindowBgUs,
+            hidSchedulerLookaheadUs,
+            hidBgBudget,
+            hidFgPreempt,
+            hidMaxSendPerFlush,
+            hidMinRepeatIntervalUs,
+            hidIdleRepeatIntervalUs,
+            hidStopClearsQueue,
+            enableStateTrackScheduler,
+            enableStateTrackImpactRenderer,
+            enableStateTrackSwingRenderer,
+            enableStateTrackFootstepRenderer,
+            enableStateTrackFootstepTokenRenderer,
+            enableStateTrackFootstepTruthTrigger,
+            enableStateTrackFootstepContextGate,
+            enableStateTrackFootstepMotionGate,
+            stateTrackFootstepRecentMoveMs,
+            enableFootstepAudioMatcherShadow,
+            footstepAudioMatcherLookbackUs,
+            footstepAudioMatcherLookaheadUs,
+            footstepAudioMatcherMaxCandidates,
+            footstepAudioMatcherMinScore,
+            enableFootstepTruthBridgeShadow,
+            footstepTruthBridgeLookbackUs,
+            footstepTruthBridgeLookaheadUs,
+            footstepTruthBridgeBindingTtlMs,
+            stateTrackLookaheadMinUs,
+            stateTrackRepeatKeepMaxOverdueUs,
+            stateTrackReleaseHitUs,
+            stateTrackReleaseSwingUs,
+            stateTrackReleaseFootstepUs,
+            stateTrackReleaseUtilityUs);
     }
 
     bool HapticsConfig::IsEventAllowed(EventType type) const

@@ -79,6 +79,8 @@ namespace dualpad::haptics
         std::uint64_t qpcStart{ 0 };
         std::uint64_t qpcEnd{ 0 };
         std::uint64_t voiceId{ 0 };
+        std::uint32_t voiceGeneration{ 0 };
+        std::uint64_t instanceId{ 0 };
         std::uint32_t sampleRate{ 48000 };
         std::uint16_t channels{ 2 };
         float rms{ 0.0f };
@@ -130,16 +132,25 @@ namespace dualpad::haptics
 
     enum class SourceType : std::uint8_t { BaseEvent, AudioMod, Ambient };
 
+    enum HapticSourceFlags : std::uint8_t
+    {
+        HapticSourceFlagNone = 0,
+        HapticSourceFlagL1Trace = 1u << 0,
+        HapticSourceFlagSessionPromoted = 1u << 1
+    };
+
     struct HapticSourceMsg
     {
         std::uint64_t qpc{ 0 };
         std::uint64_t sourceVoiceId{ 0 };
         std::uint32_t sourceFormId{ 0 };
+        std::uint8_t flags{ HapticSourceFlagNone };
         SourceType type{ SourceType::BaseEvent };
         EventType eventType{ EventType::Unknown };
         float left{ 0.0f };
         float right{ 0.0f };
         float confidence{ 1.0f };
+        float relativeEnergy{ 0.0f };
         int priority{ 50 };
         std::uint32_t ttlMs{ 100 };
     };
@@ -147,6 +158,13 @@ namespace dualpad::haptics
     struct HidFrame
     {
         std::uint64_t qpc{ 0 };
+        std::uint64_t qpcTarget{ 0 };
+        std::uint64_t seq{ 0 };
+        EventType eventType{ EventType::Unknown };
+        SourceType sourceType{ SourceType::AudioMod };
+        std::uint8_t priority{ 0 };
+        float confidence{ 0.0f };
+        bool foregroundHint{ false };
         std::uint8_t leftMotor{ 0 };
         std::uint8_t rightMotor{ 0 };
     };

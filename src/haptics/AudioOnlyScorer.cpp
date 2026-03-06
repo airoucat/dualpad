@@ -33,9 +33,11 @@ namespace dualpad::haptics
 
         _rp.gain = std::clamp(cfg.correctionGain, 0.05f, 2.0f);
         _rp.minEnergy = 0.0008f;
+        _rp.ampFloor = 0.02f;
         _rp.panMix = 0.25f;
+        _rp.relativeEnergyRatioThreshold = std::clamp(cfg.relativeEnergyRatioThreshold, 1.0f, 8.0f);
         _rp.minTtlMs = 24;
-        _rp.maxTtlMs = 180;
+        _rp.maxTtlMs = 360;
         _rp.priority = std::max(10, cfg.priorityFootstep);
     }
 
@@ -49,9 +51,10 @@ namespace dualpad::haptics
 
         ReloadParamsFromConfig();
         ResetStats();
+        _voiceEnergyState.clear();
 
-        logger::info("[Haptics][AudioOnlyScorer] initialized gain={:.2f} minEnergy={:.5f}",
-            _rp.gain, _rp.minEnergy);
+        logger::info("[Haptics][AudioOnlyScorer] initialized gain={:.2f} minEnergy={:.5f} ampFloor={:.3f} relRatio={:.2f}",
+            _rp.gain, _rp.minEnergy, _rp.ampFloor, _rp.relativeEnergyRatioThreshold);
     }
 
     void AudioOnlyScorer::Shutdown()
@@ -89,7 +92,32 @@ namespace dualpad::haptics
                 continue;
             }
 
-            out.push_back(ToSource(a));
+            auto& state = _voiceEnergyState[a.voiceId];
+            if (state.samples == 0) {
+                state.noiseFloor = loud;
+            }
+            else if (loud < state.noiseFloor) {
+                state.noiseFloor = 0.85f * state.noiseFloor + 0.15f * loud;
+            }
+            else {
+                state.noiseFloor = 0.995f * state.noiseFloor + 0.005f * loud;
+            }
+
+            state.noiseFloor = std::clamp(state.noiseFloor, 0.00005f, 1.0f);
+            const float relEnergy = loud / state.noiseFloor;
+            const bool warmupDone = state.samples >= 4;
+            ++state.samples;
+
+            const bool lowRelative = relEnergy < _rp.relativeEnergyRatioThreshold;
+            const bool strongAbsolute = loud >= 0.16f;
+            if (warmupDone && lowRelative && !strongAbsolute) {
+                _relativeEnergyDropped.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+
+            auto src = ToSource(a);
+            src.relativeEnergy = warmupDone ? std::max(1.0f, relEnergy) : 0.0f;
+            out.push_back(src);
         }
 
         if (!out.empty()) {
@@ -103,8 +131,7 @@ namespace dualpad::haptics
     {
         const float loud = Clamp01(0.65f * a.peak + 0.35f * a.rms);
 
-        const float ampFloor = 0.08f;
-        const float amp = Clamp01(std::max(ampFloor, loud * _rp.gain));
+        const float amp = Clamp01(std::max(_rp.ampFloor, loud * _rp.gain));
 
         const float sum = std::max(1e-5f, a.energyL + a.energyR);
         const float pan = std::clamp((a.energyR - a.energyL) / sum, -1.0f, 1.0f) * _rp.panMix;
@@ -112,7 +139,8 @@ namespace dualpad::haptics
         std::uint32_t ttlMs = 36;
         if (a.qpcEnd > a.qpcStart) {
             const auto durUs = static_cast<std::uint32_t>(a.qpcEnd - a.qpcStart);
-            ttlMs = std::clamp(durUs / 1000u + 10u, _rp.minTtlMs, _rp.maxTtlMs);
+            // Keep a small padding for pipeline delay while staying close to source audio length.
+            ttlMs = std::clamp(durUs / 1000u + 6u, _rp.minTtlMs, _rp.maxTtlMs);
         }
 
         HapticSourceMsg s{};
@@ -122,7 +150,8 @@ namespace dualpad::haptics
         s.sourceVoiceId = a.voiceId;
         s.left = Clamp01(amp * (1.0f - pan));
         s.right = Clamp01(amp * (1.0f + pan));
-        s.confidence = std::max(0.35f, Clamp01(0.50f + 0.50f * loud));
+        s.confidence = Clamp01(0.42f + 0.58f * loud);
+        s.relativeEnergy = 0.0f;
         s.priority = _rp.priority;
         s.ttlMs = ttlMs;
         return s;
@@ -134,6 +163,7 @@ namespace dualpad::haptics
         s.featuresPulled = _featuresPulled.load(std::memory_order_relaxed);
         s.sourcesProduced = _sourcesProduced.load(std::memory_order_relaxed);
         s.lowEnergyDropped = _lowEnergyDropped.load(std::memory_order_relaxed);
+        s.relativeEnergyDropped = _relativeEnergyDropped.load(std::memory_order_relaxed);
         return s;
     }
 
@@ -142,5 +172,7 @@ namespace dualpad::haptics
         _featuresPulled.store(0, std::memory_order_relaxed);
         _sourcesProduced.store(0, std::memory_order_relaxed);
         _lowEnergyDropped.store(0, std::memory_order_relaxed);
+        _relativeEnergyDropped.store(0, std::memory_order_relaxed);
+        _voiceEnergyState.clear();
     }
 }

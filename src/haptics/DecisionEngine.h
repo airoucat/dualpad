@@ -26,6 +26,12 @@ namespace dualpad::haptics
         L3DynamicPoolHit,
         L3LowScoreFallback,
         L1Disabled,
+        GateUnknownBlocked,
+        GateBackgroundBlocked,
+        GateNoTraceContext,
+        GateLowSemanticConfidence,
+        GateLowRelativeEnergy,
+        GateRefractoryBlocked,
         NoCandidate,
         L1TraceMissUnbound,
         L1TraceMissExpired,
@@ -76,6 +82,15 @@ namespace dualpad::haptics
             std::uint64_t dynamicPoolLearnFromL2{ 0 };
             std::uint64_t dynamicPoolLearnFromL2NoKey{ 0 };
             std::uint64_t dynamicPoolLearnFromL2LowScore{ 0 };
+            std::uint64_t l3DroppedUnstructuredWeakUnknown{ 0 };
+            std::uint64_t gateAccepted{ 0 };
+            std::uint64_t gateRejected{ 0 };
+            std::uint64_t rejectUnknownBlocked{ 0 };
+            std::uint64_t rejectBackgroundBlocked{ 0 };
+            std::uint64_t rejectNoTraceContext{ 0 };
+            std::uint64_t rejectLowSemanticConfidence{ 0 };
+            std::uint64_t rejectLowRelativeEnergy{ 0 };
+            std::uint64_t rejectRefractoryBlocked{ 0 };
         };
         Stats GetStats() const;
         void ResetStats();
@@ -110,5 +125,14 @@ namespace dualpad::haptics
         std::atomic<std::uint64_t> _dynamicPoolLearnFromL2{ 0 };
         std::atomic<std::uint64_t> _dynamicPoolLearnFromL2NoKey{ 0 };
         std::atomic<std::uint64_t> _dynamicPoolLearnFromL2LowScore{ 0 };
+        std::atomic<std::uint64_t> _l3DroppedUnstructuredWeakUnknown{ 0 };
+        std::atomic<std::uint64_t> _gateAccepted{ 0 };
+        std::atomic<std::uint64_t> _gateRejected{ 0 };
+        std::atomic<std::uint64_t> _rejectUnknownBlocked{ 0 };
+        std::atomic<std::uint64_t> _rejectBackgroundBlocked{ 0 };
+        std::atomic<std::uint64_t> _rejectNoTraceContext{ 0 };
+        std::atomic<std::uint64_t> _rejectLowSemanticConfidence{ 0 };
+        std::atomic<std::uint64_t> _rejectLowRelativeEnergy{ 0 };
+        std::atomic<std::uint64_t> _rejectRefractoryBlocked{ 0 };
     };
 }

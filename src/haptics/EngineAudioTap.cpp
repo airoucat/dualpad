@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "haptics/EngineAudioTap.h"
+#include "haptics/FootstepAudioMatcher.h"
 #include "haptics/PlayPathHook.h"
 #include "haptics/VoiceManager.h"
 #include "haptics/HapticsTypes.h"
@@ -105,7 +106,7 @@ namespace dualpad::haptics
             const auto vp = reinterpret_cast<std::uintptr_t>(voice);
             auto& map = VoiceBindingMap::GetSingleton();
 
-            // �Ѱ󶨾Ͳ��ظ���
+            // 已绑定就不重复绑
             if (auto existing = map.TryGet(vp); existing.has_value()) {
                 return EnsureBindResult{ true, false, *existing };
             }
@@ -189,7 +190,7 @@ namespace dualpad::haptics
                 }
             }
 
-            us = std::clamp<std::uint64_t>(us, 8'000ull, 180'000ull);
+            us = std::clamp<std::uint64_t>(us, 8'000ull, 360'000ull);
             return static_cast<std::uint32_t>(us);
         }
 
@@ -253,6 +254,8 @@ namespace dualpad::haptics
             (void)VoiceBindingMap::GetSingleton().Touch(
                 reinterpret_cast<std::uintptr_t>(self), nowUs);
             PlayPathHook::GetSingleton().OnSubmitContext(self, pBuffer, nowUs);
+            const auto binding = VoiceBindingMap::GetSingleton().TryGet(
+                reinterpret_cast<std::uintptr_t>(self));
 
             if (pBufferWMA != nullptr) {
                 g_submitCompressedSkipped.fetch_add(1, std::memory_order_relaxed);
@@ -316,6 +319,10 @@ namespace dualpad::haptics
                             msg.qpcStart = nowUs;
                             msg.qpcEnd = msg.qpcStart + durUs;
                             msg.voiceId = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(self));
+                            if (binding.has_value()) {
+                                msg.voiceGeneration = binding->generation;
+                                msg.instanceId = binding->instanceId;
+                            }
                             msg.sampleRate = sampleRate;
                             msg.channels = channels;
 
@@ -327,6 +334,7 @@ namespace dualpad::haptics
                             msg.bandLow = rms;
                             msg.bandMid = rms;
                             msg.bandHigh = rms;
+                            FootstepAudioMatcher::GetSingleton().ObserveAudioFeature(msg);
 
                             if (VoiceManager::GetSingleton().PushAudioFeature(msg)) {
                                 g_submitFeaturesPushed.fetch_add(1, std::memory_order_relaxed);

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "haptics/PlayPathHook.h"
 
+#include "haptics/FootstepTruthBridge.h"
 #include "haptics/FormSemanticCache.h"
 #include "haptics/HapticsConfig.h"
 #include "haptics/InstanceTraceCache.h"
@@ -52,6 +53,89 @@ namespace dualpad::haptics
             case SemanticGroup::Ambient:     return EventType::Ambient;
             default:                         return EventType::Unknown;
             }
+        }
+
+        bool IsBackgroundSemantic(SemanticGroup group)
+        {
+            return group == SemanticGroup::Ambient ||
+                group == SemanticGroup::Music ||
+                group == SemanticGroup::UI;
+        }
+
+        bool IsStrongForegroundSemantic(SemanticGroup group)
+        {
+            switch (group) {
+            case SemanticGroup::WeaponSwing:
+            case SemanticGroup::Hit:
+            case SemanticGroup::Block:
+            case SemanticGroup::Bow:
+            case SemanticGroup::Voice:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool IsTraceSemanticallyReady(const TraceMeta& trace)
+        {
+            if (trace.preferredEvent != EventType::Unknown) {
+                return true;
+            }
+
+            if (trace.semantic == SemanticGroup::Unknown) {
+                return false;
+            }
+
+            // Background classes can be considered semantically complete with a moderate
+            // confidence floor, while foreground classes keep a slightly stricter bar.
+            if (IsBackgroundSemantic(trace.semantic)) {
+                return trace.confidence >= 0.50f;
+            }
+
+            return trace.confidence >= 0.52f;
+        }
+
+        bool CanStopSemanticScan(const TraceMeta& trace)
+        {
+            return trace.sourceFormId != 0 &&
+                trace.soundFormId != 0 &&
+                IsTraceSemanticallyReady(trace);
+        }
+
+        bool CanSkipSubmitSemanticScan(const TraceMeta& trace)
+        {
+            const bool hasAnyForm = (trace.sourceFormId != 0) || (trace.soundFormId != 0);
+            return hasAnyForm && IsTraceSemanticallyReady(trace);
+        }
+
+        bool IsTraceFootstepForBridge(const TraceMeta& trace)
+        {
+            if (trace.preferredEvent == EventType::Footstep) {
+                return true;
+            }
+            return trace.semantic == SemanticGroup::Footstep && trace.confidence >= 0.40f;
+        }
+
+        void ObserveFootstepTraceBridge(
+            const TraceMeta& trace,
+            std::uintptr_t voicePtr,
+            std::uint32_t generation,
+            std::uint64_t nowUs,
+            bool viaSubmit)
+        {
+            const auto& cfg = HapticsConfig::GetSingleton();
+            if (!cfg.enableFootstepTruthBridgeShadow) {
+                return;
+            }
+            if (voicePtr == 0 || trace.instanceId == 0 || !IsTraceFootstepForBridge(trace)) {
+                return;
+            }
+            FootstepTruthBridge::GetSingleton().ObserveFootstepInstance(
+                trace.instanceId,
+                voicePtr,
+                generation,
+                nowUs,
+                viaSubmit);
         }
 
         std::size_t GetReadableSpan(const void* p, std::size_t maxBytes)
@@ -144,15 +228,58 @@ namespace dualpad::haptics
             }
 
             const auto conf = std::clamp(meta.confidence, 0.0f, 1.0f);
-            if (io.semantic == SemanticGroup::Unknown || conf > io.confidence) {
-                if (io.semantic != meta.group || io.confidence != conf) {
-                    io.semantic = meta.group;
-                    io.confidence = conf;
-                    changed = true;
-                }
+            auto& cfg = HapticsConfig::GetSingleton();
+            const bool isBackgroundSemantic = IsBackgroundSemantic(meta.group);
+            if (isBackgroundSemantic && !cfg.traceAllowBackgroundEvent) {
+                // Keep form IDs for later lookup, but avoid promoting noisy background semantics
+                // into runtime event types.
+                return true;
+            }
 
-                const auto evt = SemanticToEventType(meta.group);
-                if (evt != EventType::Unknown && io.preferredEvent != evt) {
+            float minEventConfidence = std::clamp(
+                isBackgroundSemantic ? cfg.traceBackgroundEventMinConfidence :
+                cfg.tracePreferredEventMinConfidence,
+                0.0f, 1.0f);
+            if (!isBackgroundSemantic && IsStrongForegroundSemantic(meta.group)) {
+                // Foreground combat-like semantics can be promoted with a softer threshold
+                // to reduce Unknown dominance in runtime.
+                minEventConfidence = std::min(
+                    minEventConfidence,
+                    std::min(0.52f, std::clamp(cfg.unknownSemanticMinConfidence, 0.0f, 1.0f)));
+            }
+
+            const auto previousConfidence = io.confidence;
+            const bool incomingUnknown = (meta.group == SemanticGroup::Unknown);
+            const bool currentUnknown = (io.semantic == SemanticGroup::Unknown);
+            const bool currentBackground = IsBackgroundSemantic(io.semantic);
+            const bool incomingForeground = !incomingUnknown && !isBackgroundSemantic;
+
+            // Prevent generic Unknown hints (typically Sound/SoundRecord fallback)
+            // from downgrading an already-resolved semantic group.
+            bool shouldRefreshSemantic = false;
+            if (incomingUnknown) {
+                shouldRefreshSemantic = currentUnknown;
+            } else {
+                shouldRefreshSemantic =
+                    currentUnknown ||
+                    conf > io.confidence ||
+                    (incomingForeground && currentBackground);
+            }
+
+            if (shouldRefreshSemantic &&
+                (io.semantic != meta.group || io.confidence != conf)) {
+                io.semantic = meta.group;
+                io.confidence = conf;
+                changed = true;
+            }
+
+            const auto evt = SemanticToEventType(meta.group);
+            const bool canPromoteEvent = (evt != EventType::Unknown) && (conf >= minEventConfidence);
+            if (canPromoteEvent) {
+                const bool shouldSetEvent =
+                    (io.preferredEvent == EventType::Unknown) ||
+                    (conf > previousConfidence + 0.10f);
+                if (shouldSetEvent && io.preferredEvent != evt) {
                     io.preferredEvent = evt;
                     changed = true;
                 }
@@ -220,7 +347,7 @@ namespace dualpad::haptics
 
                 if (TryResolveSemanticFormID(candidate, io, preferSource, changed)) {
                     ++resolvedCount;
-                    if (io.sourceFormId != 0 && io.soundFormId != 0) {
+                    if (CanStopSemanticScan(io)) {
                         return resolvedCount;
                     }
                 }
@@ -257,7 +384,7 @@ namespace dualpad::haptics
                     }
                 }
 
-                if (io.sourceFormId != 0 && io.soundFormId != 0) {
+                if (CanStopSemanticScan(io)) {
                     break;
                 }
             }
@@ -296,7 +423,7 @@ namespace dualpad::haptics
                     kSubmitContextScanBytes,
                     io,
                     preferSource);
-                if (io.sourceFormId != 0 && io.soundFormId != 0) {
+                if (CanStopSemanticScan(io)) {
                     return resolvedCount;
                 }
 
@@ -316,7 +443,7 @@ namespace dualpad::haptics
                         kSubmitContextScanBytes,
                         io,
                         preferSource);
-                    if (io.sourceFormId != 0 && io.soundFormId != 0) {
+                    if (CanStopSemanticScan(io)) {
                         return resolvedCount;
                     }
                 }
@@ -380,6 +507,11 @@ namespace dualpad::haptics
         }
 
         UpsertTraceIfChanged(oldMeta, next, _counters.traceUpserts);
+
+        const auto binding = VoiceBindingMap::GetSingleton().TryGet(voicePtr);
+        const auto generation =
+            (binding.has_value() && binding->instanceId == instanceId) ? binding->generation : 0u;
+        ObserveFootstepTraceBridge(next, voicePtr, generation, nowUs, false);
     }
 
     void PlayPathHook::OnSubmitContext(
@@ -428,7 +560,7 @@ namespace dualpad::haptics
         const auto retryIntervalUs =
             static_cast<std::uint64_t>(std::max<std::uint32_t>(1u, cfg.submitSemanticRetryIntervalMs)) * 1000ull;
 
-        if (next.sourceFormId != 0 || next.soundFormId != 0) {
+        if (CanSkipSubmitSemanticScan(next)) {
             _counters.submitSkipResolved.fetch_add(1, std::memory_order_relaxed);
             if ((next.flags & kFlagResolvedFromInit) != 0) {
                 _counters.submitSkipResolvedFromInit.fetch_add(1, std::memory_order_relaxed);
@@ -439,6 +571,7 @@ namespace dualpad::haptics
             else {
                 _counters.submitSkipResolvedOther.fetch_add(1, std::memory_order_relaxed);
             }
+            ObserveFootstepTraceBridge(next, binding->voicePtr, binding->generation, nowUs, true);
             return;
         }
 
@@ -518,6 +651,7 @@ namespace dualpad::haptics
         }
 
         UpsertTraceIfChanged(oldMeta, next, _counters.traceUpserts);
+        ObserveFootstepTraceBridge(next, binding->voicePtr, binding->generation, nowUs, true);
     }
 
     PlayPathHook::Stats PlayPathHook::GetStats() const

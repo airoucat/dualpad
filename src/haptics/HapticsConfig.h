@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "haptics/HapticsTypes.h"
 
 #include <cstdint>
@@ -11,6 +11,12 @@ namespace dualpad::haptics
 {
     struct HapticsConfig
     {
+        enum class MixerSameGroupMode : std::uint8_t
+        {
+            Max = 0,
+            Avg = 1
+        };
+
         enum class HapticsMode
         {
             NativeOnly,
@@ -87,14 +93,52 @@ namespace dualpad::haptics
         float dynamicPoolOutputCap{ 0.75f };
         bool enableDynamicPoolShadowProbe{ true };
         bool enableDynamicPoolLearnFromL2{ false };
-        float dynamicPoolL2MinConfidence{ 0.62f };
-        std::uint32_t dynamicPoolResolveMinHits{ 2 };
+        float dynamicPoolL2MinConfidence{ 0.56f };
+        std::uint32_t dynamicPoolResolveMinHits{ 1 };
         float dynamicPoolResolveMinInputEnergy{ 0.04f };
 
         // Device
         std::string outputBackend{ "hid" };
         std::uint32_t retryCount{ 3 };
         std::uint32_t reconnectMs{ 500 };
+
+        // HID Tx
+        std::uint32_t hidTxFgCapacity{ 128 };
+        std::uint32_t hidTxBgCapacity{ 192 };
+        std::uint32_t hidStaleUs{ 32000 };
+        std::uint32_t hidMergeWindowFgUs{ 1500 };
+        std::uint32_t hidMergeWindowBgUs{ 4500 };
+        std::uint32_t hidSchedulerLookaheadUs{ 1200 };
+        std::uint32_t hidBgBudget{ 2 };
+        bool hidFgPreempt{ true };
+        std::uint32_t hidMaxSendPerFlush{ 2 };
+        std::uint32_t hidMinRepeatIntervalUs{ 7000 };
+        std::uint32_t hidIdleRepeatIntervalUs{ 40000 };
+        bool hidStopClearsQueue{ true };
+        bool enableStateTrackScheduler{ true };
+        bool enableStateTrackImpactRenderer{ true };
+        bool enableStateTrackSwingRenderer{ true };
+        bool enableStateTrackFootstepRenderer{ true };
+        bool enableStateTrackFootstepTokenRenderer{ true };
+        bool enableStateTrackFootstepTruthTrigger{ true };
+        bool enableStateTrackFootstepContextGate{ true };
+        bool enableStateTrackFootstepMotionGate{ true };
+        std::uint32_t stateTrackFootstepRecentMoveMs{ 140 };
+        bool enableFootstepAudioMatcherShadow{ true };
+        bool enableFootstepTruthBridgeShadow{ true };
+        std::uint32_t footstepAudioMatcherLookbackUs{ 20000 };
+        std::uint32_t footstepAudioMatcherLookaheadUs{ 40000 };
+        std::uint32_t footstepAudioMatcherMaxCandidates{ 96 };
+        float footstepAudioMatcherMinScore{ 0.55f };
+        std::uint32_t footstepTruthBridgeLookbackUs{ 60000 };
+        std::uint32_t footstepTruthBridgeLookaheadUs{ 260000 };
+        std::uint32_t footstepTruthBridgeBindingTtlMs{ 1200 };
+        std::uint32_t stateTrackLookaheadMinUs{ 2200 };
+        std::uint32_t stateTrackRepeatKeepMaxOverdueUs{ 1800 };
+        std::uint32_t stateTrackReleaseHitUs{ 70000 };
+        std::uint32_t stateTrackReleaseSwingUs{ 76000 };
+        std::uint32_t stateTrackReleaseFootstepUs{ 62000 };
+        std::uint32_t stateTrackReleaseUtilityUs{ 42000 };
 
         // LowLatency
         std::uint32_t correctionWindowMs{ 30 };
@@ -105,6 +149,26 @@ namespace dualpad::haptics
         float immediateGain{ 1.00f };
         float correctionGain{ 1.00f };
         bool enableAmbientPassthrough{ false };
+        bool allowUnknownAudioEvent{ false };
+        bool enableUnknownSemanticGate{ true };
+        bool allowUnknownFootstep{ false };
+        float unknownMinInputLevel{ 0.22f };
+        float unknownSemanticMinConfidence{ 0.60f };
+        bool allowBackgroundEvent{ false };
+        bool enableUnknownPromotion{ true };
+        float unknownPromotionMinConfidence{ 0.82f };
+        float relativeEnergyRatioThreshold{ 1.10f };
+        std::uint32_t refractoryHitMs{ 70 };
+        std::uint32_t refractorySwingMs{ 45 };
+        std::uint32_t refractoryFootstepMs{ 40 };
+        std::uint32_t mixerForegroundTopN{ 2 };
+        float mixerBackgroundBudget{ 0.0f };
+        MixerSameGroupMode mixerSameGroupMode{ MixerSameGroupMode::Max };
+        bool enableAudioLockBinding{ true };
+        float audioLockStartMinConfidence{ 0.50f };
+        float audioLockUnknownStartMinConfidence{ 0.72f };
+        float audioLockExtendMinConfidence{ 0.20f };
+        std::uint32_t audioLockExtendGraceMs{ 24 };
 
         // Semantic cache
         bool enableFormSemanticCache{ true };
@@ -113,6 +177,9 @@ namespace dualpad::haptics
         bool enableSubmitNoContextFallback{ true };
         bool enableSubmitNoContextDeepFallback{ true };
         float l1FormSemanticMinConfidence{ 0.70f };
+        float tracePreferredEventMinConfidence{ 0.60f };
+        float traceBackgroundEventMinConfidence{ 0.90f };
+        bool traceAllowBackgroundEvent{ false };
         std::uint32_t submitSemanticScanMaxAttempts{ 3 };
         std::uint32_t submitSemanticRetryIntervalMs{ 120 };
         std::string semanticRulesPath{ "Data/SKSE/Plugins/DualPadSemanticRules.json" };
@@ -155,5 +222,8 @@ namespace dualpad::haptics
         void LoadDuckingMatrix(const std::unordered_map<std::string, std::string>& values);
         void LoadDynamicPoolConfig(const std::unordered_map<std::string, std::string>& values);
         void LoadExtensionConfig(const std::unordered_map<std::string, std::string>& values);
+        void LoadGateConfig(const std::unordered_map<std::string, std::string>& values);
+        void LoadBudgetConfig(const std::unordered_map<std::string, std::string>& values);
+        void LoadHidTxConfig(const std::unordered_map<std::string, std::string>& values);
     };
 }

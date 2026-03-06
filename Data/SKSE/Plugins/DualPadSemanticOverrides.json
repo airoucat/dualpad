@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hardOverrides": {
+    "0x003F3E2": { "group": "Footstep", "confidence": 0.90, "baseWeight": 0.60, "texturePresetId": 2 },
+    "0x003C751": { "group": "Footstep", "confidence": 0.90, "baseWeight": 0.60, "texturePresetId": 2 },
+    "0x003F204": { "group": "Footstep", "confidence": 0.88, "baseWeight": 0.58, "texturePresetId": 2 },
+    "0x00DCE87": { "group": "Footstep", "confidence": 0.88, "baseWeight": 0.58, "texturePresetId": 2 },
+    "0x00FFA07": { "group": "Footstep", "confidence": 0.88, "baseWeight": 0.58, "texturePresetId": 2 },
+    "0x003C709": { "group": "Footstep", "confidence": 0.88, "baseWeight": 0.58, "texturePresetId": 2 },
+    "0x01037D7": { "group": "Footstep", "confidence": 0.86, "baseWeight": 0.56, "texturePresetId": 2 },
+    "0x01037D8": { "group": "Footstep", "confidence": 0.86, "baseWeight": 0.56, "texturePresetId": 2 },
+    "0x0086912": { "group": "Footstep", "confidence": 0.86, "baseWeight": 0.56, "texturePresetId": 2 },
+    "0x0086913": { "group": "Footstep", "confidence": 0.86, "baseWeight": 0.56, "texturePresetId": 2 }
+  }
+}

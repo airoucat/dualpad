@@ -165,12 +165,93 @@ namespace dualpad::haptics
             }
         }
 
+        constexpr std::size_t kSemanticGroupCount = 10;
+
+        std::size_t GroupIndex(SemanticGroup group)
+        {
+            return static_cast<std::size_t>(group);
+        }
+
+        bool IsKnownGroup(SemanticGroup group)
+        {
+            return group != SemanticGroup::Unknown &&
+                GroupIndex(group) < kSemanticGroupCount;
+        }
+
+        std::uint8_t FlagsForGroup(SemanticGroup group)
+        {
+            switch (group) {
+            case SemanticGroup::Ambient:
+                return semantic_flags::kIsAmbient | semantic_flags::kIsLoop;
+            case SemanticGroup::Music:
+                return semantic_flags::kIsLoop;
+            case SemanticGroup::Voice:
+                return semantic_flags::kIsVoice;
+            case SemanticGroup::UI:
+                return semantic_flags::kIsUI;
+            default:
+                return 0;
+            }
+        }
+
+        float DefaultWeightForGroup(SemanticGroup group)
+        {
+            switch (group) {
+            case SemanticGroup::WeaponSwing:
+                return 0.72f;
+            case SemanticGroup::Hit:
+                return 0.84f;
+            case SemanticGroup::Block:
+                return 0.76f;
+            case SemanticGroup::Footstep:
+                return 0.58f;
+            case SemanticGroup::Bow:
+                return 0.70f;
+            case SemanticGroup::Voice:
+                return 0.50f;
+            case SemanticGroup::UI:
+                return 0.36f;
+            case SemanticGroup::Music:
+                return 0.26f;
+            case SemanticGroup::Ambient:
+                return 0.22f;
+            default:
+                return 0.20f;
+            }
+        }
+
+        std::string BuildCategoryHint(const RE::BGSSoundCategory* category)
+        {
+            std::string hint;
+            std::size_t depth = 0;
+            while (category && depth < 4) {
+                if (const auto* editorID = category->GetFormEditorID();
+                    editorID && editorID[0] != '\0') {
+                    if (!hint.empty()) {
+                        hint.push_back('_');
+                    }
+                    hint.append(editorID);
+                }
+
+                if (const auto* fullName = category->GetFullName();
+                    fullName && fullName[0] != '\0') {
+                    if (!hint.empty()) {
+                        hint.push_back('_');
+                    }
+                    hint.append(fullName);
+                }
+
+                category = category->parentCategory;
+                ++depth;
+            }
+            return hint;
+        }
+
         template <class TForm>
         void ScanType(
             RE::TESDataHandler* dh,
             SemanticRuleEngine& rules,
-            std::unordered_map<std::uint32_t, FormSemanticMeta>& out,
-            std::size_t& unknownCount)
+            std::unordered_map<std::uint32_t, FormSemanticMeta>& out)
         {
             auto& forms = dh->GetFormArray<TForm>();
             for (auto* f : forms) {
@@ -189,11 +270,180 @@ namespace dualpad::haptics
                     f->GetFormType(),
                     formID);
 
-                if (meta.group == SemanticGroup::Unknown) {
-                    ++unknownCount;
+                out[formID] = meta;
+            }
+        }
+
+        void ScanSoundCategories(
+            RE::TESDataHandler* dh,
+            SemanticRuleEngine& rules,
+            std::unordered_map<std::uint32_t, FormSemanticMeta>& out)
+        {
+            auto& forms = dh->GetFormArray<RE::BGSSoundCategory>();
+            for (auto* category : forms) {
+                if (!category) {
+                    continue;
+                }
+
+                const auto formID = category->GetFormID();
+                if (formID == 0) {
+                    continue;
+                }
+
+                std::string hint = BuildCategoryHint(category);
+                if (hint.empty()) {
+                    if (const auto* editorID = category->GetFormEditorID()) {
+                        hint = editorID;
+                    }
+                }
+
+                out[formID] = rules.ClassifyEditorID(
+                    hint,
+                    category->GetFormType(),
+                    formID);
+            }
+        }
+
+        void ScanSoundDescriptors(
+            RE::TESDataHandler* dh,
+            SemanticRuleEngine& rules,
+            std::unordered_map<std::uint32_t, FormSemanticMeta>& out)
+        {
+            struct UnknownSeed
+            {
+                std::uint32_t formID{ 0 };
+                std::uint32_t descriptorType{ 0 };
+                std::uint32_t alternateFormID{ 0 };
+                std::uint32_t categoryFormID{ 0 };
+            };
+
+            std::unordered_map<std::uint32_t, std::array<std::uint32_t, kSemanticGroupCount>> typeGroupCounts;
+            std::vector<UnknownSeed> unknownSeeds;
+
+            auto& forms = dh->GetFormArray<RE::BGSSoundDescriptorForm>();
+            for (auto* descriptorForm : forms) {
+                if (!descriptorForm) {
+                    continue;
+                }
+
+                const auto formID = descriptorForm->GetFormID();
+                if (formID == 0) {
+                    continue;
+                }
+
+                const char* editorID = descriptorForm->GetFormEditorID();
+                auto meta = rules.ClassifyEditorID(
+                    editorID ? std::string_view(editorID) : std::string_view{},
+                    descriptorForm->GetFormType(),
+                    formID);
+
+                std::uint32_t descriptorType = 0;
+                std::uint32_t alternateFormID = 0;
+                std::uint32_t categoryFormID = 0;
+
+                if (descriptorForm->soundDescriptor) {
+                    descriptorType = descriptorForm->soundDescriptor->GetType();
+                    alternateFormID = descriptorForm->soundDescriptor->alternateSoundFormID;
+
+                    if (descriptorForm->soundDescriptor->category) {
+                        categoryFormID = descriptorForm->soundDescriptor->category->GetFormID();
+                    }
+                }
+
+                if (meta.group == SemanticGroup::Unknown && categoryFormID != 0) {
+                    if (const auto it = out.find(categoryFormID);
+                        it != out.end() && IsKnownGroup(it->second.group)) {
+                        meta = it->second;
+                        meta.confidence = std::clamp(meta.confidence * 0.92f, 0.0f, 1.0f);
+                        meta.baseWeight = std::clamp(meta.baseWeight * 0.95f, 0.0f, 1.0f);
+                    }
+                    else if (descriptorForm->soundDescriptor && descriptorForm->soundDescriptor->category) {
+                        const auto hint = BuildCategoryHint(descriptorForm->soundDescriptor->category);
+                        if (!hint.empty()) {
+                            auto hinted = rules.ClassifyEditorID(
+                                hint,
+                                RE::FormType::SoundCategory,
+                                categoryFormID);
+                            if (IsKnownGroup(hinted.group)) {
+                                hinted.confidence = std::clamp(hinted.confidence * 0.90f, 0.0f, 1.0f);
+                                hinted.baseWeight = std::clamp(hinted.baseWeight * 0.95f, 0.0f, 1.0f);
+                                meta = hinted;
+                            }
+                        }
+                    }
                 }
 
                 out[formID] = meta;
+
+                if (descriptorType != 0 && IsKnownGroup(meta.group)) {
+                    auto& bins = typeGroupCounts[descriptorType];
+                    ++bins[GroupIndex(meta.group)];
+                }
+                else if (meta.group == SemanticGroup::Unknown) {
+                    unknownSeeds.push_back(UnknownSeed{
+                        formID,
+                        descriptorType,
+                        alternateFormID,
+                        categoryFormID
+                        });
+                }
+            }
+
+            for (const auto& seed : unknownSeeds) {
+                auto itMeta = out.find(seed.formID);
+                if (itMeta == out.end() || itMeta->second.group != SemanticGroup::Unknown) {
+                    continue;
+                }
+
+                bool promoted = false;
+
+                if (seed.descriptorType != 0) {
+                    if (const auto itType = typeGroupCounts.find(seed.descriptorType);
+                        itType != typeGroupCounts.end()) {
+                        std::uint32_t knownTotal = 0;
+                        std::uint32_t bestCount = 0;
+                        SemanticGroup bestGroup = SemanticGroup::Unknown;
+                        for (std::size_t i = 0; i < kSemanticGroupCount; ++i) {
+                            const auto count = itType->second[i];
+                            knownTotal += count;
+                            const auto group = static_cast<SemanticGroup>(i);
+                            if (!IsKnownGroup(group)) {
+                                continue;
+                            }
+                            if (count > bestCount) {
+                                bestCount = count;
+                                bestGroup = group;
+                            }
+                        }
+
+                        if (IsKnownGroup(bestGroup) &&
+                            knownTotal >= 3 &&
+                            bestCount >= 2 &&
+                            (bestCount * 100u) >= (knownTotal * 70u)) {
+                            FormSemanticMeta promotedMeta{};
+                            promotedMeta.group = bestGroup;
+                            promotedMeta.confidence = std::clamp(
+                                0.48f + 0.24f * (static_cast<float>(bestCount) / static_cast<float>(knownTotal)),
+                                0.0f,
+                                1.0f);
+                            promotedMeta.baseWeight = DefaultWeightForGroup(bestGroup);
+                            promotedMeta.texturePresetId = 0;
+                            promotedMeta.flags = FlagsForGroup(bestGroup);
+                            itMeta->second = promotedMeta;
+                            promoted = true;
+                        }
+                    }
+                }
+
+                if (!promoted && seed.alternateFormID != 0) {
+                    if (const auto itAlt = out.find(seed.alternateFormID);
+                        itAlt != out.end() && IsKnownGroup(itAlt->second.group)) {
+                        auto altMeta = itAlt->second;
+                        altMeta.confidence = std::clamp(altMeta.confidence * 0.90f, 0.0f, 1.0f);
+                        altMeta.baseWeight = std::clamp(altMeta.baseWeight * 0.96f, 0.0f, 1.0f);
+                        itMeta->second = altMeta;
+                    }
+                }
             }
         }
     }
@@ -256,17 +506,23 @@ namespace dualpad::haptics
             return;
         }
 
+        ScanType<RE::TESSound>(dh, rules, snapshot->table);
+        ScanSoundCategories(dh, rules, snapshot->table);
+        ScanSoundDescriptors(dh, rules, snapshot->table);
+        ScanType<RE::BGSMusicType>(dh, rules, snapshot->table);
+        ScanType<RE::BGSMusicTrackFormWrapper>(dh, rules, snapshot->table);
+        ScanType<RE::BGSAcousticSpace>(dh, rules, snapshot->table);
+        ScanType<RE::BGSFootstep>(dh, rules, snapshot->table);
+        ScanType<RE::BGSFootstepSet>(dh, rules, snapshot->table);
+        ScanType<RE::BGSImpactData>(dh, rules, snapshot->table);
+        ScanType<RE::BGSImpactDataSet>(dh, rules, snapshot->table);
+
         std::size_t unknownCount = 0;
-        ScanType<RE::TESSound>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSSoundDescriptorForm>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSSoundCategory>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSMusicType>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSMusicTrackFormWrapper>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSAcousticSpace>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSFootstep>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSFootstepSet>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSImpactData>(dh, rules, snapshot->table, unknownCount);
-        ScanType<RE::BGSImpactDataSet>(dh, rules, snapshot->table, unknownCount);
+        for (const auto& [_, meta] : snapshot->table) {
+            if (meta.group == SemanticGroup::Unknown) {
+                ++unknownCount;
+            }
+        }
 
         InstallSnapshot(std::shared_ptr<const Snapshot>(snapshot));
         _rebuilds.fetch_add(1, std::memory_order_relaxed);

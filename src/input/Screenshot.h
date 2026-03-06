@@ -3,6 +3,6 @@
 
 namespace dualpad::utils
 {
-    // 使用 DirectX 11 从渲染管线截取当前帧并保存为 PNG
+    // 浣跨敤 DirectX 11 浠庢覆鏌撶绾挎埅鍙栧綋鍓嶅抚骞朵繚瀛樹负 PNG
     std::string TakeScreenshot();
 }

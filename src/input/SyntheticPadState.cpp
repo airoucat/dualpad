@@ -55,7 +55,7 @@ namespace dualpad::input
     {
         SyntheticFrame f{};
 
-        // ¼ì²é pulse ÊÇ·ñ¹ýÆÚ
+        // æ£€æŸ¥ pulse æ˜¯å¦è¿‡æœŸ
         const auto expireMs = _pulseExpireMs.load(std::memory_order_acquire);
         if (expireMs > 0 && NowMs() >= expireMs) {
             _down.store(0, std::memory_order_release);

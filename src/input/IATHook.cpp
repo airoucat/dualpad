@@ -12,7 +12,7 @@ namespace dualpad::input
 {
     namespace
     {
-        // XInput ½á¹¹¶¨Òå
+        // XInput ç»“æ„å®šä¹‰
         struct XINPUT_GAMEPAD
         {
             WORD  wButtons;
@@ -36,14 +36,14 @@ namespace dualpad::input
             WORD wRightMotorSpeed;
         };
 
-        // Ô­Ê¼º¯ÊıÖ¸Õë
+        // åŸå§‹å‡½æ•°æŒ‡é’ˆ
         using XInputGetStateFunc = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
         using XInputSetStateFunc = DWORD(WINAPI*)(DWORD, XINPUT_VIBRATION*);
 
         XInputGetStateFunc g_originalGetState = nullptr;
         XInputSetStateFunc g_originalSetState = nullptr;
 
-        // ÎÒÃÇµÄ hook º¯Êı
+        // æˆ‘ä»¬çš„ hook å‡½æ•°
         DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
         {
             if (!pState || dwUserIndex != 0) {
@@ -53,28 +53,28 @@ namespace dualpad::input
                 return ERROR_DEVICE_NOT_CONNECTED;
             }
 
-            // »ñÈ¡ DualSense ×´Ì¬
+            // è·å– DualSense çŠ¶æ€
             auto frame = SyntheticPadState::GetSingleton().ConsumeFrame();
 
-            // Ó³Éä°´¼ü
+            // æ˜ å°„æŒ‰é”®
             WORD buttons = 0;
             const auto& bits = GetPadBits(GetActivePadProfile());
 
-            // Ãæ¼ü
-            if (frame.downMask & bits.cross) buttons |= 0x1000;      // A (¡Á)
-            if (frame.downMask & bits.circle) buttons |= 0x2000;     // B (¡ğ)
-            if (frame.downMask & bits.square) buttons |= 0x4000;     // X (¡õ)
-            if (frame.downMask & bits.triangle) buttons |= 0x8000;   // Y (¡÷)
+            // é¢é”®
+            if (frame.downMask & bits.cross) buttons |= 0x1000;      // A (Ã—)
+            if (frame.downMask & bits.circle) buttons |= 0x2000;     // B (â—‹)
+            if (frame.downMask & bits.square) buttons |= 0x4000;     // X (â–¡)
+            if (frame.downMask & bits.triangle) buttons |= 0x8000;   // Y (â–³)
 
-            // ¼ç¼ü
+            // è‚©é”®
             if (frame.downMask & bits.l1) buttons |= 0x0100;         // LB
             if (frame.downMask & bits.r1) buttons |= 0x0200;         // RB
 
-            // Ò¡¸Ë°´ÏÂ
+            // æ‘‡æ†æŒ‰ä¸‹
             if (frame.downMask & bits.l3) buttons |= 0x0040;         // L3
             if (frame.downMask & bits.r3) buttons |= 0x0080;         // R3
 
-            // ²Ëµ¥¼ü
+            // èœå•é”®
             if (frame.downMask & bits.options) buttons |= 0x0010;    // Start
             if (frame.downMask & bits.create) buttons |= 0x0020;     // Back
 
@@ -86,7 +86,7 @@ namespace dualpad::input
 
             pState->Gamepad.wButtons = buttons;
 
-            // Ò¡¸ËºÍ°â»ú
+            // æ‘‡æ†å’Œæ‰³æœº
             if (frame.hasAxis) {
                 pState->Gamepad.sThumbLX = static_cast<SHORT>(frame.lx * 32767.0f);
                 pState->Gamepad.sThumbLY = static_cast<SHORT>(frame.ly * 32767.0f);
@@ -111,7 +111,7 @@ namespace dualpad::input
         DWORD WINAPI HookedXInputSetState(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
         {
             if (dwUserIndex == 0 && pVibration) {
-                // TODO: ×ª»»Îª DualSense Õğ¶¯
+                // TODO: è½¬æ¢ä¸º DualSense éœ‡åŠ¨
                 logger::trace("[DualPad] Vibration: L={} R={}",
                     pVibration->wLeftMotorSpeed, pVibration->wRightMotorSpeed);
             }
@@ -122,7 +122,7 @@ namespace dualpad::input
             return ERROR_SUCCESS;
         }
 
-        // IAT Hook ÊµÏÖ
+        // IAT Hook å®ç°
         bool HookIATEntry(HMODULE hModule, const char* dllName, const char* funcName,
             void* newFunc, void** oldFunc)
         {
@@ -146,7 +146,7 @@ namespace dualpad::input
             auto* importDesc = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(
                 reinterpret_cast<BYTE*>(hModule) + importDirRVA);
 
-            // ±éÀúµ¼ÈëµÄ DLL
+            // éå†å¯¼å…¥çš„ DLL
             for (; importDesc->Name; importDesc++) {
                 const char* importDllName = reinterpret_cast<const char*>(
                     reinterpret_cast<BYTE*>(hModule) + importDesc->Name);
@@ -157,7 +157,7 @@ namespace dualpad::input
 
                 logger::info("[DualPad][IAT] Found import DLL: {}", importDllName);
 
-                // ±éÀúµ¼ÈëµÄº¯Êı
+                // éå†å¯¼å…¥çš„å‡½æ•°
                 auto* thunk = reinterpret_cast<IMAGE_THUNK_DATA*>(
                     reinterpret_cast<BYTE*>(hModule) + importDesc->FirstThunk);
 
@@ -168,7 +168,7 @@ namespace dualpad::input
                     bool isOrdinal = IMAGE_SNAP_BY_ORDINAL(origThunk->u1.Ordinal);
 
                     if (isOrdinal) {
-                        // ĞòºÅµ¼Èë
+                        // åºå·å¯¼å…¥
                         WORD ordinal = IMAGE_ORDINAL(origThunk->u1.Ordinal);
 
                         bool shouldHook = false;
@@ -186,7 +186,7 @@ namespace dualpad::input
                         logger::info("[DualPad][IAT] Matched {} to ordinal #{}", funcName, ordinal);
                     }
                     else {
-                        // Ãû³Æµ¼Èë
+                        // åç§°å¯¼å…¥
                         auto* importByName = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(
                             reinterpret_cast<BYTE*>(hModule) + origThunk->u1.AddressOfData);
 
@@ -197,12 +197,12 @@ namespace dualpad::input
                         logger::info("[DualPad][IAT] Found function: {}", funcName);
                     }
 
-                    // ±£´æÔ­º¯ÊıµØÖ·
+                    // ä¿å­˜åŸå‡½æ•°åœ°å€
                     if (oldFunc) {
                         *oldFunc = reinterpret_cast<void*>(thunk->u1.Function);
                     }
 
-                    // ĞŞ¸ÄÎªÎÒÃÇµÄº¯Êı
+                    // ä¿®æ”¹ä¸ºæˆ‘ä»¬çš„å‡½æ•°
                     DWORD oldProtect;
                     if (!VirtualProtect(&thunk->u1.Function, sizeof(ULONGLONG),
                         PAGE_READWRITE, &oldProtect)) {

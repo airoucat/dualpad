@@ -9,14 +9,23 @@
 #include "haptics/DynamicHapticPool.h"
 #include "haptics/EngineAudioTap.h"
 #include "haptics/EventNormalizer.h"
+#include "haptics/FootstepAudioMatcher.h"
+#include "haptics/FootstepTruthBridge.h"
+#include "haptics/FootstepTruthProbe.h"
+#include "haptics/HapticEligibilityEngine.h"
 #include "haptics/MetricsReporter.h"
 #include "haptics/PlayPathHook.h"
 #include "haptics/AudioOnlyScorer.h"
 #include "haptics/FormSemanticCache.h"
 #include "haptics/SemanticResolver.h"
+#include "haptics/SessionFormPromoter.h"
 
 #include <SKSE/SKSE.h>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 namespace logger = SKSE::log;
 
@@ -30,6 +39,176 @@ namespace dualpad::haptics
                 return 0.0f;
             }
             return (100.0f * static_cast<float>(part)) / static_cast<float>(total);
+        }
+
+        const char* ToString(SemanticGroup group)
+        {
+            switch (group) {
+            case SemanticGroup::WeaponSwing: return "WeaponSwing";
+            case SemanticGroup::Hit:         return "Hit";
+            case SemanticGroup::Block:       return "Block";
+            case SemanticGroup::Footstep:    return "Footstep";
+            case SemanticGroup::Bow:         return "Bow";
+            case SemanticGroup::Voice:       return "Voice";
+            case SemanticGroup::UI:          return "UI";
+            case SemanticGroup::Music:       return "Music";
+            case SemanticGroup::Ambient:     return "Ambient";
+            default:                         return "Unknown";
+            }
+        }
+
+        std::string BuildUnknownTopSummary(const EventNormalizer::Stats& s)
+        {
+            if (s.unknownTopCount == 0) {
+                return "none";
+            }
+
+            std::ostringstream oss;
+            for (std::uint32_t i = 0; i < s.unknownTopCount; ++i) {
+                if (i > 0) {
+                    oss << ", ";
+                }
+
+                const auto& item = s.unknownTop[i];
+                oss << "0x"
+                    << std::hex << std::uppercase << item.formID
+                    << std::dec
+                    << ":" << item.hits
+                    << ":" << ToString(item.semantic)
+                    << "(" << item.semanticConfidence << ")";
+            }
+            return oss.str();
+        }
+
+        const char* ToString(RE::FormType formType)
+        {
+            switch (formType) {
+            case RE::FormType::Sound:         return "Sound";
+            case RE::FormType::SoundRecord:   return "SoundRecord";
+            case RE::FormType::SoundCategory: return "SoundCategory";
+            case RE::FormType::MusicType:     return "MusicType";
+            case RE::FormType::MusicTrack:    return "MusicTrack";
+            case RE::FormType::Footstep:      return "Footstep";
+            case RE::FormType::FootstepSet:   return "FootstepSet";
+            case RE::FormType::Impact:        return "Impact";
+            case RE::FormType::ImpactDataSet: return "ImpactDataSet";
+            case RE::FormType::AcousticSpace: return "AcousticSpace";
+            default:                          return "Other";
+            }
+        }
+
+        std::string TrimEditorID(const char* editorID)
+        {
+            if (!editorID || editorID[0] == '\0') {
+                return "<none>";
+            }
+
+            std::string out(editorID);
+            constexpr std::size_t kMaxEdidLen = 48;
+            if (out.size() > kMaxEdidLen) {
+                out.resize(kMaxEdidLen);
+                out += "...";
+            }
+            return out;
+        }
+
+        std::string BuildUnknownTopResolvedSummary(const EventNormalizer::Stats& s)
+        {
+            if (s.unknownTopCount == 0) {
+                return "none";
+            }
+
+            // During shutdown TES data can already be torn down; avoid form lookups then.
+            if (!RE::TESDataHandler::GetSingleton()) {
+                return "tesdata=unavailable";
+            }
+
+            std::ostringstream oss;
+            for (std::uint32_t i = 0; i < s.unknownTopCount; ++i) {
+                if (i > 0) {
+                    oss << ", ";
+                }
+
+                const auto& item = s.unknownTop[i];
+                oss << "0x"
+                    << std::hex << std::uppercase << item.formID
+                    << std::dec
+                    << ":" << item.hits
+                    << ":" << ToString(item.semantic)
+                    << "(" << item.semanticConfidence << ")";
+
+                auto* form = RE::TESForm::LookupByID(static_cast<RE::FormID>(item.formID));
+                if (!form) {
+                    oss << "/missing";
+                    continue;
+                }
+
+                oss << "/type=" << ToString(form->GetFormType())
+                    << "/edid=" << TrimEditorID(form->GetFormEditorID());
+            }
+
+            return oss.str();
+        }
+
+        void ExportUnknownOverrideTemplate(const EventNormalizer::Stats& s)
+        {
+            if (s.unknownTopCount == 0) {
+                return;
+            }
+
+            const std::filesystem::path path = "Data/SKSE/Plugins/DualPadSemanticOverrides.template.json";
+            std::error_code ec;
+            std::filesystem::create_directories(path.parent_path(), ec);
+            if (ec) {
+                logger::warn(
+                    "[Haptics][SessionSummary] create override template dir failed: {} ({})",
+                    path.parent_path().string(),
+                    ec.message());
+                return;
+            }
+
+            std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
+            if (!ofs.is_open()) {
+                logger::warn("[Haptics][SessionSummary] open override template failed: {}", path.string());
+                return;
+            }
+
+            ofs << "{\n";
+            ofs << "  \"version\": 1,\n";
+            ofs << "  \"hardOverrides\": {\n";
+
+            std::size_t written = 0;
+            for (std::uint32_t i = 0; i < s.unknownTopCount; ++i) {
+                const auto& item = s.unknownTop[i];
+                if (item.formID == 0) {
+                    continue;
+                }
+
+                std::ostringstream formID;
+                formID << "0x" << std::uppercase << std::hex << std::setw(8)
+                    << std::setfill('0') << item.formID;
+
+                if (written > 0) {
+                    ofs << ",\n";
+                }
+
+                ofs << "    \"" << formID.str() << "\": {\"group\": \"Unknown\", \"confidence\": 0.60, \"baseWeight\": 0.50, \"note\": \"unknownTop hits="
+                    << item.hits << "; fill real group manually\"}";
+                ++written;
+            }
+
+            ofs << "\n  }\n";
+            ofs << "}\n";
+
+            if (!ofs.good()) {
+                logger::warn("[Haptics][SessionSummary] write override template failed: {}", path.string());
+                return;
+            }
+
+            logger::info(
+                "[Haptics][SessionSummary] wrote unknown override template path={} entries={}",
+                path.string(),
+                written);
         }
 
         void LogSystemDivider()
@@ -81,7 +260,7 @@ namespace dualpad::haptics
             const EventNormalizer::Stats& norm)
         {
             logger::info(
-                "[Haptics][SessionSummary] playPath initResolved={}/{} ({:.1f}%) submitResolved={}/{} ({:.1f}%) noCtx={} noForm={} (first={} retry={}) scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} (init={} submit={} other={}) retry={} skipRL={} skipMax={} traceMeta(hit={} miss={}) patchForm={} patchEvent={} traceMiss={} bindMiss={}",
+                "[Haptics][SessionSummary] playPath initResolved={}/{} ({:.1f}%) submitResolved={}/{} ({:.1f}%) noCtx={} noForm={} (first={} retry={}) scan={} retryRes={} noCtxScan={} noCtxRes={} noCtxNoPtr={} noCtxDeepScan={} noCtxDeepRes={} skipResolved={} (init={} submit={} other={}) retry={} skipRL={} skipMax={} traceMeta(hit={} miss={}) patchForm={} patchEvent={} patchEventCons={} traceMiss={} bindMiss={}",
                 play.initResolved,
                 play.initCalls,
                 PercentOf(play.initResolved, play.initCalls),
@@ -110,6 +289,7 @@ namespace dualpad::haptics
                 play.submitTraceMetaMiss,
                 norm.patchedFormID,
                 norm.patchedEventType,
+                norm.patchedEventTypeConservative,
                 norm.traceMiss,
                 norm.bindingMiss);
         }
@@ -208,6 +388,12 @@ namespace dualpad::haptics
             return false;
         }
 
+        if (!FootstepTruthProbe::GetSingleton().Register()) {
+            logger::warn("[Haptics][System] FootstepTruthProbe register failed, continue fail-open");
+        }
+        FootstepTruthBridge::GetSingleton().Reset();
+        FootstepAudioMatcher::GetSingleton().Reset();
+
         _customPipelineActive.store(true, std::memory_order_release);
 
         LogSystemDivider();
@@ -227,6 +413,7 @@ namespace dualpad::haptics
 
         const bool customActive = _customPipelineActive.exchange(false, std::memory_order_acq_rel);
         if (customActive) {
+            FootstepTruthProbe::GetSingleton().Unregister();
             StopThreads();
             PrintSessionSummary();
             HidOutput::GetSingleton().StopVibration();
@@ -283,20 +470,38 @@ namespace dualpad::haptics
         LogPlayPathStats(playStats);
 
         auto audioStats = AudioOnlyScorer::GetSingleton().GetStats();
-        logger::info("[Haptics][AudioOnlyScorer] pulled={} produced={} lowEnergyDropped={}",
+        logger::info("[Haptics][AudioOnlyScorer] pulled={} produced={} lowEnergyDropped={} relativeEnergyDropped={}",
             audioStats.featuresPulled,
             audioStats.sourcesProduced,
-            audioStats.lowEnergyDropped);
+            audioStats.lowEnergyDropped,
+            audioStats.relativeEnergyDropped);
 
         auto normStats = EventNormalizer::GetSingleton().GetStats();
-        logger::info("[Haptics][EventNormalizer] inputs={} noVoice={} bindMiss={} traceMiss={} traceHit={} patchForm={} patchEvent={}",
+        logger::info("[Haptics][EventNormalizer] inputs={} noVoice={} bindMiss={} traceMiss={} traceHit={} patchForm={} patchEvent={} patchEventCons={} unknownAfter={} unknownForm={} unknownNoForm={} unknownMapOv={}",
             normStats.inputs,
             normStats.noVoiceID,
             normStats.bindingMiss,
             normStats.traceMiss,
             normStats.traceHit,
             normStats.patchedFormID,
-            normStats.patchedEventType);
+            normStats.patchedEventType,
+            normStats.patchedEventTypeConservative,
+            normStats.unknownAfterNormalize,
+            normStats.unknownWithFormID,
+            normStats.unknownNoFormID,
+            normStats.unknownMapOverflow);
+        if (normStats.unknownAfterNormalize > 0) {
+            logger::info(
+                "[Haptics][UnknownTop] after={} withForm={} noForm={} mapOv={} top={}",
+                normStats.unknownAfterNormalize,
+                normStats.unknownWithFormID,
+                normStats.unknownNoFormID,
+                normStats.unknownMapOverflow,
+                BuildUnknownTopSummary(normStats));
+            logger::info(
+                "[Haptics][UnknownTopResolved] {}",
+                BuildUnknownTopResolvedSummary(normStats));
+        }
 
         auto resolverStats = SemanticResolver::GetSingleton().GetStats();
         logger::info("[Haptics][SemanticResolver] lookups={} hits={} noForm={} cacheMiss={} lowConfidence={}",
@@ -320,6 +525,7 @@ namespace dualpad::haptics
             metricSnap.dropCount);
 
         auto decStats = DecisionEngine::GetSingleton().GetStats();
+        auto eligibilityStats = HapticEligibilityEngine::GetSingleton().GetStats();
         auto dynamicStats = DynamicHapticPool::GetSingleton().GetStats();
         logger::info(
             "[Haptics][DynamicPool] size={} observe={} admitted={} rejNoKey={} rejLow={} shCall={} shHit={} shMiss={} hit={} miss={} rejMinHit={} rejLowIn={} evicted={} learnL2={} learnNoKey={} learnLowScore={}",
@@ -349,17 +555,152 @@ namespace dualpad::haptics
             semanticStats.rebuilds);
 
         auto mixerStats = HapticMixer::GetSingleton().GetStats();
-        logger::info("[Haptics][Mixer] Active={} Frames={} Ticks={} Sources={} PeakL={:.3f} PeakR={:.3f}",
+        logger::info("[Haptics][Mixer] Active={} Frames={} Ticks={} Sources={} ClampUnk={} ClampBg={} BgIso={} FgFam={} DropEvt={} DropUnkLow={} DropUnkSem={} Meta(active/carrier)={}/{} DropOutUnk={} PeakL={:.3f} PeakR={:.3f}",
             mixerStats.activeSources,
             mixerStats.framesOutput,
             mixerStats.totalTicks,
             mixerStats.totalSourcesAdded,
+            mixerStats.softClampUnknown,
+            mixerStats.softClampBackground,
+            mixerStats.dropBackgroundHardIsolated,
+            mixerStats.foregroundFamilies,
+            mixerStats.dropEventDisabled,
+            mixerStats.dropUnknownLowInput,
+            mixerStats.dropUnknownSemantic,
+            mixerStats.outputMetaFromActive,
+            mixerStats.outputMetaFromCarrier,
+            mixerStats.outputDropUnknownNonZero,
             mixerStats.peakLeft,
             mixerStats.peakRight);
+        logger::info(
+            "[Haptics][ProbeGate] rej={} unk={} bg={} noTrace={} lowSem={} lowRel={} refrHard={} refrWindow={} refrSoft={}",
+            decStats.gateRejected,
+            decStats.rejectUnknownBlocked,
+            decStats.rejectBackgroundBlocked,
+            decStats.rejectNoTraceContext,
+            decStats.rejectLowSemanticConfidence,
+            decStats.rejectLowRelativeEnergy,
+            eligibilityStats.refractoryHardDropped,
+            eligibilityStats.refractoryWindowHit,
+            eligibilityStats.refractorySoftSuppressed);
+        logger::info(
+            "[Haptics][ProbeMixer] add(call={} ins={} mergeForm={} mergeLock={} dropUnkBudget={} lateRescue={} bgIso={}) age(sample={} <8ms={} 8-20={} 20-50={} 50-100={} 100+={} max={}us) budget(unk={} fg={} bg={} total={} fgFamilies={})",
+            mixerStats.sourceAddCalls,
+            mixerStats.sourceInserted,
+            mixerStats.sourceMergedSameForm,
+            mixerStats.sourceMergedAudioLock,
+            mixerStats.sourceDropUnknownBudget,
+            mixerStats.sourceLateRescue,
+            mixerStats.dropBackgroundHardIsolated,
+            mixerStats.sourceAgeSamples,
+            mixerStats.sourceAgeLt8Ms,
+            mixerStats.sourceAge8To20Ms,
+            mixerStats.sourceAge20To50Ms,
+            mixerStats.sourceAge50To100Ms,
+            mixerStats.sourceAge100MsPlus,
+            mixerStats.sourceAgeMaxUs,
+            mixerStats.budgetDropUnknown,
+            mixerStats.budgetDropForeground,
+            mixerStats.budgetDropBackground,
+            mixerStats.budgetDropCount,
+            mixerStats.foregroundFamilies);
 
         auto hidStats = HidOutput::GetSingleton().GetStats();
-        logger::info("[Haptics][HidOutput] Frames={} Bytes={} Failures={}",
-            hidStats.totalFramesSent, hidStats.totalBytesSent, hidStats.sendFailures);
+        auto footTruth = FootstepTruthProbe::GetSingleton().GetStats();
+        auto footBridge = FootstepTruthBridge::GetSingleton().GetStats();
+        auto footAudio = FootstepAudioMatcher::GetSingleton().GetStats();
+        logger::info(
+            "[Haptics][HidOutput] Frames={} Bytes={} Failures={} sendOk={} sendFail={} noDev={} writeFail={} qDepth(FG/BG)={}/{}",
+            hidStats.totalFramesSent,
+            hidStats.totalBytesSent,
+            hidStats.sendFailures,
+            hidStats.txSendOk,
+            hidStats.txSendFail,
+            hidStats.txNoDevice,
+            hidStats.sendWriteFail,
+            hidStats.txQueueDepthFg,
+            hidStats.txQueueDepthBg);
+        logger::info(
+            "[Haptics][TxStats] q(FG/BG)={}/{} dq(FG/BG)={}/{} dropFull(FG/BG)={}/{} dropStale(FG/BG)={}/{} merge(FG/BG)={}/{} renderP50={}us renderP95={}us renderN={} firstP50={}us firstP95={}us firstN={} skipRpt={} stopFlush={} route(fg/bg={}/{}, fgZero/hint/prio/evt={}/{}/{}/{}, bgUnk/bgEvt={}/{}) select(forceFg/bgWhileFg={}/{})",
+            hidStats.txQueuedFg,
+            hidStats.txQueuedBg,
+            hidStats.txDequeuedFg,
+            hidStats.txDequeuedBg,
+            hidStats.txDropQueueFullFg,
+            hidStats.txDropQueueFullBg,
+            hidStats.txDropStaleFg,
+            hidStats.txDropStaleBg,
+            hidStats.txMergedFg,
+            hidStats.txMergedBg,
+            hidStats.txRenderOverP50Us,
+            hidStats.txRenderOverP95Us,
+            hidStats.txRenderOverSamples,
+            hidStats.txFirstRenderP50Us,
+            hidStats.txFirstRenderP95Us,
+            hidStats.txFirstRenderSamples,
+            hidStats.txSkippedRepeat,
+            hidStats.txStopFlushes,
+            hidStats.txRouteFg,
+            hidStats.txRouteBg,
+            hidStats.txRouteFgZero,
+            hidStats.txRouteFgHint,
+            hidStats.txRouteFgPriority,
+            hidStats.txRouteFgEvent,
+            hidStats.txRouteBgUnknown,
+            hidStats.txRouteBgBackground,
+            hidStats.txSelectForcedFgBudget,
+            hidStats.txSelectBgWhileFgPending);
+        logger::info(
+            "[Haptics][FootTruth] total={} player={} admissible={} shadow(match={} truthMiss={} renderMiss={} deltaP50={}us deltaP95={}us samples={} pending={})",
+            footTruth.totalEvents,
+            footTruth.playerEvents,
+            footTruth.admissibleEvents,
+            footTruth.shadowMatchedRenders,
+            footTruth.shadowExpiredTruthMisses,
+            footTruth.shadowRenderWithoutTruth,
+            footTruth.shadowRenderDeltaP50Us,
+            footTruth.shadowRenderDeltaP95Us,
+            footTruth.shadowRenderDeltaSamples,
+            footTruth.shadowPendingTruth);
+        logger::info(
+            "[Haptics][FootBridge] truths={} inst={} claims={} init={} submit={} miss(truth/inst)={}/{} deltaP50={}us deltaP95={}us samples={} pending(t/i/b)={}/{}/{}",
+            footBridge.truthsObserved,
+            footBridge.instancesObserved,
+            footBridge.claimsMatched,
+            footBridge.claimsFromInit,
+            footBridge.claimsFromSubmit,
+            footBridge.truthExpiredMisses,
+            footBridge.instanceExpiredMisses,
+            footBridge.deltaP50Us,
+            footBridge.deltaP95Us,
+            footBridge.deltaSamples,
+            footBridge.pendingTruths,
+            footBridge.pendingInstances,
+            footBridge.activeBindings);
+        logger::info(
+            "[Haptics][FootAudio] features={} truths={} matched={} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
+            footAudio.featuresObserved,
+            footAudio.truthsObserved,
+            footAudio.truthsMatched,
+            footAudio.truthBridgeBound,
+            footAudio.truthBridgeMatched,
+            footAudio.truthBridgeNoFeature,
+            footAudio.truthNoWindow,
+            footAudio.truthNoSemantic,
+            footAudio.truthLowScore,
+            footAudio.windowCandidates,
+            footAudio.semanticCandidates,
+            footAudio.bindingMissCandidates,
+            footAudio.traceMissCandidates,
+            footAudio.matchDeltaP50Us,
+            footAudio.matchDeltaP95Us,
+            static_cast<float>(footAudio.matchScoreP50Permille) / 1000.0f,
+            static_cast<float>(footAudio.matchScoreP95Permille) / 1000.0f,
+            footAudio.matchDurationP50Us,
+            footAudio.matchDurationP95Us,
+            static_cast<float>(footAudio.matchPanAbsP50Permille) / 1000.0f,
+            static_cast<float>(footAudio.matchPanAbsP95Permille) / 1000.0f,
+            footAudio.pendingTruths);
 
         LogSystemDivider();
     }
@@ -371,8 +712,14 @@ namespace dualpad::haptics
         auto play = PlayPathHook::GetSingleton().GetStats();
         auto norm = EventNormalizer::GetSingleton().GetStats();
         auto dyn = DynamicHapticPool::GetSingleton().GetStats();
+        auto sessionPromoter = SessionFormPromoter::GetSingleton().GetStats();
         auto voice = VoiceManager::GetSingleton().GetStats();
         auto hid = HidOutput::GetSingleton().GetStats();
+        auto mixer = HapticMixer::GetSingleton().GetStats();
+        auto eligibility = HapticEligibilityEngine::GetSingleton().GetStats();
+        auto footTruth = FootstepTruthProbe::GetSingleton().GetStats();
+        auto footBridge = FootstepTruthBridge::GetSingleton().GetStats();
+        auto footAudio = FootstepAudioMatcher::GetSingleton().GetStats();
 
         const std::uint64_t totalDecisions = dec.l1Count + dec.l2Count + dec.l3Count;
         const std::uint64_t traceMissTotal =
@@ -415,6 +762,22 @@ namespace dualpad::haptics
             dec.l1FormSemanticLowConfidence);
 
         logger::info(
+            "[Haptics][SessionSummary] gate acc={} rej={} unknown={} background={} noTrace={} lowSem={} lowRel={} refr={}",
+            dec.gateAccepted,
+            dec.gateRejected,
+            dec.rejectUnknownBlocked,
+            dec.rejectBackgroundBlocked,
+            dec.rejectNoTraceContext,
+            dec.rejectLowSemanticConfidence,
+            dec.rejectLowRelativeEnergy,
+            dec.rejectRefractoryBlocked);
+        logger::info(
+            "[Haptics][SessionSummary] gateRefr window={} soft={} hard={}",
+            eligibility.refractoryWindowHit,
+            eligibility.refractorySoftSuppressed,
+            eligibility.refractoryHardDropped);
+
+        logger::info(
             "[Haptics][SessionSummary] semantic miss={} (noForm={} cacheMiss={} lowConf={})",
             dec.l1FormSemanticMiss,
             dec.l1FormSemanticNoFormID,
@@ -422,13 +785,25 @@ namespace dualpad::haptics
             dec.l1FormSemanticLowConfidence);
 
         logger::info(
-            "[Haptics][SessionSummary] fallback noAudio={} lowScore={} dynHit={} dynMiss={}",
+            "[Haptics][SessionSummary] fallback noAudio={} lowScore={} dynHit={} dynMiss={} l3DropWeakUnk={}",
             dec.tickNoAudio,
             dec.lowScoreFallback,
             dec.dynamicPoolHit,
-            dec.dynamicPoolMiss);
+            dec.dynamicPoolMiss,
+            dec.l3DroppedUnstructuredWeakUnknown);
 
         LogSessionPlayPathSummary(play, norm);
+        logger::info(
+            "[Haptics][SessionSummary] unknown after={} withForm={} noForm={} mapOv={} top={}",
+            norm.unknownAfterNormalize,
+            norm.unknownWithFormID,
+            norm.unknownNoFormID,
+            norm.unknownMapOverflow,
+            BuildUnknownTopSummary(norm));
+        logger::info(
+            "[Haptics][SessionSummary] unknownResolved {}",
+            BuildUnknownTopResolvedSummary(norm));
+        ExportUnknownOverrideTemplate(norm);
 
         logger::info(
             "[Haptics][SessionSummary] dynamicPool size={} admitted={} rejNoKey={} rejLow={} shadowHit={} shadowMiss={} l3Hit={} l3Miss={} rejMinHit={} rejLowIn={} l2Learn={} l2SkipNoKey={} l2SkipScore={}",
@@ -445,6 +820,14 @@ namespace dualpad::haptics
             dec.dynamicPoolLearnFromL2,
             dec.dynamicPoolLearnFromL2NoKey,
             dec.dynamicPoolLearnFromL2LowScore);
+        logger::info(
+            "[Haptics][SessionSummary] sessionPromoter observe={} accepted={} promoteTry={} promoteHit={} promoteMiss={} entries={}",
+            sessionPromoter.observeCalls,
+            sessionPromoter.observedAccepted,
+            sessionPromoter.promoteCalls,
+            sessionPromoter.promoteHits,
+            sessionPromoter.promoteMisses,
+            sessionPromoter.entries);
 
         logger::info(
             "[Haptics][SessionSummary] io submitCalls={} pushed={} hidFrames={} hidFailures={} voiceDrop={} semanticRejectTotal={}",
@@ -454,6 +837,146 @@ namespace dualpad::haptics
             hid.sendFailures,
             voice.featuresDropped,
             semanticRejectTotal);
+        logger::info(
+            "[Haptics][SessionSummary] footBridge truths={} inst={} claims={} init={} submit={} miss(truth/inst)={}/{} deltaP50={}us deltaP95={}us samples={} pending(t/i/b)={}/{}/{}",
+            footBridge.truthsObserved,
+            footBridge.instancesObserved,
+            footBridge.claimsMatched,
+            footBridge.claimsFromInit,
+            footBridge.claimsFromSubmit,
+            footBridge.truthExpiredMisses,
+            footBridge.instanceExpiredMisses,
+            footBridge.deltaP50Us,
+            footBridge.deltaP95Us,
+            footBridge.deltaSamples,
+            footBridge.pendingTruths,
+            footBridge.pendingInstances,
+            footBridge.activeBindings);
+        logger::info(
+            "[Haptics][SessionSummary] footAudio features={} truths={} matched={} bridge(bound/match/noFeat)={}/{}/{} noWin={} noSem={} lowScore={} cand(window/sem)={}/{} miss(bind/trace)={}/{} deltaP50={}us deltaP95={}us scoreP50={:.2f} scoreP95={:.2f} durP50={}us durP95={}us panAbsP50={:.2f} panAbsP95={:.2f} pending={}",
+            footAudio.featuresObserved,
+            footAudio.truthsObserved,
+            footAudio.truthsMatched,
+            footAudio.truthBridgeBound,
+            footAudio.truthBridgeMatched,
+            footAudio.truthBridgeNoFeature,
+            footAudio.truthNoWindow,
+            footAudio.truthNoSemantic,
+            footAudio.truthLowScore,
+            footAudio.windowCandidates,
+            footAudio.semanticCandidates,
+            footAudio.bindingMissCandidates,
+            footAudio.traceMissCandidates,
+            footAudio.matchDeltaP50Us,
+            footAudio.matchDeltaP95Us,
+            static_cast<float>(footAudio.matchScoreP50Permille) / 1000.0f,
+            static_cast<float>(footAudio.matchScoreP95Permille) / 1000.0f,
+            footAudio.matchDurationP50Us,
+            footAudio.matchDurationP95Us,
+            static_cast<float>(footAudio.matchPanAbsP50Permille) / 1000.0f,
+            static_cast<float>(footAudio.matchPanAbsP95Permille) / 1000.0f,
+            footAudio.pendingTruths);
+        logger::info(
+            "[Haptics][SessionSummary] footTruth total={} actorResolved={} player={} nonPlayer={} ctxAllow={} ctxBlock={} moving={} recent={} admissible={} shadow(match={} truthMiss={} renderMiss={} deltaP50={}us deltaP95={}us samples={} pending={})",
+            footTruth.totalEvents,
+            footTruth.actorResolvedEvents,
+            footTruth.playerEvents,
+            footTruth.nonPlayerEvents,
+            footTruth.contextAllowedEvents,
+            footTruth.contextBlockedEvents,
+            footTruth.movingEvents,
+            footTruth.recentMoveEvents,
+            footTruth.admissibleEvents,
+            footTruth.shadowMatchedRenders,
+            footTruth.shadowExpiredTruthMisses,
+            footTruth.shadowRenderWithoutTruth,
+            footTruth.shadowRenderDeltaP50Us,
+            footTruth.shadowRenderDeltaP95Us,
+            footTruth.shadowRenderDeltaSamples,
+            footTruth.shadowPendingTruth);
+        logger::info(
+            "[Haptics][SessionSummary] tx q(FG/BG)={}/{} dq(FG/BG)={}/{} dropFull(FG/BG)={}/{} dropStale(FG/BG)={}/{} merge(FG/BG)={}/{} sendOk={} sendFail={} noDev={} depth(FG/BG)={}/{} renderP50={}us renderP95={}us renderN={} firstP50={}us firstP95={}us firstN={} skipRpt={} stopFlush={} route(fg/bg={}/{}, fgZero/hint/prio/evt={}/{}/{}/{}, bgUnk/bgEvt={}/{}) select(forceFg/bgWhileFg={}/{}) state(upFg/upBg={}/{}, ovFg/ovBg={}/{}, carryQ(FG/BG)={}/{}, carryDrop(FG/BG)={}/{}, carryUse(FG/BG)={}/{}, expDrop={} futSkip={})",
+            hid.txQueuedFg,
+            hid.txQueuedBg,
+            hid.txDequeuedFg,
+            hid.txDequeuedBg,
+            hid.txDropQueueFullFg,
+            hid.txDropQueueFullBg,
+            hid.txDropStaleFg,
+            hid.txDropStaleBg,
+            hid.txMergedFg,
+            hid.txMergedBg,
+            hid.txSendOk,
+            hid.txSendFail,
+            hid.txNoDevice,
+            hid.txQueueDepthFg,
+            hid.txQueueDepthBg,
+            hid.txRenderOverP50Us,
+            hid.txRenderOverP95Us,
+            hid.txRenderOverSamples,
+            hid.txFirstRenderP50Us,
+            hid.txFirstRenderP95Us,
+            hid.txFirstRenderSamples,
+            hid.txSkippedRepeat,
+            hid.txStopFlushes,
+            hid.txRouteFg,
+            hid.txRouteBg,
+            hid.txRouteFgZero,
+            hid.txRouteFgHint,
+            hid.txRouteFgPriority,
+            hid.txRouteFgEvent,
+            hid.txRouteBgUnknown,
+            hid.txRouteBgBackground,
+            hid.txSelectForcedFgBudget,
+            hid.txSelectBgWhileFgPending,
+            hid.txStateUpdateFg,
+            hid.txStateUpdateBg,
+            hid.txStateOverwriteFg,
+            hid.txStateOverwriteBg,
+            hid.txStateCarryQueuedFg,
+            hid.txStateCarryQueuedBg,
+            hid.txStateCarryDropFg,
+            hid.txStateCarryDropBg,
+            hid.txStateCarryConsumedFg,
+            hid.txStateCarryConsumedBg,
+            hid.txStateExpiredDrop,
+            hid.txStateFutureSkip);
+        logger::info(
+            "[Haptics][SessionSummary] mixer sources={} clampUnk={} clampBg={} bgIso={} fgFam={} dropEvt={} dropUnkLow={} dropUnkSem={} budgetDrop={} activeFg={} activeBg={} meta(active/carrier)={}/{} dropOutUnk={}",
+            mixer.totalSourcesAdded,
+            mixer.softClampUnknown,
+            mixer.softClampBackground,
+            mixer.dropBackgroundHardIsolated,
+            mixer.foregroundFamilies,
+            mixer.dropEventDisabled,
+            mixer.dropUnknownLowInput,
+            mixer.dropUnknownSemantic,
+            mixer.budgetDropCount,
+            mixer.activeForeground,
+            mixer.activeBackground,
+            mixer.outputMetaFromActive,
+            mixer.outputMetaFromCarrier,
+            mixer.outputDropUnknownNonZero);
+        logger::info(
+            "[Haptics][SessionSummary] mixerProbe add(call={} ins={} mergeForm={} mergeLock={} dropUnkBudget={} lateRescue={} bgIso={}) age(sample={} <8ms={} 8-20={} 20-50={} 50-100={} 100+={} max={}us) budget(unk={} fg={} bg={} fgFamilies={})",
+            mixer.sourceAddCalls,
+            mixer.sourceInserted,
+            mixer.sourceMergedSameForm,
+            mixer.sourceMergedAudioLock,
+            mixer.sourceDropUnknownBudget,
+            mixer.sourceLateRescue,
+            mixer.dropBackgroundHardIsolated,
+            mixer.sourceAgeSamples,
+            mixer.sourceAgeLt8Ms,
+            mixer.sourceAge8To20Ms,
+            mixer.sourceAge20To50Ms,
+            mixer.sourceAge50To100Ms,
+            mixer.sourceAge100MsPlus,
+            mixer.sourceAgeMaxUs,
+            mixer.budgetDropUnknown,
+            mixer.budgetDropForeground,
+            mixer.budgetDropBackground,
+            mixer.foregroundFamilies);
         logger::info("[Haptics][SessionSummary] ========================================");
     }
 

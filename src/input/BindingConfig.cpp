@@ -129,7 +129,7 @@ namespace dualpad::input
 
     bool BindingConfig::ParseTrigger(std::string_view triggerStr, Trigger& outTrigger)
     {
-        // ¸ñÊ½: "Gesture:TpLeftPress" »ò "Button:BackLeft" »ò "Button:FnLeft+Triangle"
+        // æ ¼å¼: "Gesture:TpLeftPress" æˆ– "Button:BackLeft" æˆ– "Button:FnLeft+Triangle"
 
         auto colonPos = triggerStr.find(':');
         if (colonPos == std::string_view::npos) {
@@ -139,7 +139,7 @@ namespace dualpad::input
         auto typeStr = triggerStr.substr(0, colonPos);
         auto codeStr = triggerStr.substr(colonPos + 1);
 
-        // ½âÎöÀàĞÍ
+        // è§£æç±»å‹
         if (typeStr == "Gesture") {
             outTrigger.type = TriggerType::Gesture;
             outTrigger.code = GestureNameToCode(codeStr);
@@ -149,10 +149,10 @@ namespace dualpad::input
         if (typeStr == "Button") {
             outTrigger.type = TriggerType::Button;
 
-            // ¼ì²éÊÇ·ñÓĞ×éºÏ¼ü
+            // æ£€æŸ¥æ˜¯å¦æœ‰ç»„åˆé”®
             auto plusPos = codeStr.find('+');
             if (plusPos != std::string_view::npos) {
-                // ×éºÏ¼ü: "FnLeft+Triangle"
+                // ç»„åˆé”®: "FnLeft+Triangle"
                 auto modifierStr = codeStr.substr(0, plusPos);
                 auto mainStr = codeStr.substr(plusPos + 1);
 
@@ -168,7 +168,7 @@ namespace dualpad::input
                 return true;
             }
 
-            // µ¥¸ö°´¼ü
+            // å•ä¸ªæŒ‰é”®
             outTrigger.code = ButtonNameToCode(codeStr);
             return outTrigger.code != 0;
         }
@@ -178,28 +178,28 @@ namespace dualpad::input
 
     bool BindingConfig::ParseBinding(std::string_view contextStr, std::string_view key, std::string_view value)
     {
-        // ÌØÊâ¼ü: Inherit
+        // ç‰¹æ®Šé”®: Inherit
         if (key == "Inherit") {
-            // TODO: ÊµÏÖ¼Ì³ĞÂß¼­
+            // TODO: å®ç°ç»§æ‰¿é€»è¾‘
             logger::info("[DualPad][Config] Context {} inherits from {}", contextStr, value);
             return true;
         }
 
-        // ½âÎöÉÏÏÂÎÄ
+        // è§£æä¸Šä¸‹æ–‡
         auto context = StringToContext(contextStr);
         if (context == InputContext::Unknown) {
             logger::warn("[DualPad][Config] Unknown context: {}", contextStr);
             return false;
         }
 
-        // ½âÎö´¥·¢Æ÷
+        // è§£æè§¦å‘å™¨
         Trigger trigger;
         if (!ParseTrigger(key, trigger)) {
             logger::warn("[DualPad][Config] Invalid trigger: {}", key);
             return false;
         }
 
-        // ´´½¨°ó¶¨
+        // åˆ›å»ºç»‘å®š
         Binding binding;
         binding.trigger = trigger;
         binding.actionId = std::string(value);
@@ -229,7 +229,7 @@ namespace dualpad::input
         while (std::getline(ifs, line)) {
             ++lineNo;
 
-            // È¥³ı BOM
+            // å»é™¤ BOM
             if (lineNo == 1 && line.size() >= 3 &&
                 static_cast<unsigned char>(line[0]) == 0xEF &&
                 static_cast<unsigned char>(line[1]) == 0xBB &&
@@ -239,19 +239,19 @@ namespace dualpad::input
 
             line = Trim(line);
 
-            // Ìø¹ı¿ÕĞĞºÍ×¢ÊÍ
+            // è·³è¿‡ç©ºè¡Œå’Œæ³¨é‡Š
             if (line.empty() || line[0] == ';' || line[0] == '#') {
                 continue;
             }
 
-            // ½âÎö½Ú
+            // è§£æèŠ‚
             if (line.front() == '[' && line.back() == ']') {
                 currentSection = Trim(line.substr(1, line.size() - 2));
                 logger::info("[DualPad][Config] Parsing section: [{}]", currentSection);
                 continue;
             }
 
-            // ½âÎö¼üÖµ¶Ô
+            // è§£æé”®å€¼å¯¹
             auto eqPos = line.find('=');
             if (eqPos == std::string::npos) {
                 logger::warn("[DualPad][Config] Line {}: Invalid format (no '=')", lineNo);

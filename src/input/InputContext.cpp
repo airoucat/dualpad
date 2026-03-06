@@ -1,6 +1,7 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "input/InputContext.h"
 #include "input/RaceTypeCache.h"
+
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 
@@ -17,6 +18,7 @@ namespace
 
     constexpr auto kMenuLogMinInterval = std::chrono::milliseconds(500);
     constexpr auto kSuppressedSummaryInterval = std::chrono::seconds(3);
+    constexpr float kPlayerMoveDelta2DPerFrameSq = 0.25f;
 
     struct MenuLogThrottleState
     {
@@ -27,6 +29,14 @@ namespace
     };
 
     MenuLogThrottleState g_menuLogThrottle{};
+
+    std::uint64_t NowSteadyUs()
+    {
+        return static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                Clock::now().time_since_epoch())
+                .count());
+    }
 
     bool ShouldLogMenuEvent(std::string_view eventTag, std::string_view menuName)
     {
@@ -86,7 +96,13 @@ namespace dualpad::input
 
     InputContext ContextManager::GetCurrentContext() const
     {
-        return _currentContext;
+        return static_cast<InputContext>(_currentContextValue.load(std::memory_order_relaxed));
+    }
+
+    void ContextManager::SyncCurrentContext(InputContext context)
+    {
+        _currentContext = context;
+        _currentContextValue.store(static_cast<std::uint16_t>(context), std::memory_order_relaxed);
     }
 
     InputContext ContextManager::MenuNameToContext(std::string_view menuName) const
@@ -131,7 +147,7 @@ namespace dualpad::input
         }
 
         if (player->AsActorValueOwner()) {
-            auto health = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+            const auto health = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             if (health <= 0.0f && !player->IsDead()) {
                 return InputContext::Bleedout;
             }
@@ -145,8 +161,7 @@ namespace dualpad::input
             return InputContext::KillMove;
         }
 
-        auto* race = player->GetRace();
-        if (race) {
+        if (auto* race = player->GetRace()) {
             const auto raceType = RaceTypeCache::GetSingleton().Resolve(race->GetFormID());
             if (raceType == RaceType::Werewolf) {
                 return InputContext::Werewolf;
@@ -167,18 +182,53 @@ namespace dualpad::input
         return InputContext::Gameplay;
     }
 
-    void ContextManager::UpdateGameplayContext()
+    void ContextManager::UpdatePlayerMotionSnapshot()
     {
-        auto ctxValue = static_cast<std::uint16_t>(_currentContext);
-        if ((ctxValue >= 100 && ctxValue < 2000) || ctxValue == 200) {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            _playerMoving.store(false, std::memory_order_relaxed);
+            _lastPlayerMoveUs.store(0, std::memory_order_relaxed);
+            _hasLastPlayerPos = false;
             return;
         }
 
-        auto newContext = DetectGameplayContext();
+        const auto pos = player->GetPosition();
+        if (!_hasLastPlayerPos) {
+            _lastPlayerPosX = pos.x;
+            _lastPlayerPosY = pos.y;
+            _hasLastPlayerPos = true;
+            _playerMoving.store(false, std::memory_order_relaxed);
+            return;
+        }
+
+        const auto dx = pos.x - _lastPlayerPosX;
+        const auto dy = pos.y - _lastPlayerPosY;
+        const auto deltaSq = (dx * dx) + (dy * dy);
+        const bool moving = deltaSq >= kPlayerMoveDelta2DPerFrameSq;
+        _playerMoving.store(moving, std::memory_order_relaxed);
+        if (moving) {
+            _lastPlayerMoveUs.store(NowSteadyUs(), std::memory_order_relaxed);
+        }
+
+        _lastPlayerPosX = pos.x;
+        _lastPlayerPosY = pos.y;
+    }
+
+    void ContextManager::UpdateGameplayContext()
+    {
+        const auto ctxValue = static_cast<std::uint16_t>(GetCurrentContext());
+        if ((ctxValue >= 100 && ctxValue < 2000) || ctxValue == 200) {
+            MaybeLogSuppressedSummary();
+            return;
+        }
+
+        UpdatePlayerMotionSnapshot();
+
+        const auto newContext = DetectGameplayContext();
         if (newContext != _currentContext) {
             logger::trace("[DualPad][Context] Gameplay context changed: {} -> {}",
                 ToString(_currentContext), ToString(newContext));
-            _currentContext = newContext;
+            SyncCurrentContext(newContext);
         }
 
         MaybeLogSuppressedSummary();
@@ -186,16 +236,17 @@ namespace dualpad::input
 
     void ContextManager::OnMenuOpen(std::string_view menuName)
     {
-        auto newContext = MenuNameToContext(menuName);
-
+        const auto newContext = MenuNameToContext(menuName);
         _contextStack.push_back(_currentContext);
-        _currentContext = newContext;
+        SyncCurrentContext(newContext);
+        _playerMoving.store(false, std::memory_order_relaxed);
+        _lastPlayerMoveUs.store(0, std::memory_order_relaxed);
+        _hasLastPlayerPos = false;
 
         if (ShouldLogMenuEvent("open", menuName)) {
             logger::info("[DualPad][Context] Menu opened: {} -> Context: {}",
                 menuName, ToString(newContext));
-        }
-        else {
+        } else {
             MaybeLogSuppressedSummary();
         }
     }
@@ -203,18 +254,19 @@ namespace dualpad::input
     void ContextManager::OnMenuClose(std::string_view menuName)
     {
         if (!_contextStack.empty()) {
-            _currentContext = _contextStack.back();
+            SyncCurrentContext(_contextStack.back());
             _contextStack.pop_back();
+        } else {
+            SyncCurrentContext(DetectGameplayContext());
         }
-        else {
-            _currentContext = DetectGameplayContext();
-        }
+        _playerMoving.store(false, std::memory_order_relaxed);
+        _lastPlayerMoveUs.store(0, std::memory_order_relaxed);
+        _hasLastPlayerPos = false;
 
         if (ShouldLogMenuEvent("close", menuName)) {
             logger::info("[DualPad][Context] Menu closed: {} -> Restored: {}",
                 menuName, ToString(_currentContext));
-        }
-        else {
+        } else {
             MaybeLogSuppressedSummary();
         }
     }
@@ -222,20 +274,16 @@ namespace dualpad::input
     void ContextManager::PushContext(InputContext context)
     {
         _contextStack.push_back(_currentContext);
-        _currentContext = context;
-
-        logger::info("[DualPad][Context] Context pushed: {}",
-            ToString(context));
+        SyncCurrentContext(context);
+        logger::info("[DualPad][Context] Context pushed: {}", ToString(context));
     }
 
     void ContextManager::PopContext()
     {
         if (!_contextStack.empty()) {
-            _currentContext = _contextStack.back();
+            SyncCurrentContext(_contextStack.back());
             _contextStack.pop_back();
-
-            logger::info("[DualPad][Context] Context popped to: {}",
-                ToString(_currentContext));
+            logger::info("[DualPad][Context] Context popped to: {}", ToString(_currentContext));
         }
     }
 
@@ -244,7 +292,49 @@ namespace dualpad::input
         if (_currentContext != context) {
             logger::info("[DualPad][Context] Context set: {} -> {}",
                 ToString(_currentContext), ToString(context));
-            _currentContext = context;
+            SyncCurrentContext(context);
         }
+    }
+
+    bool ContextManager::IsFootstepContextAllowed() const
+    {
+        switch (GetCurrentContext()) {
+        case InputContext::Gameplay:
+        case InputContext::Combat:
+        case InputContext::Sneaking:
+        case InputContext::Werewolf:
+        case InputContext::VampireLord:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool ContextManager::IsPlayerMoving() const
+    {
+        return _playerMoving.load(std::memory_order_relaxed);
+    }
+
+    bool ContextManager::WasPlayerMovingRecently(std::uint64_t recentWindowUs) const
+    {
+        if (IsPlayerMoving()) {
+            return true;
+        }
+
+        const auto lastMoveUs = _lastPlayerMoveUs.load(std::memory_order_relaxed);
+        if (lastMoveUs == 0 || recentWindowUs == 0) {
+            return false;
+        }
+
+        const auto nowUs = NowSteadyUs();
+        if (nowUs < lastMoveUs) {
+            return false;
+        }
+        return (nowUs - lastMoveUs) <= recentWindowUs;
+    }
+
+    std::uint64_t ContextManager::GetLastPlayerMoveUs() const
+    {
+        return _lastPlayerMoveUs.load(std::memory_order_relaxed);
     }
 }

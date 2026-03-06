@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -7,10 +8,8 @@ namespace dualpad::input
 {
     enum class InputContext : std::uint16_t
     {
-        // === 主要游戏玩法 (Main Gameplay) ===
         Gameplay = 0,
 
-        // === 菜单模式 (Menu Mode) ===
         Menu = 100,
         InventoryMenu,
         MagicMenu,
@@ -32,43 +31,19 @@ namespace dualpad::input
         GiftMenu,
         CreationsMenu,
 
-        // === 控制台 (Console) ===
         Console = 200,
-
-        // === 物品菜单 (Item Menus) ===
         ItemMenu = 300,
-
-        // === 调试文本 (Debug Text) ===
         DebugText = 400,
-
-        // === 地图菜单 (Map Menu) ===
         MapMenuContext = 500,
-
-        // === 统计 (Stats) ===
         Stats = 600,
-
-        // === 光标 (Cursor) ===
         Cursor = 700,
-
-        // === 书籍 (Book) ===
         Book = 800,
-
-        // === 调试覆盖 (Debug Overlay) ===
         DebugOverlay = 900,
-
-        // === 开锁 (Lockpicking) ===
         Lockpicking = 1000,
-
-        // === TFC 模式 (TFC Mode) ===
         TFCMode = 1100,
-
-        // === 调试地图模式 (Debug Map Menu) ===
         DebugMapMenu = 1200,
-
-        // === 好感度 (Favor) ===
         Favor = 1300,
 
-        // === 特殊游戏状态 ===
         Combat = 2000,
         Sneaking,
         Riding,
@@ -150,14 +125,26 @@ namespace dualpad::input
         void PushContext(InputContext context);
         void PopContext();
         void SetContext(InputContext context);
+        bool IsFootstepContextAllowed() const;
+        bool IsPlayerMoving() const;
+        bool WasPlayerMovingRecently(std::uint64_t recentWindowUs) const;
+        std::uint64_t GetLastPlayerMoveUs() const;
 
     private:
         ContextManager() = default;
 
         InputContext _currentContext{ InputContext::Gameplay };
         std::vector<InputContext> _contextStack;
+        std::atomic<std::uint16_t> _currentContextValue{ static_cast<std::uint16_t>(InputContext::Gameplay) };
+        std::atomic<bool> _playerMoving{ false };
+        std::atomic<std::uint64_t> _lastPlayerMoveUs{ 0 };
+        float _lastPlayerPosX{ 0.0f };
+        float _lastPlayerPosY{ 0.0f };
+        bool _hasLastPlayerPos{ false };
 
         InputContext MenuNameToContext(std::string_view menuName) const;
         InputContext DetectGameplayContext() const;
+        void UpdatePlayerMotionSnapshot();
+        void SyncCurrentContext(InputContext context);
     };
 }

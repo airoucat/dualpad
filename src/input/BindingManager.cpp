@@ -74,7 +74,7 @@ namespace dualpad::input
     {
         logger::info("[DualPad][BindingMgr] Initializing default bindings");
 
-        // Gameplay Ĭ�ϰ�
+        // Gameplay 默认绑定
         {
             Binding b;
             b.context = InputContext::Gameplay;

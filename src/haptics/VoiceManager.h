@@ -7,7 +7,7 @@
 
 namespace dualpad::haptics
 {
-    // Submit hook ¶àÏß³ÌÉú²ú -> scorer µ¥Ïß³ÌÏû·Ñ
+    // Submit hook å¤šçº¿ç¨‹ç”Ÿäº§ -> scorer å•çº¿ç¨‹æ¶ˆè´¹
     class VoiceManager
     {
     public:

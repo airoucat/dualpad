@@ -18,7 +18,7 @@ namespace dualpad::input
     std::uint8_t TouchpadGestureRecognizer::ClassifyRegion(const dse::State& state) const
     {
         if (!state.hasTouchData || !state.touch1.active) {
-            return 2;  // 无触摸时默认中区
+            return 2;  // 鏃犺Е鎽告椂榛樿涓尯
         }
 
         const auto x = state.touch1.x;
@@ -49,7 +49,7 @@ namespace dualpad::input
         const bool clicking = (state.btn2 & dse::btn::kTouchpadClick) != 0;
         const bool touching = state.hasTouchData && state.touch1.active;
 
-        // === 分区点击 ===
+        // === 鍒嗗尯鐐瑰嚮 ===
         if (!_wasClicking && clicking) {
             _heldRegion = ClassifyRegion(state);
             _wasClicking = true;
@@ -71,7 +71,7 @@ namespace dualpad::input
             _heldRegion = 0;
         }
 
-        // === 滑动 ===
+        // === 婊戝姩 ===
         if (!_wasClicking && touching && !_tracking) {
             _tracking = true;
             _startX = static_cast<int>(state.touch1.x);

@@ -23,7 +23,7 @@ namespace dualpad::input
         static SyntheticPadState& GetSingleton();
 
         void SetButton(std::uint32_t bit, bool down);
-        void PulseButton(std::uint32_t bit);  // ³ÖĞø 50ms
+        void PulseButton(std::uint32_t bit);  // æŒç»­ 50ms
 
         void SetAxis(float lx, float ly, float rx, float ry, float l2, float r2);
 

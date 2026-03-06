@@ -549,19 +549,32 @@ namespace dualpad::haptics
             return out;
         };
 
-        if (const auto v = ReadU32(root.Find("version")); v.has_value()) {
-            nextRules.version = *v;
-        }
+        auto mergeHardOverrides = [&](const JsonValue& hardNode, bool clearFirst, std::size_t* mergedCount) {
+            if (!hardNode.IsObject()) {
+                return;
+            }
+            if (clearFirst) {
+                nextRules.hardOverrides.clear();
+            }
 
-        if (const auto* hard = root.Find("hardOverrides"); hard && hard->IsObject()) {
-            nextRules.hardOverrides.clear();
-            for (const auto& [k, v] : hard->objectValue) {
+            for (const auto& [k, v] : hardNode.objectValue) {
                 const auto formID = ParseFormIDKey(k);
                 if (!formID.has_value()) {
                     continue;
                 }
                 nextRules.hardOverrides[*formID] = parseMeta(v, FormSemanticMeta{});
+                if (mergedCount) {
+                    ++(*mergedCount);
+                }
             }
+        };
+
+        if (const auto v = ReadU32(root.Find("version")); v.has_value()) {
+            nextRules.version = *v;
+        }
+
+        if (const auto* hard = root.Find("hardOverrides"); hard && hard->IsObject()) {
+            mergeHardOverrides(*hard, true, nullptr);
         }
 
         if (const auto* exact = root.Find("exactMatch"); exact && exact->IsObject()) {
@@ -629,6 +642,27 @@ namespace dualpad::haptics
             }
         }
 
+        std::size_t externalHardMerged = 0;
+        const auto externalOverridePath = path.parent_path() / "DualPadSemanticOverrides.json";
+        if (!externalOverridePath.empty() && std::filesystem::exists(externalOverridePath)) {
+            std::ifstream ofs(externalOverridePath, std::ios::binary);
+            std::string otext((std::istreambuf_iterator<char>(ofs)), std::istreambuf_iterator<char>());
+            JsonValue overRoot{};
+            std::string overErr;
+            JsonParser overParser(otext);
+            if (!otext.empty() && overParser.Parse(overRoot, overErr) && overRoot.IsObject()) {
+                if (const auto* hard = overRoot.Find("hardOverrides"); hard && hard->IsObject()) {
+                    mergeHardOverrides(*hard, false, &externalHardMerged);
+                }
+            }
+            else {
+                logger::warn(
+                    "[Haptics][SemanticRuleEngine] external override parse failed: {} ({})",
+                    externalOverridePath.string(),
+                    overErr);
+            }
+        }
+
         const auto version = nextRules.version;
         const auto hardCount = nextRules.hardOverrides.size();
         const auto exactCount = nextRules.exactMatch.size();
@@ -641,13 +675,14 @@ namespace dualpad::haptics
         }
 
         logger::info(
-            "[Haptics][SemanticRuleEngine] loaded rules path={} version={} hard={} exact={} keyword={} formHints={}",
+            "[Haptics][SemanticRuleEngine] loaded rules path={} version={} hard={} exact={} keyword={} formHints={} extHard={}",
             path.string(),
             version,
             hardCount,
             exactCount,
             keywordCount,
-            hintCount);
+            hintCount,
+            externalHardMerged);
         return true;
     }
 
@@ -766,10 +801,11 @@ namespace dualpad::haptics
         case RE::FormType::SoundRecord:
         case RE::FormType::SoundCategory:
         case RE::FormType::AcousticSpace:
-            meta.group = SemanticGroup::Ambient;
-            meta.confidence = 0.52f;
-            meta.baseWeight = 0.30f;
-            meta.flags = semantic_flags::kIsAmbient | semantic_flags::kIsLoop;
+            // Generic sound records are too broad to default to a haptic-bearing ambient class.
+            meta.group = SemanticGroup::Unknown;
+            meta.confidence = 0.32f;
+            meta.baseWeight = 0.20f;
+            meta.flags = 0;
             break;
         case RE::FormType::MusicType:
         case RE::FormType::MusicTrack:

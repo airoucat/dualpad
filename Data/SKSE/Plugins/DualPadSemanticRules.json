@@ -1,32 +1,68 @@
 {
-  "version": 1,
+  "version": 3,
   "hardOverrides": {
     "0x00012E46": { "group": "WeaponSwing", "confidence": 1.0, "baseWeight": 0.9 }
   },
   "exactMatch": {
     "WPNSwingSD": { "group": "WeaponSwing", "confidence": 0.95, "baseWeight": 0.78, "texturePresetId": 1 },
-    "NPCHumanFootstepWalk": { "group": "Footstep", "confidence": 0.90, "baseWeight": 0.56, "texturePresetId": 2 }
+    "NPCHumanFootstepWalk": { "group": "Footstep", "confidence": 0.90, "baseWeight": 0.56, "texturePresetId": 2 },
+    "WPNBowReleaseSD": { "group": "Bow", "confidence": 0.93, "baseWeight": 0.72, "texturePresetId": 4 },
+    "WPNShieldBlockSD": { "group": "Block", "confidence": 0.92, "baseWeight": 0.70, "texturePresetId": 5 }
   },
   "keywordScoring": {
     "WeaponSwing": {
-      "positive": ["swing", "swish", "whoosh"],
-      "negative": ["impact", "hit"],
-      "weight": 0.8
+      "positive": [
+        "swing", "swish", "whoosh", "swoosh", "slash", "slice", "axe", "sword",
+        "dagger", "mace", "warhammer", "greatsword", "weapon", "attack", "cleave"
+      ],
+      "negative": ["impact", "hit", "strike", "block", "parry", "ui", "menu", "ambient", "music"],
+      "weight": 0.86
     },
     "Hit": {
-      "positive": ["impact", "hit", "strike"],
-      "negative": ["swing", "swish"],
+      "positive": [
+        "impact", "hit", "strike", "bash", "blunt", "stab", "smash", "crush",
+        "pierce", "thud", "contact", "collision"
+      ],
+      "negative": ["swing", "swish", "whoosh", "draw", "release", "ui", "menu", "ambient", "music"],
       "weight": 1.0
     },
+    "Block": {
+      "positive": ["block", "parry", "shield", "deflect", "guard", "clang", "clash"],
+      "negative": ["swing", "whoosh", "ui", "menu", "ambient", "music"],
+      "weight": 0.90
+    },
     "Footstep": {
-      "positive": ["foot", "step", "walk", "run", "land"],
-      "negative": ["ui", "music"],
-      "weight": 0.72
+      "positive": [
+        "foot", "step", "walk", "run", "sprint", "land", "heel", "toe", "boot",
+        "sneak", "jump"
+      ],
+      "negative": ["ui", "menu", "music", "ambient", "weapon", "swing", "hit", "impact"],
+      "weight": 0.74
+    },
+    "Bow": {
+      "positive": ["bow", "arrow", "draw", "release", "crossbow", "bolt", "string", "quiver"],
+      "negative": ["hit", "impact", "ui", "menu", "ambient", "music"],
+      "weight": 0.86
+    },
+    "Voice": {
+      "positive": ["voice", "shout", "thuum", "npc", "dialogue", "yell", "speak", "talk"],
+      "negative": ["ui", "menu", "music", "ambient", "foot", "step"],
+      "weight": 0.78
+    },
+    "UI": {
+      "positive": ["ui", "menu", "cursor", "button", "focus", "inventory", "journal", "map", "click"],
+      "negative": ["foot", "step", "hit", "swing", "impact", "weapon", "bow"],
+      "weight": 0.66
+    },
+    "Music": {
+      "positive": ["music", "theme", "battlemusic", "combatmusic", "stinger", "orchestra", "score"],
+      "negative": ["foot", "step", "hit", "swing", "ui", "menu", "weapon"],
+      "weight": 0.62
     },
     "Ambient": {
-      "positive": ["ambient", "wind", "water", "rain", "loop"],
-      "negative": ["hit", "swing"],
-      "weight": 0.45
+      "positive": ["ambient", "wind", "water", "rain", "river", "weather", "cave", "loop", "bgm"],
+      "negative": ["foot", "step", "walk", "run", "land", "hit", "swing", "menu", "ui", "weapon"],
+      "weight": 0.30
     }
   },
   "formTypeHints": {

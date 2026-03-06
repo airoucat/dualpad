@@ -17,7 +17,7 @@ namespace dualpad::input
     {
         logger::info("[DualPad][ContextSink] Registering event listeners");
 
-        // ×¢²á²Ëµ¥ÊÂ¼ş
+        // æ³¨å†Œèœå•äº‹ä»¶
         auto* ui = RE::UI::GetSingleton();
         if (ui) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(this);
@@ -27,7 +27,7 @@ namespace dualpad::input
             logger::error("[DualPad][ContextSink] Failed to get UI singleton");
         }
 
-        // ×¢²áÕ½¶·ÊÂ¼ş
+        // æ³¨å†Œæˆ˜æ–—äº‹ä»¶
         auto* combatSource = RE::ScriptEventSourceHolder::GetSingleton();
         if (combatSource) {
             combatSource->AddEventSink<RE::TESCombatEvent>(this);
@@ -37,7 +37,7 @@ namespace dualpad::input
             logger::warn("[DualPad][ContextSink] Failed to get combat event source");
         }
 
-        // Æô¶¯Ã¿Ö¡¸üĞÂ
+        // å¯åŠ¨æ¯å¸§æ›´æ–°
         StartPerFrameUpdate();
 
         logger::info("[DualPad][ContextSink] All event listeners registered");
@@ -62,7 +62,7 @@ namespace dualpad::input
         logger::info("[DualPad][ContextSink] All event listeners unregistered");
     }
 
-    // === ²Ëµ¥ÊÂ¼ş ===
+    // === èœå•äº‹ä»¶ ===
     RE::BSEventNotifyControl ContextEventSink::ProcessEvent(
         const RE::MenuOpenCloseEvent* event,
         RE::BSTEventSource<RE::MenuOpenCloseEvent>*)
@@ -83,7 +83,7 @@ namespace dualpad::input
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    // === Õ½¶·ÊÂ¼ş ===
+    // === æˆ˜æ–—äº‹ä»¶ ===
     RE::BSEventNotifyControl ContextEventSink::ProcessEvent(
         const RE::TESCombatEvent* event,
         RE::BSTEventSource<RE::TESCombatEvent>*)
@@ -97,8 +97,8 @@ namespace dualpad::input
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        // ¼ì²éÊÇ·ñÊÇÍæ¼ÒµÄÕ½¶·ÊÂ¼ş
-        // Ê¹ÓÃ .get() »ñÈ¡Ô­Ê¼Ö¸Õë
+        // æ£€æŸ¥æ˜¯å¦æ˜¯ç©å®¶çš„æˆ˜æ–—äº‹ä»¶
+        // ä½¿ç”¨ .get() è·å–åŸå§‹æŒ‡é’ˆ
         if (event->actor.get() != player && event->targetActor.get() != player) {
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -106,12 +106,12 @@ namespace dualpad::input
         auto& contextMgr = ContextManager::GetSingleton();
 
         if (event->newState == RE::ACTOR_COMBAT_STATE::kCombat) {
-            // ½øÈëÕ½¶·
+            // è¿›å…¥æˆ˜æ–—
             logger::info("[DualPad][ContextSink] Player entered combat");
             contextMgr.SetContext(InputContext::Combat);
         }
         else if (event->newState == RE::ACTOR_COMBAT_STATE::kNone) {
-            // ÍË³öÕ½¶·
+            // é€€å‡ºæˆ˜æ–—
             logger::info("[DualPad][ContextSink] Player left combat");
             contextMgr.SetContext(InputContext::Gameplay);
         }
@@ -119,14 +119,14 @@ namespace dualpad::input
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    // === Ã¿Ö¡¸üĞÂ ===
+    // === æ¯å¸§æ›´æ–° ===
     void ContextEventSink::StartPerFrameUpdate()
     {
         if (_updateRunning.exchange(true)) {
             return;
         }
 
-        _updateThread = std::jthread([this](std::stop_token) {  // ²»Ê¹ÓÃ²ÎÊıÃû
+        _updateThread = std::jthread([this](std::stop_token) {  // ä¸ä½¿ç”¨å‚æ•°å
             PerFrameUpdateLoop();
             });
 
@@ -150,7 +150,7 @@ namespace dualpad::input
         using namespace std::chrono_literals;
 
         while (_updateRunning.load()) {
-            // ¸üĞÂÓÎÏ·×´Ì¬ÉÏÏÂÎÄ
+            // æ›´æ–°æ¸¸æˆçŠ¶æ€ä¸Šä¸‹æ–‡
             ContextManager::GetSingleton().UpdateGameplayContext();
 
             // 60 FPS

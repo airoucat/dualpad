@@ -26,11 +26,15 @@ namespace dualpad::haptics
     std::uint64_t DynamicHapticPool::MakeKey(const HapticSourceMsg& source)
     {
         if (source.sourceFormId != 0) {
+            // Prefer FormID-only key to avoid fragmentation between Unknown/promoted event types.
             return kFormIdTag | static_cast<std::uint64_t>(source.sourceFormId);
         }
+
         if (source.eventType != EventType::Unknown) {
             return static_cast<std::uint64_t>(source.eventType);
         }
+
+        // Unknown templates are too noisy for DynamicPool keys.
         return 0;
     }
 
@@ -124,7 +128,7 @@ namespace dualpad::haptics
             e.right = Clamp01((1.0f - kAlpha) * e.right + kAlpha * source.right);
             e.confidence = Clamp01((1.0f - kAlpha) * e.confidence + kAlpha * confidence);
             e.priority = std::max(e.priority, source.priority);
-            e.ttlMs = std::clamp(source.ttlMs, 24u, 180u);
+            e.ttlMs = std::clamp(source.ttlMs, 24u, 360u);
             e.score = Clamp01((1.0f - kAlpha) * e.score + kAlpha * confidence);
             e.hits += 1;
             e.lastSeenUs = ToQPC(Now());
@@ -181,7 +185,13 @@ namespace dualpad::haptics
         }
 
         auto& e = it->second;
-        if (e.hits < _resolveMinHits) {
+        std::uint32_t requiredHits = _resolveMinHits;
+        if (input.sourceFormId != 0) {
+            // Form-keyed templates are stable enough to resolve immediately.
+            requiredHits = 1;
+        }
+
+        if (e.hits < requiredHits) {
             _resolveRejectMinHits.fetch_add(1, std::memory_order_relaxed);
             _resolveMisses.fetch_add(1, std::memory_order_relaxed);
             return false;
@@ -208,7 +218,7 @@ namespace dualpad::haptics
         output.right = std::clamp(e.right, 0.0f, _outputCap);
         output.confidence = std::max(output.confidence, std::clamp(e.confidence, 0.0f, _outputCap));
         output.priority = std::max(output.priority, e.priority);
-        output.ttlMs = std::clamp(e.ttlMs, 24u, 180u);
+        output.ttlMs = std::clamp(e.ttlMs, 24u, 360u);
 
         _resolveHits.fetch_add(1, std::memory_order_relaxed);
         return true;

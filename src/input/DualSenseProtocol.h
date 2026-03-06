@@ -8,7 +8,7 @@ namespace dualpad::input::dse
     inline constexpr std::uint16_t kPidDualSense = 0x0CE6;
     inline constexpr std::uint16_t kPidDualSenseEdge = 0x0DF2;
 
-    // Report 0x01 °´¼üÎ»¶¨Òå
+    // Report 0x01 æŒ‰é”®ä½å®šä¹‰
     namespace btn
     {
         // btn0 (buf[8])
@@ -34,7 +34,7 @@ namespace dualpad::input::dse
         inline constexpr std::uint8_t kMic = 0x04;
     }
 
-    // DSE À©Õ¹°´¼ü
+    // DSE æ‰©å±•æŒ‰é”®
     enum ExtraBits : std::uint8_t
     {
         kExtraNone = 0,
@@ -60,7 +60,7 @@ namespace dualpad::input::dse
         return out;
     }
 
-    // ´¥Ãşµã
+    // è§¦æ‘¸ç‚¹
     struct TouchPoint
     {
         bool active{ false };
@@ -80,7 +80,7 @@ namespace dualpad::input::dse
         return t;
     }
 
-    // ÍêÕû×´Ì¬
+    // å®Œæ•´çŠ¶æ€
     struct State
     {
         std::uint8_t lx{ 0 }, ly{ 0 }, rx{ 0 }, ry{ 0 };
