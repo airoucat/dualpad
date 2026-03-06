@@ -2,6 +2,7 @@
 #include "input/IATHook.h"
 #include "input/SyntheticPadState.h"
 #include "input/PadProfile.h"
+#include "haptics/HapticsSystem.h"
 
 #include <Windows.h>
 #include <SKSE/SKSE.h>
@@ -12,7 +13,6 @@ namespace dualpad::input
 {
     namespace
     {
-        // XInput 结构定义
         struct XINPUT_GAMEPAD
         {
             WORD  wButtons;
@@ -36,14 +36,12 @@ namespace dualpad::input
             WORD wRightMotorSpeed;
         };
 
-        // 原始函数指针
         using XInputGetStateFunc = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
         using XInputSetStateFunc = DWORD(WINAPI*)(DWORD, XINPUT_VIBRATION*);
 
         XInputGetStateFunc g_originalGetState = nullptr;
         XInputSetStateFunc g_originalSetState = nullptr;
 
-        // 我们的 hook 函数
         DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
         {
             if (!pState || dwUserIndex != 0) {
@@ -53,32 +51,25 @@ namespace dualpad::input
                 return ERROR_DEVICE_NOT_CONNECTED;
             }
 
-            // 获取 DualSense 状态
             auto frame = SyntheticPadState::GetSingleton().ConsumeFrame();
 
-            // 映射按键
             WORD buttons = 0;
             const auto& bits = GetPadBits(GetActivePadProfile());
 
-            // 面键
-            if (frame.downMask & bits.cross) buttons |= 0x1000;      // A (×)
-            if (frame.downMask & bits.circle) buttons |= 0x2000;     // B (○)
-            if (frame.downMask & bits.square) buttons |= 0x4000;     // X (□)
-            if (frame.downMask & bits.triangle) buttons |= 0x8000;   // Y (△)
+            if (frame.downMask & bits.cross) buttons |= 0x1000;
+            if (frame.downMask & bits.circle) buttons |= 0x2000;
+            if (frame.downMask & bits.square) buttons |= 0x4000;
+            if (frame.downMask & bits.triangle) buttons |= 0x8000;
 
-            // 肩键
-            if (frame.downMask & bits.l1) buttons |= 0x0100;         // LB
-            if (frame.downMask & bits.r1) buttons |= 0x0200;         // RB
+            if (frame.downMask & bits.l1) buttons |= 0x0100;
+            if (frame.downMask & bits.r1) buttons |= 0x0200;
 
-            // 摇杆按下
-            if (frame.downMask & bits.l3) buttons |= 0x0040;         // L3
-            if (frame.downMask & bits.r3) buttons |= 0x0080;         // R3
+            if (frame.downMask & bits.l3) buttons |= 0x0040;
+            if (frame.downMask & bits.r3) buttons |= 0x0080;
 
-            // 菜单键
-            if (frame.downMask & bits.options) buttons |= 0x0010;    // Start
-            if (frame.downMask & bits.create) buttons |= 0x0020;     // Back
+            if (frame.downMask & bits.options) buttons |= 0x0010;
+            if (frame.downMask & bits.create) buttons |= 0x0020;
 
-            // D-Pad
             if (frame.downMask & bits.dpadUp) buttons |= 0x0001;
             if (frame.downMask & bits.dpadDown) buttons |= 0x0002;
             if (frame.downMask & bits.dpadLeft) buttons |= 0x0004;
@@ -86,7 +77,6 @@ namespace dualpad::input
 
             pState->Gamepad.wButtons = buttons;
 
-            // 摇杆和扳机
             if (frame.hasAxis) {
                 pState->Gamepad.sThumbLX = static_cast<SHORT>(frame.lx * 32767.0f);
                 pState->Gamepad.sThumbLY = static_cast<SHORT>(frame.ly * 32767.0f);
@@ -110,10 +100,19 @@ namespace dualpad::input
 
         DWORD WINAPI HookedXInputSetState(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
         {
-            if (dwUserIndex == 0 && pVibration) {
-                // TODO: 转换为 DualSense 震动
-                logger::trace("[DualPad] Vibration: L={} R={}",
-                    pVibration->wLeftMotorSpeed, pVibration->wRightMotorSpeed);
+            if (dwUserIndex == 0) {
+                auto& hapticsSystem = dualpad::haptics::HapticsSystem::GetSingleton();
+
+                if (pVibration) {
+                    (void)hapticsSystem.SubmitNativeVibration(
+                        pVibration->wLeftMotorSpeed,
+                        pVibration->wRightMotorSpeed);
+                }
+                else {
+                    (void)hapticsSystem.SubmitNativeVibration(0, 0);
+                }
+
+                return ERROR_SUCCESS;
             }
 
             if (g_originalSetState) {
@@ -122,7 +121,6 @@ namespace dualpad::input
             return ERROR_SUCCESS;
         }
 
-        // IAT Hook 实现
         bool HookIATEntry(HMODULE hModule, const char* dllName, const char* funcName,
             void* newFunc, void** oldFunc)
         {
@@ -146,7 +144,6 @@ namespace dualpad::input
             auto* importDesc = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(
                 reinterpret_cast<BYTE*>(hModule) + importDirRVA);
 
-            // 遍历导入的 DLL
             for (; importDesc->Name; importDesc++) {
                 const char* importDllName = reinterpret_cast<const char*>(
                     reinterpret_cast<BYTE*>(hModule) + importDesc->Name);
@@ -157,7 +154,6 @@ namespace dualpad::input
 
                 logger::info("[DualPad][IAT] Found import DLL: {}", importDllName);
 
-                // 遍历导入的函数
                 auto* thunk = reinterpret_cast<IMAGE_THUNK_DATA*>(
                     reinterpret_cast<BYTE*>(hModule) + importDesc->FirstThunk);
 
@@ -168,7 +164,6 @@ namespace dualpad::input
                     bool isOrdinal = IMAGE_SNAP_BY_ORDINAL(origThunk->u1.Ordinal);
 
                     if (isOrdinal) {
-                        // 序号导入
                         WORD ordinal = IMAGE_ORDINAL(origThunk->u1.Ordinal);
 
                         bool shouldHook = false;
@@ -186,7 +181,6 @@ namespace dualpad::input
                         logger::info("[DualPad][IAT] Matched {} to ordinal #{}", funcName, ordinal);
                     }
                     else {
-                        // 名称导入
                         auto* importByName = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(
                             reinterpret_cast<BYTE*>(hModule) + origThunk->u1.AddressOfData);
 
@@ -197,12 +191,10 @@ namespace dualpad::input
                         logger::info("[DualPad][IAT] Found function: {}", funcName);
                     }
 
-                    // 保存原函数地址
                     if (oldFunc) {
                         *oldFunc = reinterpret_cast<void*>(thunk->u1.Function);
                     }
 
-                    // 修改为我们的函数
                     DWORD oldProtect;
                     if (!VirtualProtect(&thunk->u1.Function, sizeof(ULONGLONG),
                         PAGE_READWRITE, &oldProtect)) {
@@ -237,7 +229,6 @@ namespace dualpad::input
 
         bool foundAny = false;
 
-        // Hook XInputGetState
         if (HookIATEntry(hSkyrim, "xinput1_3.dll", "XInputGetState",
             reinterpret_cast<void*>(HookedXInputGetState),
             reinterpret_cast<void**>(&g_originalGetState))) {
@@ -245,7 +236,6 @@ namespace dualpad::input
             foundAny = true;
         }
 
-        // Hook XInputSetState
         if (HookIATEntry(hSkyrim, "xinput1_3.dll", "XInputSetState",
             reinterpret_cast<void*>(HookedXInputSetState),
             reinterpret_cast<void**>(&g_originalSetState))) {

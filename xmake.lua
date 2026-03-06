@@ -15,16 +15,14 @@ add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
 add_requires("hidapi")
-add_requires("minhook")
 local mo2_plugins_dir = "G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins"
 
 target("DualPad")
     add_deps("commonlibsse-ng")
-    add_packages("hidapi", "minhook") 
-    
-    -- Ìí¼Ó XAPO Ïà¹Ø¿â
-    add_syslinks("gdi32", "gdiplus", "user32", "xapobase", "xaudio2")
-    
+    add_packages("hidapi")
+
+    add_syslinks("gdi32", "gdiplus", "user32")
+
     add_rules("commonlibsse-ng.plugin", {
         name = "DualPad",
         author = "xuanyuantec",
@@ -46,7 +44,16 @@ target("DualPad")
         local pdb = target:symbolfile()
         if pdb and os.isfile(pdb) then
             os.mkdir(mo2_plugins_dir)
-            os.cp(pdb, path.join(mo2_plugins_dir, path.filename(pdb)))
+            try {
+                function ()
+                    os.cp(pdb, path.join(mo2_plugins_dir, path.filename(pdb)))
+                end,
+                catch {
+                    function (err)
+                        print("warning: skip pdb copy: %s", err)
+                    end
+                }
+            }
         end
         print("Deployed: %s", target:targetfile())
     end)

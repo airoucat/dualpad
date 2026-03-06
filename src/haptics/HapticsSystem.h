@@ -1,48 +1,51 @@
 #pragma once
+
 #include <atomic>
+#include <cstdint>
 
 namespace dualpad::haptics
 {
-    // 触觉系统总控
-    // 负责初始化、启动、停止所有触觉子系统
     class HapticsSystem
     {
     public:
+        struct Stats
+        {
+            std::uint64_t nativeRequests{ 0 };
+            std::uint64_t nativeFramesSent{ 0 };
+            std::uint64_t nativeFramesDropped{ 0 };
+            std::uint16_t lastLeftMotor{ 0 };
+            std::uint16_t lastRightMotor{ 0 };
+        };
+
         static HapticsSystem& GetSingleton();
 
-        // 初始化所有子系统
         bool Initialize();
-
-        // 启动触觉系统（启动线程）
         bool Start();
-
-        // 停止触觉系统
         void Stop();
-
-        // 关闭并清理资源
         void Shutdown();
+        bool SubmitNativeVibration(std::uint16_t leftMotor, std::uint16_t rightMotor);
 
-        // 查询状态
         bool IsRunning() const { return _running.load(std::memory_order_acquire); }
-        bool IsInitialized() const { return _initialized; }
+        bool IsInitialized() const { return _initialized.load(std::memory_order_acquire); }
 
-        // 打印统计信息（调试用）
+        Stats GetStats() const;
         void PrintStats();
 
     private:
         HapticsSystem() = default;
 
-        bool _initialized{ false };
+        static std::uint8_t ConvertMotorSpeed(
+            std::uint16_t rawSpeed,
+            float scale,
+            float deadzone,
+            float maxIntensity);
+
+        std::atomic<bool> _initialized{ false };
         std::atomic<bool> _running{ false };
-
-        // 初始化步骤
-        bool InitializeConfig();
-        bool InitializeQueues();
-        bool InitializeManagers();
-        bool InitializeThreads();
-
-        // 关闭步骤
-        void StopThreads();
-        void ShutdownManagers();
+        std::atomic<std::uint64_t> _nativeRequests{ 0 };
+        std::atomic<std::uint64_t> _nativeFramesSent{ 0 };
+        std::atomic<std::uint64_t> _nativeFramesDropped{ 0 };
+        std::atomic<std::uint16_t> _lastLeftMotor{ 0 };
+        std::atomic<std::uint16_t> _lastRightMotor{ 0 };
     };
 }

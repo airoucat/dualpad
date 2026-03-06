@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <string>
 
 // 前向声明（避免在头文件引入 hidapi）
 struct hid_device_;
