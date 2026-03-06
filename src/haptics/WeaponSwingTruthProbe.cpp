@@ -18,6 +18,29 @@ namespace dualpad::haptics
     {
         constexpr std::uint32_t kMaxProbeLinesPerSecond = 10;
         constexpr float kTruthSwingOppositeMotorScale = 0.82f;
+        constexpr std::uint64_t kRegisterRetryIntervalUs = 1000000ull;
+        constexpr std::uint64_t kSwingTriggerDedupeUs = 45000ull;
+        constexpr std::uint64_t kSwingFollowupMergeUs = 700000ull;
+
+        enum class SwingTruthKind
+        {
+            None = 0,
+            Swing,
+            PowerSwing,
+            IgnoreAttackPhase
+        };
+
+        struct SwingTruthTagMeta
+        {
+            SwingTruthKind kind{ SwingTruthKind::None };
+            bool attackLike{ false };
+            bool left{ false };
+            bool right{ false };
+            bool followupStart{ false };
+            float pulseScale{ 1.0f };
+            float oppositeScale{ kTruthSwingOppositeMotorScale };
+            const char* normalized{ "None" };
+        };
 
         bool ShouldEmitWindowedProbe(
             std::atomic<std::uint64_t>& windowUs,
@@ -61,36 +84,81 @@ namespace dualpad::haptics
             return view;
         }
 
-        bool IsWeaponSwingTruthTag(std::string_view tag)
+        SwingTruthTagMeta ClassifySwingTruthTag(std::string_view tag)
         {
             const auto lower = ToLowerAscii(tag);
-            return
-                lower.find("weaponswing") != std::string::npos ||
-                lower.find("weaponleftswing") != std::string::npos ||
-                lower.find("weaponrightswing") != std::string::npos ||
-                lower.find("leftswing") != std::string::npos ||
-                lower.find("rightswing") != std::string::npos;
-        }
 
-        bool LooksAttackLikeTag(std::string_view tag)
-        {
-            const auto lower = ToLowerAscii(tag);
-            return
+            SwingTruthTagMeta meta{};
+            meta.attackLike =
                 lower.find("swing") != std::string::npos ||
                 lower.find("attack") != std::string::npos ||
                 lower.find("weapon") != std::string::npos ||
                 lower.find("bash") != std::string::npos ||
                 lower.find("block") != std::string::npos;
+            meta.left = lower.find("left") != std::string::npos;
+            meta.right = lower.find("right") != std::string::npos;
+
+            if (lower.find("powerattack_start") != std::string::npos ||
+                lower.find("powerattack") != std::string::npos) {
+                meta.kind = SwingTruthKind::PowerSwing;
+                meta.followupStart = true;
+                meta.pulseScale = 1.16f;
+                meta.oppositeScale = 0.76f;
+                meta.normalized = meta.left ? "PowerSwingLeft" : (meta.right ? "PowerSwingRight" : "PowerSwing");
+                return meta;
+            }
+
+            if (lower.find("attackwinstart") != std::string::npos) {
+                meta.kind = SwingTruthKind::Swing;
+                meta.followupStart = true;
+                meta.pulseScale = 1.06f;
+                meta.oppositeScale = 0.78f;
+                meta.normalized = meta.left ? "AttackStartLeft" : (meta.right ? "AttackStartRight" : "AttackStart");
+                return meta;
+            }
+
+            if (lower.find("attackwinend") != std::string::npos ||
+                lower.find("attackstop") != std::string::npos ||
+                lower.find("_end") != std::string::npos) {
+                meta.kind = SwingTruthKind::IgnoreAttackPhase;
+                meta.normalized = "AttackPhaseEnd";
+                return meta;
+            }
+
+            if (lower.find("weaponleftswing") != std::string::npos ||
+                lower.find("leftswing") != std::string::npos) {
+                meta.kind = SwingTruthKind::Swing;
+                meta.left = true;
+                meta.right = false;
+                meta.pulseScale = 1.04f;
+                meta.oppositeScale = 0.78f;
+                meta.normalized = "WeaponSwingLeft";
+                return meta;
+            }
+
+            if (lower.find("weaponrightswing") != std::string::npos ||
+                lower.find("rightswing") != std::string::npos) {
+                meta.kind = SwingTruthKind::Swing;
+                meta.left = false;
+                meta.right = true;
+                meta.pulseScale = 1.04f;
+                meta.oppositeScale = 0.78f;
+                meta.normalized = "WeaponSwingRight";
+                return meta;
+            }
+
+            if (lower.find("weaponswing") != std::string::npos) {
+                meta.kind = SwingTruthKind::Swing;
+                meta.normalized = "WeaponSwing";
+                return meta;
+            }
+
+            return meta;
         }
 
-        bool IsLeftSwingTag(std::string_view tag)
+        bool LooksAttackLikeTag(std::string_view tag)
         {
-            return ToLowerAscii(tag).find("left") != std::string::npos;
-        }
-
-        bool IsRightSwingTag(std::string_view tag)
-        {
-            return ToLowerAscii(tag).find("right") != std::string::npos;
+            return ClassifySwingTruthTag(tag).attackLike;
         }
     }
 
@@ -111,25 +179,46 @@ namespace dualpad::haptics
 
     bool WeaponSwingTruthProbe::Register()
     {
-        if (_registered.exchange(true, std::memory_order_acq_rel)) {
+        _wantRegistered.store(true, std::memory_order_release);
+        if (_registered.load(std::memory_order_acquire)) {
             return true;
         }
+        return TryRegisterSink(true);
+    }
 
+    bool WeaponSwingTruthProbe::TryRegisterSink(bool logFailure)
+    {
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
-            _registered.store(false, std::memory_order_release);
-            logger::warn("[Haptics][SwingTruth] register failed: player unavailable");
+            if (logFailure) {
+                logger::warn("[Haptics][SwingTruth] register failed: player unavailable");
+            }
             return false;
         }
 
-        ResetStats();
-        player->AddAnimationGraphEventSink(this);
+        if (!_statsResetForSession.exchange(true, std::memory_order_acq_rel)) {
+            ResetStats();
+        }
+
+        const bool registered = player->AddAnimationGraphEventSink(this);
+        if (!registered) {
+            if (logFailure) {
+                logger::warn("[Haptics][SwingTruth] register failed: animation graph unavailable");
+            }
+            _registered.store(false, std::memory_order_release);
+            return false;
+        }
+
+        _registered.store(true, std::memory_order_release);
         logger::info("[Haptics][SwingTruth] registered BSAnimationGraphEvent sink");
         return true;
     }
 
     void WeaponSwingTruthProbe::Unregister()
     {
+        _wantRegistered.store(false, std::memory_order_release);
+        _lastRegisterAttemptUs.store(0, std::memory_order_relaxed);
+        _statsResetForSession.store(false, std::memory_order_release);
         if (!_registered.exchange(false, std::memory_order_acq_rel)) {
             return;
         }
@@ -138,6 +227,23 @@ namespace dualpad::haptics
             player->RemoveAnimationGraphEventSink(this);
         }
         logger::info("[Haptics][SwingTruth] unregistered BSAnimationGraphEvent sink");
+    }
+
+    void WeaponSwingTruthProbe::Tick(std::uint64_t nowUs)
+    {
+        if (!_wantRegistered.load(std::memory_order_acquire) ||
+            _registered.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        const auto lastAttemptUs = _lastRegisterAttemptUs.load(std::memory_order_relaxed);
+        if (lastAttemptUs != 0 && nowUs > lastAttemptUs &&
+            (nowUs - lastAttemptUs) < kRegisterRetryIntervalUs) {
+            return;
+        }
+
+        _lastRegisterAttemptUs.store(nowUs, std::memory_order_relaxed);
+        TryRegisterSink(true);
     }
 
     WeaponSwingTruthProbe::Stats WeaponSwingTruthProbe::GetStats() const
@@ -173,7 +279,10 @@ namespace dualpad::haptics
 
         const auto nowUs = ToQPC(Now());
         const auto tagView = TrimTag(event->tag.c_str());
-        const bool isSwing = IsWeaponSwingTruthTag(tagView);
+        const auto meta = ClassifySwingTruthTag(tagView);
+        const bool isSwing =
+            meta.kind == SwingTruthKind::Swing ||
+            meta.kind == SwingTruthKind::PowerSwing;
 
         if (!isSwing) {
             if (LooksAttackLikeTag(tagView)) {
@@ -184,14 +293,52 @@ namespace dualpad::haptics
                         nowUs,
                         kMaxProbeLinesPerSecond)) {
                     logger::info(
-                        "[Haptics][SwingTruth] site=truth/reject tag={} reason=unmapped_attack_like",
-                        tagView);
+                        "[Haptics][SwingTruth] site=truth/reject tag={} reason={}",
+                        tagView,
+                        meta.kind == SwingTruthKind::IgnoreAttackPhase ?
+                            "ignored_attack_phase" :
+                            "unmapped_attack_like");
                 }
             }
             return RE::BSEventNotifyControl::kContinue;
         }
 
         _swingMatched.fetch_add(1, std::memory_order_relaxed);
+
+        const auto lastSubmitUs = _lastSwingSubmitUs.load(std::memory_order_relaxed);
+        if (meta.followupStart &&
+            lastSubmitUs != 0 &&
+            nowUs > lastSubmitUs &&
+            (nowUs - lastSubmitUs) < kSwingFollowupMergeUs) {
+            if (ShouldEmitWindowedProbe(
+                    s_probeWindowUs,
+                    s_probeLines,
+                    nowUs,
+                    kMaxProbeLinesPerSecond)) {
+                logger::info(
+                    "[Haptics][SwingTruth] site=truth/merge tag={} norm={} deltaUs={} reason=followup_recent_swing",
+                    tagView,
+                    meta.normalized,
+                    static_cast<unsigned long long>(nowUs - lastSubmitUs));
+            }
+            return RE::BSEventNotifyControl::kContinue;
+        }
+
+        if (lastSubmitUs != 0 && nowUs > lastSubmitUs &&
+            (nowUs - lastSubmitUs) < kSwingTriggerDedupeUs) {
+            if (ShouldEmitWindowedProbe(
+                    s_probeWindowUs,
+                    s_probeLines,
+                    nowUs,
+                    kMaxProbeLinesPerSecond)) {
+                logger::info(
+                    "[Haptics][SwingTruth] site=truth/merge tag={} norm={} deltaUs={}",
+                    tagView,
+                    meta.normalized,
+                    static_cast<unsigned long long>(nowUs - lastSubmitUs));
+            }
+            return RE::BSEventNotifyControl::kContinue;
+        }
 
         const auto& cfg = HapticsConfig::GetSingleton();
         if (!cfg.enableStateTrackWeaponSwingTruthTrigger) {
@@ -207,7 +354,7 @@ namespace dualpad::haptics
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        const auto basePulse = std::clamp(cfg.basePulseSwing, 0.10f, 1.0f);
+        const auto basePulse = std::clamp(cfg.basePulseSwing * meta.pulseScale, 0.12f, 1.0f);
         const auto baseMotor = static_cast<std::uint8_t>(std::clamp(
             basePulse * 255.0f,
             0.0f,
@@ -215,16 +362,16 @@ namespace dualpad::haptics
 
         std::uint8_t leftMotor = baseMotor;
         std::uint8_t rightMotor = baseMotor;
-        const bool isLeft = IsLeftSwingTag(tagView);
-        const bool isRight = IsRightSwingTag(tagView);
+        const bool isLeft = meta.left;
+        const bool isRight = meta.right;
         if (isLeft && !isRight) {
             rightMotor = static_cast<std::uint8_t>(std::clamp(
-                static_cast<float>(baseMotor) * kTruthSwingOppositeMotorScale,
+                static_cast<float>(baseMotor) * meta.oppositeScale,
                 0.0f,
                 255.0f));
         } else if (isRight && !isLeft) {
             leftMotor = static_cast<std::uint8_t>(std::clamp(
-                static_cast<float>(baseMotor) * kTruthSwingOppositeMotorScale,
+                static_cast<float>(baseMotor) * meta.oppositeScale,
                 0.0f,
                 255.0f));
         }
@@ -242,6 +389,7 @@ namespace dualpad::haptics
         const bool submitted = HidOutput::GetSingleton().SubmitFrameNonBlocking(frame);
         if (submitted) {
             _swingSubmitted.fetch_add(1, std::memory_order_relaxed);
+            _lastSwingSubmitUs.store(nowUs, std::memory_order_relaxed);
         }
 
         if (ShouldEmitWindowedProbe(
@@ -250,8 +398,9 @@ namespace dualpad::haptics
                 nowUs,
                 kMaxProbeLinesPerSecond)) {
             logger::info(
-                "[Haptics][SwingTruth] site=truth/submit tag={} submitted={} motor={}/{}",
+                "[Haptics][SwingTruth] site=truth/submit tag={} norm={} submitted={} motor={}/{}",
                 tagView,
+                meta.normalized,
                 submitted ? 1 : 0,
                 static_cast<int>(leftMotor),
                 static_cast<int>(rightMotor));

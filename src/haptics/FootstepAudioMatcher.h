@@ -75,6 +75,11 @@ namespace dualpad::haptics
             std::uint64_t targetEndUs{ 0 };
             float ampScale{ 1.0f };
             float panSigned{ 0.0f };
+            float attackScale{ 1.0f };
+            float bodyScale{ 1.0f };
+            float tailScale{ 1.0f };
+            float resonance{ 0.0f };
+            float textureBlend{ 0.0f };
             std::uint32_t patchLeaseUs{ 0 };
             std::uint16_t scorePermille{ 0 };
             bool fromRecentMemory{ false };
@@ -124,6 +129,11 @@ namespace dualpad::haptics
             std::uint16_t matchPanAbsPermille{ 0 };
             float matchPanSigned{ 0.0f };
             float matchEnergyScore{ 0.0f };
+            float matchAttackScale{ 1.0f };
+            float matchBodyScale{ 1.0f };
+            float matchTailScale{ 1.0f };
+            float matchResonance{ 0.0f };
+            float matchTextureBlend{ 0.0f };
             std::uint32_t windowCandidates{ 0 };
             std::uint32_t semanticCandidates{ 0 };
             std::uint32_t bindingMissCandidates{ 0 };
@@ -138,6 +148,11 @@ namespace dualpad::haptics
             std::uint64_t truthUs{ 0 };
             float ampScale{ 1.0f };
             float panSigned{ 0.0f };
+            float attackScale{ 1.0f };
+            float bodyScale{ 1.0f };
+            float tailScale{ 1.0f };
+            float resonance{ 0.0f };
+            float textureBlend{ 0.0f };
             std::uint32_t targetEndDeltaUs{ 0 };
             std::uint16_t scorePermille{ 0 };
             MemoryBucket bucket{ MemoryBucket::Unknown };

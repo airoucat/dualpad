@@ -3,6 +3,7 @@
 #include <RE/Skyrim.h>
 
 #include <atomic>
+#include <array>
 #include <cstdint>
 
 namespace dualpad::haptics
@@ -24,6 +25,7 @@ namespace dualpad::haptics
 
         bool Register();
         void Unregister();
+        void Tick(std::uint64_t nowUs);
         Stats GetStats() const;
 
         RE::BSEventNotifyControl ProcessEvent(
@@ -33,12 +35,17 @@ namespace dualpad::haptics
     private:
         WeaponSwingTruthProbe() = default;
         void ResetStats();
+        bool TryRegisterSink(bool logFailure);
 
         std::atomic<bool> _registered{ false };
+        std::atomic<bool> _wantRegistered{ false };
+        std::atomic<bool> _statsResetForSession{ false };
+        std::atomic<std::uint64_t> _lastRegisterAttemptUs{ 0 };
         std::atomic<std::uint64_t> _totalEvents{ 0 };
         std::atomic<std::uint64_t> _playerEvents{ 0 };
         std::atomic<std::uint64_t> _swingMatched{ 0 };
         std::atomic<std::uint64_t> _swingSubmitted{ 0 };
         std::atomic<std::uint64_t> _attackLikeRejected{ 0 };
+        std::atomic<std::uint64_t> _lastSwingSubmitUs{ 0 };
     };
 }

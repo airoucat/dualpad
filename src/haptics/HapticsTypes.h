@@ -168,6 +168,7 @@ namespace dualpad::haptics
         bool foregroundHint{ false };
         std::uint8_t leftMotor{ 0 };
         std::uint8_t rightMotor{ 0 };
+        std::uint32_t durationUs{ 0 };
         FootstepTruthGait footstepGait{ FootstepTruthGait::Unknown };
         FootstepTruthSide footstepSide{ FootstepTruthSide::Unknown };
     };
@@ -175,13 +176,27 @@ namespace dualpad::haptics
     enum class StructuredRendererKind : std::uint8_t
     {
         None = 0,
-        FootstepStride
+        FootstepStride,
+        CombatBurst
+    };
+
+    enum class CombatTexturePreset : std::uint8_t
+    {
+        None = 0,
+        HitImpact,
+        BlockSnap,
+        SwingArc
     };
 
     struct StructuredModifierState
     {
         float ampScale{ 1.0f };
         float panSigned{ 0.0f };
+        float attackScale{ 1.0f };
+        float bodyScale{ 1.0f };
+        float tailScale{ 1.0f };
+        float resonance{ 0.0f };
+        float textureBlend{ 0.0f };
         std::uint16_t scorePermille{ 0 };
         std::uint64_t targetEndUs{ 0 };
         bool provisional{ false };
@@ -199,9 +214,18 @@ namespace dualpad::haptics
         StructuredModifierState modifier{};
     };
 
+    struct CombatBurstState
+    {
+        std::uint8_t seedLeft{ 0 };
+        std::uint8_t seedRight{ 0 };
+        CombatTexturePreset texturePreset{ CombatTexturePreset::None };
+        StructuredModifierState modifier{};
+    };
+
     struct StructuredEventState
     {
         StructuredRendererKind renderer{ StructuredRendererKind::None };
         FootstepStrideState footstep{};
+        CombatBurstState combat{};
     };
 }

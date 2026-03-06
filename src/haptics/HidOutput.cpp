@@ -193,6 +193,73 @@ namespace dualpad::haptics
             }
         }
 
+        CombatTexturePreset DefaultCombatTexturePresetForEvent(EventType type)
+        {
+            switch (type) {
+            case EventType::Block:
+                return CombatTexturePreset::BlockSnap;
+            case EventType::WeaponSwing:
+                return CombatTexturePreset::SwingArc;
+            case EventType::HitImpact:
+            default:
+                return CombatTexturePreset::HitImpact;
+            }
+        }
+
+        std::uint64_t CombatTargetEndDeltaUs(EventType type)
+        {
+            switch (type) {
+            case EventType::Block:
+                return 90000ull;
+            case EventType::WeaponSwing:
+                return 182000ull;
+            case EventType::HitImpact:
+            default:
+                return 98000ull;
+            }
+        }
+
+        float CombatProvisionalAmpScale(EventType type)
+        {
+            switch (type) {
+            case EventType::Block:
+                return 0.98f;
+            case EventType::WeaponSwing:
+                return 1.10f;
+            case EventType::HitImpact:
+            default:
+                return 1.00f;
+            }
+        }
+
+        std::pair<std::uint8_t, std::uint8_t> ResolveCombatBurstMotors(
+            std::uint8_t seedLeft,
+            std::uint8_t seedRight,
+            float ampScaleValue,
+            float panSigned)
+        {
+            const float ampScale = std::clamp(ampScaleValue, 0.82f, 1.30f);
+            const float panMix = 0.16f;
+            const float leftScale = std::clamp(
+                ampScale * (1.0f - panSigned * panMix),
+                0.72f,
+                1.32f);
+            const float rightScale = std::clamp(
+                ampScale * (1.0f + panSigned * panMix),
+                0.72f,
+                1.32f);
+
+            const auto left = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(seedLeft) * leftScale,
+                0.0f,
+                255.0f));
+            const auto right = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(seedRight) * rightScale,
+                0.0f,
+                255.0f));
+            return { left, right };
+        }
+
         float ClampUnit(float value)
         {
             return std::clamp(value, 0.0f, 1.0f);
@@ -231,28 +298,31 @@ namespace dualpad::haptics
             std::uint64_t effectiveEndUs{ 0 };
         };
 
+        struct CombatTextureRender
+        {
+            std::uint8_t left{ 0 };
+            std::uint8_t right{ 0 };
+            std::uint64_t effectiveEndUs{ 0 };
+        };
+
         FootstepTextureRender RenderFootstepTexture(
             const HapticsConfig& cfg,
             std::uint64_t truthUs,
             std::uint64_t releaseEndUs,
-            std::uint64_t targetEndUs,
+            const StructuredModifierState& modifier,
             std::uint8_t seedLeft,
             std::uint8_t seedRight,
             FootstepTruthGait gait,
             FootstepTruthSide side,
             FootstepTexturePreset preset,
-            float ampScale,
-            float panSigned,
-            std::uint16_t scorePermille,
-            bool provisional,
             std::uint64_t nowUs)
         {
             const auto [baseLeft, baseRight] = ResolveFootstepStrideMotors(
                 cfg,
                 seedLeft,
                 seedRight,
-                ampScale,
-                panSigned);
+                modifier.ampScale,
+                modifier.panSigned);
 
             const auto gaitPreset = (preset != FootstepTexturePreset::None) ?
                 preset :
@@ -272,7 +342,7 @@ namespace dualpad::haptics
             }();
 
             const auto effectiveEndUs = std::max(
-                std::max(releaseEndUs, targetEndUs),
+                std::max(releaseEndUs, modifier.targetEndUs),
                 truthUs + nominalTextureSpanUs);
             if (truthUs == 0 || nowUs <= truthUs) {
                 return { baseLeft, baseRight, effectiveEndUs };
@@ -281,8 +351,13 @@ namespace dualpad::haptics
             const auto totalSpanUs = std::max<std::uint64_t>(effectiveEndUs - truthUs, 1ull);
             const auto elapsedUs = std::min<std::uint64_t>(nowUs - truthUs, totalSpanUs);
             const float phase = ClampUnit(static_cast<float>(elapsedUs) / static_cast<float>(totalSpanUs));
-            const float detail = ClampUnit((static_cast<float>(scorePermille) - 520.0f) / 360.0f);
-            const float definition = provisional ? (0.72f + 0.10f * detail) : (0.94f + 0.06f * detail);
+            const float detail = ClampUnit((static_cast<float>(modifier.scorePermille) - 520.0f) / 360.0f);
+            const float definition = modifier.provisional ? (0.72f + 0.10f * detail) : (0.94f + 0.06f * detail);
+            const float attackShape = std::clamp(modifier.attackScale, 0.78f, 1.36f);
+            const float bodyShape = std::clamp(modifier.bodyScale, 0.78f, 1.30f);
+            const float tailShape = std::clamp(modifier.tailScale, 0.76f, 1.40f);
+            const float resonance = ClampUnit(modifier.resonance);
+            const float textureBlend = ClampUnit(modifier.textureBlend);
             const float tail = ClampUnit(1.0f - phase);
 
             float leadEnv = 0.0f;
@@ -290,39 +365,44 @@ namespace dualpad::haptics
 
             switch (gaitPreset) {
             case FootstepTexturePreset::SprintDrive: {
-                const float bed = (0.18f + 0.05f * detail) * tail;
-                const float impact = TrianglePulse(phase, 0.05f, 0.08f) * (0.98f + 0.12f * detail);
-                const float rebound = TrianglePulse(phase, 0.18f, 0.11f) * (0.48f + 0.12f * detail);
-                const float grit = WindowBand(phase, 0.06f, 0.62f) * tail * (0.24f + 0.04f * detail);
-                leadEnv = bed + impact + rebound * 0.34f + grit * 0.72f;
-                trailEnv = bed * 0.96f + impact * 0.86f + rebound * 0.56f + grit * 0.82f;
+                const float tailLift = ClampUnit((tailShape - 0.78f) / 0.56f);
+                const float bed = (0.18f + 0.05f * detail) * tail * (0.94f + 0.14f * tailLift);
+                const float impact = TrianglePulse(phase, 0.05f, 0.08f) * (0.98f + 0.12f * detail) * (0.90f + 0.22f * attackShape);
+                const float rebound = TrianglePulse(phase, 0.18f, 0.11f) * (0.48f + 0.12f * detail) * (0.86f + 0.18f * bodyShape);
+                const float grit = WindowBand(phase, 0.06f, 0.62f) * tail * (0.24f + 0.04f * detail) * (0.84f + 0.26f * tailShape);
+                const float skid = TrianglePulse(phase, 0.32f, 0.18f) * (0.10f + 0.16f * textureBlend + 0.08f * resonance);
+                leadEnv = bed + impact + rebound * 0.34f + grit * 0.72f + skid * 0.42f;
+                trailEnv = bed * 0.96f + impact * 0.86f + rebound * 0.56f + grit * 0.82f + skid;
                 break;
             }
             case FootstepTexturePreset::JumpLift: {
-                const float bed = (0.09f + 0.03f * detail) * tail;
-                const float push = TrianglePulse(phase, 0.16f, 0.16f) * (0.74f + 0.10f * detail);
-                const float lift = WindowBand(phase, 0.18f, 0.78f) * tail * (0.22f + 0.05f * detail);
-                leadEnv = bed + push + lift * 0.88f;
-                trailEnv = bed * 0.92f + push * 0.92f + lift;
+                const float bed = (0.09f + 0.03f * detail) * tail * (0.88f + 0.18f * tailShape);
+                const float push = TrianglePulse(phase, 0.16f, 0.16f) * (0.74f + 0.10f * detail) * (0.88f + 0.18f * attackShape);
+                const float lift = WindowBand(phase, 0.18f, 0.78f) * tail * (0.22f + 0.05f * detail) * (0.88f + 0.18f * bodyShape);
+                const float flutter = TrianglePulse(phase, 0.40f, 0.16f) * (0.08f + 0.10f * resonance);
+                leadEnv = bed + push + lift * 0.88f + flutter * 0.48f;
+                trailEnv = bed * 0.92f + push * 0.92f + lift + flutter;
                 break;
             }
             case FootstepTexturePreset::LandSlam: {
-                const float bed = (0.20f + 0.04f * detail) * tail;
-                const float slam = TrianglePulse(phase, 0.04f, 0.08f) * (1.08f + 0.10f * detail);
-                const float aftershock = TrianglePulse(phase, 0.22f, 0.14f) * (0.46f + 0.08f * detail);
-                const float rattle = WindowBand(phase, 0.05f, 0.54f) * tail * (0.26f + 0.04f * detail);
-                leadEnv = bed + slam + aftershock * 0.54f + rattle;
-                trailEnv = bed * 0.96f + slam * 0.94f + aftershock * 0.66f + rattle * 0.86f;
+                const float bed = (0.20f + 0.04f * detail) * tail * (0.92f + 0.18f * tailShape);
+                const float slam = TrianglePulse(phase, 0.04f, 0.08f) * (1.08f + 0.10f * detail) * (0.90f + 0.24f * attackShape);
+                const float aftershock = TrianglePulse(phase, 0.22f, 0.14f) * (0.46f + 0.08f * detail) * (0.84f + 0.20f * bodyShape);
+                const float rattle = WindowBand(phase, 0.05f, 0.54f) * tail * (0.26f + 0.04f * detail) * (0.82f + 0.22f * tailShape);
+                const float settle = TrianglePulse(phase, 0.36f, 0.18f) * (0.10f + 0.14f * resonance + 0.06f * textureBlend);
+                leadEnv = bed + slam + aftershock * 0.54f + rattle + settle * 0.42f;
+                trailEnv = bed * 0.96f + slam * 0.94f + aftershock * 0.66f + rattle * 0.86f + settle;
                 break;
             }
             case FootstepTexturePreset::WalkSoft:
             default: {
-                const float bed = (0.12f + 0.04f * detail) * tail;
-                const float heel = TrianglePulse(phase, 0.08f, 0.11f) * (0.76f + 0.10f * detail);
-                const float toe = TrianglePulse(phase, 0.28f, 0.15f) * (0.34f + 0.10f * detail);
-                const float brush = WindowBand(phase, 0.14f, 0.78f) * tail * (0.17f + 0.03f * detail);
-                leadEnv = bed + heel + toe * 0.24f + brush * 0.94f;
-                trailEnv = bed * 0.94f + heel * 0.74f + toe * 0.44f + brush * 1.08f;
+                const float bed = (0.12f + 0.04f * detail) * tail * (0.90f + 0.18f * tailShape);
+                const float heel = TrianglePulse(phase, 0.08f, 0.11f) * (0.76f + 0.10f * detail) * (0.88f + 0.18f * attackShape + 0.10f * textureBlend);
+                const float toe = TrianglePulse(phase, 0.28f, 0.15f) * (0.34f + 0.10f * detail) * (0.82f + 0.24f * bodyShape + 0.08f * textureBlend);
+                const float brush = WindowBand(phase, 0.14f, 0.78f) * tail * (0.17f + 0.03f * detail) * (0.86f + 0.24f * tailShape);
+                const float settle = TrianglePulse(phase, 0.42f, 0.14f) * (0.08f + 0.12f * resonance);
+                leadEnv = bed + heel + toe * 0.24f + brush * 0.94f + settle * 0.28f;
+                trailEnv = bed * 0.94f + heel * 0.74f + toe * 0.44f + brush * 1.08f + settle;
                 break;
             }
             }
@@ -356,6 +436,129 @@ namespace dualpad::haptics
                 255.0f));
             const auto right = static_cast<std::uint8_t>(std::clamp(
                 static_cast<float>(baseRight) * std::clamp(rightEnv, 0.0f, 1.35f),
+                0.0f,
+                255.0f));
+            return { left, right, effectiveEndUs };
+        }
+
+        CombatTextureRender RenderCombatBurstTexture(
+            std::uint64_t truthUs,
+            std::uint64_t releaseEndUs,
+            const StructuredModifierState& modifier,
+            std::uint8_t seedLeft,
+            std::uint8_t seedRight,
+            CombatTexturePreset preset,
+            std::uint64_t nowUs)
+        {
+            const auto [baseLeft, baseRight] = ResolveCombatBurstMotors(
+                seedLeft,
+                seedRight,
+                modifier.ampScale,
+                modifier.panSigned);
+            const auto effectivePreset = (preset != CombatTexturePreset::None) ?
+                preset :
+                CombatTexturePreset::HitImpact;
+            const auto nominalSpanUs = [&]() -> std::uint64_t {
+                switch (effectivePreset) {
+                case CombatTexturePreset::BlockSnap:
+                    return 98000ull;
+                case CombatTexturePreset::SwingArc:
+                    return 178000ull;
+                case CombatTexturePreset::HitImpact:
+                default:
+                    return 104000ull;
+                }
+            }();
+
+            const auto effectiveEndUs = std::max(
+                std::max(releaseEndUs, modifier.targetEndUs),
+                truthUs + nominalSpanUs);
+            if (truthUs == 0 || nowUs <= truthUs) {
+                return { baseLeft, baseRight, effectiveEndUs };
+            }
+
+            const auto totalSpanUs = std::max<std::uint64_t>(effectiveEndUs - truthUs, 1ull);
+            const auto elapsedUs = std::min<std::uint64_t>(nowUs - truthUs, totalSpanUs);
+            const float phase = ClampUnit(static_cast<float>(elapsedUs) / static_cast<float>(totalSpanUs));
+            const float detail = ClampUnit((static_cast<float>(modifier.scorePermille) - 520.0f) / 360.0f);
+            const float definition = modifier.provisional ? (0.76f + 0.08f * detail) : (0.96f + 0.06f * detail);
+            const float attackShape = std::clamp(modifier.attackScale, 0.78f, 1.36f);
+            const float bodyShape = std::clamp(modifier.bodyScale, 0.78f, 1.32f);
+            const float tailShape = std::clamp(modifier.tailScale, 0.76f, 1.40f);
+            const float resonance = ClampUnit(modifier.resonance);
+            const float textureBlend = ClampUnit(modifier.textureBlend);
+            const float tail = ClampUnit(1.0f - phase);
+
+            float leftEnv = 0.0f;
+            float rightEnv = 0.0f;
+            switch (effectivePreset) {
+            case CombatTexturePreset::BlockSnap: {
+                const float snap = TrianglePulse(phase, 0.03f, 0.06f) * (1.18f + 0.08f * detail) * (0.90f + 0.24f * attackShape);
+                const float ringA = TrianglePulse(phase, 0.14f, 0.08f) * (0.58f + 0.10f * detail) * (0.84f + 0.22f * bodyShape);
+                const float ringB = TrianglePulse(phase, 0.27f, 0.10f) * (0.26f + 0.05f * detail) * (0.84f + 0.18f * tailShape);
+                const float bed = (0.12f + 0.03f * detail) * tail * (0.88f + 0.20f * tailShape);
+                const float shimmer = TrianglePulse(phase, 0.22f, 0.14f) * (0.08f + 0.14f * resonance + 0.06f * textureBlend);
+                leftEnv = bed + snap + ringA * 0.94f + ringB * 0.66f;
+                rightEnv = bed * 0.96f + snap * 0.92f + ringA + ringB * 0.74f + shimmer;
+                leftEnv += shimmer * 0.78f;
+                break;
+            }
+            case CombatTexturePreset::SwingArc: {
+                static std::atomic<std::uint64_t> s_attackShapeProbeWindowUs{ 0 };
+                static std::atomic<std::uint32_t> s_attackShapeProbeLines{ 0 };
+                const float bed = (0.06f + 0.02f * detail) * tail * (0.88f + 0.22f * tailShape);
+                const float opener = (0.96f + 0.08f * detail) * (0.88f + 0.20f * attackShape) *
+                    (1.0f - SmoothStep(0.16f, 0.32f, phase));
+                const float sweep = WindowBand(phase, 0.22f, 0.56f) * (0.24f + 0.04f * detail) * (0.84f + 0.24f * bodyShape + 0.08f * textureBlend);
+                const float body = WindowBand(phase, 0.34f, 0.74f) * (0.22f + 0.05f * detail) * (0.84f + 0.22f * bodyShape);
+                const float trail = WindowBand(phase, 0.52f, 1.00f) * tail * (0.46f + 0.06f * detail) * (0.84f + 0.24f * tailShape);
+                const float shimmer = TrianglePulse(phase, 0.62f, 0.16f) * (0.06f + 0.12f * resonance);
+                leftEnv = bed + opener + sweep * 0.72f + body * 0.64f + trail + shimmer * 0.72f;
+                rightEnv = bed * 0.98f + opener * 0.92f + sweep + body * 0.72f + trail * 0.92f + shimmer;
+                if (elapsedUs <= 45000ull &&
+                    ShouldEmitWindowedProbe(
+                        s_attackShapeProbeWindowUs,
+                        s_attackShapeProbeLines,
+                        nowUs,
+                        12)) {
+                    logger::info(
+                        "[Haptics][ProbeAttack] site=attack/swing_shape elapsed={}us phase={:.3f} base={}/{} opener={:.2f} sweep={:.2f} body={:.2f} trail={:.2f} env={:.2f}/{:.2f} provisional={} score={}",
+                        static_cast<unsigned long long>(elapsedUs),
+                        phase,
+                        static_cast<int>(baseLeft),
+                        static_cast<int>(baseRight),
+                        opener,
+                        sweep,
+                        body,
+                        trail,
+                        leftEnv,
+                        rightEnv,
+                        modifier.provisional ? 1 : 0,
+                        static_cast<unsigned>(modifier.scorePermille));
+                }
+                break;
+            }
+            case CombatTexturePreset::HitImpact:
+            default: {
+                const float slam = TrianglePulse(phase, 0.04f, 0.08f) * (1.10f + 0.08f * detail) * (0.90f + 0.24f * attackShape);
+                const float rebound = TrianglePulse(phase, 0.19f, 0.11f) * (0.50f + 0.10f * detail) * (0.84f + 0.22f * bodyShape);
+                const float rattle = WindowBand(phase, 0.06f, 0.56f) * tail * (0.18f + 0.04f * detail) * (0.82f + 0.24f * tailShape);
+                const float bed = (0.14f + 0.04f * detail) * tail * (0.90f + 0.18f * tailShape);
+                const float ring = TrianglePulse(phase, 0.30f, 0.14f) * (0.08f + 0.14f * resonance + 0.04f * textureBlend);
+                leftEnv = bed + slam + rebound * 0.72f + rattle + ring * 0.64f;
+                rightEnv = bed * 0.94f + slam * 0.94f + rebound + rattle * 0.82f + ring;
+                break;
+            }
+            }
+
+            leftEnv *= definition;
+            rightEnv *= definition;
+            const auto left = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(baseLeft) * std::clamp(leftEnv, 0.0f, 1.40f),
+                0.0f,
+                255.0f));
+            const auto right = static_cast<std::uint8_t>(std::clamp(
+                static_cast<float>(baseRight) * std::clamp(rightEnv, 0.0f, 1.40f),
                 0.0f,
                 255.0f));
             return { left, right, effectiveEndUs };
@@ -1186,6 +1389,10 @@ namespace dualpad::haptics
         static std::atomic<std::uint32_t> s_trackShoutSuppressProbeLines{ 0 };
         static std::atomic<std::uint64_t> s_attackSubmitProbeWindowUs{ 0 };
         static std::atomic<std::uint32_t> s_attackSubmitProbeLines{ 0 };
+        static std::atomic<std::uint64_t> s_attackStateProbeWindowUs{ 0 };
+        static std::atomic<std::uint32_t> s_attackStateProbeLines{ 0 };
+        static std::atomic<std::uint64_t> s_attackTailProbeWindowUs{ 0 };
+        static std::atomic<std::uint32_t> s_attackTailProbeLines{ 0 };
 
         HidFrame out = frame;
         if (out.qpc == 0) {
@@ -1218,6 +1425,11 @@ namespace dualpad::haptics
         const bool truthFirstFootstepAudioSuppressed =
             cfg.enableStateTrackFootstepTruthTrigger &&
             out.eventType == EventType::Footstep &&
+            out.sourceType == SourceType::AudioMod &&
+            !isZeroFrame;
+        const bool weaponSwingAudioTailOnly =
+            cfg.enableStateTrackWeaponSwingTruthTrigger &&
+            out.eventType == EventType::WeaponSwing &&
             out.sourceType == SourceType::AudioMod &&
             !isZeroFrame;
         const bool shoutLiveSuppressed =
@@ -1260,6 +1472,110 @@ namespace dualpad::haptics
                     out.confidence,
                     static_cast<int>(out.priority),
                     submitLeadUs);
+            }
+            return true;
+        }
+
+        if (weaponSwingAudioTailOnly) {
+            bool patched = false;
+            std::uint64_t targetEndDeltaUs = 0;
+            float tailAmpScale = 1.0f;
+            float tailPanSigned = 0.0f;
+            {
+                std::scoped_lock lock(_trackMutex);
+                auto& track = _trackStates[trackIndex];
+                auto tryPatchSlot = [&](TrackSlotState& slot) {
+                    if (!slot.valid ||
+                        slot.eventType != EventType::WeaponSwing ||
+                        slot.structured.renderer != StructuredRendererKind::CombatBurst ||
+                        slot.sourceQpc == 0) {
+                        return false;
+                    }
+
+                    const auto ageUs = (nowUs > slot.sourceQpc) ? (nowUs - slot.sourceQpc) : 0ull;
+                    if (ageUs > 260000ull) {
+                        return false;
+                    }
+
+                    const auto durationUs = std::clamp<std::uint64_t>(
+                        out.durationUs != 0 ? out.durationUs : 110000ull,
+                        85000ull,
+                        260000ull);
+                    const auto targetEndUs = std::max(
+                        slot.structured.combat.modifier.targetEndUs,
+                        out.qpc + durationUs);
+                    const auto motorPeak = static_cast<float>(std::max(out.leftMotor, out.rightMotor)) / 255.0f;
+                    const auto motorSum = static_cast<float>(out.leftMotor) + static_cast<float>(out.rightMotor);
+                    const auto panSigned = (motorSum > 0.0f) ?
+                        std::clamp(
+                            (static_cast<float>(out.rightMotor) - static_cast<float>(out.leftMotor)) / motorSum,
+                            -0.35f,
+                            0.35f) :
+                        0.0f;
+                    const auto durationNorm = ClampUnit((static_cast<float>(durationUs) - 85000.0f) / 175000.0f);
+                    const auto transient = ClampUnit(
+                        0.60f * motorPeak +
+                        0.40f * std::clamp(out.confidence, 0.0f, 1.0f));
+
+                    slot.structured.combat.modifier.ampScale = std::max(
+                        slot.structured.combat.modifier.ampScale,
+                        std::clamp(0.96f + motorPeak * 0.34f, 0.96f, 1.28f));
+                    slot.structured.combat.modifier.panSigned = panSigned;
+                    slot.structured.combat.modifier.attackScale = std::max(
+                        slot.structured.combat.modifier.attackScale,
+                        std::clamp(0.92f + 0.30f * transient, 0.90f, 1.28f));
+                    slot.structured.combat.modifier.bodyScale = std::max(
+                        slot.structured.combat.modifier.bodyScale,
+                        std::clamp(0.90f + 0.26f * motorPeak, 0.88f, 1.22f));
+                    slot.structured.combat.modifier.tailScale = std::max(
+                        slot.structured.combat.modifier.tailScale,
+                        std::clamp(0.94f + 0.34f * durationNorm, 0.92f, 1.28f));
+                    slot.structured.combat.modifier.resonance = std::max(
+                        slot.structured.combat.modifier.resonance,
+                        ClampUnit(0.16f + 0.34f * durationNorm));
+                    slot.structured.combat.modifier.textureBlend = std::max(
+                        slot.structured.combat.modifier.textureBlend,
+                        ClampUnit(0.20f + 0.26f * transient));
+                    slot.structured.combat.modifier.scorePermille = std::max<std::uint16_t>(
+                        slot.structured.combat.modifier.scorePermille,
+                        static_cast<std::uint16_t>(680));
+                    slot.structured.combat.modifier.targetEndUs = targetEndUs;
+                    slot.structured.combat.modifier.provisional = false;
+                    slot.releaseEndUs = std::max(slot.releaseEndUs, targetEndUs);
+                    slot.lastUpdateUs = nowUs;
+                    if (track.nextReadyUs > nowUs) {
+                        track.nextReadyUs = nowUs;
+                    }
+
+                    targetEndDeltaUs = (targetEndUs > slot.sourceQpc) ? (targetEndUs - slot.sourceQpc) : 0ull;
+                    tailAmpScale = slot.structured.combat.modifier.ampScale;
+                    tailPanSigned = slot.structured.combat.modifier.panSigned;
+                    patched = true;
+                    return true;
+                };
+
+                if (!tryPatchSlot(track.active)) {
+                    (void)tryPatchSlot(track.pending);
+                }
+            }
+
+            if (ShouldEmitWindowedProbe(
+                    s_attackTailProbeWindowUs,
+                    s_attackTailProbeLines,
+                    nowUs,
+                    10)) {
+                logger::info(
+                    "[Haptics][ProbeAttack] site=attack/audio_tail_patch lane={} evt={} patched={} dur={}us targetEndDelta={}us amp={:.2f} pan={:.2f} motor={}/{} conf={:.2f}",
+                    static_cast<int>(trackIndex),
+                    ToString(out.eventType),
+                    patched ? 1 : 0,
+                    static_cast<unsigned long long>(out.durationUs),
+                    static_cast<unsigned long long>(targetEndDeltaUs),
+                    tailAmpScale,
+                    tailPanSigned,
+                    static_cast<int>(out.leftMotor),
+                    static_cast<int>(out.rightMotor),
+                    out.confidence);
             }
             return true;
         }
@@ -1593,6 +1909,7 @@ namespace dualpad::haptics
                     const auto prevPriority = slot.priority;
                     const auto prevConfidence = slot.confidence;
                     const auto prevHint = slot.hint;
+                    const auto prevEventType = slot.eventType;
                     const auto prevBaseLeft = slot.baseLeft;
                     const auto prevBaseRight = slot.baseRight;
                     const auto prevSourceQpc = slot.sourceQpc;
@@ -1606,10 +1923,29 @@ namespace dualpad::haptics
                     const auto prevFootstepTexturePreset = slot.structured.footstep.texturePreset;
                     const auto prevFootstepModifierAmpScale = slot.structured.footstep.modifier.ampScale;
                     const auto prevFootstepModifierPanSigned = slot.structured.footstep.modifier.panSigned;
+                    const auto prevFootstepModifierAttackScale = slot.structured.footstep.modifier.attackScale;
+                    const auto prevFootstepModifierBodyScale = slot.structured.footstep.modifier.bodyScale;
+                    const auto prevFootstepModifierTailScale = slot.structured.footstep.modifier.tailScale;
+                    const auto prevFootstepModifierResonance = slot.structured.footstep.modifier.resonance;
+                    const auto prevFootstepModifierTextureBlend = slot.structured.footstep.modifier.textureBlend;
                     const auto prevFootstepModifierScorePermille = slot.structured.footstep.modifier.scorePermille;
                     const auto prevFootstepTargetEndUs = slot.structured.footstep.modifier.targetEndUs;
                     const auto prevFootstepModifierProvisional = slot.structured.footstep.modifier.provisional;
                     const auto prevFootstepSessionRevisionApplied = slot.structured.footstep.modifier.revisionApplied;
+                    const auto prevCombatSeedLeft = slot.structured.combat.seedLeft;
+                    const auto prevCombatSeedRight = slot.structured.combat.seedRight;
+                    const auto prevCombatTexturePreset = slot.structured.combat.texturePreset;
+                    const auto prevCombatModifierAmpScale = slot.structured.combat.modifier.ampScale;
+                    const auto prevCombatModifierPanSigned = slot.structured.combat.modifier.panSigned;
+                    const auto prevCombatModifierAttackScale = slot.structured.combat.modifier.attackScale;
+                    const auto prevCombatModifierBodyScale = slot.structured.combat.modifier.bodyScale;
+                    const auto prevCombatModifierTailScale = slot.structured.combat.modifier.tailScale;
+                    const auto prevCombatModifierResonance = slot.structured.combat.modifier.resonance;
+                    const auto prevCombatModifierTextureBlend = slot.structured.combat.modifier.textureBlend;
+                    const auto prevCombatModifierScorePermille = slot.structured.combat.modifier.scorePermille;
+                    const auto prevCombatTargetEndUs = slot.structured.combat.modifier.targetEndUs;
+                    const auto prevCombatModifierProvisional = slot.structured.combat.modifier.provisional;
+                    const auto prevCombatRevisionApplied = slot.structured.combat.modifier.revisionApplied;
                     const auto prevEpoch = slot.epoch;
                     const auto prevSupersededAtUs = slot.supersededAtUs;
 
@@ -1693,6 +2029,21 @@ namespace dualpad::haptics
                             slot.structured.footstep.modifier.targetEndUs = std::max(prevFootstepTargetEndUs, defaultTargetEndUs);
                             slot.structured.footstep.modifier.provisional = prevFootstepModifierProvisional;
                             slot.structured.footstep.modifier.revisionApplied = prevFootstepSessionRevisionApplied;
+                            slot.structured.footstep.modifier.attackScale = std::max(
+                                prevFootstepModifierAttackScale,
+                                (slot.structured.footstep.gait == FootstepTruthGait::Sprint) ? 1.08f : 0.96f);
+                            slot.structured.footstep.modifier.bodyScale = std::max(
+                                prevFootstepModifierBodyScale,
+                                (slot.structured.footstep.gait == FootstepTruthGait::Sprint) ? 1.04f : 0.94f);
+                            slot.structured.footstep.modifier.tailScale = std::max(
+                                prevFootstepModifierTailScale,
+                                (slot.structured.footstep.gait == FootstepTruthGait::Sprint) ? 1.14f : 1.02f);
+                            slot.structured.footstep.modifier.resonance = std::max(
+                                prevFootstepModifierResonance,
+                                (slot.structured.footstep.gait == FootstepTruthGait::Sprint) ? 0.24f : 0.12f);
+                            slot.structured.footstep.modifier.textureBlend = std::max(
+                                prevFootstepModifierTextureBlend,
+                                (slot.structured.footstep.gait == FootstepTruthGait::Sprint) ? 0.48f : 0.22f);
                         } else {
                             const auto seedBase = static_cast<std::uint8_t>(std::clamp(
                                 cfg.basePulseFootstep * 255.0f,
@@ -1706,12 +2057,65 @@ namespace dualpad::haptics
                             slot.structured.footstep.texturePreset = DefaultFootstepTexturePresetForGait(out.footstepGait);
                             slot.structured.footstep.modifier.ampScale = FootstepProvisionalAmpScale(out.footstepGait);
                             slot.structured.footstep.modifier.panSigned = 0.0f;
+                            slot.structured.footstep.modifier.attackScale = (out.footstepGait == FootstepTruthGait::Sprint) ? 1.08f : 0.96f;
+                            slot.structured.footstep.modifier.bodyScale = (out.footstepGait == FootstepTruthGait::Sprint) ? 1.04f : 0.94f;
+                            slot.structured.footstep.modifier.tailScale = (out.footstepGait == FootstepTruthGait::Sprint) ? 1.14f : 1.02f;
+                            slot.structured.footstep.modifier.resonance = (out.footstepGait == FootstepTruthGait::Sprint) ? 0.24f : 0.12f;
+                            slot.structured.footstep.modifier.textureBlend = (out.footstepGait == FootstepTruthGait::Sprint) ? 0.48f : 0.22f;
                             slot.structured.footstep.modifier.scorePermille = 560;
                             slot.structured.footstep.modifier.targetEndUs = defaultTargetEndUs;
                             slot.structured.footstep.modifier.provisional = true;
                             slot.structured.footstep.modifier.revisionApplied = 0;
                         }
                         slot.releaseEndUs = std::max(slot.releaseEndUs, slot.structured.footstep.modifier.targetEndUs);
+                    }
+                    else if (IsStructuredCombatEvent(slot.eventType)) {
+                        const auto defaultTargetEndUs = slot.sourceQpc + CombatTargetEndDeltaUs(slot.eventType);
+                        const auto prevReleaseRemainUs = (hadValid && prevReleaseEndUs > nowUs) ?
+                            (prevReleaseEndUs - nowUs) :
+                            0ull;
+                        const auto prevAgeUs = (hadValid && prevSourceQpc != 0 && nowUs > prevSourceQpc) ?
+                            (nowUs - prevSourceQpc) :
+                            0ull;
+                        // Combat bursts should feel identical whether they happen from idle
+                        // or mid-combo. Reusing the previous swing state caused later swings
+                        // to inherit an old sourceQpc/release tail and feel shorter/weaker.
+                        slot.sourceQpc = out.qpc;
+                        slot.releaseEndUs = defaultTargetEndUs;
+                        slot.structured.renderer = StructuredRendererKind::CombatBurst;
+                        slot.structured.combat.seedLeft = out.leftMotor;
+                        slot.structured.combat.seedRight = out.rightMotor;
+                        slot.structured.combat.texturePreset = DefaultCombatTexturePresetForEvent(slot.eventType);
+                        slot.structured.combat.modifier.ampScale = CombatProvisionalAmpScale(slot.eventType);
+                        slot.structured.combat.modifier.panSigned = 0.0f;
+                        slot.structured.combat.modifier.attackScale = (slot.eventType == EventType::WeaponSwing) ? 1.04f : 1.00f;
+                        slot.structured.combat.modifier.bodyScale = (slot.eventType == EventType::WeaponSwing) ? 1.00f : 0.96f;
+                        slot.structured.combat.modifier.tailScale = (slot.eventType == EventType::WeaponSwing) ? 1.10f : 1.00f;
+                        slot.structured.combat.modifier.resonance = (slot.eventType == EventType::Block) ? 0.24f : 0.14f;
+                        slot.structured.combat.modifier.textureBlend = (slot.eventType == EventType::WeaponSwing) ? 0.30f : 0.18f;
+                        slot.structured.combat.modifier.scorePermille = 620;
+                        slot.structured.combat.modifier.targetEndUs = defaultTargetEndUs;
+                        slot.structured.combat.modifier.provisional = true;
+                        slot.structured.combat.modifier.revisionApplied = 0;
+                        if (slot.eventType == EventType::WeaponSwing &&
+                            ShouldEmitWindowedProbe(
+                                s_attackStateProbeWindowUs,
+                                s_attackStateProbeLines,
+                                nowUs,
+                                10)) {
+                            logger::info(
+                                "[Haptics][ProbeAttack] site=attack/state_seed evt={} seq={} hadValid={} prevEvt={} prevAge={}us prevRelRemain={}us seed={}/{} targetEndDelta={}us deadlineGap={}us",
+                                ToString(slot.eventType),
+                                static_cast<unsigned>(slot.seq),
+                                hadValid ? 1 : 0,
+                                ToString(prevEventType),
+                                static_cast<unsigned long long>(prevAgeUs),
+                                static_cast<unsigned long long>(prevReleaseRemainUs),
+                                static_cast<int>(slot.structured.combat.seedLeft),
+                                static_cast<int>(slot.structured.combat.seedRight),
+                                static_cast<unsigned long long>(defaultTargetEndUs > slot.sourceQpc ? (defaultTargetEndUs - slot.sourceQpc) : 0ull),
+                                static_cast<unsigned long long>(slot.deadlineUs > nowUs ? (slot.deadlineUs - nowUs) : 0ull));
+                        }
                     }
                     else {
                         slot.structured.renderer = StructuredRendererKind::None;
@@ -1723,10 +2127,29 @@ namespace dualpad::haptics
                         slot.structured.footstep.texturePreset = FootstepTexturePreset::None;
                         slot.structured.footstep.modifier.ampScale = 1.0f;
                         slot.structured.footstep.modifier.panSigned = 0.0f;
+                        slot.structured.footstep.modifier.attackScale = 1.0f;
+                        slot.structured.footstep.modifier.bodyScale = 1.0f;
+                        slot.structured.footstep.modifier.tailScale = 1.0f;
+                        slot.structured.footstep.modifier.resonance = 0.0f;
+                        slot.structured.footstep.modifier.textureBlend = 0.0f;
                         slot.structured.footstep.modifier.scorePermille = 0;
                         slot.structured.footstep.modifier.targetEndUs = 0;
                         slot.structured.footstep.modifier.provisional = false;
                         slot.structured.footstep.modifier.revisionApplied = 0;
+                        slot.structured.combat.seedLeft = 0;
+                        slot.structured.combat.seedRight = 0;
+                        slot.structured.combat.texturePreset = CombatTexturePreset::None;
+                        slot.structured.combat.modifier.ampScale = 1.0f;
+                        slot.structured.combat.modifier.panSigned = 0.0f;
+                        slot.structured.combat.modifier.attackScale = 1.0f;
+                        slot.structured.combat.modifier.bodyScale = 1.0f;
+                        slot.structured.combat.modifier.tailScale = 1.0f;
+                        slot.structured.combat.modifier.resonance = 0.0f;
+                        slot.structured.combat.modifier.textureBlend = 0.0f;
+                        slot.structured.combat.modifier.scorePermille = 0;
+                        slot.structured.combat.modifier.targetEndUs = 0;
+                        slot.structured.combat.modifier.provisional = false;
+                        slot.structured.combat.modifier.revisionApplied = 0;
                     }
                 };
 
@@ -2287,6 +2710,21 @@ namespace dualpad::haptics
                         active.structured.footstep.modifier.ampScale,
                         pending.structured.footstep.modifier.ampScale);
                     active.structured.footstep.modifier.panSigned = pending.structured.footstep.modifier.panSigned;
+                    active.structured.footstep.modifier.attackScale = std::max(
+                        active.structured.footstep.modifier.attackScale,
+                        pending.structured.footstep.modifier.attackScale);
+                    active.structured.footstep.modifier.bodyScale = std::max(
+                        active.structured.footstep.modifier.bodyScale,
+                        pending.structured.footstep.modifier.bodyScale);
+                    active.structured.footstep.modifier.tailScale = std::max(
+                        active.structured.footstep.modifier.tailScale,
+                        pending.structured.footstep.modifier.tailScale);
+                    active.structured.footstep.modifier.resonance = std::max(
+                        active.structured.footstep.modifier.resonance,
+                        pending.structured.footstep.modifier.resonance);
+                    active.structured.footstep.modifier.textureBlend = std::max(
+                        active.structured.footstep.modifier.textureBlend,
+                        pending.structured.footstep.modifier.textureBlend);
                     active.structured.footstep.modifier.scorePermille = std::max(
                         active.structured.footstep.modifier.scorePermille,
                         pending.structured.footstep.modifier.scorePermille);
@@ -2342,6 +2780,11 @@ namespace dualpad::haptics
                     std::uint64_t patchTargetEndUs = 0;
                     float patchAmpScale = 1.0f;
                     float patchPanSigned = 0.0f;
+                    float patchAttackScale = 1.0f;
+                    float patchBodyScale = 1.0f;
+                    float patchTailScale = 1.0f;
+                    float patchResonance = 0.0f;
+                    float patchTextureBlend = 0.0f;
                     std::uint32_t patchLeaseUs = 0;
                     std::uint16_t patchScorePermille = 0;
                     const char* patchSource = nullptr;
@@ -2357,6 +2800,11 @@ namespace dualpad::haptics
                             patchTargetEndUs = sessionPatch->targetEndUs;
                             patchAmpScale = sessionPatch->ampScale;
                             patchPanSigned = sessionPatch->panSigned;
+                            patchAttackScale = sessionPatch->attackScale;
+                            patchBodyScale = sessionPatch->bodyScale;
+                            patchTailScale = sessionPatch->tailScale;
+                            patchResonance = sessionPatch->resonance;
+                            patchTextureBlend = sessionPatch->textureBlend;
                             patchLeaseUs = sessionPatch->patchLeaseUs;
                             patchScorePermille = sessionPatch->scorePermille;
                             sessionPatchRevision = sessionPatch->revision;
@@ -2375,6 +2823,11 @@ namespace dualpad::haptics
                         patchTargetEndUs = patch->targetEndUs;
                         patchAmpScale = patch->ampScale;
                         patchPanSigned = patch->panSigned;
+                        patchAttackScale = patch->attackScale;
+                        patchBodyScale = patch->bodyScale;
+                        patchTailScale = patch->tailScale;
+                        patchResonance = patch->resonance;
+                        patchTextureBlend = patch->textureBlend;
                         patchLeaseUs = patch->patchLeaseUs;
                         patchScorePermille = patch->scorePermille;
                         patchSource = patch->fromRecentMemory ? "recent_memory" : "audio_patch";
@@ -2389,6 +2842,11 @@ namespace dualpad::haptics
                     const bool silentSeed = !active.renderedOnce && prevLeft == 0 && prevRight == 0;
                     active.structured.footstep.modifier.ampScale = patchAmpScale;
                     active.structured.footstep.modifier.panSigned = patchPanSigned;
+                    active.structured.footstep.modifier.attackScale = patchAttackScale;
+                    active.structured.footstep.modifier.bodyScale = patchBodyScale;
+                    active.structured.footstep.modifier.tailScale = patchTailScale;
+                    active.structured.footstep.modifier.resonance = patchResonance;
+                    active.structured.footstep.modifier.textureBlend = patchTextureBlend;
                     active.structured.footstep.modifier.scorePermille = std::max(
                         active.structured.footstep.modifier.scorePermille,
                         patchScorePermille);
@@ -2428,7 +2886,7 @@ namespace dualpad::haptics
                             nowUs,
                             6)) {
                         logger::info(
-                            "[Haptics][ProbeTrack] site=track/live_patch lane={} seq={} truth={} source={} score={:.2f} amp={:.2f} pan={:.2f} texture={} targetEndDelta={}us lease={}us motor={}/{}->{}/{}",
+                            "[Haptics][ProbeTrack] site=track/live_patch lane={} seq={} truth={} source={} score={:.2f} amp={:.2f} pan={:.2f} atk={:.2f} body={:.2f} tail={:.2f} tex={:.2f} res={:.2f} texture={} targetEndDelta={}us lease={}us motor={}/{}->{}/{}",
                             static_cast<int>(index),
                             active.seq,
                             patchTruthUs,
@@ -2436,6 +2894,11 @@ namespace dualpad::haptics
                             static_cast<float>(patchScorePermille) / 1000.0f,
                             patchAmpScale,
                             patchPanSigned,
+                            patchAttackScale,
+                            patchBodyScale,
+                            patchTailScale,
+                            patchTextureBlend,
+                            patchResonance,
                             ToString(active.structured.footstep.texturePreset),
                             (patchTargetEndUs > patchTruthUs) ? (patchTargetEndUs - patchTruthUs) : 0ull,
                             patchLeaseUs,
@@ -2574,22 +3037,19 @@ namespace dualpad::haptics
                     std::uint64_t effectiveReleaseEndUs = active.releaseEndUs;
                     std::uint8_t renderBaseLeft = active.baseLeft;
                     std::uint8_t renderBaseRight = active.baseRight;
-                    if (active.eventType == EventType::Footstep) {
+                    if (active.structured.renderer == StructuredRendererKind::FootstepStride &&
+                        active.eventType == EventType::Footstep) {
                         if (cfg.enableStateTrackFootstepTextureRenderer) {
                             const auto textured = RenderFootstepTexture(
                                 cfg,
                                 active.sourceQpc,
                                 active.releaseEndUs,
-                                active.structured.footstep.modifier.targetEndUs,
+                                active.structured.footstep.modifier,
                                 active.structured.footstep.seedLeft,
                                 active.structured.footstep.seedRight,
                                 active.structured.footstep.gait,
                                 active.structured.footstep.side,
                                 active.structured.footstep.texturePreset,
-                                active.structured.footstep.modifier.ampScale,
-                                active.structured.footstep.modifier.panSigned,
-                                active.structured.footstep.modifier.scorePermille,
-                                active.structured.footstep.modifier.provisional,
                                 nowUs);
                             renderBaseLeft = textured.left;
                             renderBaseRight = textured.right;
@@ -2608,6 +3068,20 @@ namespace dualpad::haptics
                                 effectiveReleaseEndUs,
                                 active.structured.footstep.modifier.targetEndUs);
                         }
+                    }
+                    else if (active.structured.renderer == StructuredRendererKind::CombatBurst &&
+                             IsStructuredCombatEvent(active.eventType)) {
+                        const auto textured = RenderCombatBurstTexture(
+                            active.sourceQpc,
+                            active.releaseEndUs,
+                            active.structured.combat.modifier,
+                            active.structured.combat.seedLeft,
+                            active.structured.combat.seedRight,
+                            active.structured.combat.texturePreset,
+                            nowUs);
+                        renderBaseLeft = textured.left;
+                        renderBaseRight = textured.right;
+                        effectiveReleaseEndUs = std::max(effectiveReleaseEndUs, textured.effectiveEndUs);
                     }
                     if (nowUs > deadlineUs) {
                         overdueUs = nowUs - deadlineUs;

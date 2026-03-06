@@ -69,6 +69,43 @@ namespace dualpad::haptics
             }
             return lookaheadUs;
         }
+
+        struct AudioTextureShape
+        {
+            float attackScale{ 1.0f };
+            float bodyScale{ 1.0f };
+            float tailScale{ 1.0f };
+            float resonance{ 0.0f };
+            float textureBlend{ 0.0f };
+        };
+
+        float Clamp01(float value)
+        {
+            return std::clamp(value, 0.0f, 1.0f);
+        }
+
+        AudioTextureShape DeriveAudioTextureShape(const AudioFeatureMsg& feature)
+        {
+            const auto bandSum = std::max(0.0001f, feature.bandLow + feature.bandMid + feature.bandHigh);
+            const auto lowRatio = Clamp01(feature.bandLow / bandSum);
+            const auto midRatio = Clamp01(feature.bandMid / bandSum);
+            const auto highRatio = Clamp01(feature.bandHigh / bandSum);
+            const auto durationUs = (feature.qpcEnd > feature.qpcStart) ? (feature.qpcEnd - feature.qpcStart) : 0ull;
+            const auto durationNorm = Clamp01((static_cast<float>(durationUs) - 28000.0f) / 120000.0f);
+            const auto transient = Clamp01(
+                0.70f * feature.attack +
+                0.30f * Clamp01((feature.peak - feature.rms) * 2.4f));
+            const auto bodyTone = Clamp01(0.55f * midRatio + 0.45f * highRatio);
+            const auto tailTone = Clamp01(0.62f * lowRatio + 0.38f * durationNorm);
+
+            AudioTextureShape out{};
+            out.attackScale = std::clamp(0.86f + 0.46f * transient, 0.82f, 1.34f);
+            out.bodyScale = std::clamp(0.84f + 0.40f * bodyTone, 0.80f, 1.26f);
+            out.tailScale = std::clamp(0.82f + 0.48f * tailTone, 0.78f, 1.34f);
+            out.resonance = Clamp01(0.45f * lowRatio + 0.25f * midRatio + 0.30f * durationNorm);
+            out.textureBlend = Clamp01(0.60f * highRatio + 0.40f * transient);
+            return out;
+        }
     }
 
     FootstepTruthSessionShadow& FootstepTruthSessionShadow::GetSingleton()
@@ -459,6 +496,16 @@ namespace dualpad::haptics
         const auto patchExpireUs = std::max<std::uint64_t>(
             expireUs,
             truthUs + std::min<std::uint64_t>(static_cast<std::uint64_t>(patchLeaseUs) + 40000ull, 240000ull));
+        const auto defaultAttackScale = (gait == FootstepTruthGait::Sprint) ? 1.08f :
+            ((gait == FootstepTruthGait::JumpUp || gait == FootstepTruthGait::JumpDown) ? 1.02f : 0.96f);
+        const auto defaultBodyScale = (gait == FootstepTruthGait::Sprint) ? 1.04f :
+            ((gait == FootstepTruthGait::JumpUp || gait == FootstepTruthGait::JumpDown) ? 1.00f : 0.94f);
+        const auto defaultTailScale = (gait == FootstepTruthGait::Sprint) ? 1.14f :
+            ((gait == FootstepTruthGait::JumpUp || gait == FootstepTruthGait::JumpDown) ? 1.08f : 1.02f);
+        const auto defaultResonance = (gait == FootstepTruthGait::Sprint) ? 0.24f :
+            ((gait == FootstepTruthGait::JumpUp || gait == FootstepTruthGait::JumpDown) ? 0.18f : 0.12f);
+        const auto defaultTextureBlend = (gait == FootstepTruthGait::Sprint) ? 0.48f :
+            ((gait == FootstepTruthGait::JumpUp || gait == FootstepTruthGait::JumpDown) ? 0.34f : 0.22f);
 
         for (auto& existing : _readyLivePatches) {
             if (existing.truthUs != truthUs) {
@@ -474,6 +521,11 @@ namespace dualpad::haptics
                 existing.targetEndUs != (truthUs + targetEndDeltaUs) ||
                 std::fabs(existing.ampScale - newAmpScale) > 0.0001f ||
                 std::fabs(existing.panSigned) > 0.0001f ||
+                std::fabs(existing.attackScale - defaultAttackScale) > 0.0001f ||
+                std::fabs(existing.bodyScale - defaultBodyScale) > 0.0001f ||
+                std::fabs(existing.tailScale - defaultTailScale) > 0.0001f ||
+                std::fabs(existing.resonance - defaultResonance) > 0.0001f ||
+                std::fabs(existing.textureBlend - defaultTextureBlend) > 0.0001f ||
                 existing.patchLeaseUs != patchLeaseUs ||
                 existing.scorePermille != newScorePermille;
 
@@ -481,6 +533,11 @@ namespace dualpad::haptics
             existing.targetEndUs = truthUs + targetEndDeltaUs;
             existing.ampScale = newAmpScale;
             existing.panSigned = 0.0f;
+            existing.attackScale = defaultAttackScale;
+            existing.bodyScale = defaultBodyScale;
+            existing.tailScale = defaultTailScale;
+            existing.resonance = defaultResonance;
+            existing.textureBlend = defaultTextureBlend;
             existing.patchLeaseUs = patchLeaseUs;
             existing.scorePermille = newScorePermille;
             existing.gait = gait;
@@ -498,6 +555,11 @@ namespace dualpad::haptics
         provisional.targetEndUs = truthUs + targetEndDeltaUs;
         provisional.ampScale = (gait == FootstepTruthGait::Sprint) ? 1.00f : 0.96f;
         provisional.panSigned = 0.0f;
+        provisional.attackScale = defaultAttackScale;
+        provisional.bodyScale = defaultBodyScale;
+        provisional.tailScale = defaultTailScale;
+        provisional.resonance = defaultResonance;
+        provisional.textureBlend = defaultTextureBlend;
         provisional.patchLeaseUs = patchLeaseUs;
         provisional.scorePermille = (gait == FootstepTruthGait::Sprint) ? 560 : 520;
         provisional.gait = gait;
@@ -607,6 +669,7 @@ namespace dualpad::haptics
                     0.65f * feature.peak + 0.35f * feature.rms,
                     0.0f,
                     1.0f);
+                const auto textureShape = DeriveAudioTextureShape(feature);
                 const auto sprintLeaseBoostUs =
                     (bestSession->gait == FootstepTruthGait::Sprint) ? 40000ull : 0ull;
                 const auto patchLeaseUs = static_cast<std::uint32_t>(std::min<std::uint64_t>(
@@ -628,6 +691,11 @@ namespace dualpad::haptics
                     0.92f,
                     1.22f);
                 live.panSigned = std::clamp(panSigned, -0.55f, 0.55f);
+                live.attackScale = textureShape.attackScale;
+                live.bodyScale = textureShape.bodyScale;
+                live.tailScale = textureShape.tailScale;
+                live.resonance = textureShape.resonance;
+                live.textureBlend = textureShape.textureBlend;
                 live.patchLeaseUs = patchLeaseUs;
                 live.scorePermille = static_cast<std::uint16_t>(std::clamp(
                     static_cast<int>(std::lround(
@@ -652,6 +720,11 @@ namespace dualpad::haptics
                         existing.targetEndUs != live.targetEndUs ||
                         std::fabs(existing.ampScale - live.ampScale) > 0.0001f ||
                         std::fabs(existing.panSigned - live.panSigned) > 0.0001f ||
+                        std::fabs(existing.attackScale - live.attackScale) > 0.0001f ||
+                        std::fabs(existing.bodyScale - live.bodyScale) > 0.0001f ||
+                        std::fabs(existing.tailScale - live.tailScale) > 0.0001f ||
+                        std::fabs(existing.resonance - live.resonance) > 0.0001f ||
+                        std::fabs(existing.textureBlend - live.textureBlend) > 0.0001f ||
                         existing.patchLeaseUs != live.patchLeaseUs ||
                         existing.scorePermille != live.scorePermille ||
                         existing.expireUs != live.expireUs;
@@ -659,6 +732,11 @@ namespace dualpad::haptics
                     existing.targetEndUs = live.targetEndUs;
                     existing.ampScale = live.ampScale;
                     existing.panSigned = live.panSigned;
+                    existing.attackScale = live.attackScale;
+                    existing.bodyScale = live.bodyScale;
+                    existing.tailScale = live.tailScale;
+                    existing.resonance = live.resonance;
+                    existing.textureBlend = live.textureBlend;
                     existing.patchLeaseUs = live.patchLeaseUs;
                     existing.scorePermille = live.scorePermille;
                     existing.gait = live.gait;

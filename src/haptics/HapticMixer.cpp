@@ -13,16 +13,19 @@
 #include "haptics/FootstepTruthProbe.h"
 #include "haptics/FootstepTruthSessionShadow.h"
 #include "haptics/HapticEligibilityEngine.h"
+#include "haptics/HitImpactTruthProbe.h"
 #include "haptics/MetricsReporter.h"
 #include "haptics/PlayPathHook.h"
 #include "haptics/SemanticResolver.h"
 #include "haptics/SessionFormPromoter.h"
 #include "haptics/VoiceManager.h"
+#include "haptics/WeaponSwingTruthProbe.h"
 
 #include <SKSE/SKSE.h>
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <limits>
 
 namespace logger = SKSE::log;
 
@@ -1223,6 +1226,7 @@ namespace dualpad::haptics
             FootstepTruthBridge::GetSingleton().Tick(ToQPC(Now()));
             FootstepAudioMatcher::GetSingleton().Tick(ToQPC(Now()));
             FootstepTruthSessionShadow::GetSingleton().Tick(ToQPC(Now()));
+            WeaponSwingTruthProbe::GetSingleton().Tick(ToQPC(Now()));
 
             _totalTicks.fetch_add(1, std::memory_order_relaxed);
             _framesOutput.fetch_add(1, std::memory_order_relaxed);
@@ -1382,6 +1386,14 @@ namespace dualpad::haptics
         frame.foregroundHint = (dominantEvent != EventType::Unknown && !IsBackgroundEvent(dominantEvent));
         frame.leftMotor = static_cast<std::uint8_t>(std::clamp(left * 255.0f, 0.0f, 255.0f));
         frame.rightMotor = static_cast<std::uint8_t>(std::clamp(right * 255.0f, 0.0f, 255.0f));
+        if (dominantSource == SourceType::AudioMod &&
+            _eventLease.active &&
+            _eventLease.eventType == dominantEvent &&
+            _eventLease.releaseEndUs > nowQpc) {
+            frame.durationUs = static_cast<std::uint32_t>(std::min<std::uint64_t>(
+                _eventLease.releaseEndUs - nowQpc,
+                std::numeric_limits<std::uint32_t>::max()));
+        }
         return frame;
     }
 

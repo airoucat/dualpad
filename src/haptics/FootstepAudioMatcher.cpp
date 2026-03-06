@@ -138,6 +138,38 @@ namespace dualpad::haptics
 
             return std::nullopt;
         }
+
+        struct AudioTextureShape
+        {
+            float attackScale{ 1.0f };
+            float bodyScale{ 1.0f };
+            float tailScale{ 1.0f };
+            float resonance{ 0.0f };
+            float textureBlend{ 0.0f };
+        };
+
+        AudioTextureShape DeriveAudioTextureShape(const AudioFeatureMsg& feature)
+        {
+            const auto bandSum = std::max(0.0001f, feature.bandLow + feature.bandMid + feature.bandHigh);
+            const auto lowRatio = Clamp01(feature.bandLow / bandSum);
+            const auto midRatio = Clamp01(feature.bandMid / bandSum);
+            const auto highRatio = Clamp01(feature.bandHigh / bandSum);
+            const auto durationUs = (feature.qpcEnd > feature.qpcStart) ? (feature.qpcEnd - feature.qpcStart) : 0ull;
+            const auto durationNorm = Clamp01((static_cast<float>(durationUs) - 28000.0f) / 120000.0f);
+            const auto transient = Clamp01(
+                0.70f * feature.attack +
+                0.30f * Clamp01((feature.peak - feature.rms) * 2.4f));
+            const auto bodyTone = Clamp01(0.55f * midRatio + 0.45f * highRatio);
+            const auto tailTone = Clamp01(0.62f * lowRatio + 0.38f * durationNorm);
+
+            AudioTextureShape out{};
+            out.attackScale = std::clamp(0.86f + 0.46f * transient, 0.82f, 1.34f);
+            out.bodyScale = std::clamp(0.84f + 0.40f * bodyTone, 0.80f, 1.26f);
+            out.tailScale = std::clamp(0.82f + 0.48f * tailTone, 0.78f, 1.34f);
+            out.resonance = Clamp01(0.45f * lowRatio + 0.25f * midRatio + 0.30f * durationNorm);
+            out.textureBlend = Clamp01(0.60f * highRatio + 0.40f * transient);
+            return out;
+        }
     }
 
     FootstepAudioMatcher& FootstepAudioMatcher::GetSingleton()
@@ -486,6 +518,36 @@ namespace dualpad::haptics
             [](const RecentModifierSample& sample) {
                 return sample.ampScale;
             });
+        const float medianAttack = WeightedMedianOf(
+            selected,
+            weights,
+            [](const RecentModifierSample& sample) {
+                return sample.attackScale;
+            });
+        const float medianBody = WeightedMedianOf(
+            selected,
+            weights,
+            [](const RecentModifierSample& sample) {
+                return sample.bodyScale;
+            });
+        const float medianTail = WeightedMedianOf(
+            selected,
+            weights,
+            [](const RecentModifierSample& sample) {
+                return sample.tailScale;
+            });
+        const float medianResonance = WeightedMedianOf(
+            selected,
+            weights,
+            [](const RecentModifierSample& sample) {
+                return sample.resonance;
+            });
+        const float medianTextureBlend = WeightedMedianOf(
+            selected,
+            weights,
+            [](const RecentModifierSample& sample) {
+                return sample.textureBlend;
+            });
         const float medianTargetEnd = WeightedMedianOf(
             selected,
             weights,
@@ -521,6 +583,11 @@ namespace dualpad::haptics
         live.expireUs = nowUs + kLivePatchTtlUs;
         live.ampScale = std::clamp(1.0f + (medianAmp - 1.0f) * 0.80f, 0.92f, 1.15f);
         live.panSigned = std::clamp((trimmedPan / trimmedWeight) * 0.78f, -0.40f, 0.40f);
+        live.attackScale = std::clamp(0.92f + (medianAttack - 0.92f) * 0.86f, 0.84f, 1.26f);
+        live.bodyScale = std::clamp(0.90f + (medianBody - 0.90f) * 0.86f, 0.84f, 1.22f);
+        live.tailScale = std::clamp(0.90f + (medianTail - 0.90f) * 0.90f, 0.84f, 1.28f);
+        live.resonance = Clamp01(medianResonance * 0.90f);
+        live.textureBlend = Clamp01(medianTextureBlend * 0.90f);
         live.targetEndUs = truthUs + std::clamp<std::uint64_t>(
             static_cast<std::uint64_t>(std::max(0.0f, medianTargetEnd)),
             42000ull,
@@ -841,6 +908,7 @@ namespace dualpad::haptics
                 const auto panAbs = std::abs(pan);
                 const auto freshness = Clamp01(std::exp(-static_cast<float>(deltaObservedUs) / 40000.0f));
                 const auto energyScore = Clamp01(0.65f * feature.peak + 0.35f * feature.rms);
+                const auto textureShape = DeriveAudioTextureShape(feature);
                 const auto score = Clamp01(
                     0.55f * Clamp01(metaConfidence) +
                     0.25f * freshness +
@@ -871,6 +939,11 @@ namespace dualpad::haptics
                         std::clamp(panAbs * 1000.0f, 0.0f, 1000.0f));
                     out.matchPanSigned = pan;
                     out.matchEnergyScore = energyScore;
+                    out.matchAttackScale = textureShape.attackScale;
+                    out.matchBodyScale = textureShape.bodyScale;
+                    out.matchTailScale = textureShape.tailScale;
+                    out.matchResonance = textureShape.resonance;
+                    out.matchTextureBlend = textureShape.textureBlend;
                 }
             }
         };
@@ -988,6 +1061,7 @@ namespace dualpad::haptics
             const auto panAbs = std::abs(pan);
             const auto timeScore = Clamp01(std::exp(-static_cast<float>(deltaUs) / kTimeTauUs));
             const auto energyScore = Clamp01(0.65f * feature.peak + 0.35f * feature.rms);
+            const auto textureShape = DeriveAudioTextureShape(feature);
             const auto score = Clamp01(
                 0.35f * timeScore +
                 0.35f * Clamp01(metaConfidence) +
@@ -1016,6 +1090,11 @@ namespace dualpad::haptics
                     std::clamp(panAbs * 1000.0f, 0.0f, 1000.0f));
                 out.matchPanSigned = pan;
                 out.matchEnergyScore = energyScore;
+                out.matchAttackScale = textureShape.attackScale;
+                out.matchBodyScale = textureShape.bodyScale;
+                out.matchTailScale = textureShape.tailScale;
+                out.matchResonance = textureShape.resonance;
+                out.matchTextureBlend = textureShape.textureBlend;
             }
         }
 
@@ -1069,6 +1148,11 @@ namespace dualpad::haptics
             static_cast<std::uint64_t>(cfg.stateTrackFootstepPatchLeaseUs));
         live.ampScale = std::clamp(0.90f + 0.28f * match.matchEnergyScore, 0.90f, 1.18f);
         live.panSigned = std::clamp(match.matchPanSigned, -0.55f, 0.55f);
+        live.attackScale = match.matchAttackScale;
+        live.bodyScale = match.matchBodyScale;
+        live.tailScale = match.matchTailScale;
+        live.resonance = match.matchResonance;
+        live.textureBlend = match.matchTextureBlend;
         live.patchLeaseUs = cfg.stateTrackFootstepPatchLeaseUs;
         live.scorePermille = match.matchScorePermille;
         live.fromRecentMemory = false;
@@ -1112,6 +1196,11 @@ namespace dualpad::haptics
         sample.truthUs = patch.truthUs;
         sample.ampScale = patch.ampScale;
         sample.panSigned = patch.panSigned;
+        sample.attackScale = patch.attackScale;
+        sample.bodyScale = patch.bodyScale;
+        sample.tailScale = patch.tailScale;
+        sample.resonance = patch.resonance;
+        sample.textureBlend = patch.textureBlend;
         sample.targetEndDeltaUs = static_cast<std::uint32_t>(
             (patch.targetEndUs > patch.truthUs) ? (patch.targetEndUs - patch.truthUs) : 0ull);
         sample.scorePermille = patch.scorePermille;

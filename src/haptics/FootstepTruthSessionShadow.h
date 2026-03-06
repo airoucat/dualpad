@@ -65,6 +65,11 @@ namespace dualpad::haptics
             std::uint64_t targetEndUs{ 0 };
             float ampScale{ 1.0f };
             float panSigned{ 0.0f };
+            float attackScale{ 1.0f };
+            float bodyScale{ 1.0f };
+            float tailScale{ 1.0f };
+            float resonance{ 0.0f };
+            float textureBlend{ 0.0f };
             std::uint32_t patchLeaseUs{ 0 };
             std::uint16_t scorePermille{ 0 };
             FootstepTruthGait gait{ FootstepTruthGait::Unknown };

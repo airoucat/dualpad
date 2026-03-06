@@ -805,3 +805,56 @@
   - this pass is structural only
   - live behavior should remain functionally equivalent
   - remaining `coverage / noCand / live-expired` cleanup stays deferred as already recorded above
+
+### Phase B37 (Done - 2026-03-06)
+- Extend the new `StructuredEventState` shell to combat burst lanes:
+  - add `CombatBurstState`
+  - add `StructuredRendererKind::CombatBurst`
+  - let `lane=0 / lane=1` seed structured combat burst state instead of staying on raw motor pulses only
+- Add `CombatTextureRenderer v1` for structured combat events:
+  - `HitImpact -> HitImpact burst`
+  - `Block -> BlockSnap`
+  - `WeaponSwing -> SwingArc`
+- Design intent:
+  - stop cloning Footstep-only state patterns for combat lanes
+  - make future `Hit / Block / Swing` truth-backed work land on the same renderer-owned shell from the start
+
+### Phase B38 (Done - 2026-03-06)
+- Normalize `WeaponSwing` truth tags into one trigger family instead of only accepting raw `weaponSwing` tags:
+  - accept `weaponSwing / weaponLeftSwing / weaponRightSwing`
+  - accept `AttackWinStart*`
+  - accept `PowerAttack_Start*`
+  - treat `AttackWinEnd / attackStop / *_end` as non-trigger attack phases
+- Add a short truth-level dedupe window so paired attack-start tags do not double-submit the same empty swing.
+- Strengthen `SwingArc` perceptibility in `CombatTextureRenderer`:
+  - longer target end window
+  - stronger provisional amplitude
+  - clearer windup/cut/trail texture split
+- Goal:
+  - make empty swings land on a broader and more realistic attack-tag family
+  - make `lane=1` WeaponSwing output easier to perceive without pulling audio back into the primary trigger path
+
+### Phase B39 (Done - 2026-03-07)
+- Upgrade modifier dimensionality from `amp/pan/end` only to audio-shaped texture parameters:
+  - `StructuredModifierState` now carries `attackScale / bodyScale / tailScale / resonance / textureBlend`
+  - `FootstepAudioMatcher` and `FootstepTruthSessionShadow` now derive and transport these values from matched audio features
+- Promote renderer ownership of waveform/envelope detail:
+  - `FootstepTextureRenderer` now uses audio-derived modifier shape to alter attack/body/tail texture, not just total strength and end time
+  - `CombatBurst` tail-only audio refinement now writes the same modifier dimensions for future combat texture work
+- Design intent:
+  - stop treating audio as a trigger source while still borrowing the useful part of `audio-to-haptics`: waveform family, envelope shape, and truth-anchored end-time refinement
+  - reduce haptic homogeneity without reintroducing false trigger / late trigger behavior
+
+### Phase B40 (Recorded - 2026-03-07)
+- Fine-grained haptics / audio-to-haptics refinement is temporarily frozen.
+- Current branch is kept as the archive point for:
+  - `TruthTrigger + ModifierResolver + Renderer-owned Lane`
+  - `Footstep` truth-first path
+  - early combat truth probes and texture renderer shells
+  - audio-shaped modifier dimensions (`attack/body/tail/resonance/textureBlend`)
+- Short-term product direction:
+  - stop expanding fine-grained haptic behavior for now
+  - use game-native vibration as the practical runtime choice until renderer / texture design knowledge is ready to resume
+- Resume rule:
+  - when development restarts, continue from this snapshot instead of re-opening old ad-hoc patch paths
+  - keep the deferred items (`coverage`, `candidate coverage`, `session/live-expired`, richer texture design) as backlog, not active work
