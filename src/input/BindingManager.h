@@ -15,6 +15,7 @@ namespace dualpad::input
         InputContext context;
     };
 
+    // Stores context-sensitive bindings and serves both config and runtime lookups.
     class BindingManager
     {
     public:
@@ -31,6 +32,7 @@ namespace dualpad::input
             std::string_view actionId,
             InputContext context) const;
 
+        // Seeds a fallback set when no external config is present.
         void InitDefaultBindings();
 
     private:

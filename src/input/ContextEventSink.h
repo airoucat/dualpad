@@ -5,7 +5,7 @@
 
 namespace dualpad::input
 {
-    // 统一的上下文事件监听器
+    // Forwards Skyrim UI and combat events into the local context model.
     class ContextEventSink :
         public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
         public RE::BSTEventSink<RE::TESCombatEvent>
@@ -13,18 +13,14 @@ namespace dualpad::input
     public:
         static ContextEventSink& GetSingleton();
 
-        // 注册所有事件监听
         void Register();
 
-        // 停止监听
         void Unregister();
 
-        // 菜单事件
         RE::BSEventNotifyControl ProcessEvent(
             const RE::MenuOpenCloseEvent* event,
             RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
 
-        // 战斗事件
         RE::BSEventNotifyControl ProcessEvent(
             const RE::TESCombatEvent* event,
             RE::BSTEventSource<RE::TESCombatEvent>*) override;
@@ -35,6 +31,7 @@ namespace dualpad::input
         std::atomic_bool _updateRunning{ false };
         std::jthread _updateThread;
 
+        // Polls gameplay-only states that are not exposed by menu events.
         void StartPerFrameUpdate();
         void StopPerFrameUpdate();
         void PerFrameUpdateLoop();

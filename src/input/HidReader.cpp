@@ -8,7 +8,7 @@
 #include "input/BindingManager.h"
 #include "input/ActionExecutor.h"
 #include "input/InputContext.h"
-#include "haptics/HidOutput.h" 
+#include "haptics/HidOutput.h"
 
 #include <SKSE/SKSE.h>
 #include <hidapi/hidapi.h>
@@ -26,7 +26,7 @@ namespace
 
     using namespace std::chrono_literals;
 
-    // 按键映射
+    // Internal bit layout used by bindings and the XInput bridge.
     enum class BtnCode : std::uint32_t
     {
         Square = 0x00000001,
@@ -68,23 +68,21 @@ namespace
         TpSwipeRight = 0x40000000
     };
 
+    // Flattens the parsed HID report into the plugin's stable button mask.
     inline std::uint32_t BuildButtonMask(const dse::State& state)
     {
         std::uint32_t mask = 0;
 
-        // 面键
         if (state.btn0 & dse::btn::kSquare) mask |= static_cast<std::uint32_t>(BtnCode::Square);
         if (state.btn0 & dse::btn::kCross) mask |= static_cast<std::uint32_t>(BtnCode::Cross);
         if (state.btn0 & dse::btn::kCircle) mask |= static_cast<std::uint32_t>(BtnCode::Circle);
         if (state.btn0 & dse::btn::kTriangle) mask |= static_cast<std::uint32_t>(BtnCode::Triangle);
 
-        // 肩键
         if (state.btn1 & dse::btn::kL1) mask |= static_cast<std::uint32_t>(BtnCode::L1);
         if (state.btn1 & dse::btn::kR1) mask |= static_cast<std::uint32_t>(BtnCode::R1);
         if (state.btn1 & dse::btn::kL2Button) mask |= static_cast<std::uint32_t>(BtnCode::L2Button);
         if (state.btn1 & dse::btn::kR2Button) mask |= static_cast<std::uint32_t>(BtnCode::R2Button);
 
-        // 功能键
         if (state.btn1 & dse::btn::kCreate) mask |= static_cast<std::uint32_t>(BtnCode::Create);
         if (state.btn1 & dse::btn::kOptions) mask |= static_cast<std::uint32_t>(BtnCode::Options);
         if (state.btn1 & dse::btn::kL3) mask |= static_cast<std::uint32_t>(BtnCode::L3);
@@ -93,14 +91,12 @@ namespace
         if (state.btn2 & dse::btn::kPS) mask |= static_cast<std::uint32_t>(BtnCode::PS);
         if (state.btn2 & dse::btn::kMic) mask |= static_cast<std::uint32_t>(BtnCode::Mic);
 
-        // D-Pad
         const std::uint8_t dpad = state.btn0 & dse::btn::kDpadMask;
         if (dpad == 0 || dpad == 1 || dpad == 7) mask |= static_cast<std::uint32_t>(BtnCode::DpadUp);
         if (dpad == 1 || dpad == 2 || dpad == 3) mask |= static_cast<std::uint32_t>(BtnCode::DpadRight);
         if (dpad == 3 || dpad == 4 || dpad == 5) mask |= static_cast<std::uint32_t>(BtnCode::DpadDown);
         if (dpad == 5 || dpad == 6 || dpad == 7) mask |= static_cast<std::uint32_t>(BtnCode::DpadLeft);
 
-        // DSE 扩展
         if (state.extraButtons & dse::kExtraFnLeft) mask |= static_cast<std::uint32_t>(BtnCode::FnLeft);
         if (state.extraButtons & dse::kExtraFnRight) mask |= static_cast<std::uint32_t>(BtnCode::FnRight);
         if (state.extraButtons & dse::kExtraBackLeft) mask |= static_cast<std::uint32_t>(BtnCode::BackLeft);
@@ -129,6 +125,7 @@ namespace
         return (static_cast<float>(v) - 127.5f) / 127.5f;
     }
 
+    // Opens the first DualSense or DualSense Edge device exposed by hidapi.
     hid_device* TryOpenDualSense()
     {
         hid_device_info* infos = hid_enumerate(dse::kSonyVid, 0x0);
@@ -154,6 +151,7 @@ namespace
         return dev;
     }
 
+    // Polls HID reports, resolves gestures and bindings, then updates the XInput bridge.
     void ReaderLoop()
     {
         logger::info("[DualPad] HID reader thread started");
@@ -179,7 +177,6 @@ namespace
                 prevMask = 0;
                 gesture.Reset();
 
-                // 新增：通知 HidOutput 设备已连接
                 dualpad::haptics::HidOutput::GetSingleton().SetDevice(dev);
             }
 
@@ -192,10 +189,9 @@ namespace
                     continue;
                 }
 
-                // 构建按键掩码
                 std::uint32_t mask = BuildButtonMask(state);
 
-                // === 处理触摸板手势 ===
+                // Touch gestures generate their own synthetic button edges.
                 const auto g = gesture.Update(state);
                 if (g != dualpad::input::TouchGesture::None) {
                     const auto gMask = GestureToMask(g);
@@ -203,10 +199,8 @@ namespace
                         logger::info("[DualPad] Gesture detected: {}",
                             dualpad::input::ToString(g));
 
-                        // Pulse 手势按键（传递给 XInput）
                         dualpad::input::SyntheticPadState::GetSingleton().PulseButton(gMask);
 
-                        // 查询绑定并执行动作
                         dualpad::input::Trigger trigger;
                         trigger.type = dualpad::input::TriggerType::Gesture;
                         trigger.code = gMask;
@@ -221,58 +215,52 @@ namespace
                     }
                 }
 
-                // === 处理按键变化 ===
                 const std::uint32_t pressed = mask & ~prevMask;
                 const std::uint32_t released = prevMask & ~mask;
 
-                // ===== 关键修改：检查自定义绑定并屏蔽已处理的按键 =====
-                std::uint32_t handledButtons = 0;  // 记录哪些按键被我们处理了
+                // Buttons claimed by custom bindings must not leak into Skyrim's default path.
+                std::uint32_t handledButtons = 0;
 
                 if (pressed != 0) {
                     auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
                     auto& bindingManager = dualpad::input::BindingManager::GetSingleton();
 
-                    // 遍历所有可能的按键位
                     for (int i = 0; i < 32; ++i) {
                         std::uint32_t buttonMask = (1u << i);
 
                         if (pressed & buttonMask) {
-                            // 构造触发器
+
                             dualpad::input::Trigger trigger;
                             trigger.type = dualpad::input::TriggerType::Button;
                             trigger.code = buttonMask;
 
-                            // 查询是否有绑定
                             auto actionId = bindingManager.GetActionForTrigger(trigger, context);
 
                             if (actionId.has_value()) {
-                                // 找到绑定，执行动作
+
                                 logger::info("[DualPad] Button {:08X} has binding: {}",
                                     buttonMask, actionId.value());
 
                                 dualpad::input::ActionExecutor::GetSingleton().Execute(actionId.value(), context);
 
-                                // 标记这个按键已被处理，不传递给 Skyrim
                                 handledButtons |= buttonMask;
                             }
                         }
                     }
 
-                    // 从按键状态中移除已处理的按键
                     std::uint32_t filteredPressed = pressed & ~handledButtons;
 
                     if (handledButtons != 0) {
                         logger::info("[DualPad] Blocked buttons from Skyrim: {:08X}", handledButtons);
                     }
 
-                    // 只传递未被处理的按键给 SyntheticPadState
                     if (filteredPressed != 0) {
                         dualpad::input::SyntheticPadState::GetSingleton().SetButton(filteredPressed, true);
                     }
                 }
 
                 if (released != 0) {
-                    // 释放按键时也要过滤（如果之前被屏蔽了，就不要发送释放事件）
+
                     std::uint32_t filteredReleased = released & ~handledButtons;
                     if (filteredReleased != 0) {
                         dualpad::input::SyntheticPadState::GetSingleton().SetButton(filteredReleased, false);
@@ -281,7 +269,7 @@ namespace
 
                 prevMask = mask;
 
-                // 处理摇杆
+                // Analog axes continue through the compatibility bridge every frame.
                 const float lx = NormalizeU8(state.lx);
                 const float ly = -NormalizeU8(state.ly);
                 const float rx = NormalizeU8(state.rx);
@@ -295,7 +283,7 @@ namespace
             }
             else if (n < 0) {
                 logger::warn("[DualPad] HID read error, reconnecting...");
-                // 新增：通知 HidOutput 设备已断开
+
                 dualpad::haptics::HidOutput::GetSingleton().SetDevice(nullptr);
 
                 hid_close(dev);

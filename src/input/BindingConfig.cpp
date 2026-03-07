@@ -127,9 +127,9 @@ namespace dualpad::input
         return ParseIniFile(_configPath);
     }
 
+    // Accepts Gesture:Name, Button:Name, or Button:Modifier+Name.
     bool BindingConfig::ParseTrigger(std::string_view triggerStr, Trigger& outTrigger)
     {
-        // 格式: "Gesture:TpLeftPress" 或 "Button:BackLeft" 或 "Button:FnLeft+Triangle"
 
         auto colonPos = triggerStr.find(':');
         if (colonPos == std::string_view::npos) {
@@ -139,7 +139,6 @@ namespace dualpad::input
         auto typeStr = triggerStr.substr(0, colonPos);
         auto codeStr = triggerStr.substr(colonPos + 1);
 
-        // 解析类型
         if (typeStr == "Gesture") {
             outTrigger.type = TriggerType::Gesture;
             outTrigger.code = GestureNameToCode(codeStr);
@@ -149,10 +148,9 @@ namespace dualpad::input
         if (typeStr == "Button") {
             outTrigger.type = TriggerType::Button;
 
-            // 检查是否有组合键
             auto plusPos = codeStr.find('+');
             if (plusPos != std::string_view::npos) {
-                // 组合键: "FnLeft+Triangle"
+
                 auto modifierStr = codeStr.substr(0, plusPos);
                 auto mainStr = codeStr.substr(plusPos + 1);
 
@@ -168,7 +166,6 @@ namespace dualpad::input
                 return true;
             }
 
-            // 单个按键
             outTrigger.code = ButtonNameToCode(codeStr);
             return outTrigger.code != 0;
         }
@@ -178,28 +175,26 @@ namespace dualpad::input
 
     bool BindingConfig::ParseBinding(std::string_view contextStr, std::string_view key, std::string_view value)
     {
-        // 特殊键: Inherit
+
+        // Inherit is parsed but not expanded yet.
         if (key == "Inherit") {
-            // TODO: 实现继承逻辑
+
             logger::info("[DualPad][Config] Context {} inherits from {}", contextStr, value);
             return true;
         }
 
-        // 解析上下文
         auto context = StringToContext(contextStr);
         if (context == InputContext::Unknown) {
             logger::warn("[DualPad][Config] Unknown context: {}", contextStr);
             return false;
         }
 
-        // 解析触发器
         Trigger trigger;
         if (!ParseTrigger(key, trigger)) {
             logger::warn("[DualPad][Config] Invalid trigger: {}", key);
             return false;
         }
 
-        // 创建绑定
         Binding binding;
         binding.trigger = trigger;
         binding.actionId = std::string(value);
@@ -226,10 +221,10 @@ namespace dualpad::input
         std::size_t lineNo = 0;
         std::size_t bindingCount = 0;
 
+        // The parser is intentionally simple because the file format is small and user-editable.
         while (std::getline(ifs, line)) {
             ++lineNo;
 
-            // 去除 BOM
             if (lineNo == 1 && line.size() >= 3 &&
                 static_cast<unsigned char>(line[0]) == 0xEF &&
                 static_cast<unsigned char>(line[1]) == 0xBB &&
@@ -239,19 +234,16 @@ namespace dualpad::input
 
             line = Trim(line);
 
-            // 跳过空行和注释
             if (line.empty() || line[0] == ';' || line[0] == '#') {
                 continue;
             }
 
-            // 解析节
             if (line.front() == '[' && line.back() == ']') {
                 currentSection = Trim(line.substr(1, line.size() - 2));
                 logger::info("[DualPad][Config] Parsing section: [{}]", currentSection);
                 continue;
             }
 
-            // 解析键值对
             auto eqPos = line.find('=');
             if (eqPos == std::string::npos) {
                 logger::warn("[DualPad][Config] Line {}: Invalid format (no '=')", lineNo);

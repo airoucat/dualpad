@@ -3,22 +3,20 @@
 
 namespace dualpad::input::dse
 {
-    // Sony VID/PID
+    // Sony VID/PID values used during HID enumeration.
     inline constexpr std::uint16_t kSonyVid = 0x054C;
     inline constexpr std::uint16_t kPidDualSense = 0x0CE6;
     inline constexpr std::uint16_t kPidDualSenseEdge = 0x0DF2;
 
-    // Report 0x01 按键位定义
     namespace btn
     {
-        // btn0 (buf[8])
+        // Report 0x01 splits buttons across btn0, btn1, and btn2.
         inline constexpr std::uint8_t kDpadMask = 0x0F;
         inline constexpr std::uint8_t kSquare = 0x10;
         inline constexpr std::uint8_t kCross = 0x20;
         inline constexpr std::uint8_t kCircle = 0x40;
         inline constexpr std::uint8_t kTriangle = 0x80;
 
-        // btn1 (buf[9])
         inline constexpr std::uint8_t kL1 = 0x01;
         inline constexpr std::uint8_t kR1 = 0x02;
         inline constexpr std::uint8_t kL2Button = 0x04;
@@ -28,13 +26,12 @@ namespace dualpad::input::dse
         inline constexpr std::uint8_t kL3 = 0x40;
         inline constexpr std::uint8_t kR3 = 0x80;
 
-        // btn2 (buf[10])
         inline constexpr std::uint8_t kPS = 0x01;
         inline constexpr std::uint8_t kTouchpadClick = 0x02;
         inline constexpr std::uint8_t kMic = 0x04;
     }
 
-    // DSE 扩展按键
+    // Edge-specific back and Fn buttons live outside the base pad state.
     enum ExtraBits : std::uint8_t
     {
         kExtraNone = 0,
@@ -60,15 +57,16 @@ namespace dualpad::input::dse
         return out;
     }
 
-    // 触摸点
+    // Touch coordinates use the controller's native 1920x1080 panel space.
     struct TouchPoint
     {
         bool active{ false };
         std::uint8_t id{ 0 };
-        std::uint16_t x{ 0 };  // 0-1919
-        std::uint16_t y{ 0 };  // 0-1079
+        std::uint16_t x{ 0 };
+        std::uint16_t y{ 0 };
     };
 
+    // p4 points to the four-byte packed touch structure inside report 0x01.
     inline TouchPoint ParseTouchPoint(const unsigned char* p4)
     {
         TouchPoint t{};
@@ -80,7 +78,7 @@ namespace dualpad::input::dse
         return t;
     }
 
-    // 完整状态
+    // Parsed subset of the report consumed by the rest of the plugin.
     struct State
     {
         std::uint8_t lx{ 0 }, ly{ 0 }, rx{ 0 }, ry{ 0 };
@@ -93,6 +91,7 @@ namespace dualpad::input::dse
         bool hasTouchData{ false };
     };
 
+    // Report 0x01 is the low-latency gameplay input report.
     inline bool ParseReport01(const unsigned char* buf, int len, State& out)
     {
         if (!buf || len < 11 || buf[0] != 0x01) {

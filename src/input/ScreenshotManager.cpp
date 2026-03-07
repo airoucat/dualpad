@@ -27,7 +27,6 @@ namespace dualpad::utils
     {
         Stop();
 
-        // 释放 WIC Factory
         if (_wicFactory) {
             _wicFactory->Release();
             _wicFactory = nullptr;
@@ -37,13 +36,13 @@ namespace dualpad::utils
     void ScreenshotManager::Start()
     {
         if (_running.exchange(true)) {
-            return;  // 已经在运行
+            return;
         }
 
         logger::info("[ScreenshotMgr] Starting background saver thread");
 
-        // 初始化 WIC Factory
         {
+            // WIC is created once and reused for every save request.
             std::scoped_lock lock(_wicMutex);
             if (!_wicFactory) {
                 HRESULT hr = CoCreateInstance(
@@ -63,16 +62,13 @@ namespace dualpad::utils
             }
         }
 
-        // 启动后台保存线程
         _thread = std::jthread([this](std::stop_token st) {
-            (void)st;  // 标记参数已使用
+            (void)st;
             SaverThread();
             });
 
-        // 等待线程真正启动（添加这个）
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-        // 标记为已初始化（添加这个）
         _initialized = true;
 
         logger::info("[ScreenshotMgr] Initialization complete");
@@ -81,12 +77,11 @@ namespace dualpad::utils
     void ScreenshotManager::Stop()
     {
         if (!_running.exchange(false)) {
-            return;  // 已经停止
+            return;
         }
 
         logger::info("[ScreenshotMgr] Stopping background saver thread");
 
-        // 检查队列中是否还有待保存的截图
         size_t remainingCount = 0;
         {
             std::scoped_lock lock(_mutex);
@@ -96,7 +91,6 @@ namespace dualpad::utils
         if (remainingCount > 0) {
             logger::info("[ScreenshotMgr] Waiting for {} screenshots to be saved...", remainingCount);
 
-            // 等待队列清空（最多等待 10 秒）
             auto startTime = std::chrono::steady_clock::now();
             const auto timeout = std::chrono::seconds(10);
 
@@ -120,15 +114,12 @@ namespace dualpad::utils
             }
         }
 
-        // 通知线程退出
         _cv.notify_all();
 
-        // 等待线程结束
         if (_thread.joinable()) {
             _thread.join();
         }
 
-        // 标记为未初始化
         _initialized = false;
 
         logger::info("[ScreenshotMgr] Background saver thread stopped");
@@ -136,7 +127,7 @@ namespace dualpad::utils
 
     bool ScreenshotManager::CaptureFrame()
     {
-        // 防抖检查（添加这个）
+        // Debounce repeated requests before touching the renderer.
         {
             std::scoped_lock lock(_captureMutex);
             auto now = std::chrono::steady_clock::now();
@@ -148,7 +139,7 @@ namespace dualpad::utils
             }
             _lastCaptureTime = now;
         }
-        // 检查是否已初始化（添加这个）
+
         if (!_initialized) {
             logger::warn("[ScreenshotMgr] Screenshot manager not initialized yet, ignoring request");
             return false;
@@ -159,7 +150,7 @@ namespace dualpad::utils
         }
 
         try {
-            // 获取 Renderer
+
             auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
             if (!renderer) {
                 logger::error("[ScreenshotMgr] Failed to get Renderer");
@@ -175,7 +166,6 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 获取 SwapChain
             auto& renderWindow = data.renderWindows[0];
             auto* swapChain = renderWindow.swapChain;
 
@@ -184,7 +174,6 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 获取后台缓冲区
             ComPtr<REX::W32::ID3D11Texture2D> backBuffer;
             const auto& iid = reinterpret_cast<const REX::W32::GUID&>(__uuidof(REX::W32::ID3D11Texture2D));
             HRESULT hr = swapChain->GetBuffer(0, iid, reinterpret_cast<void**>(backBuffer.GetAddressOf()));
@@ -194,11 +183,9 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 获取纹理描述
             REX::W32::D3D11_TEXTURE2D_DESC desc;
             backBuffer->GetDesc(&desc);
 
-            // 创建 Staging 纹理
             desc.usage = REX::W32::D3D11_USAGE_STAGING;
             desc.bindFlags = 0;
             desc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
@@ -211,10 +198,8 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 复制后台缓冲区到 Staging 纹理
             context->CopyResource(stagingTexture.Get(), backBuffer.Get());
 
-            // 映射纹理读取数据
             REX::W32::D3D11_MAPPED_SUBRESOURCE mapped;
             hr = context->Map(stagingTexture.Get(), 0, REX::W32::D3D11_MAP_READ, 0, &mapped);
             if (FAILED(hr)) {
@@ -222,7 +207,6 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 复制像素数据到内存（快速操作）
             ScreenshotData screenshot;
             screenshot.width = desc.width;
             screenshot.height = desc.height;
@@ -235,14 +219,14 @@ namespace dualpad::utils
 
             context->Unmap(stagingTexture.Get(), 0);
 
-            // 添加到保存队列
             {
+                // The queue is bounded so screenshot hotkeys cannot grow memory without limit.
                 std::scoped_lock lock(_mutex);
-                // 检查队列是否已满
+
                 if (_queue.size() >= _maxQueueSize) {
                     logger::warn("[ScreenshotMgr] Queue is full ({}/{}), dropping oldest screenshot",
                         _queue.size(), _maxQueueSize);
-                    _queue.pop();  // 丢弃最旧的截图
+                    _queue.pop();
                 }
                 _queue.push(std::move(screenshot));
 
@@ -250,7 +234,6 @@ namespace dualpad::utils
                     desc.width, desc.height, _queue.size(), _maxQueueSize);
             }
 
-            // 通知保存线程
             _cv.notify_one();
 
             return true;
@@ -275,13 +258,13 @@ namespace dualpad::utils
         while (_running) {
             ScreenshotData screenshot;
 
-            // 等待队列中有数据
+            // Wait until new work arrives or shutdown begins.
             {
                 std::unique_lock lock(_mutex);
                 _cv.wait(lock, [this] { return !_queue.empty() || !_running; });
 
                 if (!_running && _queue.empty()) {
-                    break;  // 退出线程
+                    break;
                 }
 
                 if (_queue.empty()) {
@@ -292,7 +275,6 @@ namespace dualpad::utils
                 _queue.pop();
             }
 
-            // 保存到文件（耗时操作，不持有锁）
             if (SaveToFile(screenshot)) {
                 logger::info("[ScreenshotMgr] Screenshot saved: {}", screenshot.filename);
             }
@@ -314,10 +296,8 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 获取完整路径
             fs::path fullPath = fs::path(GetSavePath()) / data.filename;
 
-            // 创建 WIC Stream
             ComPtr<IWICStream> stream;
             HRESULT hr = _wicFactory->CreateStream(stream.GetAddressOf());
             if (FAILED(hr)) {
@@ -331,7 +311,6 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 创建 PNG 编码器
             ComPtr<IWICBitmapEncoder> encoder;
             hr = _wicFactory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf());
             if (FAILED(hr)) {
@@ -345,7 +324,6 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 创建帧
             ComPtr<IWICBitmapFrameEncode> frame;
             hr = encoder->CreateNewFrame(frame.GetAddressOf(), nullptr);
             if (FAILED(hr)) {
@@ -372,7 +350,6 @@ namespace dualpad::utils
                 return false;
             }
 
-            // 写入像素数据
             hr = frame->WritePixels(
                 data.height,
                 data.rowPitch,

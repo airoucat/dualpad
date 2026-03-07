@@ -2,8 +2,6 @@
 
 namespace dualpad::input
 {
-    // 安装 XInput IAT hook
-    // 返回 true 表示找到并 hook 了 XInput 函数
-    // 返回 false 表示 Skyrim 不使用 XInput
+    // Installs the temporary XInput compatibility hook into Skyrim's import table.
     bool InstallXInputIATHook();
 }

@@ -42,6 +42,7 @@ namespace dualpad::input
         XInputGetStateFunc g_originalGetState = nullptr;
         XInputSetStateFunc g_originalSetState = nullptr;
 
+        // Synthesizes an XInput pad state from the HID-driven compatibility frame.
         DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
         {
             if (!pState || dwUserIndex != 0) {
@@ -98,6 +99,7 @@ namespace dualpad::input
             return ERROR_SUCCESS;
         }
 
+        // Routes game vibration requests into the native DualSense haptics path.
         DWORD WINAPI HookedXInputSetState(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
         {
             if (dwUserIndex == 0) {
@@ -121,6 +123,7 @@ namespace dualpad::input
             return ERROR_SUCCESS;
         }
 
+        // Rewrites one import address table slot in the Skyrim module.
         bool HookIATEntry(HMODULE hModule, const char* dllName, const char* funcName,
             void* newFunc, void** oldFunc)
         {

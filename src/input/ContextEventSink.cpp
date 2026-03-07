@@ -17,7 +17,6 @@ namespace dualpad::input
     {
         logger::info("[DualPad][ContextSink] Registering event listeners");
 
-        // 注册菜单事件
         auto* ui = RE::UI::GetSingleton();
         if (ui) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(this);
@@ -27,7 +26,6 @@ namespace dualpad::input
             logger::error("[DualPad][ContextSink] Failed to get UI singleton");
         }
 
-        // 注册战斗事件
         auto* combatSource = RE::ScriptEventSourceHolder::GetSingleton();
         if (combatSource) {
             combatSource->AddEventSink<RE::TESCombatEvent>(this);
@@ -37,7 +35,6 @@ namespace dualpad::input
             logger::warn("[DualPad][ContextSink] Failed to get combat event source");
         }
 
-        // 启动每帧更新
         StartPerFrameUpdate();
 
         logger::info("[DualPad][ContextSink] All event listeners registered");
@@ -62,7 +59,7 @@ namespace dualpad::input
         logger::info("[DualPad][ContextSink] All event listeners unregistered");
     }
 
-    // === 菜单事件 ===
+    // Menu events own the authoritative UI context transitions.
     RE::BSEventNotifyControl ContextEventSink::ProcessEvent(
         const RE::MenuOpenCloseEvent* event,
         RE::BSTEventSource<RE::MenuOpenCloseEvent>*)
@@ -83,7 +80,7 @@ namespace dualpad::input
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    // === 战斗事件 ===
+    // Combat events patch over gameplay states that are not visible from menu polling.
     RE::BSEventNotifyControl ContextEventSink::ProcessEvent(
         const RE::TESCombatEvent* event,
         RE::BSTEventSource<RE::TESCombatEvent>*)
@@ -97,8 +94,7 @@ namespace dualpad::input
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        // 检查是否是玩家的战斗事件
-        // 使用 .get() 获取原始指针
+        // Ignore combat updates that do not involve the player.
         if (event->actor.get() != player && event->targetActor.get() != player) {
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -106,12 +102,12 @@ namespace dualpad::input
         auto& contextMgr = ContextManager::GetSingleton();
 
         if (event->newState == RE::ACTOR_COMBAT_STATE::kCombat) {
-            // 进入战斗
+
             logger::info("[DualPad][ContextSink] Player entered combat");
             contextMgr.SetContext(InputContext::Combat);
         }
         else if (event->newState == RE::ACTOR_COMBAT_STATE::kNone) {
-            // 退出战斗
+
             logger::info("[DualPad][ContextSink] Player left combat");
             contextMgr.SetContext(InputContext::Gameplay);
         }
@@ -119,14 +115,13 @@ namespace dualpad::input
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    // === 每帧更新 ===
     void ContextEventSink::StartPerFrameUpdate()
     {
         if (_updateRunning.exchange(true)) {
             return;
         }
 
-        _updateThread = std::jthread([this](std::stop_token) {  // 不使用参数名
+        _updateThread = std::jthread([this](std::stop_token) {
             PerFrameUpdateLoop();
             });
 
@@ -150,10 +145,9 @@ namespace dualpad::input
         using namespace std::chrono_literals;
 
         while (_updateRunning.load()) {
-            // 更新游戏状态上下文
+            // Gameplay-only states such as sneak, riding, or death are sampled here.
             ContextManager::GetSingleton().UpdateGameplayContext();
 
-            // 60 FPS
             std::this_thread::sleep_for(16ms);
         }
     }

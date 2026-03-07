@@ -21,7 +21,7 @@ namespace dualpad::utils
                 logger::warn("[Screenshot] Queue is getting large, screenshots may be delayed");
             }
 
-            return "queued";  // 返回特殊值表示已加入队列
+            return "queued";
         }
         else {
             logger::error("[Screenshot] Failed to capture screenshot");

@@ -9,16 +9,18 @@ namespace dualpad::input
 {
     namespace
     {
+        // Tuned for the DualSense touch surface in native coordinate space.
         constexpr int kSwipeThresholdX = 340;
         constexpr int kSwipeThresholdY = 190;
     }
 
     TouchpadGestureRecognizer::TouchpadGestureRecognizer() = default;
 
+    // Splits the touchpad into left, middle, and right press zones.
     std::uint8_t TouchpadGestureRecognizer::ClassifyRegion(const dse::State& state) const
     {
         if (!state.hasTouchData || !state.touch1.active) {
-            return 2;  // 无触摸时默认中区
+            return 2;
         }
 
         const auto x = state.touch1.x;
@@ -49,12 +51,12 @@ namespace dualpad::input
         const bool clicking = (state.btn2 & dse::btn::kTouchpadClick) != 0;
         const bool touching = state.hasTouchData && state.touch1.active;
 
-        // === 分区点击 ===
         if (!_wasClicking && clicking) {
             _heldRegion = ClassifyRegion(state);
             _wasClicking = true;
 
             if (_tracking) {
+                // A click that starts during a swipe should not also emit a swipe on release.
                 _suppressSwipe = true;
             }
 
@@ -71,7 +73,6 @@ namespace dualpad::input
             _heldRegion = 0;
         }
 
-        // === 滑动 ===
         if (!_wasClicking && touching && !_tracking) {
             _tracking = true;
             _startX = static_cast<int>(state.touch1.x);

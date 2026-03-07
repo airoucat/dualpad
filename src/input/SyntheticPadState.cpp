@@ -55,7 +55,6 @@ namespace dualpad::input
     {
         SyntheticFrame f{};
 
-        // 检查 pulse 是否过期
         const auto expireMs = _pulseExpireMs.load(std::memory_order_acquire);
         if (expireMs > 0 && NowMs() >= expireMs) {
             _down.store(0, std::memory_order_release);

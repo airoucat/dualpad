@@ -70,17 +70,17 @@ namespace dualpad::input
         return std::nullopt;
     }
 
+    // These defaults keep the plugin usable when no INI file is present.
     void BindingManager::InitDefaultBindings()
     {
         logger::info("[DualPad][BindingMgr] Initializing default bindings");
 
-        // Gameplay Ä¬ÈÏ°ó¶¨
         {
             Binding b;
             b.context = InputContext::Gameplay;
             b.actionId = "Game.OpenInventory";
             b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = 0x01000000; // TpLeftPress
+            b.trigger.code = 0x01000000;
             AddBinding(b);
         }
 
@@ -89,7 +89,7 @@ namespace dualpad::input
             b.context = InputContext::Gameplay;
             b.actionId = "Game.OpenMap";
             b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = 0x08000000; // TpSwipeUp
+            b.trigger.code = 0x08000000;
             AddBinding(b);
         }
 
@@ -98,7 +98,7 @@ namespace dualpad::input
             b.context = InputContext::Gameplay;
             b.actionId = "Game.OpenMagic";
             b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = 0x04000000; // TpRightPress
+            b.trigger.code = 0x04000000;
             AddBinding(b);
         }
 
@@ -107,7 +107,7 @@ namespace dualpad::input
             b.context = InputContext::Gameplay;
             b.actionId = "Game.QuickSave";
             b.trigger.type = TriggerType::Button;
-            b.trigger.code = 0x00400000; // BackLeft
+            b.trigger.code = 0x00400000;
             AddBinding(b);
         }
 
@@ -116,7 +116,7 @@ namespace dualpad::input
             b.context = InputContext::Gameplay;
             b.actionId = "Game.QuickLoad";
             b.trigger.type = TriggerType::Button;
-            b.trigger.code = 0x00800000; // BackRight
+            b.trigger.code = 0x00800000;
             AddBinding(b);
         }
 
