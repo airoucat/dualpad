@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "input/BindingManager.h"
+#include "input/mapping/PadEvent.h"
 #include <SKSE/SKSE.h>
 
 namespace logger = SKSE::log;
@@ -31,6 +32,32 @@ namespace dualpad::input
             ctxIt->second.erase(trigger);
         }
     }
+
+    void BindingManager::ClearBindings()
+    {
+        std::scoped_lock lock(_mutex);
+        _bindings.clear();
+    }
+
+    void BindingManager::MergeBindings(InputContext sourceContext, InputContext targetContext, bool overwriteExisting)
+    {
+        std::scoped_lock lock(_mutex);
+
+        const auto sourceIt = _bindings.find(sourceContext);
+        if (sourceIt == _bindings.end()) {
+            return;
+        }
+
+        auto& targetBindings = _bindings[targetContext];
+        for (const auto& [trigger, actionId] : sourceIt->second) {
+            if (!overwriteExisting && targetBindings.contains(trigger)) {
+                continue;
+            }
+
+            targetBindings[trigger] = actionId;
+        }
+    }
+
     std::optional<std::string> BindingManager::GetActionForTrigger(
         const Trigger& trigger,
         InputContext context) const
@@ -80,7 +107,7 @@ namespace dualpad::input
             b.context = InputContext::Gameplay;
             b.actionId = "Game.OpenInventory";
             b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = 0x01000000;
+            b.trigger.code = mapping_codes::kTpLeftPress;
             AddBinding(b);
         }
 
@@ -89,7 +116,7 @@ namespace dualpad::input
             b.context = InputContext::Gameplay;
             b.actionId = "Game.OpenMap";
             b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = 0x08000000;
+            b.trigger.code = mapping_codes::kTpSwipeUp;
             AddBinding(b);
         }
 
@@ -98,7 +125,7 @@ namespace dualpad::input
             b.context = InputContext::Gameplay;
             b.actionId = "Game.OpenMagic";
             b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = 0x04000000;
+            b.trigger.code = mapping_codes::kTpRightPress;
             AddBinding(b);
         }
 

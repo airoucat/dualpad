@@ -18,6 +18,8 @@ namespace dualpad::input
         // Menu navigation actions.
         inline constexpr std::string_view MenuConfirm = "Menu.Confirm";
         inline constexpr std::string_view MenuCancel = "Menu.Cancel";
+        inline constexpr std::string_view MenuScrollUp = "Menu.ScrollUp";
+        inline constexpr std::string_view MenuScrollDown = "Menu.ScrollDown";
         inline constexpr std::string_view MenuPageUp = "Menu.PageUp";
         inline constexpr std::string_view MenuPageDown = "Menu.PageDown";
 

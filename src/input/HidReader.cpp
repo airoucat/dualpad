@@ -3,15 +3,15 @@
 
 #include "input/BindingManager.h"
 #include "input/ActionExecutor.h"
+#include "input/BindingConfig.h"
 #include "input/InputContext.h"
-#include "input/PadProfile.h"
 #include "input/SyntheticPadState.h"
-#include "input/TouchpadGesture.h"
-#include "input/Trigger.h"
 #include "input/hid/DualSenseDevice.h"
 #include "input/legacy/InputCompatBridge.h"
+#include "input/mapping/BindingResolver.h"
+#include "input/mapping/PadEvent.h"
+#include "input/mapping/PadEventGenerator.h"
 #include "input/protocol/DualSenseProtocol.h"
-#include "input/state/PadSnapshot.h"
 #include "input/state/PadStateDebugger.h"
 #include "input/state/PadStateNormalizer.h"
 #include "haptics/HidOutput.h"
@@ -31,82 +31,49 @@ namespace
 
     using namespace std::chrono_literals;
 
-    std::uint32_t GestureToMask(dualpad::input::TouchGesture gesture)
+    std::uint32_t DispatchBoundEvent(
+        const dualpad::input::PadEvent& event,
+        const dualpad::input::BindingResolver& bindingResolver,
+        dualpad::input::InputContext context)
     {
-        const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
-
-        using TG = dualpad::input::TouchGesture;
-        switch (gesture) {
-        case TG::LeftPress:
-            return bits.tpLeftPress;
-        case TG::MidPress:
-            return bits.tpMidPress;
-        case TG::RightPress:
-            return bits.tpRightPress;
-        case TG::SwipeUp:
-            return bits.tpSwipeUp;
-        case TG::SwipeDown:
-            return bits.tpSwipeDown;
-        case TG::SwipeLeft:
-            return bits.tpSwipeLeft;
-        case TG::SwipeRight:
-            return bits.tpSwipeRight;
-        default:
+        const auto resolved = bindingResolver.Resolve(event, context);
+        if (!resolved) {
             return 0;
         }
-    }
 
-    void DispatchGestureBinding(dualpad::input::TouchGesture gesture)
-    {
-        const auto gestureMask = GestureToMask(gesture);
-        if (gesture == dualpad::input::TouchGesture::None || gestureMask == 0) {
-            return;
+        logger::info("[DualPad][Mapping] Event {} mapped to action {}",
+            dualpad::input::ToString(event.type),
+            resolved->actionId);
+        dualpad::input::ActionExecutor::GetSingleton().Execute(resolved->actionId, context);
+
+        if (event.type == dualpad::input::PadEventType::ButtonPress) {
+            return event.code;
         }
 
-        logger::info("[DualPad] Gesture detected: {}", dualpad::input::ToString(gesture));
-        dualpad::input::SyntheticPadState::GetSingleton().PulseButton(gestureMask);
-
-        dualpad::input::Trigger trigger;
-        trigger.type = dualpad::input::TriggerType::Gesture;
-        trigger.code = gestureMask;
-
-        auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
-        auto actionId = dualpad::input::BindingManager::GetSingleton()
-            .GetActionForTrigger(trigger, context);
-
-        if (actionId) {
-            dualpad::input::ActionExecutor::GetSingleton().Execute(*actionId, context);
-        }
+        return 0;
     }
 
-    std::uint32_t DispatchButtonBindings(std::uint32_t pressedMask)
+    std::uint32_t DispatchPadEvents(
+        const dualpad::input::PadEventBuffer& events,
+        const dualpad::input::BindingResolver& bindingResolver)
     {
         std::uint32_t handledButtons = 0;
-        if (pressedMask == 0) {
+        if (events.count == 0) {
             return handledButtons;
         }
 
-        auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
-        auto& bindingManager = dualpad::input::BindingManager::GetSingleton();
+        const auto context = dualpad::input::ContextManager::GetSingleton().GetCurrentContext();
+        for (std::size_t i = 0; i < events.count; ++i) {
+            const auto& event = events[i];
 
-        for (int i = 0; i < 32; ++i) {
-            const std::uint32_t buttonMask = (1u << i);
-            if ((pressedMask & buttonMask) == 0) {
-                continue;
+            if ((event.type == dualpad::input::PadEventType::Gesture ||
+                 event.type == dualpad::input::PadEventType::TouchpadPress ||
+                 event.type == dualpad::input::PadEventType::TouchpadSlide) &&
+                dualpad::input::IsSyntheticPadBitCode(event.code)) {
+                dualpad::input::SyntheticPadState::GetSingleton().PulseButton(event.code);
             }
 
-            dualpad::input::Trigger trigger;
-            trigger.type = dualpad::input::TriggerType::Button;
-            trigger.code = buttonMask;
-
-            auto actionId = bindingManager.GetActionForTrigger(trigger, context);
-            if (!actionId) {
-                continue;
-            }
-
-            logger::info("[DualPad] Button {:08X} has binding: {}", buttonMask, *actionId);
-            dualpad::input::ActionExecutor::GetSingleton().Execute(*actionId, context);
-            handledButtons |= buttonMask;
+            handledButtons |= DispatchBoundEvent(event, bindingResolver, context);
         }
 
         if (handledButtons != 0) {
@@ -126,7 +93,10 @@ namespace
 
         dualpad::input::DualSenseDevice device;
         dualpad::input::PadState previousState{};
-        dualpad::input::TouchpadGestureRecognizer gesture;
+        dualpad::input::PadEventGenerator eventGenerator;
+        dualpad::input::BindingResolver bindingResolver;
+        eventGenerator.GetTouchpadMapper().SetConfig(
+            dualpad::input::BindingConfig::GetSingleton().GetTouchpadConfig());
 
         while (g_running.load(std::memory_order_acquire)) {
             if (!device.IsOpen()) {
@@ -136,7 +106,7 @@ namespace
                 }
 
                 previousState = {};
-                gesture.Reset();
+                eventGenerator.Reset();
                 dualpad::haptics::HidOutput::GetSingleton().SetDevice(device.GetNativeHandle());
             }
 
@@ -170,18 +140,17 @@ namespace
             dualpad::input::LogStateSummary(currentState);
 
             const auto compatFrame = dualpad::input::BuildCompatFrame(currentState);
-            currentState.buttons.digitalMask = compatFrame.buttonMask;
+            dualpad::input::PadEventBuffer events{};
+            eventGenerator.Generate(previousState, currentState, events);
 
-            const auto snapshot = dualpad::input::MakePadSnapshot(previousState, currentState);
+            const auto handledButtons = DispatchPadEvents(events, bindingResolver);
 
-            const auto detectedGesture = gesture.Update(currentState);
-            if (detectedGesture != dualpad::input::TouchGesture::None) {
-                DispatchGestureBinding(detectedGesture);
-            }
-
-            const auto handledButtons = DispatchButtonBindings(snapshot.pressedMask);
-            const auto filteredPressed = snapshot.pressedMask & ~handledButtons;
-            const auto filteredReleased = snapshot.releasedMask & ~handledButtons;
+            const auto previousMask = previousState.buttons.digitalMask;
+            const auto currentMask = compatFrame.buttonMask;
+            const auto pressedMask = currentMask & ~previousMask;
+            const auto releasedMask = previousMask & ~currentMask;
+            const auto filteredPressed = pressedMask & ~handledButtons;
+            const auto filteredReleased = releasedMask & ~handledButtons;
 
             if (filteredPressed != 0) {
                 dualpad::input::SyntheticPadState::GetSingleton().SetButton(filteredPressed, true);

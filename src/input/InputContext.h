@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -142,12 +143,22 @@ namespace dualpad::input
         void SetContext(InputContext context);
 
     private:
+        struct MenuContextEntry
+        {
+            std::string menuName;
+            InputContext context{ InputContext::Menu };
+        };
+
         ContextManager() = default;
 
         InputContext _currentContext{ InputContext::Gameplay };
+        InputContext _baseContext{ InputContext::Gameplay };
         std::vector<InputContext> _contextStack;
+        std::vector<MenuContextEntry> _menuStack;
 
         InputContext MenuNameToContext(std::string_view menuName) const;
         InputContext DetectGameplayContext() const;
+        void RefreshCurrentContext();
+        bool ShouldTrackMenu(std::string_view menuName) const;
     };
 }

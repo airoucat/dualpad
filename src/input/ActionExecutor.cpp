@@ -1,7 +1,9 @@
 #include "pch.h"
 #include "input/ActionExecutor.h"
 #include "input/Action.h"
+#include "input/PadProfile.h"
 #include "input/Screenshot.h"
+#include "input/SyntheticPadState.h"
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 
@@ -9,6 +11,19 @@ namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
+    namespace
+    {
+        void PulseVirtualButton(std::uint32_t bit, std::string_view reason)
+        {
+            if (!bit) {
+                return;
+            }
+
+            SyntheticPadState::GetSingleton().PulseButton(bit);
+            logger::info("[DualPad][Executor] Pulsed virtual button 0x{:08X} for {}", bit, reason);
+        }
+    }
+
     ActionExecutor& ActionExecutor::GetSingleton()
     {
         static ActionExecutor instance;
@@ -229,12 +244,30 @@ namespace dualpad::input
         }
 
         if (actionId == actions::QuickSave) {
-            (void)actionId;
+            auto* saveLoadManager = RE::BGSSaveLoadManager::GetSingleton();
+            if (!saveLoadManager) {
+                logger::warn("[DualPad][Executor] SaveLoad manager not found");
+                return false;
+            }
+
+            saveLoadManager->Save("DualPad_QuickSave");
+            logger::info("[DualPad][Executor] Requested quick save");
             return true;
         }
 
         if (actionId == actions::QuickLoad) {
-            (void)actionId;
+            auto* saveLoadManager = RE::BGSSaveLoadManager::GetSingleton();
+            if (!saveLoadManager) {
+                logger::warn("[DualPad][Executor] SaveLoad manager not found");
+                return false;
+            }
+
+            if (!saveLoadManager->LoadMostRecentSaveGame()) {
+                logger::warn("[DualPad][Executor] No recent save available for quick load");
+                return false;
+            }
+
+            logger::info("[DualPad][Executor] Requested quick load");
             return true;
         }
 
@@ -243,12 +276,90 @@ namespace dualpad::input
 
     bool ActionExecutor::ExecuteGameplayAction(std::string_view actionId)
     {
+        const auto& bits = GetPadBits(GetActivePadProfile());
+
+        if (actionId == actions::Jump) {
+            PulseVirtualButton(bits.jump, actionId);
+            return true;
+        }
+        if (actionId == actions::Activate) {
+            PulseVirtualButton(bits.activate, actionId);
+            return true;
+        }
+        if (actionId == actions::Sprint) {
+            PulseVirtualButton(bits.sprint, actionId);
+            return true;
+        }
+        if (actionId == actions::Attack) {
+            PulseVirtualButton(bits.attack, actionId);
+            return true;
+        }
+        if (actionId == actions::Sneak) {
+            PulseVirtualButton(bits.sneak, actionId);
+            return true;
+        }
+        if (actionId == actions::Shout) {
+            PulseVirtualButton(bits.r2Button, actionId);
+            return true;
+        }
+
         return false;
     }
 
     bool ActionExecutor::ExecuteMenuAction(std::string_view actionId, InputContext context)
     {
         (void)context;
+
+        const auto& bits = GetPadBits(GetActivePadProfile());
+
+        if (actionId == actions::MenuConfirm || actionId == "Console.Execute"sv) {
+            PulseVirtualButton(bits.cross, actionId);
+            return true;
+        }
+
+        if (actionId == actions::MenuCancel || actionId == "Book.Close"sv) {
+            PulseVirtualButton(bits.circle, actionId);
+            return true;
+        }
+
+        if (actionId == actions::MenuScrollUp ||
+            actionId == "Dialogue.PreviousOption"sv ||
+            actionId == "Favorites.PreviousItem"sv ||
+            actionId == "Console.HistoryUp"sv) {
+            PulseVirtualButton(bits.dpadUp, actionId);
+            return true;
+        }
+
+        if (actionId == actions::MenuScrollDown ||
+            actionId == "Dialogue.NextOption"sv ||
+            actionId == "Favorites.NextItem"sv ||
+            actionId == "Console.HistoryDown"sv) {
+            PulseVirtualButton(bits.dpadDown, actionId);
+            return true;
+        }
+
+        if (actionId == actions::MenuPageUp ||
+            actionId == "Book.PreviousPage"sv) {
+            PulseVirtualButton(bits.l1, actionId);
+            return true;
+        }
+
+        if (actionId == actions::MenuPageDown ||
+            actionId == "Book.NextPage"sv) {
+            PulseVirtualButton(bits.r1, actionId);
+            return true;
+        }
+
+        if (actionId == "Menu.SortByName"sv) {
+            PulseVirtualButton(bits.l1, actionId);
+            return true;
+        }
+
+        if (actionId == "Menu.SortByValue"sv) {
+            PulseVirtualButton(bits.r1, actionId);
+            return true;
+        }
+
         return false;
     }
 }

@@ -3,10 +3,16 @@
 #include "input/BindingManager.h"
 #include "input/InputContext.h"
 #include "input/Trigger.h"
+#include "input/mapping/PadEvent.h"
+#include "input/mapping/TouchpadMapper.h"
 
 #include <SKSE/SKSE.h>
+#include <cstdlib>
 #include <fstream>
+#include <functional>
+#include <optional>
 #include <sstream>
+#include <unordered_map>
 
 namespace logger = SKSE::log;
 
@@ -55,13 +61,19 @@ namespace dualpad::input
 
         std::uint32_t GestureNameToCode(std::string_view name)
         {
-            if (name == "TpLeftPress") return 0x01000000;
-            if (name == "TpMidPress") return 0x02000000;
-            if (name == "TpRightPress") return 0x04000000;
-            if (name == "TpSwipeUp") return 0x08000000;
-            if (name == "TpSwipeDown") return 0x10000000;
-            if (name == "TpSwipeLeft") return 0x20000000;
-            if (name == "TpSwipeRight") return 0x40000000;
+            using namespace mapping_codes;
+            if (name == "TpLeftPress") return kTpLeftPress;
+            if (name == "TpMidPress" || name == "TpCenterPress") return kTpMidPress;
+            if (name == "TpRightPress") return kTpRightPress;
+            if (name == "TpSwipeUp") return kTpSwipeUp;
+            if (name == "TpSwipeDown") return kTpSwipeDown;
+            if (name == "TpSwipeLeft") return kTpSwipeLeft;
+            if (name == "TpSwipeRight") return kTpSwipeRight;
+            if (name == "TpEdgeTopPress") return kTpEdgeTopPress;
+            if (name == "TpEdgeBottomPress") return kTpEdgeBottomPress;
+            if (name == "TpEdgeLeftPress") return kTpEdgeLeftPress;
+            if (name == "TpEdgeRightPress") return kTpEdgeRightPress;
+            if (name == "TpWholePress") return kTpWholePress;
             return 0;
         }
 
@@ -92,6 +104,40 @@ namespace dualpad::input
             if (name == "BackRight") return 0x00800000;
             return 0;
         }
+
+        std::uint32_t AxisNameToCode(std::string_view name)
+        {
+            if (name == "LeftStickX") return static_cast<std::uint32_t>(PadAxisId::LeftStickX);
+            if (name == "LeftStickY") return static_cast<std::uint32_t>(PadAxisId::LeftStickY);
+            if (name == "RightStickX") return static_cast<std::uint32_t>(PadAxisId::RightStickX);
+            if (name == "RightStickY") return static_cast<std::uint32_t>(PadAxisId::RightStickY);
+            if (name == "LeftTrigger") return static_cast<std::uint32_t>(PadAxisId::LeftTrigger);
+            if (name == "RightTrigger") return static_cast<std::uint32_t>(PadAxisId::RightTrigger);
+            return 0;
+        }
+
+        bool ParseFloat(std::string_view text, float& outValue)
+        {
+            std::string buffer(text);
+            char* end = nullptr;
+            const auto value = std::strtof(buffer.c_str(), &end);
+            if (end == buffer.c_str() || end == nullptr || *end != '\0') {
+                return false;
+            }
+
+            outValue = value;
+            return true;
+        }
+
+        std::optional<InputContext> ResolveContextName(std::string_view str)
+        {
+            const auto context = StringToContext(str);
+            if (context == InputContext::Unknown) {
+                return std::nullopt;
+            }
+
+            return context;
+        }
     }
 
     BindingConfig& BindingConfig::GetSingleton()
@@ -105,11 +151,18 @@ namespace dualpad::input
         return "Data/SKSE/Plugins/DualPadBindings.ini";
     }
 
+    TouchpadConfig BindingConfig::GetTouchpadConfig() const
+    {
+        return _touchpadConfig;
+    }
+
     bool BindingConfig::Load(const std::filesystem::path& path)
     {
         _configPath = path.empty() ? GetDefaultPath() : path;
 
         logger::info("[DualPad][Config] Loading bindings from: {}", _configPath.string());
+        BindingManager::GetSingleton().ClearBindings();
+        _touchpadConfig = {};
 
         if (!std::filesystem::exists(_configPath)) {
             logger::warn("[DualPad][Config] Config file not found, using defaults");
@@ -125,10 +178,12 @@ namespace dualpad::input
         if (_configPath.empty()) {
             return Load();
         }
+        BindingManager::GetSingleton().ClearBindings();
+        _touchpadConfig = {};
         return ParseIniFile(_configPath);
     }
 
-    // Accepts Gesture:Name, Button:Name, or Button:Modifier+Name.
+    // Accepts Gesture:Name, Button:Name, Button:Modifier+Name, Combo:A+B, Hold:Name, Tap:Name, or Axis:Name.
     bool BindingConfig::ParseTrigger(std::string_view triggerStr, Trigger& outTrigger)
     {
 
@@ -146,8 +201,9 @@ namespace dualpad::input
             return outTrigger.code != 0;
         }
 
-        if (typeStr == "Button") {
-            outTrigger.type = TriggerType::Button;
+        const auto parseButtonLikeTrigger = [&](TriggerType type) {
+            outTrigger.type = type;
+            outTrigger.modifiers.clear();
 
             auto plusPos = codeStr.find('+');
             if (plusPos != std::string_view::npos) {
@@ -169,6 +225,67 @@ namespace dualpad::input
 
             outTrigger.code = ButtonNameToCode(codeStr);
             return outTrigger.code != 0;
+            };
+
+        if (typeStr == "Button") {
+            return parseButtonLikeTrigger(TriggerType::Button);
+        }
+
+        if (typeStr == "Combo") {
+            return parseButtonLikeTrigger(TriggerType::Combo);
+        }
+
+        if (typeStr == "Hold") {
+            return parseButtonLikeTrigger(TriggerType::Hold);
+        }
+
+        if (typeStr == "Tap") {
+            return parseButtonLikeTrigger(TriggerType::Tap);
+        }
+
+        if (typeStr == "Axis") {
+            outTrigger.type = TriggerType::Axis;
+            outTrigger.modifiers.clear();
+            outTrigger.code = AxisNameToCode(codeStr);
+            return outTrigger.code != 0;
+        }
+
+        return false;
+    }
+
+    bool BindingConfig::ParseTouchpadSetting(std::string_view key, std::string_view value)
+    {
+        if (key == "Mode") {
+            if (value == "LeftCenterRight" || value == "LCR") {
+                _touchpadConfig.mode = TouchpadMode::LeftCenterRight;
+                return true;
+            }
+            if (value == "Edge") {
+                _touchpadConfig.mode = TouchpadMode::Edge;
+                return true;
+            }
+            if (value == "Whole") {
+                _touchpadConfig.mode = TouchpadMode::Whole;
+                return true;
+            }
+            if (value == "Disabled") {
+                _touchpadConfig.mode = TouchpadMode::Disabled;
+                return true;
+            }
+
+            return false;
+        }
+
+        if (key == "EdgeThreshold") {
+            return ParseFloat(value, _touchpadConfig.edgeThreshold);
+        }
+
+        if (key == "LeftRightBoundary") {
+            return ParseFloat(value, _touchpadConfig.leftRightBoundary);
+        }
+
+        if (key == "SlideThreshold") {
+            return ParseFloat(value, _touchpadConfig.slideThreshold);
         }
 
         return false;
@@ -176,14 +293,6 @@ namespace dualpad::input
 
     bool BindingConfig::ParseBinding(std::string_view contextStr, std::string_view key, std::string_view value)
     {
-
-        // Inherit is parsed but not expanded yet.
-        if (key == "Inherit") {
-
-            logger::info("[DualPad][Config] Context {} inherits from {}", contextStr, value);
-            return true;
-        }
-
         auto context = StringToContext(contextStr);
         if (context == InputContext::Unknown) {
             logger::warn("[DualPad][Config] Unknown context: {}", contextStr);
@@ -221,6 +330,7 @@ namespace dualpad::input
         std::string line;
         std::size_t lineNo = 0;
         std::size_t bindingCount = 0;
+        std::unordered_map<InputContext, InputContext> inheritMap;
 
         // The parser is intentionally simple because the file format is small and user-editable.
         while (std::getline(ifs, line)) {
@@ -263,11 +373,66 @@ namespace dualpad::input
                 continue;
             }
 
+            if (currentSection == "Touchpad") {
+                if (!ParseTouchpadSetting(key, value)) {
+                    logger::warn("[DualPad][Config] Invalid touchpad setting: {}={}", key, value);
+                }
+                continue;
+            }
+
+            if (key == "Inherit") {
+                const auto child = ResolveContextName(currentSection);
+                const auto parent = ResolveContextName(value);
+                if (!child || !parent) {
+                    logger::warn("[DualPad][Config] Invalid inherit rule: [{}] Inherit={}", currentSection, value);
+                    continue;
+                }
+
+                inheritMap[*child] = *parent;
+                logger::info("[DualPad][Config] Context {} inherits from {}", currentSection, value);
+                continue;
+            }
+
             if (ParseBinding(currentSection, key, value)) {
                 ++bindingCount;
             }
         }
 
+        std::unordered_map<InputContext, std::uint8_t> visitState;
+        std::function<void(InputContext)> applyInheritance = [&](InputContext child) {
+            const auto state = visitState[child];
+            if (state == 2) {
+                return;
+            }
+            if (state == 1) {
+                logger::warn("[DualPad][Config] Inheritance cycle detected at context {}", ToString(child));
+                return;
+            }
+
+            visitState[child] = 1;
+
+            const auto inheritIt = inheritMap.find(child);
+            if (inheritIt == inheritMap.end()) {
+                visitState[child] = 2;
+                return;
+            }
+
+            applyInheritance(inheritIt->second);
+            BindingManager::GetSingleton().MergeBindings(inheritIt->second, child, false);
+            visitState[child] = 2;
+        };
+
+        for (const auto& [child, parent] : inheritMap) {
+            (void)parent;
+            applyInheritance(child);
+        }
+
+        logger::info(
+            "[DualPad][Config] Touchpad mode={} edgeThreshold={:.2f} leftRightBoundary={:.2f} slideThreshold={:.2f}",
+            ToString(_touchpadConfig.mode),
+            _touchpadConfig.edgeThreshold,
+            _touchpadConfig.leftRightBoundary,
+            _touchpadConfig.slideThreshold);
         logger::info("[DualPad][Config] Loaded {} bindings from {}", bindingCount, path.string());
         return bindingCount > 0;
     }

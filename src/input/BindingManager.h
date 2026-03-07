@@ -23,6 +23,8 @@ namespace dualpad::input
 
         void AddBinding(const Binding& binding);
         void RemoveBinding(const Trigger& trigger, InputContext context);
+        void ClearBindings();
+        void MergeBindings(InputContext sourceContext, InputContext targetContext, bool overwriteExisting = false);
 
         std::optional<std::string> GetActionForTrigger(
             const Trigger& trigger,
