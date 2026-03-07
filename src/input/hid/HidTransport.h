@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
+#include <string_view>
 
 struct hid_device_;
 using hid_device = struct hid_device_;
@@ -20,7 +22,7 @@ namespace dualpad::input
         Error
     };
 
-    // Thin hidapi wrapper that owns the native handle and reports transport hints.
+    // Thin hidapi wrapper that owns the native handle and exposes raw device metadata.
     class HidTransport
     {
     public:
@@ -33,13 +35,12 @@ namespace dualpad::input
 
         ReadStatus Read(std::span<std::uint8_t> buffer, std::size_t& outBytes);
 
-        TransportType GetTransportType() const;
-        void SetTransportType(TransportType transport);
         hid_device* GetNativeHandle() const;
+        std::string_view GetDevicePath() const;
 
     private:
         hid_device* _device{ nullptr };
-        TransportType _transport{ TransportType::Unknown };
+        std::string _devicePath{};
         std::uint16_t _vendorId{ 0 };
         std::uint16_t _productId{ 0 };
     };

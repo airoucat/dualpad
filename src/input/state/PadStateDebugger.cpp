@@ -82,8 +82,9 @@ namespace dualpad::input
         }
 
         logger::debug(
-            "[DualPad][Input][Packet] transport={} report=0x{:02X} size={} seq={} tsUs={}",
+            "[DualPad][Input][Packet] transport={} confidence={} report=0x{:02X} size={} seq={} tsUs={}",
             ToString(packet.transport),
+            ToString(packet.transportConfidence),
             packet.reportId,
             packet.size,
             packet.sequence,
@@ -122,6 +123,27 @@ namespace dualpad::input
             buffer.data());
     }
 
+    void LogParseSuccess(const PadState& state)
+    {
+        if (!IsInputDebugLogEnabled(InputDebugLog::PacketSummary)) {
+            return;
+        }
+
+        if (state.transport == TransportType::Bluetooth && state.reportId == 0x01) {
+            logger::debug("[DualPad][Input][Parse] Parsed DualSense BT report 0x01 (partial support)");
+            return;
+        }
+
+        if (state.transport == TransportType::Bluetooth && state.reportId == 0x31) {
+            logger::debug("[DualPad][Input][Parse] Parsed DualSense BT report 0x31");
+            return;
+        }
+
+        if (state.transport == TransportType::USB && state.reportId == 0x01) {
+            logger::debug("[DualPad][Input][Parse] Parsed DualSense USB report 0x01");
+        }
+    }
+
     void LogStateSummary(const PadState& state)
     {
         if (!IsInputDebugLogEnabled(InputDebugLog::StateSummary)) {
@@ -129,8 +151,9 @@ namespace dualpad::input
         }
 
         logger::debug(
-            "[DualPad][Input][State] transport={} report=0x{:02X} mask=0x{:08X} ls=({:.3f},{:.3f}) rs=({:.3f},{:.3f}) lt={:.3f} rt={:.3f} tp1={}({},{}) tp2={}({},{}) imu={} battery={} valid={}",
+            "[DualPad][Input][State] transport={} completeness={} report=0x{:02X} mask=0x{:08X} ls=({:.3f},{:.3f}) rs=({:.3f},{:.3f}) lt={:.3f} rt={:.3f} tp1={}({},{}) tp2={}({},{}) imu={} battery={} valid={}",
             ToString(state.transport),
+            ToString(state.parseCompleteness),
             state.reportId,
             state.buttons.digitalMask,
             state.leftStick.x,

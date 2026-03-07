@@ -5,13 +5,40 @@
 
 #include "input/state/PadStateDebugger.h"
 
+#include <algorithm>
+#include <cctype>
+#include <string>
+
 namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
     namespace
     {
-        TransportType InferTransport(const RawInputPacket& packet)
+        TransportType GuessTransportFromPath(std::string_view path)
+        {
+            if (path.empty()) {
+                return TransportType::Unknown;
+            }
+
+            std::string lowered(path);
+            std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+
+            if (lowered.find("bth") != std::string::npos ||
+                lowered.find("bluetooth") != std::string::npos) {
+                return TransportType::Bluetooth;
+            }
+
+            if (lowered.find("usb") != std::string::npos) {
+                return TransportType::USB;
+            }
+
+            return TransportType::Unknown;
+        }
+
+        TransportType VerifyTransportFromPacket(const RawInputPacket& packet)
         {
             if (packet.reportId == 0x31) {
                 return TransportType::Bluetooth;
@@ -31,7 +58,12 @@ namespace dualpad::input
 
     bool DualSenseDevice::Open()
     {
-        return _transport.OpenFirstDualSense();
+        if (!_transport.OpenFirstDualSense()) {
+            return false;
+        }
+
+        ResolveTransportFromPathHint();
+        return true;
     }
 
     void DualSenseDevice::Close()
@@ -39,6 +71,7 @@ namespace dualpad::input
         _transport.Close();
         _lastReadStatus = ReadStatus::None;
         _sequence = 0;
+        _transportResolution = {};
     }
 
     bool DualSenseDevice::IsOpen() const
@@ -54,21 +87,28 @@ namespace dualpad::input
             return false;
         }
 
-        outPacket.transport = _transport.GetTransportType();
+        outPacket.transport = _transportResolution.type;
+        outPacket.transportConfidence = _transportResolution.confidence;
         outPacket.reportId = _buffer[0];
         outPacket.data = _buffer.data();
         outPacket.size = bytesRead;
         outPacket.timestampUs = CaptureInputTimestampUs();
         outPacket.sequence = ++_sequence;
 
-        MaybeInferTransport(outPacket);
-        outPacket.transport = _transport.GetTransportType();
+        MaybeVerifyTransport(outPacket);
+        outPacket.transport = _transportResolution.type;
+        outPacket.transportConfidence = _transportResolution.confidence;
         return true;
     }
 
     TransportType DualSenseDevice::GetTransportType() const
     {
-        return _transport.GetTransportType();
+        return _transportResolution.type;
+    }
+
+    const TransportResolution& DualSenseDevice::GetTransportResolution() const
+    {
+        return _transportResolution;
     }
 
     ReadStatus DualSenseDevice::GetLastReadStatus() const
@@ -81,18 +121,51 @@ namespace dualpad::input
         return _transport.GetNativeHandle();
     }
 
-    void DualSenseDevice::MaybeInferTransport(const RawInputPacket& packet)
+    void DualSenseDevice::ResolveTransportFromPathHint()
     {
-        if (_transport.GetTransportType() != TransportType::Unknown) {
+        const auto hinted = GuessTransportFromPath(_transport.GetDevicePath());
+        if (hinted == TransportType::Unknown) {
+            _transportResolution = {};
+            logger::info("[DualPad][HID] Transport hint unavailable from device path");
             return;
         }
 
-        const auto inferred = InferTransport(packet);
-        if (inferred == TransportType::Unknown) {
+        _transportResolution.type = hinted;
+        _transportResolution.confidence = TransportConfidence::PathHint;
+        logger::info(
+            "[DualPad][HID] Transport hint from device path: {} ({})",
+            ToString(_transportResolution.type),
+            ToString(_transportResolution.confidence));
+    }
+
+    void DualSenseDevice::MaybeVerifyTransport(const RawInputPacket& packet)
+    {
+        if (_transportResolution.confidence == TransportConfidence::PacketVerified) {
             return;
         }
 
-        logger::info("[DualPad][HID] Transport inferred from report stream: {}", ToString(inferred));
-        _transport.SetTransportType(inferred);
+        const auto verified = VerifyTransportFromPacket(packet);
+        if (verified == TransportType::Unknown) {
+            return;
+        }
+
+        if (_transportResolution.confidence == TransportConfidence::PathHint &&
+            _transportResolution.type != TransportType::Unknown &&
+            _transportResolution.type != verified) {
+            logger::warn(
+                "[DualPad][HID] Transport hint conflict: hint={} verified={} report=0x{:02X} size={}",
+                ToString(_transportResolution.type),
+                ToString(verified),
+                packet.reportId,
+                packet.size);
+        }
+
+        _transportResolution.type = verified;
+        _transportResolution.confidence = TransportConfidence::PacketVerified;
+        logger::info(
+            "[DualPad][HID] Transport verified from report 0x{:02X} size={} -> {}",
+            packet.reportId,
+            packet.size,
+            ToString(_transportResolution.type));
     }
 }

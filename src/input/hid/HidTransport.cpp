@@ -5,8 +5,6 @@
 #include <hidapi/hidapi.h>
 
 #include <SKSE/SKSE.h>
-#include <algorithm>
-#include <cctype>
 #include <string>
 
 namespace logger = SKSE::log;
@@ -38,28 +36,6 @@ namespace dualpad::input
             return out;
         }
 
-        TransportType GuessTransportFromPath(const char* path)
-        {
-            if (!path) {
-                return TransportType::Unknown;
-            }
-
-            std::string lowered(path);
-            std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) {
-                return static_cast<char>(std::tolower(c));
-            });
-
-            if (lowered.find("bth") != std::string::npos ||
-                lowered.find("bluetooth") != std::string::npos) {
-                return TransportType::Bluetooth;
-            }
-
-            if (lowered.find("usb") != std::string::npos) {
-                return TransportType::USB;
-            }
-
-            return TransportType::Unknown;
-        }
     }
 
     bool HidTransport::InitializeApi()
@@ -95,13 +71,12 @@ namespace dualpad::input
                 if (candidate) {
                     hid_set_nonblocking(candidate, 1);
                     _device = candidate;
-                    _transport = GuessTransportFromPath(current->path);
+                    _devicePath = current->path;
                     _vendorId = current->vendor_id;
                     _productId = current->product_id;
 
                     logger::info(
-                        "[DualPad][HID] Device opened transport={} vid=0x{:04X} pid=0x{:04X}",
-                        ToString(_transport),
+                        "[DualPad][HID] Device opened vid=0x{:04X} pid=0x{:04X}",
                         _vendorId,
                         _productId);
                     hid_free_enumeration(infos);
@@ -124,7 +99,7 @@ namespace dualpad::input
 
         hid_close(_device);
         _device = nullptr;
-        _transport = TransportType::Unknown;
+        _devicePath.clear();
         _vendorId = 0;
         _productId = 0;
     }
@@ -155,18 +130,13 @@ namespace dualpad::input
         return ReadStatus::Disconnected;
     }
 
-    TransportType HidTransport::GetTransportType() const
-    {
-        return _transport;
-    }
-
-    void HidTransport::SetTransportType(TransportType transport)
-    {
-        _transport = transport;
-    }
-
     hid_device* HidTransport::GetNativeHandle() const
     {
         return _device;
+    }
+
+    std::string_view HidTransport::GetDevicePath() const
+    {
+        return _devicePath;
     }
 }

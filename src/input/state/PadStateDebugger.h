@@ -20,6 +20,7 @@ namespace dualpad::input
 
     void LogPacketSummary(const RawInputPacket& packet);
     void LogPacketHexDump(const RawInputPacket& packet);
+    void LogParseSuccess(const PadState& state);
     void LogStateSummary(const PadState& state);
     void LogParseFailure(const RawInputPacket& packet, std::string_view reason);
 }

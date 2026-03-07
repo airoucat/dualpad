@@ -165,6 +165,7 @@ namespace
                 continue;
             }
 
+            dualpad::input::LogParseSuccess(currentState);
             dualpad::input::NormalizePadState(currentState);
             dualpad::input::LogStateSummary(currentState);
 

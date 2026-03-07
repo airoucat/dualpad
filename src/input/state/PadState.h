@@ -6,6 +6,22 @@
 
 namespace dualpad::input
 {
+    enum class ParseCompleteness : std::uint8_t
+    {
+        Full,
+        Partial
+    };
+
+    inline constexpr std::string_view ToString(ParseCompleteness completeness)
+    {
+        switch (completeness) {
+        case ParseCompleteness::Partial:
+            return "Partial";
+        default:
+            return "Full";
+        }
+    }
+
     struct TouchPointState
     {
         bool active{ false };
@@ -54,6 +70,7 @@ namespace dualpad::input
         std::uint8_t reportId{ 0 };
         std::uint64_t timestampUs{ 0 };
         std::uint64_t sequence{ 0 };
+        ParseCompleteness parseCompleteness{ ParseCompleteness::Full };
 
         PadButtons buttons{};
         StickState leftStick{};

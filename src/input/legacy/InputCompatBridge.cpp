@@ -3,11 +3,14 @@
 
 namespace dualpad::input
 {
+    // Keep the compatibility bridge as a thin adapter only. When the mapping layer is
+    // rebuilt, this translation should shrink further or disappear entirely.
     std::uint32_t BuildLegacyButtonMask(const PadState& state)
     {
         return state.buttons.digitalMask;
     }
 
+    // Intentionally forwards only the fields the existing XInput shim consumes today.
     CompatFrame BuildCompatFrame(const PadState& state)
     {
         CompatFrame frame{};
