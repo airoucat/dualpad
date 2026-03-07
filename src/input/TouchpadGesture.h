@@ -1,5 +1,5 @@
 #pragma once
-#include "input/DualSenseProtocol.h"
+#include "input/state/PadState.h"
 #include <cstdint>
 
 namespace dualpad::input
@@ -37,7 +37,7 @@ namespace dualpad::input
         TouchpadGestureRecognizer();
 
         // Returns one gesture edge for the latest touch update.
-        TouchGesture Update(const dse::State& state);
+        TouchGesture Update(const PadState& state);
 
         void Reset();
 
@@ -52,7 +52,7 @@ namespace dualpad::input
         int _lastX{ 0 }, _lastY{ 0 };
         bool _suppressSwipe{ false };
 
-        std::uint8_t ClassifyRegion(const dse::State& state) const;
+        std::uint8_t ClassifyRegion(const PadState& state) const;
         TouchGesture EvaluateSwipe() const;
     };
 }

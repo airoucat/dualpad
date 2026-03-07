@@ -17,9 +17,9 @@ namespace dualpad::input
     TouchpadGestureRecognizer::TouchpadGestureRecognizer() = default;
 
     // Splits the touchpad into left, middle, and right press zones.
-    std::uint8_t TouchpadGestureRecognizer::ClassifyRegion(const dse::State& state) const
+    std::uint8_t TouchpadGestureRecognizer::ClassifyRegion(const PadState& state) const
     {
-        if (!state.hasTouchData || !state.touch1.active) {
+        if (!state.touch1.active) {
             return 2;
         }
 
@@ -46,10 +46,10 @@ namespace dualpad::input
         }
     }
 
-    TouchGesture TouchpadGestureRecognizer::Update(const dse::State& state)
+    TouchGesture TouchpadGestureRecognizer::Update(const PadState& state)
     {
-        const bool clicking = (state.btn2 & dse::btn::kTouchpadClick) != 0;
-        const bool touching = state.hasTouchData && state.touch1.active;
+        const bool clicking = state.buttons.touchpadClick;
+        const bool touching = state.touch1.active;
 
         if (!_wasClicking && clicking) {
             _heldRegion = ClassifyRegion(state);

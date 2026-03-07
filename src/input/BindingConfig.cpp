@@ -80,7 +80,8 @@ namespace dualpad::input
             if (name == "L3") return 0x00000400;
             if (name == "R3") return 0x00000800;
             if (name == "PS") return 0x00001000;
-            if (name == "Mic") return 0x00002000;
+            if (name == "Mute" || name == "Mic") return 0x00002000;
+            if (name == "TouchpadClick") return 0x00004000;
             if (name == "DpadUp") return 0x00010000;
             if (name == "DpadDown") return 0x00020000;
             if (name == "DpadLeft") return 0x00040000;
