@@ -1,5 +1,5 @@
 #pragma once
-#include "input/DualSenseProtocol.h"
+#include "input/state/PadState.h"
 #include <cstdint>
 
 namespace dualpad::input
@@ -30,28 +30,29 @@ namespace dualpad::input
         }
     }
 
+    // Converts raw touch data into click regions and coarse swipe directions.
     class TouchpadGestureRecognizer
     {
     public:
         TouchpadGestureRecognizer();
 
-        // 每帧调用，返回识别到的手势
-        TouchGesture Update(const dse::State& state);
+        // Returns one gesture edge for the latest touch update.
+        TouchGesture Update(const PadState& state);
 
         void Reset();
 
     private:
-        // 分区点击
+        // Click state remembers which zone the press started in.
         std::uint8_t _heldRegion{ 0 };
         bool _wasClicking{ false };
 
-        // 滑动
+        // Swipe state keeps the first and last touch points until release.
         bool _tracking{ false };
         int _startX{ 0 }, _startY{ 0 };
         int _lastX{ 0 }, _lastY{ 0 };
         bool _suppressSwipe{ false };
 
-        std::uint8_t ClassifyRegion(const dse::State& state) const;
+        std::uint8_t ClassifyRegion(const PadState& state) const;
         TouchGesture EvaluateSwipe() const;
     };
 }

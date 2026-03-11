@@ -1,6 +1,6 @@
 #pragma once
 
-// 在包含任何 Windows 头文件之前定义 NOMINMAX
+// Keep std::min and std::max usable after Windows headers are included.
 #define NOMINMAX
 
 #include <RE/Skyrim.h>

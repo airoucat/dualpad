@@ -4,6 +4,7 @@
 
 namespace dualpad::input
 {
+    // Snapshot consumed by the temporary XInput compatibility layer.
     struct SyntheticFrame
     {
         std::uint32_t downMask{ 0 };
@@ -17,20 +18,25 @@ namespace dualpad::input
         bool hasAxis{ false };
     };
 
+    // Thread-safe handoff from the HID reader to the XInput proxy hook.
     class SyntheticPadState
     {
     public:
         static SyntheticPadState& GetSingleton();
 
+        void Reset();
+
         void SetButton(std::uint32_t bit, bool down);
-        void PulseButton(std::uint32_t bit);  // ³ÖÐø 50ms
+        // Emits a short-lived press edge for gesture-triggered actions.
+        void PulseButton(std::uint32_t bit);
 
         void SetAxis(float lx, float ly, float rx, float ry, float l2, float r2);
 
         SyntheticFrame ConsumeFrame();
 
     private:
-        std::atomic<std::uint32_t> _down{ 0 };
+        std::atomic<std::uint32_t> _heldDown{ 0 };
+        std::atomic<std::uint32_t> _pulseDown{ 0 };
         std::atomic<std::uint64_t> _pulseExpireMs{ 0 };
 
         std::atomic<float> _lx{ 0 }, _ly{ 0 }, _rx{ 0 }, _ry{ 0 }, _l2{ 0 }, _r2{ 0 };

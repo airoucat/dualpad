@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "input/ActionExecutor.h"
 #include "input/Action.h"
-#include "input/Screenshot.h"
+#include "input/custom/CustomActionDispatcher.h"
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
 
@@ -20,15 +20,7 @@ namespace dualpad::input
         logger::info("[DualPad][Executor] Execute: action='{}' context='{}'",
             actionId, ToString(context));
 
-        if (ExecuteExtendedAction(actionId)) {
-            return true;
-        }
-
-        if (ExecuteGameplayAction(actionId)) {
-            return true;
-        }
-
-        if (ExecuteMenuAction(actionId, context)) {
+        if (ExecutePluginAction(actionId)) {
             return true;
         }
 
@@ -36,17 +28,17 @@ namespace dualpad::input
         return false;
     }
 
-    bool ActionExecutor::ExecuteExtendedAction(std::string_view actionId)
+    bool ActionExecutor::ExecutePluginAction(std::string_view actionId)
     {
+        if (custom::CustomActionDispatcher::GetSingleton().Execute(actionId)) {
+            return true;
+        }
+
         auto* ui = RE::UI::GetSingleton();
         auto* queue = RE::UIMessageQueue::GetSingleton();
         if (!ui || !queue) {
             return false;
         }
-
-        // =====================
-        // 打开菜单类
-        // =====================
 
         if (actionId == actions::OpenInventory) {
             if (!ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
@@ -96,17 +88,9 @@ namespace dualpad::input
             return true;
         }
 
-        // =====================
-        // 视角与界面类
-        // =====================
-
-        // 切换第一/第三人称视角
-        // 切换第一/第三人称视角
-        // 切换第一/第三人称视角
         if (actionId == actions::TogglePOV) {
             logger::info("[DualPad][Executor] Scheduling POV toggle on main thread");
 
-            // 防抖：避免快速连续切换
             static std::chrono::steady_clock::time_point lastToggleTime;
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastToggleTime).count();
@@ -117,7 +101,6 @@ namespace dualpad::input
             }
             lastToggleTime = now;
 
-            // 在主线程执行相机切换
             auto* taskInterface = SKSE::GetTaskInterface();
             if (taskInterface) {
                 taskInterface->AddTask([]() {
@@ -162,7 +145,6 @@ namespace dualpad::input
             return false;
         }
 
-        // 切换 HUD 显示/隐藏
         if (actionId == actions::ToggleHUD) {
             logger::info("[DualPad][Executor] Scheduling HUD toggle on main thread");
 
@@ -197,35 +179,8 @@ namespace dualpad::input
             return false;
         }
 
-        // 截图（Windows API，可以在任何线程调用）
-        if (actionId == actions::Screenshot) {
-            logger::info("[DualPad][Executor] Taking screenshot");
-
-            auto* taskInterface = SKSE::GetTaskInterface();
-            if (taskInterface) {
-                taskInterface->AddTask([]() {
-                    std::string path = dualpad::utils::TakeScreenshot();
-                    if (!path.empty()) {
-                        logger::info("[DualPad][Executor] Screenshot saved: {}", path);
-                    }
-                    else {
-                        logger::error("[DualPad][Executor] Screenshot failed");
-                    }
-                    });
-
-                return true;
-            }
-
-            return false;
-        }
-
-        // =====================
-        // 游戏功能类
-        // =====================
-
-        // 打开等待/休息菜单
         if (actionId == actions::Wait) {
-            // 检查是否可以等待
+
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!player) {
                 logger::warn("[DualPad][Executor] Player not found");
@@ -237,7 +192,6 @@ namespace dualpad::input
                 return false;
             }
 
-            // 尝试打开等待菜单
             const char* sleepWaitMenuName = "Sleep/Wait Menu";
             if (!ui->IsMenuOpen(sleepWaitMenuName)) {
                 queue->AddMessage(sleepWaitMenuName, RE::UI_MESSAGE_TYPE::kShow, nullptr);
@@ -249,29 +203,34 @@ namespace dualpad::input
             return true;
         }
 
-        // 快速存档（暂未实现）
         if (actionId == actions::QuickSave) {
-            (void)actionId;
+            auto* saveLoadManager = RE::BGSSaveLoadManager::GetSingleton();
+            if (!saveLoadManager) {
+                logger::warn("[DualPad][Executor] SaveLoad manager not found");
+                return false;
+            }
+
+            saveLoadManager->Save("DualPad_QuickSave");
+            logger::info("[DualPad][Executor] Requested quick save");
             return true;
         }
 
-        // 快速读档（暂未实现）
         if (actionId == actions::QuickLoad) {
-            (void)actionId;
+            auto* saveLoadManager = RE::BGSSaveLoadManager::GetSingleton();
+            if (!saveLoadManager) {
+                logger::warn("[DualPad][Executor] SaveLoad manager not found");
+                return false;
+            }
+
+            if (!saveLoadManager->LoadMostRecentSaveGame()) {
+                logger::warn("[DualPad][Executor] No recent save available for quick load");
+                return false;
+            }
+
+            logger::info("[DualPad][Executor] Requested quick load");
             return true;
         }
 
-        return false;
-    }
-
-    bool ActionExecutor::ExecuteGameplayAction(std::string_view actionId)
-    {
-        return false;
-    }
-
-    bool ActionExecutor::ExecuteMenuAction(std::string_view actionId, InputContext context)
-    {
-        (void)context;
         return false;
     }
 }

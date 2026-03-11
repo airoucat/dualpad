@@ -10,44 +10,39 @@ namespace dualpad::input
         PS3 = 2
     };
 
+    // Stable bit layout shared by HID polling, bindings, and the XInput bridge.
     struct PadBits
     {
-        // D-Pad
+
         std::uint32_t dpadUp{ 0x00010000 };
         std::uint32_t dpadDown{ 0x00020000 };
         std::uint32_t dpadLeft{ 0x00040000 };
         std::uint32_t dpadRight{ 0x00080000 };
 
-        // 面键
         std::uint32_t square{ 0x00000001 };
         std::uint32_t cross{ 0x00000002 };
         std::uint32_t circle{ 0x00000004 };
         std::uint32_t triangle{ 0x00000008 };
 
-        // 肩键
         std::uint32_t l1{ 0x00000010 };
         std::uint32_t r1{ 0x00000020 };
         std::uint32_t l2Button{ 0x00000040 };
         std::uint32_t r2Button{ 0x00000080 };
 
-        // 功能键
         std::uint32_t create{ 0x00000100 };
         std::uint32_t options{ 0x00000200 };
         std::uint32_t l3{ 0x00000400 };
         std::uint32_t r3{ 0x00000800 };
 
-        // 其他
         std::uint32_t ps{ 0x00001000 };
         std::uint32_t mic{ 0x00002000 };
         std::uint32_t touchpadClick{ 0x00004000 };
 
-        // === DualSense Edge 扩展按键 ===
         std::uint32_t fnLeft{ 0x00100000 };
         std::uint32_t fnRight{ 0x00200000 };
         std::uint32_t backLeft{ 0x00400000 };
         std::uint32_t backRight{ 0x00800000 };
 
-        // 触摸板虚拟按键
         std::uint32_t tpLeftPress{ 0x01000000 };
         std::uint32_t tpMidPress{ 0x02000000 };
         std::uint32_t tpRightPress{ 0x04000000 };
@@ -56,7 +51,6 @@ namespace dualpad::input
         std::uint32_t tpSwipeLeft{ 0x20000000 };
         std::uint32_t tpSwipeRight{ 0x40000000 };
 
-        // 语义映射
         std::uint32_t activate{ cross };
         std::uint32_t jump{ cross };
         std::uint32_t cancel{ circle };
@@ -68,7 +62,6 @@ namespace dualpad::input
         std::uint32_t menu{ options };
         std::uint32_t wait{ create };
 
-        // 扩展功能语义映射（示例）
         std::uint32_t quickSave{ backLeft };
         std::uint32_t quickLoad{ backRight };
         std::uint32_t openInventory{ tpLeftPress };
@@ -82,6 +75,7 @@ namespace dualpad::input
         return kBits;
     }
 
+    // The project currently exposes a single logical profile to the XInput bridge.
     inline PadProfile GetActivePadProfile()
     {
         return PadProfile::PC;

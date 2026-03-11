@@ -1,13 +1,18 @@
 # dot folders
 .cache/
+.codex/
 .idea/
 .vs/
 .vscode/
 .xmake/
+# local archives
+.local_archive/
 # folders
 build/
 vs*/
 lib/
 # files
 *.zip
+.gitconfig.codex
 compile_commands.json
+review_repair_template.md

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <cstdint>
+
 namespace dualpad::input
 {
-    // 安装 XInput IAT hook
-    // 返回 true 表示找到并 hook 了 XInput 函数
-    // 返回 false 表示 Skyrim 不使用 XInput
+    // Installs the compatibility XInput hook used for fallback and upstream pass-through.
     bool InstallXInputIATHook();
+    std::uint32_t FillSyntheticXInputState(void* pState);
+    std::uint32_t CallOriginalXInputGetState(std::uint32_t userIndex, void* pState);
 }

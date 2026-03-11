@@ -3,10 +3,17 @@
 #include "input/BindingManager.h"
 #include "input/InputContext.h"
 #include "input/Trigger.h"
+#include "input/mapping/PadEvent.h"
+#include "input/mapping/TouchpadMapper.h"
 
 #include <SKSE/SKSE.h>
+#include <cstdlib>
+#include <algorithm>
 #include <fstream>
+#include <functional>
+#include <optional>
 #include <sstream>
+#include <unordered_map>
 
 namespace logger = SKSE::log;
 
@@ -55,13 +62,19 @@ namespace dualpad::input
 
         std::uint32_t GestureNameToCode(std::string_view name)
         {
-            if (name == "TpLeftPress") return 0x01000000;
-            if (name == "TpMidPress") return 0x02000000;
-            if (name == "TpRightPress") return 0x04000000;
-            if (name == "TpSwipeUp") return 0x08000000;
-            if (name == "TpSwipeDown") return 0x10000000;
-            if (name == "TpSwipeLeft") return 0x20000000;
-            if (name == "TpSwipeRight") return 0x40000000;
+            using namespace mapping_codes;
+            if (name == "TpLeftPress") return kTpLeftPress;
+            if (name == "TpMidPress" || name == "TpCenterPress") return kTpMidPress;
+            if (name == "TpRightPress") return kTpRightPress;
+            if (name == "TpSwipeUp") return kTpSwipeUp;
+            if (name == "TpSwipeDown") return kTpSwipeDown;
+            if (name == "TpSwipeLeft") return kTpSwipeLeft;
+            if (name == "TpSwipeRight") return kTpSwipeRight;
+            if (name == "TpEdgeTopPress") return kTpEdgeTopPress;
+            if (name == "TpEdgeBottomPress") return kTpEdgeBottomPress;
+            if (name == "TpEdgeLeftPress") return kTpEdgeLeftPress;
+            if (name == "TpEdgeRightPress") return kTpEdgeRightPress;
+            if (name == "TpWholePress") return kTpWholePress;
             return 0;
         }
 
@@ -80,7 +93,8 @@ namespace dualpad::input
             if (name == "L3") return 0x00000400;
             if (name == "R3") return 0x00000800;
             if (name == "PS") return 0x00001000;
-            if (name == "Mic") return 0x00002000;
+            if (name == "Mute" || name == "Mic") return 0x00002000;
+            if (name == "TouchpadClick") return 0x00004000;
             if (name == "DpadUp") return 0x00010000;
             if (name == "DpadDown") return 0x00020000;
             if (name == "DpadLeft") return 0x00040000;
@@ -90,6 +104,121 @@ namespace dualpad::input
             if (name == "BackLeft") return 0x00400000;
             if (name == "BackRight") return 0x00800000;
             return 0;
+        }
+
+        bool IsFaceButtonCode(std::uint32_t code)
+        {
+            switch (code) {
+            case 0x00000001:
+            case 0x00000002:
+            case 0x00000004:
+            case 0x00000008:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool IsFnButtonCode(std::uint32_t code)
+        {
+            return code == 0x00100000 || code == 0x00200000;
+        }
+
+        bool ContainsTwoFnWithFace(const std::vector<std::uint32_t>& buttons)
+        {
+            bool hasFace = false;
+            std::size_t fnCount = 0;
+            for (const auto code : buttons) {
+                hasFace = hasFace || IsFaceButtonCode(code);
+                if (IsFnButtonCode(code)) {
+                    ++fnCount;
+                }
+            }
+
+            return hasFace && fnCount >= 2;
+        }
+
+        bool ParseButtonChord(std::string_view chord, Trigger& outTrigger)
+        {
+            std::vector<std::uint32_t> parsedCodes;
+            std::size_t tokenStart = 0;
+
+            while (tokenStart <= chord.size()) {
+                const auto plusPos = chord.find('+', tokenStart);
+                const auto tokenView = plusPos == std::string_view::npos ?
+                    chord.substr(tokenStart) :
+                    chord.substr(tokenStart, plusPos - tokenStart);
+
+                const auto token = Trim(std::string(tokenView));
+                if (token.empty()) {
+                    return false;
+                }
+
+                const auto code = ButtonNameToCode(token);
+                if (code == 0) {
+                    return false;
+                }
+
+                if (std::find(parsedCodes.begin(), parsedCodes.end(), code) != parsedCodes.end()) {
+                    return false;
+                }
+
+                parsedCodes.push_back(code);
+
+                if (plusPos == std::string_view::npos) {
+                    break;
+                }
+
+                tokenStart = plusPos + 1;
+            }
+
+            if (parsedCodes.empty()) {
+                return false;
+            }
+
+            if (ContainsTwoFnWithFace(parsedCodes)) {
+                logger::warn("[DualPad][Config] Rejecting forbidden FN+FN+Face chord");
+                return false;
+            }
+
+            outTrigger.code = parsedCodes.back();
+            outTrigger.modifiers.assign(parsedCodes.begin(), parsedCodes.end() - 1);
+            (std::sort)(outTrigger.modifiers.begin(), outTrigger.modifiers.end());
+            return true;
+        }
+
+        std::uint32_t AxisNameToCode(std::string_view name)
+        {
+            if (name == "LeftStickX") return static_cast<std::uint32_t>(PadAxisId::LeftStickX);
+            if (name == "LeftStickY") return static_cast<std::uint32_t>(PadAxisId::LeftStickY);
+            if (name == "RightStickX") return static_cast<std::uint32_t>(PadAxisId::RightStickX);
+            if (name == "RightStickY") return static_cast<std::uint32_t>(PadAxisId::RightStickY);
+            if (name == "LeftTrigger") return static_cast<std::uint32_t>(PadAxisId::LeftTrigger);
+            if (name == "RightTrigger") return static_cast<std::uint32_t>(PadAxisId::RightTrigger);
+            return 0;
+        }
+
+        bool ParseFloat(std::string_view text, float& outValue)
+        {
+            std::string buffer(text);
+            char* end = nullptr;
+            const auto value = std::strtof(buffer.c_str(), &end);
+            if (end == buffer.c_str() || end == nullptr || *end != '\0') {
+                return false;
+            }
+
+            outValue = value;
+            return true;
+        }
+
+        std::optional<InputContext> ResolveContextName(std::string_view str)
+        {
+            const auto context = StringToContext(str);
+            if (context == InputContext::Unknown) {
+                return std::nullopt;
+            }
+
+            return context;
         }
     }
 
@@ -104,15 +233,23 @@ namespace dualpad::input
         return "Data/SKSE/Plugins/DualPadBindings.ini";
     }
 
+    TouchpadConfig BindingConfig::GetTouchpadConfig() const
+    {
+        return _touchpadConfig;
+    }
+
     bool BindingConfig::Load(const std::filesystem::path& path)
     {
         _configPath = path.empty() ? GetDefaultPath() : path;
 
         logger::info("[DualPad][Config] Loading bindings from: {}", _configPath.string());
+        BindingManager::GetSingleton().ClearBindings();
+        _touchpadConfig = {};
 
         if (!std::filesystem::exists(_configPath)) {
             logger::warn("[DualPad][Config] Config file not found, using defaults");
             BindingManager::GetSingleton().InitDefaultBindings();
+            BindingManager::GetSingleton().ApplyStandardFallbackBindings();
             return false;
         }
 
@@ -124,12 +261,14 @@ namespace dualpad::input
         if (_configPath.empty()) {
             return Load();
         }
+        BindingManager::GetSingleton().ClearBindings();
+        _touchpadConfig = {};
         return ParseIniFile(_configPath);
     }
 
+    // Accepts Gesture:Name, Button:Name, Button:Modifier+Name, Combo:A+B, Hold:Name, Tap:Name, or Axis:Name.
     bool BindingConfig::ParseTrigger(std::string_view triggerStr, Trigger& outTrigger)
     {
-        // 格式: "Gesture:TpLeftPress" 或 "Button:BackLeft" 或 "Button:FnLeft+Triangle"
 
         auto colonPos = triggerStr.find(':');
         if (colonPos == std::string_view::npos) {
@@ -139,38 +278,77 @@ namespace dualpad::input
         auto typeStr = triggerStr.substr(0, colonPos);
         auto codeStr = triggerStr.substr(colonPos + 1);
 
-        // 解析类型
         if (typeStr == "Gesture") {
             outTrigger.type = TriggerType::Gesture;
             outTrigger.code = GestureNameToCode(codeStr);
             return outTrigger.code != 0;
         }
 
+        const auto parseButtonLikeTrigger = [&](TriggerType type) {
+            outTrigger.type = type;
+            outTrigger.modifiers.clear();
+            return ParseButtonChord(codeStr, outTrigger);
+            };
+
         if (typeStr == "Button") {
-            outTrigger.type = TriggerType::Button;
+            return parseButtonLikeTrigger(TriggerType::Button);
+        }
 
-            // 检查是否有组合键
-            auto plusPos = codeStr.find('+');
-            if (plusPos != std::string_view::npos) {
-                // 组合键: "FnLeft+Triangle"
-                auto modifierStr = codeStr.substr(0, plusPos);
-                auto mainStr = codeStr.substr(plusPos + 1);
+        if (typeStr == "Combo") {
+            return parseButtonLikeTrigger(TriggerType::Combo);
+        }
 
-                auto modifierCode = ButtonNameToCode(modifierStr);
-                auto mainCode = ButtonNameToCode(mainStr);
+        if (typeStr == "Hold") {
+            return parseButtonLikeTrigger(TriggerType::Hold);
+        }
 
-                if (modifierCode == 0 || mainCode == 0) {
-                    return false;
-                }
+        if (typeStr == "Tap") {
+            return parseButtonLikeTrigger(TriggerType::Tap);
+        }
 
-                outTrigger.code = mainCode;
-                outTrigger.modifiers.push_back(modifierCode);
+        if (typeStr == "Axis") {
+            outTrigger.type = TriggerType::Axis;
+            outTrigger.modifiers.clear();
+            outTrigger.code = AxisNameToCode(codeStr);
+            return outTrigger.code != 0;
+        }
+
+        return false;
+    }
+
+    bool BindingConfig::ParseTouchpadSetting(std::string_view key, std::string_view value)
+    {
+        if (key == "Mode") {
+            if (value == "LeftCenterRight" || value == "LCR") {
+                _touchpadConfig.mode = TouchpadMode::LeftCenterRight;
+                return true;
+            }
+            if (value == "Edge") {
+                _touchpadConfig.mode = TouchpadMode::Edge;
+                return true;
+            }
+            if (value == "Whole") {
+                _touchpadConfig.mode = TouchpadMode::Whole;
+                return true;
+            }
+            if (value == "Disabled") {
+                _touchpadConfig.mode = TouchpadMode::Disabled;
                 return true;
             }
 
-            // 单个按键
-            outTrigger.code = ButtonNameToCode(codeStr);
-            return outTrigger.code != 0;
+            return false;
+        }
+
+        if (key == "EdgeThreshold") {
+            return ParseFloat(value, _touchpadConfig.edgeThreshold);
+        }
+
+        if (key == "LeftRightBoundary") {
+            return ParseFloat(value, _touchpadConfig.leftRightBoundary);
+        }
+
+        if (key == "SlideThreshold") {
+            return ParseFloat(value, _touchpadConfig.slideThreshold);
         }
 
         return false;
@@ -178,28 +356,18 @@ namespace dualpad::input
 
     bool BindingConfig::ParseBinding(std::string_view contextStr, std::string_view key, std::string_view value)
     {
-        // 特殊键: Inherit
-        if (key == "Inherit") {
-            // TODO: 实现继承逻辑
-            logger::info("[DualPad][Config] Context {} inherits from {}", contextStr, value);
-            return true;
-        }
-
-        // 解析上下文
         auto context = StringToContext(contextStr);
         if (context == InputContext::Unknown) {
             logger::warn("[DualPad][Config] Unknown context: {}", contextStr);
             return false;
         }
 
-        // 解析触发器
         Trigger trigger;
         if (!ParseTrigger(key, trigger)) {
             logger::warn("[DualPad][Config] Invalid trigger: {}", key);
             return false;
         }
 
-        // 创建绑定
         Binding binding;
         binding.trigger = trigger;
         binding.actionId = std::string(value);
@@ -225,11 +393,12 @@ namespace dualpad::input
         std::string line;
         std::size_t lineNo = 0;
         std::size_t bindingCount = 0;
+        std::unordered_map<InputContext, InputContext> inheritMap;
 
+        // The parser is intentionally simple because the file format is small and user-editable.
         while (std::getline(ifs, line)) {
             ++lineNo;
 
-            // 去除 BOM
             if (lineNo == 1 && line.size() >= 3 &&
                 static_cast<unsigned char>(line[0]) == 0xEF &&
                 static_cast<unsigned char>(line[1]) == 0xBB &&
@@ -239,19 +408,16 @@ namespace dualpad::input
 
             line = Trim(line);
 
-            // 跳过空行和注释
             if (line.empty() || line[0] == ';' || line[0] == '#') {
                 continue;
             }
 
-            // 解析节
             if (line.front() == '[' && line.back() == ']') {
                 currentSection = Trim(line.substr(1, line.size() - 2));
                 logger::info("[DualPad][Config] Parsing section: [{}]", currentSection);
                 continue;
             }
 
-            // 解析键值对
             auto eqPos = line.find('=');
             if (eqPos == std::string::npos) {
                 logger::warn("[DualPad][Config] Line {}: Invalid format (no '=')", lineNo);
@@ -270,12 +436,73 @@ namespace dualpad::input
                 continue;
             }
 
+            if (currentSection == "Touchpad") {
+                if (!ParseTouchpadSetting(key, value)) {
+                    logger::warn("[DualPad][Config] Invalid touchpad setting: {}={}", key, value);
+                }
+                continue;
+            }
+
+            if (key == "Inherit") {
+                const auto child = ResolveContextName(currentSection);
+                const auto parent = ResolveContextName(value);
+                if (!child || !parent) {
+                    logger::warn("[DualPad][Config] Invalid inherit rule: [{}] Inherit={}", currentSection, value);
+                    continue;
+                }
+
+                inheritMap[*child] = *parent;
+                logger::info("[DualPad][Config] Context {} inherits from {}", currentSection, value);
+                continue;
+            }
+
             if (ParseBinding(currentSection, key, value)) {
                 ++bindingCount;
             }
         }
 
-        logger::info("[DualPad][Config] Loaded {} bindings from {}", bindingCount, path.string());
-        return bindingCount > 0;
+        std::unordered_map<InputContext, std::uint8_t> visitState;
+        std::function<void(InputContext)> applyInheritance = [&](InputContext child) {
+            const auto state = visitState[child];
+            if (state == 2) {
+                return;
+            }
+            if (state == 1) {
+                logger::warn("[DualPad][Config] Inheritance cycle detected at context {}", ToString(child));
+                return;
+            }
+
+            visitState[child] = 1;
+
+            const auto inheritIt = inheritMap.find(child);
+            if (inheritIt == inheritMap.end()) {
+                visitState[child] = 2;
+                return;
+            }
+
+            applyInheritance(inheritIt->second);
+            BindingManager::GetSingleton().MergeBindings(inheritIt->second, child, false);
+            visitState[child] = 2;
+        };
+
+        for (const auto& [child, parent] : inheritMap) {
+            (void)parent;
+            applyInheritance(child);
+        }
+
+        const auto fallbackCount = BindingManager::GetSingleton().ApplyStandardFallbackBindings();
+
+        logger::info(
+            "[DualPad][Config] Touchpad mode={} edgeThreshold={:.2f} leftRightBoundary={:.2f} slideThreshold={:.2f}",
+            ToString(_touchpadConfig.mode),
+            _touchpadConfig.edgeThreshold,
+            _touchpadConfig.leftRightBoundary,
+            _touchpadConfig.slideThreshold);
+        logger::info(
+            "[DualPad][Config] Loaded {} bindings from {} ({} standard fallbacks added)",
+            bindingCount,
+            path.string(),
+            fallbackCount);
+        return bindingCount > 0 || fallbackCount > 0;
     }
 }

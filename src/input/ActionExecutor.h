@@ -14,8 +14,6 @@ namespace dualpad::input
     private:
         ActionExecutor() = default;
 
-        bool ExecuteGameplayAction(std::string_view actionId);
-        bool ExecuteMenuAction(std::string_view actionId, InputContext context);
-        bool ExecuteExtendedAction(std::string_view actionId);
+        bool ExecutePluginAction(std::string_view actionId);
     };
 }

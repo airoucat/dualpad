@@ -2,6 +2,8 @@
 #include "input/IATHook.h"
 #include "input/SyntheticPadState.h"
 #include "input/PadProfile.h"
+#include "input/RuntimeConfig.h"
+#include "input/injection/UpstreamGamepadHook.h"
 #include "haptics/HapticsSystem.h"
 
 #include <Windows.h>
@@ -41,16 +43,31 @@ namespace dualpad::input
 
         XInputGetStateFunc g_originalGetState = nullptr;
         XInputSetStateFunc g_originalSetState = nullptr;
+        std::atomic<DWORD> g_syntheticPacketNumber{ 0 };
 
-        DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
+        XInputGetStateFunc ResolveFallbackGetState()
         {
-            if (!pState || dwUserIndex != 0) {
-                if (g_originalGetState) {
-                    return g_originalGetState(dwUserIndex, pState);
-                }
-                return ERROR_DEVICE_NOT_CONNECTED;
+            static XInputGetStateFunc cached = nullptr;
+            if (cached) {
+                return cached;
             }
 
+            auto* module = GetModuleHandleA("xinput1_3.dll");
+            if (!module) {
+                module = LoadLibraryA("xinput1_3.dll");
+            }
+
+            if (!module) {
+                return nullptr;
+            }
+
+            cached = reinterpret_cast<XInputGetStateFunc>(
+                GetProcAddress(module, "XInputGetState"));
+            return cached;
+        }
+
+        DWORD FillSyntheticState(XINPUT_STATE* pState)
+        {
             auto frame = SyntheticPadState::GetSingleton().ConsumeFrame();
 
             WORD buttons = 0;
@@ -94,10 +111,48 @@ namespace dualpad::input
                 pState->Gamepad.bRightTrigger = 0;
             }
 
-            pState->dwPacketNumber++;
+            pState->dwPacketNumber = g_syntheticPacketNumber.fetch_add(1, std::memory_order_relaxed) + 1;
             return ERROR_SUCCESS;
         }
 
+        DWORD CallOriginalGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
+        {
+            if (g_originalGetState) {
+                return g_originalGetState(dwUserIndex, pState);
+            }
+            if (auto fallback = ResolveFallbackGetState()) {
+                return fallback(dwUserIndex, pState);
+            }
+            return ERROR_DEVICE_NOT_CONNECTED;
+        }
+
+        // Synthesizes an XInput pad state from the HID-driven compatibility frame.
+        DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
+        {
+            if (!pState || dwUserIndex != 0) {
+                return CallOriginalGetState(dwUserIndex, pState);
+            }
+
+            auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
+            if (upstreamHook.IsRouteActive()) {
+                if (upstreamHook.HasRecentPollCallActivity()) {
+                    return CallOriginalGetState(dwUserIndex, pState);
+                }
+
+                static std::uint32_t dormantFallbackLogBudget = 32;
+                if (dormantFallbackLogBudget > 0) {
+                    --dormantFallbackLogBudget;
+                    logger::info(
+                        "[DualPad][IAT] Official upstream route is active but Poll call-site is dormant; using synthetic XInput fallback");
+                }
+
+                return FillSyntheticState(pState);
+            }
+
+            return FillSyntheticState(pState);
+        }
+
+        // Routes game vibration requests into the native DualSense haptics path.
         DWORD WINAPI HookedXInputSetState(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
         {
             if (dwUserIndex == 0) {
@@ -121,6 +176,7 @@ namespace dualpad::input
             return ERROR_SUCCESS;
         }
 
+        // Rewrites one import address table slot in the Skyrim module.
         bool HookIATEntry(HMODULE hModule, const char* dllName, const char* funcName,
             void* newFunc, void** oldFunc)
         {
@@ -248,5 +304,17 @@ namespace dualpad::input
         }
 
         return foundAny;
+    }
+
+    std::uint32_t FillSyntheticXInputState(void* pState)
+    {
+        return FillSyntheticState(reinterpret_cast<XINPUT_STATE*>(pState));
+    }
+
+    std::uint32_t CallOriginalXInputGetState(std::uint32_t userIndex, void* pState)
+    {
+        return CallOriginalGetState(
+            static_cast<DWORD>(userIndex),
+            reinterpret_cast<XINPUT_STATE*>(pState));
     }
 }

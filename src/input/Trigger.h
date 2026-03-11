@@ -9,7 +9,9 @@ namespace dualpad::input
         Button,
         Gesture,
         Combo,
-        Axis
+        Axis,
+        Hold,
+        Tap
     };
 
     struct Trigger

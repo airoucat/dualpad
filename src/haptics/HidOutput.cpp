@@ -44,7 +44,7 @@ namespace dualpad::haptics
         }
         else if (!device && _device) {
             logger::info("[Haptics][HidOutput] Device disconnected");
-            // 注意：这里已持锁，必须调用 Unlocked 版本，避免自死锁
+
             (void)SendVibrateCommandUnlocked(0, 0);
         }
 
@@ -63,7 +63,7 @@ namespace dualpad::haptics
 
         if (success) {
             _totalFramesSent.fetch_add(1, std::memory_order_relaxed);
-            _totalBytesSent.fetch_add(48, std::memory_order_relaxed);  // 报文长度
+            _totalBytesSent.fetch_add(48, std::memory_order_relaxed);
         }
         else {
             _sendFailures.fetch_add(1, std::memory_order_relaxed);
@@ -99,13 +99,13 @@ namespace dualpad::haptics
             return false;
         }
 
-        // DualSense 输出报文（你当前工程使用的简化格式）
+        // This is the 48-byte simplified DualSense output report used by the current plugin.
         unsigned char buf[48]{};
-        buf[0] = 0x02;        // Report ID
-        buf[1] = 0xFF;        // flags
-        buf[2] = 0xF7;        // flags2
-        buf[3] = rightMotor;  // right (small)
-        buf[4] = leftMotor;   // left (large)
+        buf[0] = 0x02;
+        buf[1] = 0xFF;
+        buf[2] = 0xF7;
+        buf[3] = rightMotor;
+        buf[4] = leftMotor;
 
         const int written = hid_write(_device, buf, static_cast<size_t>(sizeof(buf)));
         if (written < 0) {
