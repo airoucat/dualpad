@@ -15,10 +15,11 @@ namespace dualpad::input
 
     InputContext ContextManager::GetCurrentContext() const
     {
+        std::scoped_lock lock(_mutex);
         return _currentContext;
     }
 
-    void ContextManager::RefreshCurrentContext()
+    void ContextManager::RefreshCurrentContextLocked()
     {
         if (!_menuStack.empty()) {
             _currentContext = _menuStack.back().context;
@@ -123,19 +124,29 @@ namespace dualpad::input
 
     void ContextManager::UpdateGameplayContext()
     {
+        {
+            std::scoped_lock lock(_mutex);
 
-        // Menu-owned contexts stay fixed until the matching close event arrives.
+            // Menu-owned contexts stay fixed until the matching close event arrives.
+            auto ctxValue = static_cast<std::uint16_t>(_baseContext);
+            if ((ctxValue >= 100 && ctxValue < 2000) || ctxValue == 200) {
+                return;
+            }
+        }
+
+        auto newContext = DetectGameplayContext();
+
+        std::scoped_lock lock(_mutex);
         auto ctxValue = static_cast<std::uint16_t>(_baseContext);
         if ((ctxValue >= 100 && ctxValue < 2000) || ctxValue == 200) {
             return;
         }
 
-        auto newContext = DetectGameplayContext();
         if (newContext != _baseContext) {
             logger::trace("[DualPad][Context] Gameplay context changed: {} -> {}",
                 ToString(_baseContext), ToString(newContext));
             _baseContext = newContext;
-            RefreshCurrentContext();
+            RefreshCurrentContextLocked();
         }
     }
 
@@ -151,11 +162,12 @@ namespace dualpad::input
         logger::info("[DualPad][Context] Menu opened: {} -> Context: {}",
             menuName, ToString(newContext));
 
+        std::scoped_lock lock(_mutex);
         _menuStack.push_back(MenuContextEntry{
             .menuName = std::string(menuName),
             .context = newContext
             });
-        RefreshCurrentContext();
+        RefreshCurrentContextLocked();
     }
 
     void ContextManager::OnMenuClose(std::string_view menuName)
@@ -167,10 +179,11 @@ namespace dualpad::input
 
         logger::info("[DualPad][Context] Menu closed: {}", menuName);
 
+        std::scoped_lock lock(_mutex);
         for (auto it = _menuStack.rbegin(); it != _menuStack.rend(); ++it) {
             if (it->menuName == menuName) {
                 _menuStack.erase(std::next(it).base());
-                RefreshCurrentContext();
+                RefreshCurrentContextLocked();
                 logger::info("[DualPad][Context] Context restored to: {}",
                     ToString(_currentContext));
                 return;
@@ -178,7 +191,7 @@ namespace dualpad::input
         }
 
         _baseContext = DetectGameplayContext();
-        RefreshCurrentContext();
+        RefreshCurrentContextLocked();
 
         logger::info("[DualPad][Context] Context restored to: {}",
             ToString(_currentContext));
@@ -186,9 +199,10 @@ namespace dualpad::input
 
     void ContextManager::PushContext(InputContext context)
     {
+        std::scoped_lock lock(_mutex);
         _contextStack.push_back(_baseContext);
         _baseContext = context;
-        RefreshCurrentContext();
+        RefreshCurrentContextLocked();
 
         logger::info("[DualPad][Context] Context pushed: {}",
             ToString(context));
@@ -196,10 +210,11 @@ namespace dualpad::input
 
     void ContextManager::PopContext()
     {
+        std::scoped_lock lock(_mutex);
         if (!_contextStack.empty()) {
             _baseContext = _contextStack.back();
             _contextStack.pop_back();
-            RefreshCurrentContext();
+            RefreshCurrentContextLocked();
 
             logger::info("[DualPad][Context] Context popped to: {}",
                 ToString(_currentContext));
@@ -208,11 +223,12 @@ namespace dualpad::input
 
     void ContextManager::SetContext(InputContext context)
     {
+        std::scoped_lock lock(_mutex);
         if (_baseContext != context) {
             logger::info("[DualPad][Context] Context set: {} -> {}",
                 ToString(_baseContext), ToString(context));
             _baseContext = context;
-            RefreshCurrentContext();
+            RefreshCurrentContextLocked();
         }
     }
 }

@@ -16,12 +16,13 @@ add_rules("plugin.vsxmake.autoupdate")
 
 add_requires("hidapi")
 local mo2_plugins_dir = "G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins"
+local skyrim_game_dir = "G:/g/SkyrimSE"
 
 target("DualPad")
     add_deps("commonlibsse-ng")
     add_packages("hidapi")
 
-    add_syslinks("gdi32", "gdiplus", "user32")
+    add_syslinks("gdi32", "gdiplus", "ole32", "shell32", "user32", "windowscodecs")
 
     add_rules("commonlibsse-ng.plugin", {
         name = "DualPad",
@@ -38,6 +39,7 @@ target("DualPad")
 
     if is_mode("debug", "releasedbg") then
         set_symbols("debug")
+        add_defines("DUALPAD_DIAGNOSTIC_BUILD")
     end
 
     after_build(function (target)
@@ -55,5 +57,56 @@ target("DualPad")
                 }
             }
         end
+        local debug_ini_src = path.join(os.projectdir(), "config", "DualPadDebug.ini")
+        local debug_ini_dst = path.join(mo2_plugins_dir, "DualPadDebug.ini")
+        if os.isfile(debug_ini_src) and not os.isfile(debug_ini_dst) then
+            os.mkdir(mo2_plugins_dir)
+            os.cp(debug_ini_src, debug_ini_dst)
+        end
         print("Deployed: %s", target:targetfile())
+    end)
+
+target("DualPadDInput8Proxy")
+    set_kind("shared")
+    set_basename("dinput8")
+    set_objectdir(path.join(os.projectdir(), "build", "obj", "DualPadDInput8Proxy"))
+
+    add_files("tools/dinput8_proxy/**.cpp")
+    add_files("src/input/backend/KeyboardNativeBridge.cpp")
+    add_files("tools/dinput8_proxy/dinput8.def")
+    add_headerfiles("tools/dinput8_proxy/**.h")
+    add_headerfiles("src/input/backend/KeyboardNativeBridge.h")
+    add_includedirs("tools/dinput8_proxy")
+    add_includedirs("src")
+
+    add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX", "DIRECTINPUT_VERSION=0x0800")
+    add_syslinks("ole32", "user32", "dxguid")
+
+    set_targetdir(skyrim_game_dir)
+
+    if is_mode("debug", "releasedbg") then
+        set_symbols("debug")
+        add_cxflags("/FS", {tools = "cl"})
+    end
+
+    after_build(function (target)
+        local pdb = target:symbolfile()
+        if pdb and os.isfile(pdb) then
+            try {
+                function ()
+                    os.cp(pdb, path.join(skyrim_game_dir, path.filename(pdb)))
+                end,
+                catch {
+                    function (err)
+                        print("warning: skip dinput8 proxy pdb copy: %s", err)
+                    end
+                }
+            }
+        end
+        local proxy_ini_src = path.join(os.projectdir(), "tools", "dinput8_proxy", "DualPadDInput8.ini")
+        local proxy_ini_dst = path.join(skyrim_game_dir, "DualPadDInput8.ini")
+        if os.isfile(proxy_ini_src) and not os.isfile(proxy_ini_dst) then
+            os.cp(proxy_ini_src, proxy_ini_dst)
+        end
+        print("Deployed dinput8 proxy: %s", target:targetfile())
     end)

@@ -8,6 +8,8 @@ namespace dualpad::input
 {
     namespace
     {
+        constexpr bool kAllowFallbackWithoutModifiers = true;
+
         std::optional<ResolvedBinding> TryResolve(const Trigger& trigger, InputContext context)
         {
             auto actionId = BindingManager::GetSingleton().GetActionForTrigger(trigger, context);
@@ -18,6 +20,25 @@ namespace dualpad::input
             ResolvedBinding resolved{};
             resolved.trigger = trigger;
             resolved.actionId = std::move(*actionId);
+            return resolved;
+        }
+
+        std::optional<ResolvedBinding> TryResolveSubset(
+            const Trigger& trigger,
+            InputContext context,
+            bool allowEmptyModifiers)
+        {
+            auto binding = BindingManager::GetSingleton().FindBestBindingForTriggerSubset(
+                trigger,
+                context,
+                allowEmptyModifiers);
+            if (!binding) {
+                return std::nullopt;
+            }
+
+            ResolvedBinding resolved{};
+            resolved.trigger = binding->trigger;
+            resolved.actionId = std::move(binding->actionId);
             return resolved;
         }
     }
@@ -34,17 +55,7 @@ namespace dualpad::input
         }
 
         if (!trigger->modifiers.empty()) {
-            if (trigger->type == TriggerType::Button) {
-                auto comboTrigger = *trigger;
-                comboTrigger.type = TriggerType::Combo;
-                if (auto resolved = TryResolve(comboTrigger, context)) {
-                    return resolved;
-                }
-            }
-
-            auto fallbackTrigger = *trigger;
-            fallbackTrigger.modifiers.clear();
-            if (auto resolved = TryResolve(fallbackTrigger, context)) {
+            if (auto resolved = TryResolveSubset(*trigger, context, kAllowFallbackWithoutModifiers)) {
                 return resolved;
             }
         }

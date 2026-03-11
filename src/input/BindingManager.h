@@ -22,6 +22,7 @@ namespace dualpad::input
         static BindingManager& GetSingleton();
 
         void AddBinding(const Binding& binding);
+        void AddBindingIfMissing(const Binding& binding);
         void RemoveBinding(const Trigger& trigger, InputContext context);
         void ClearBindings();
         void MergeBindings(InputContext sourceContext, InputContext targetContext, bool overwriteExisting = false);
@@ -29,6 +30,10 @@ namespace dualpad::input
         std::optional<std::string> GetActionForTrigger(
             const Trigger& trigger,
             InputContext context) const;
+        std::optional<Binding> FindBestBindingForTriggerSubset(
+            const Trigger& trigger,
+            InputContext context,
+            bool allowEmptyModifiers) const;
 
         std::optional<Trigger> GetTriggerForAction(
             std::string_view actionId,
@@ -36,6 +41,7 @@ namespace dualpad::input
 
         // Seeds a fallback set when no external config is present.
         void InitDefaultBindings();
+        std::size_t ApplyStandardFallbackBindings();
 
     private:
         BindingManager() = default;

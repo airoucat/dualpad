@@ -3,6 +3,8 @@
 
 #include "input/mapping/EventDebugLogger.h"
 
+namespace logger = SKSE::log;
+
 namespace dualpad::input
 {
     void PadEventGenerator::Reset()
@@ -31,6 +33,13 @@ namespace dualpad::input
         _tapHoldEvaluator.Evaluate(previous, current, outEvents);
         _comboEvaluator.Evaluate(previous, current, outEvents);
         _touchpadMapper.ProcessTouch(current, outEvents);
+
+        if (outEvents.overflowed) {
+            logger::warn(
+                "[DualPad][Mapping] Dropped {} pad events because the per-frame buffer is full ({})",
+                outEvents.droppedCount,
+                kMaxPadEventsPerFrame);
+        }
 
         LogPadEvents(outEvents);
     }

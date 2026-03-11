@@ -53,6 +53,10 @@ namespace dualpad::input
         int _lastX{ 0 };
         int _lastY{ 0 };
         bool _suppressSlide{ false };
+        bool _hasLastKnownTouch{ false };
+        std::uint8_t _lastKnownTouchId{ 0 };
+        std::uint16_t _lastKnownTouchX{ 0 };
+        std::uint16_t _lastKnownTouchY{ 0 };
 
         void GeneratePressEvent(const PadState& state, PadEventBuffer& outEvents);
         void GenerateSlideEvent(const PadState& state, PadEventBuffer& outEvents);

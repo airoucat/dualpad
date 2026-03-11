@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "input/ContextEventSink.h"
 #include "input/InputContext.h"
-#include <SKSE/SKSE.h>
 
 namespace logger = SKSE::log;
 
@@ -35,16 +34,13 @@ namespace dualpad::input
             logger::warn("[DualPad][ContextSink] Failed to get combat event source");
         }
 
-        StartPerFrameUpdate();
-
+        logger::info("[DualPad][ContextSink] Gameplay context polling is driven by the main-thread snapshot pump");
         logger::info("[DualPad][ContextSink] All event listeners registered");
     }
 
     void ContextEventSink::Unregister()
     {
         logger::info("[DualPad][ContextSink] Unregistering event listeners");
-
-        StopPerFrameUpdate();
 
         auto* ui = RE::UI::GetSingleton();
         if (ui) {
@@ -113,42 +109,5 @@ namespace dualpad::input
         }
 
         return RE::BSEventNotifyControl::kContinue;
-    }
-
-    void ContextEventSink::StartPerFrameUpdate()
-    {
-        if (_updateRunning.exchange(true)) {
-            return;
-        }
-
-        _updateThread = std::jthread([this](std::stop_token) {
-            PerFrameUpdateLoop();
-            });
-
-        logger::info("[DualPad][ContextSink] Per-frame update started");
-    }
-
-    void ContextEventSink::StopPerFrameUpdate()
-    {
-        _updateRunning.store(false);
-
-        if (_updateThread.joinable()) {
-            _updateThread.request_stop();
-            _updateThread.join();
-        }
-
-        logger::info("[DualPad][ContextSink] Per-frame update stopped");
-    }
-
-    void ContextEventSink::PerFrameUpdateLoop()
-    {
-        using namespace std::chrono_literals;
-
-        while (_updateRunning.load()) {
-            // Gameplay-only states such as sneak, riding, or death are sampled here.
-            ContextManager::GetSingleton().UpdateGameplayContext();
-
-            std::this_thread::sleep_for(16ms);
-        }
     }
 }

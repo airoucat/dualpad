@@ -1,34 +1,15 @@
 #include "pch.h"
 #include "input/mapping/EventDebugLogger.h"
-
-#include <cstdlib>
+#include "input/RuntimeConfig.h"
 
 namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
 #if !defined(NDEBUG)
-    namespace
-    {
-        bool EnvEnabled(const char* name)
-        {
-            char* value = nullptr;
-            std::size_t length = 0;
-            if (_dupenv_s(&value, &length, name) != 0 || !value || value[0] == '\0') {
-                std::free(value);
-                return false;
-            }
-
-            const bool enabled = value[0] != '0';
-            std::free(value);
-            return enabled;
-        }
-    }
-
     bool IsMappingDebugLogEnabled()
     {
-        static const bool enabled = EnvEnabled("DUALPAD_LOG_MAPPING_EVENTS");
-        return enabled;
+        return RuntimeConfig::GetSingleton().LogMappingEvents();
     }
 
     void LogPadEvent(const PadEvent& event)

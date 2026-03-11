@@ -24,6 +24,8 @@ namespace dualpad::input
     public:
         static SyntheticPadState& GetSingleton();
 
+        void Reset();
+
         void SetButton(std::uint32_t bit, bool down);
         // Emits a short-lived press edge for gesture-triggered actions.
         void PulseButton(std::uint32_t bit);
@@ -33,7 +35,8 @@ namespace dualpad::input
         SyntheticFrame ConsumeFrame();
 
     private:
-        std::atomic<std::uint32_t> _down{ 0 };
+        std::atomic<std::uint32_t> _heldDown{ 0 };
+        std::atomic<std::uint32_t> _pulseDown{ 0 };
         std::atomic<std::uint64_t> _pulseExpireMs{ 0 };
 
         std::atomic<float> _lx{ 0 }, _ly{ 0 }, _rx{ 0 }, _ry{ 0 }, _l2{ 0 }, _r2{ 0 };

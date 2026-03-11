@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 
+namespace logger = SKSE::log;
+
 namespace dualpad::input
 {
     namespace
@@ -15,6 +17,11 @@ namespace dualpad::input
         float Clamp01(float value)
         {
             return (std::clamp)(value, 0.0f, 1.0f);
+        }
+
+        float ClampHalf(float value)
+        {
+            return (std::clamp)(value, 0.0f, 0.5f);
         }
 
         float NormalizeX(std::uint16_t value)
@@ -87,6 +94,10 @@ namespace dualpad::input
         _lastX = 0;
         _lastY = 0;
         _suppressSlide = false;
+        _hasLastKnownTouch = false;
+        _lastKnownTouchId = 0;
+        _lastKnownTouchX = 0;
+        _lastKnownTouchY = 0;
     }
 
     void TouchpadMapper::SetMode(TouchpadMode mode)
@@ -102,6 +113,26 @@ namespace dualpad::input
     void TouchpadMapper::SetConfig(const TouchpadConfig& config)
     {
         _config = config;
+        const auto edgeThreshold = Clamp01(config.edgeThreshold);
+        const auto leftRightBoundary = ClampHalf(config.leftRightBoundary);
+        const auto slideThreshold = Clamp01(config.slideThreshold);
+
+        if (edgeThreshold != config.edgeThreshold ||
+            leftRightBoundary != config.leftRightBoundary ||
+            slideThreshold != config.slideThreshold) {
+            logger::warn(
+                "[DualPad][Touchpad] Clamped config edgeThreshold {:.2f}->{:.2f} leftRightBoundary {:.2f}->{:.2f} slideThreshold {:.2f}->{:.2f}",
+                config.edgeThreshold,
+                edgeThreshold,
+                config.leftRightBoundary,
+                leftRightBoundary,
+                config.slideThreshold,
+                slideThreshold);
+        }
+
+        _config.edgeThreshold = edgeThreshold;
+        _config.leftRightBoundary = leftRightBoundary;
+        _config.slideThreshold = slideThreshold;
     }
 
     const TouchpadConfig& TouchpadMapper::GetConfig() const
@@ -121,6 +152,13 @@ namespace dualpad::input
 
     void TouchpadMapper::ProcessTouch(const PadState& state, PadEventBuffer& outEvents)
     {
+        if (state.touch1.active) {
+            _hasLastKnownTouch = true;
+            _lastKnownTouchId = state.touch1.id;
+            _lastKnownTouchX = state.touch1.x;
+            _lastKnownTouchY = state.touch1.y;
+        }
+
         GeneratePressEvent(state, outEvents);
         GenerateSlideEvent(state, outEvents);
     }
@@ -129,13 +167,20 @@ namespace dualpad::input
     {
         const auto& touch = state.touch1;
         const bool clicking = state.buttons.touchpadClick;
+        auto effectiveTouch = touch;
+        if (!effectiveTouch.active && _hasLastKnownTouch) {
+            effectiveTouch.active = true;
+            effectiveTouch.id = _lastKnownTouchId;
+            effectiveTouch.x = _lastKnownTouchX;
+            effectiveTouch.y = _lastKnownTouchY;
+        }
 
         if (!_pressActive && clicking) {
             _pressActive = true;
-            _pressTouchId = touch.id;
-            _pressX = touch.x;
-            _pressY = touch.y;
-            _pressRegion = MapTouchToPressRegion(touch);
+            _pressTouchId = effectiveTouch.id;
+            _pressX = effectiveTouch.x;
+            _pressY = effectiveTouch.y;
+            _pressRegion = MapTouchToPressRegion(effectiveTouch);
             _pressCode = GetPressBinding(_pressRegion);
 
             if (_tracking) {
@@ -249,7 +294,7 @@ namespace dualpad::input
 
             {
                 const auto xNorm = NormalizeX(touch.x);
-                const auto boundary = Clamp01(_config.leftRightBoundary);
+                const auto boundary = _config.leftRightBoundary;
                 if (xNorm < boundary) {
                     return TouchpadPressRegion::Left;
                 }
@@ -277,7 +322,7 @@ namespace dualpad::input
 
     TouchpadPressRegion TouchpadMapper::MapTouchToEdge(float xNorm, float yNorm) const
     {
-        const auto threshold = Clamp01(_config.edgeThreshold);
+        const auto threshold = _config.edgeThreshold;
 
         TouchpadPressRegion bestRegion = TouchpadPressRegion::None;
         float bestDistance = std::numeric_limits<float>::max();

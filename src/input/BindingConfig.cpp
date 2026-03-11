@@ -8,6 +8,7 @@
 
 #include <SKSE/SKSE.h>
 #include <cstdlib>
+#include <algorithm>
 #include <fstream>
 #include <functional>
 #include <optional>
@@ -105,6 +106,87 @@ namespace dualpad::input
             return 0;
         }
 
+        bool IsFaceButtonCode(std::uint32_t code)
+        {
+            switch (code) {
+            case 0x00000001:
+            case 0x00000002:
+            case 0x00000004:
+            case 0x00000008:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool IsFnButtonCode(std::uint32_t code)
+        {
+            return code == 0x00100000 || code == 0x00200000;
+        }
+
+        bool ContainsTwoFnWithFace(const std::vector<std::uint32_t>& buttons)
+        {
+            bool hasFace = false;
+            std::size_t fnCount = 0;
+            for (const auto code : buttons) {
+                hasFace = hasFace || IsFaceButtonCode(code);
+                if (IsFnButtonCode(code)) {
+                    ++fnCount;
+                }
+            }
+
+            return hasFace && fnCount >= 2;
+        }
+
+        bool ParseButtonChord(std::string_view chord, Trigger& outTrigger)
+        {
+            std::vector<std::uint32_t> parsedCodes;
+            std::size_t tokenStart = 0;
+
+            while (tokenStart <= chord.size()) {
+                const auto plusPos = chord.find('+', tokenStart);
+                const auto tokenView = plusPos == std::string_view::npos ?
+                    chord.substr(tokenStart) :
+                    chord.substr(tokenStart, plusPos - tokenStart);
+
+                const auto token = Trim(std::string(tokenView));
+                if (token.empty()) {
+                    return false;
+                }
+
+                const auto code = ButtonNameToCode(token);
+                if (code == 0) {
+                    return false;
+                }
+
+                if (std::find(parsedCodes.begin(), parsedCodes.end(), code) != parsedCodes.end()) {
+                    return false;
+                }
+
+                parsedCodes.push_back(code);
+
+                if (plusPos == std::string_view::npos) {
+                    break;
+                }
+
+                tokenStart = plusPos + 1;
+            }
+
+            if (parsedCodes.empty()) {
+                return false;
+            }
+
+            if (ContainsTwoFnWithFace(parsedCodes)) {
+                logger::warn("[DualPad][Config] Rejecting forbidden FN+FN+Face chord");
+                return false;
+            }
+
+            outTrigger.code = parsedCodes.back();
+            outTrigger.modifiers.assign(parsedCodes.begin(), parsedCodes.end() - 1);
+            (std::sort)(outTrigger.modifiers.begin(), outTrigger.modifiers.end());
+            return true;
+        }
+
         std::uint32_t AxisNameToCode(std::string_view name)
         {
             if (name == "LeftStickX") return static_cast<std::uint32_t>(PadAxisId::LeftStickX);
@@ -167,6 +249,7 @@ namespace dualpad::input
         if (!std::filesystem::exists(_configPath)) {
             logger::warn("[DualPad][Config] Config file not found, using defaults");
             BindingManager::GetSingleton().InitDefaultBindings();
+            BindingManager::GetSingleton().ApplyStandardFallbackBindings();
             return false;
         }
 
@@ -204,27 +287,7 @@ namespace dualpad::input
         const auto parseButtonLikeTrigger = [&](TriggerType type) {
             outTrigger.type = type;
             outTrigger.modifiers.clear();
-
-            auto plusPos = codeStr.find('+');
-            if (plusPos != std::string_view::npos) {
-
-                auto modifierStr = codeStr.substr(0, plusPos);
-                auto mainStr = codeStr.substr(plusPos + 1);
-
-                auto modifierCode = ButtonNameToCode(modifierStr);
-                auto mainCode = ButtonNameToCode(mainStr);
-
-                if (modifierCode == 0 || mainCode == 0) {
-                    return false;
-                }
-
-                outTrigger.code = mainCode;
-                outTrigger.modifiers.push_back(modifierCode);
-                return true;
-            }
-
-            outTrigger.code = ButtonNameToCode(codeStr);
-            return outTrigger.code != 0;
+            return ParseButtonChord(codeStr, outTrigger);
             };
 
         if (typeStr == "Button") {
@@ -427,13 +490,19 @@ namespace dualpad::input
             applyInheritance(child);
         }
 
+        const auto fallbackCount = BindingManager::GetSingleton().ApplyStandardFallbackBindings();
+
         logger::info(
             "[DualPad][Config] Touchpad mode={} edgeThreshold={:.2f} leftRightBoundary={:.2f} slideThreshold={:.2f}",
             ToString(_touchpadConfig.mode),
             _touchpadConfig.edgeThreshold,
             _touchpadConfig.leftRightBoundary,
             _touchpadConfig.slideThreshold);
-        logger::info("[DualPad][Config] Loaded {} bindings from {}", bindingCount, path.string());
-        return bindingCount > 0;
+        logger::info(
+            "[DualPad][Config] Loaded {} bindings from {} ({} standard fallbacks added)",
+            bindingCount,
+            path.string(),
+            fallbackCount);
+        return bindingCount > 0 || fallbackCount > 0;
     }
 }

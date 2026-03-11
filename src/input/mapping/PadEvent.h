@@ -178,21 +178,27 @@ namespace dualpad::input
         TouchpadSlideDirection slideDirection{ TouchpadSlideDirection::None };
     };
 
-    inline constexpr std::size_t kMaxPadEventsPerFrame = 32;
+    inline constexpr std::size_t kMaxPadEventsPerFrame = 64;
 
     struct PadEventBuffer
     {
         std::array<PadEvent, kMaxPadEventsPerFrame> events{};
         std::size_t count{ 0 };
+        std::size_t droppedCount{ 0 };
+        bool overflowed{ false };
 
         void Clear()
         {
             count = 0;
+            droppedCount = 0;
+            overflowed = false;
         }
 
         bool Push(const PadEvent& event)
         {
             if (count >= events.size()) {
+                overflowed = true;
+                ++droppedCount;
                 return false;
             }
 

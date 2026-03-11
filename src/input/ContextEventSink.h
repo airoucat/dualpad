@@ -1,7 +1,5 @@
 #pragma once
 #include <RE/Skyrim.h>
-#include <atomic>
-#include <thread>
 
 namespace dualpad::input
 {
@@ -27,13 +25,5 @@ namespace dualpad::input
 
     private:
         ContextEventSink() = default;
-
-        std::atomic_bool _updateRunning{ false };
-        std::jthread _updateThread;
-
-        // Polls gameplay-only states that are not exposed by menu events.
-        void StartPerFrameUpdate();
-        void StopPerFrameUpdate();
-        void PerFrameUpdateLoop();
     };
 }

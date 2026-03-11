@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -155,10 +156,11 @@ namespace dualpad::input
         InputContext _baseContext{ InputContext::Gameplay };
         std::vector<InputContext> _contextStack;
         std::vector<MenuContextEntry> _menuStack;
+        mutable std::mutex _mutex;
 
         InputContext MenuNameToContext(std::string_view menuName) const;
         InputContext DetectGameplayContext() const;
-        void RefreshCurrentContext();
+        void RefreshCurrentContextLocked();
         bool ShouldTrackMenu(std::string_view menuName) const;
     };
 }

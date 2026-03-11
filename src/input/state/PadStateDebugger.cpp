@@ -1,10 +1,10 @@
 #include "pch.h"
 #include "input/state/PadStateDebugger.h"
+#include "input/RuntimeConfig.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstdlib>
 
 namespace logger = SKSE::log;
 
@@ -12,40 +12,6 @@ namespace dualpad::input
 {
     namespace
     {
-        struct DebugConfig
-        {
-            bool packetSummary{ false };
-            bool packetHexDump{ false };
-            bool stateSummary{ false };
-            bool parseFailure{ true };
-        };
-
-        bool EnvEnabled(const char* name)
-        {
-            char* value = nullptr;
-            std::size_t length = 0;
-            if (_dupenv_s(&value, &length, name) != 0 || !value || value[0] == '\0') {
-                std::free(value);
-                return false;
-            }
-
-            const bool enabled = value[0] != '0';
-            std::free(value);
-            return enabled;
-        }
-
-        const DebugConfig& GetDebugConfig()
-        {
-            static const DebugConfig config{
-                .packetSummary = EnvEnabled("DUALPAD_LOG_INPUT_PACKETS"),
-                .packetHexDump = EnvEnabled("DUALPAD_LOG_INPUT_HEX"),
-                .stateSummary = EnvEnabled("DUALPAD_LOG_INPUT_STATE"),
-                .parseFailure = true
-            };
-
-            return config;
-        }
-
         std::string_view BoolString(bool value)
         {
             return value ? "1" : "0";
@@ -60,16 +26,16 @@ namespace dualpad::input
 
     bool IsInputDebugLogEnabled(InputDebugLog log)
     {
-        const auto& config = GetDebugConfig();
+        const auto& config = RuntimeConfig::GetSingleton();
         switch (log) {
         case InputDebugLog::PacketSummary:
-            return config.packetSummary;
+            return config.LogInputPackets();
         case InputDebugLog::PacketHexDump:
-            return config.packetHexDump;
+            return config.LogInputHex();
         case InputDebugLog::StateSummary:
-            return config.stateSummary;
+            return config.LogInputState();
         case InputDebugLog::ParseFailure:
-            return config.parseFailure;
+            return true;
         default:
             return false;
         }
