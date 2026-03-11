@@ -17,6 +17,8 @@ namespace dualpad::input
         bool IsLifecycleAction(std::string_view actionId)
         {
             return actionId == actions::Sprint ||
+                actionId == actions::Activate ||
+                actionId == actions::Sneak ||
                 actionId == actions::MenuScrollUp ||
                 actionId == actions::MenuScrollDown ||
                 actionId == actions::MenuPageUp ||

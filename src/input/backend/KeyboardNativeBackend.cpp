@@ -1997,11 +1997,131 @@ namespace dualpad::input::backend
             }
         }
 
+        using GameplayValidate_t = bool(__fastcall*)(void*, RE::InputEvent*);
+
+        bool EventMatchesSecondFamilyRawScancode(RE::InputEvent* event, std::uint8_t expectedScancode)
+        {
+            if (!event) {
+                return false;
+            }
+
+            std::uint32_t code = 0;
+            if (!TryReadDword(reinterpret_cast<std::uintptr_t>(event) + 0x20, code)) {
+                return false;
+            }
+
+            return static_cast<std::uint8_t>(code) == expectedScancode;
+        }
+
+        template <std::uint8_t ExpectedScancode>
+        struct GameplayRootValidateThunk;
+
+        template <std::uint8_t ExpectedScancode>
+        struct GameplayRootValidateSlotHook
+        {
+            static inline bool _installed{ false };
+            static inline std::uintptr_t _handlerObject{ 0 };
+            static inline GameplayValidate_t _original{ nullptr };
+            static inline std::array<std::uintptr_t, kShadowVtableEntryCount> _shadowVtable{};
+
+            static bool InstallForHandler(std::uintptr_t handlerObject, std::string_view actionName)
+            {
+                if (handlerObject == 0) {
+                    return false;
+                }
+
+                if (_installed && _handlerObject == handlerObject) {
+                    return true;
+                }
+
+                std::uint64_t originalVtable = 0;
+                if (!TryReadQword(handlerObject, originalVtable) || originalVtable == 0) {
+                    return false;
+                }
+
+                for (std::size_t i = 0; i < _shadowVtable.size(); ++i) {
+                    std::uint64_t entry = 0;
+                    if (!TryReadQword(static_cast<std::uintptr_t>(originalVtable) + i * sizeof(std::uint64_t), entry)) {
+                        return false;
+                    }
+                    _shadowVtable[i] = static_cast<std::uintptr_t>(entry);
+                }
+
+                _original = reinterpret_cast<GameplayValidate_t>(_shadowVtable[1]);
+                _shadowVtable[1] = reinterpret_cast<std::uintptr_t>(&GameplayRootValidateThunk<ExpectedScancode>::Thunk);
+                *reinterpret_cast<std::uintptr_t*>(handlerObject) = reinterpret_cast<std::uintptr_t>(_shadowVtable.data());
+
+                _handlerObject = handlerObject;
+                _installed = true;
+
+                if (RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
+                    logger::info(
+                        "[DualPad][KeyboardNative] Installed gameplay-root validate hook action={} handler=0x{:X} original=0x{:X}",
+                        actionName,
+                        handlerObject,
+                        reinterpret_cast<std::uintptr_t>(_original));
+                }
+
+                return true;
+            }
+        };
+
+        template <std::uint8_t ExpectedScancode>
+        struct GameplayRootValidateThunk
+        {
+            static bool __fastcall Thunk(void* self, RE::InputEvent* event)
+            {
+                using SlotHook = GameplayRootValidateSlotHook<ExpectedScancode>;
+                const auto originalResult = SlotHook::_original ? SlotHook::_original(self, event) : false;
+                if (originalResult) {
+                    return true;
+                }
+
+                if (!EventMatchesSecondFamilyRawScancode(event, ExpectedScancode)) {
+                    return false;
+                }
+
+                if (RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
+                    std::uint32_t code = 0;
+                    TryReadDword(reinterpret_cast<std::uintptr_t>(event) + 0x20, code);
+                    logger::info(
+                        "[DualPad][KeyboardNative] SecondFamily gameplay-root validate override handler=0x{:X} event=0x{:X} code=0x{:X}",
+                        reinterpret_cast<std::uintptr_t>(self),
+                        reinterpret_cast<std::uintptr_t>(event),
+                        code);
+                }
+
+                return true;
+            }
+        };
+
         void EnsureGameplayRootValidateHooksInstalled()
         {
-            // Minimal baseline restore: keep Install()/Dispatch path valid.
-            // The second-family gameplay-root validate implementation can be
-            // reintroduced safely after the codebase is back to a clean build.
+            const auto gameplayRoot = ReadGlobalObjectPointer(kGameplayRootGlobalObjectPointerRva);
+            if (gameplayRoot == 0) {
+                return;
+            }
+
+            std::uint64_t sprintHandlerObject = 0;
+            if (TryReadQword(gameplayRoot + 48 * sizeof(std::uint64_t), sprintHandlerObject) && sprintHandlerObject != 0) {
+                GameplayRootValidateSlotHook<static_cast<std::uint8_t>(REX::W32::DIK::DIK_LMENU)>::InstallForHandler(
+                    static_cast<std::uintptr_t>(sprintHandlerObject),
+                    "Sprint");
+            }
+
+            std::uint64_t activateHandlerObject = 0;
+            if (TryReadQword(gameplayRoot + 52 * sizeof(std::uint64_t), activateHandlerObject) && activateHandlerObject != 0) {
+                GameplayRootValidateSlotHook<static_cast<std::uint8_t>(REX::W32::DIK::DIK_E)>::InstallForHandler(
+                    static_cast<std::uintptr_t>(activateHandlerObject),
+                    "Activate");
+            }
+
+            std::uint64_t sneakHandlerObject = 0;
+            if (TryReadQword(gameplayRoot + 57 * sizeof(std::uint64_t), sneakHandlerObject) && sneakHandlerObject != 0) {
+                GameplayRootValidateSlotHook<static_cast<std::uint8_t>(REX::W32::DIK::DIK_LCONTROL)>::InstallForHandler(
+                    static_cast<std::uintptr_t>(sneakHandlerObject),
+                    "Sneak");
+            }
         }
 
         struct PreprocessCallHook

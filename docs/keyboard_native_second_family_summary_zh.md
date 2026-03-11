@@ -754,3 +754,54 @@ second-family 落入的那条 interface/generic 键盘树再收窄一层：
 - 这样能避开本体 branch hook 的调用约定/重定位风险，同时更贴近 second-family 的真实 miss 点
 
 如果这版有效，后面再决定是否往前收成更优雅的 descriptor/routing patch。
+## 最新补丁进展
+
+- 已将 second-family 的第一版共存补丁前移到 gameplay root 自己的 handler 容器，不再依赖 shared owner 的 child list。
+- 当前实现直接从 `qword_142EC5BD8` 读取 gameplay root，并对这 3 个 handler 的 `vtable slot1(validate)` 做 shadow-vtable override：
+  - `Sprint` index `48`
+  - `Activate` index `52`
+  - `Sneak` index `57`
+- 兜底逻辑保持很窄：
+  - 原 validate 先跑
+  - 只有原结果为 `false` 才兜底
+  - 只对白名单 raw 键生效：
+    - `Sprint -> DIK_LMENU`
+    - `Activate -> DIK_E`
+    - `Sneak -> DIK_LCONTROL`
+- 这版的目的不是一次性解决 second-family 所有时序问题，而是先验证：
+  - gameplay validate miss 是否就是 second-family 的主因
+  - 以及 gameplay root 是否能在 active gamepad delegate 存在时重新吃掉这 3 个动作
+
+## 2026-03-11：validate 已通，主问题前移到 gameplay process / 时序层
+
+最新运行结果表明，second-family 已经不是“完全进不去 gameplay tree”的状态：
+
+- gameplay root 的 3 个 validate hook 都能稳定安装；
+- `Activate / Sprint / Sneak` 的 override 也已经在日志里实际命中；
+- 说明 `gameplay validate miss` 确实是真问题，但它不是唯一问题。
+
+当前新的高可信判断是：
+
+1. second-family 现在已经可以进入 gameplay validate 层；
+2. 但在 `FAMILY DISPATCH EXIT` 时，事件仍然经常保持 `raw + empty`；
+3. 因此剩余问题更像是 `gameplay process / 时序层`，而不再是更早的 routing/validate 层。
+
+这带来两个直接推论：
+
+- 对 second-family，不应再优先怀疑 proxy provenance 或 shared owner 路由；
+- 更应该优先检查动作自身的 `press / hold / release` 语义是否和当前注入形态匹配。
+
+按当前动作特征，最可疑的是：
+
+- `Sprint`
+  - 很可能需要稳定的 held 状态，而不是窄 pulse。
+- `Sneak`
+  - 更像 toggle / press-consume，需要比单次 pulse 更稳定的按下语义。
+- `Activate`
+  - 虽然更接近短按动作，但在 active gamepad delegate 共存时，也可能需要比单次 pulse 更稳定的 down/release 窗口。
+
+因此后续推进方向已经调整为：
+
+- 维持当前 validate patch 不动；
+- 把 second-family 的发射策略从单次 `Pulse` 前移到 `Press/Hold/Release` 生命周期；
+- 先用 stateful 路由验证 second-family 是否从“结构性失效”推进到“可稳定消费”。

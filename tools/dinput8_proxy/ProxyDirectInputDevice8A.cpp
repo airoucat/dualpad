@@ -7,7 +7,16 @@ namespace dualpad::dinput8_proxy
 {
     namespace
     {
+        // Keyboard-native families have diverged at the process/feel layer:
+        // - Jump: one-shot pulse with a minimum down window
+        // - Activate: short pulse, but needs a slightly wider down window
+        // - Sneak: toggle-like, only light release smoothing
+        // - Sprint: held-like, needs a longer release delay to avoid collapsing
+        //   back into a too-narrow pulse.
         constexpr std::uint8_t kJumpPulseReleaseExtraGetDeviceDataCalls = 1;
+        constexpr std::uint8_t kActivateReleaseExtraGetDeviceDataCalls = 2;
+        constexpr std::uint8_t kSneakReleaseExtraGetDeviceDataCalls = 1;
+        constexpr std::uint8_t kSprintReleaseExtraGetDeviceDataCalls = 4;
 
         bool IsWrappedDeviceInterface(REFIID riid)
         {
@@ -16,6 +25,22 @@ namespace dualpad::dinput8_proxy
                 ::IsEqualGUID(riid, IID_IDirectInputDevice2A) ||
                 ::IsEqualGUID(riid, IID_IDirectInputDevice7A) ||
                 ::IsEqualGUID(riid, IID_IDirectInputDevice8A);
+        }
+
+        std::uint8_t GetBridgeReleaseExtraGetDeviceDataCalls(const std::uint8_t scancode)
+        {
+            switch (scancode) {
+            case DIK_E:
+                return kActivateReleaseExtraGetDeviceDataCalls;
+            case DIK_LCONTROL:
+                return kSneakReleaseExtraGetDeviceDataCalls;
+            case DIK_LMENU:
+                return kSprintReleaseExtraGetDeviceDataCalls;
+            case DIK_SPACE:
+                return kJumpPulseReleaseExtraGetDeviceDataCalls;
+            default:
+                return 0;
+            }
         }
 
     }
@@ -301,17 +326,24 @@ namespace dualpad::dinput8_proxy
                 break;
             case input::backend::KeyboardBridgeCommandType::Release:
                 if (scancode < _bridgeLatchedDown.size() && _bridgeLatchedDown[scancode]) {
-                    queueBridgeRecord(command.scancode, false);
-                    _bridgeLatchedDown[scancode] = false;
+                    const auto extraGetDeviceDataCalls =
+                        GetBridgeReleaseExtraGetDeviceDataCalls(command.scancode);
+                    if (extraGetDeviceDataCalls != 0) {
+                        QueueBridgeDeferredEvent(
+                            BuildBridgeEvent(command.scancode, false),
+                            extraGetDeviceDataCalls);
+                    }
+                    else {
+                        queueBridgeRecord(command.scancode, false);
+                        _bridgeLatchedDown[scancode] = false;
+                    }
                 }
                 break;
             case input::backend::KeyboardBridgeCommandType::Pulse:
                 if (scancode < _bridgeLatchedDown.size()) {
                     QueueBridgePendingEvent(BuildBridgeEvent(command.scancode, true));
                     const auto extraGetDeviceDataCalls =
-                        command.scancode == DIK_SPACE ?
-                            kJumpPulseReleaseExtraGetDeviceDataCalls :
-                            static_cast<std::uint8_t>(0);
+                        GetBridgeReleaseExtraGetDeviceDataCalls(command.scancode);
                     QueueBridgeDeferredEvent(
                         BuildBridgeEvent(command.scancode, false),
                         extraGetDeviceDataCalls);
