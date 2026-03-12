@@ -274,6 +274,15 @@ namespace dualpad::input
                 }
                 _upstreamGamepadHookMode = ParseUpstreamGamepadHookMode(it->second, _upstreamGamepadHookMode);
             }
+            if (auto it = values.find("use_orbis_gamepad_probe_hook"); it != values.end()) {
+                _useOrbisGamepadProbeHook = ParseBool(it->second, _useOrbisGamepadProbeHook);
+            }
+            if (auto it = values.find("use_gamepad_device_creation_probe_hook"); it != values.end()) {
+                _useGamepadDeviceCreationProbeHook = ParseBool(it->second, _useGamepadDeviceCreationProbeHook);
+            }
+            if (auto it = values.find("force_factory_xinput_capabilities_fail"); it != values.end()) {
+                _forceFactoryXInputCapabilitiesFail = ParseBool(it->second, _forceFactoryXInputCapabilitiesFail);
+            }
             if (auto it = values.find("use_upstream_keyboard_hook"); it != values.end()) {
                 _useUpstreamKeyboardHook = ParseBool(it->second, _useUpstreamKeyboardHook);
             }
@@ -313,7 +322,7 @@ namespace dualpad::input
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} sprint={} injection upstreamGamepad={} upstreamMode={} upstreamKeyboard={} upstreamKeyboardMode={} keyboardSourcePatchTest={} keyboardManagerHeadPatchTest={} keyboardAcceptDumpRouteTest={} nativeButton={} nativeButtonMode={} nativeFrame={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} sprint={} injection upstreamGamepad={} upstreamMode={} orbisProbe={} gamepadFactoryProbe={} factoryXInputFail={} upstreamKeyboard={} upstreamKeyboardMode={} keyboardSourcePatchTest={} keyboardManagerHeadPatchTest={} keyboardAcceptDumpRouteTest={} nativeButton={} nativeButtonMode={} nativeFrame={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -325,6 +334,9 @@ namespace dualpad::input
             _logSprintObservation,
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
+            _useOrbisGamepadProbeHook,
+            _useGamepadDeviceCreationProbeHook,
+            _forceFactoryXInputCapabilitiesFail,
             _useUpstreamKeyboardHook,
             ToString(_upstreamKeyboardHookMode),
             _testKeyboardEventSourcePatch,
@@ -337,6 +349,18 @@ namespace dualpad::input
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
                 ToString(_upstreamGamepadHookMode));
+        }
+        if (_useOrbisGamepadProbeHook) {
+            logger::warn(
+                "[DualPad][RuntimeConfig] use_orbis_gamepad_probe_hook enables an observe-only Orbis provider call-site probe; it logs producer-side state but does not inject");
+        }
+        if (_useGamepadDeviceCreationProbeHook) {
+            logger::warn(
+                "[DualPad][RuntimeConfig] use_gamepad_device_creation_probe_hook enables an observe-only gamepad factory probe; it logs whether the runtime created Win32 or Orbis gamepad devices");
+        }
+        if (_forceFactoryXInputCapabilitiesFail) {
+            logger::warn(
+                "[DualPad][RuntimeConfig] force_factory_xinput_capabilities_fail is enabled; the gamepad factory XInputGetCapabilities call-site will return DEVICE_NOT_CONNECTED so Orbis/provider fallback can be tested");
         }
         if (_useUpstreamKeyboardHook) {
             logger::warn(
@@ -381,6 +405,9 @@ namespace dualpad::input
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
+        _useOrbisGamepadProbeHook = false;
+        _useGamepadDeviceCreationProbeHook = false;
+        _forceFactoryXInputCapabilitiesFail = false;
         _useUpstreamKeyboardHook = false;
         _upstreamKeyboardHookMode = UpstreamKeyboardHookMode::SemanticMid;
         _testKeyboardEventSourcePatch = false;

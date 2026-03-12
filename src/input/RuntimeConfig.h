@@ -47,6 +47,9 @@ namespace dualpad::input
 
         bool UseUpstreamGamepadHook() const { return _useUpstreamGamepadHook; }
         UpstreamGamepadHookMode GetUpstreamGamepadHookMode() const { return _upstreamGamepadHookMode; }
+        bool UseOrbisGamepadProbeHook() const { return _useOrbisGamepadProbeHook; }
+        bool UseGamepadDeviceCreationProbeHook() const { return _useGamepadDeviceCreationProbeHook; }
+        bool ForceFactoryXInputCapabilitiesFail() const { return _forceFactoryXInputCapabilitiesFail; }
         bool UseUpstreamKeyboardHook() const { return _useUpstreamKeyboardHook; }
         UpstreamKeyboardHookMode GetUpstreamKeyboardHookMode() const { return _upstreamKeyboardHookMode; }
         bool TestKeyboardEventSourcePatch() const { return _testKeyboardEventSourcePatch; }
@@ -77,6 +80,9 @@ namespace dualpad::input
 
         bool _useUpstreamGamepadHook{ true };
         UpstreamGamepadHookMode _upstreamGamepadHookMode{ UpstreamGamepadHookMode::PollXInputCall };
+        bool _useOrbisGamepadProbeHook{ false };
+        bool _useGamepadDeviceCreationProbeHook{ false };
+        bool _forceFactoryXInputCapabilitiesFail{ false };
         bool _useUpstreamKeyboardHook{ false };
         UpstreamKeyboardHookMode _upstreamKeyboardHookMode{ UpstreamKeyboardHookMode::SemanticMid };
         bool _testKeyboardEventSourcePatch{ false };

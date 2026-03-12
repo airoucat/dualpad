@@ -15,7 +15,10 @@
 #include "input/RuntimeConfig.h"
 #include "input/backend/KeyboardNativeBackend.h"
 
+#include "input/injection/GamepadFactoryXInputBypassHook.h"
 #include "input/injection/NativeInputPreControlMapHook.h"
+#include "input/injection/GamepadDeviceCreationProbeHook.h"
+#include "input/injection/OrbisGamepadProbeHook.h"
 #include "input/injection/UpstreamGamepadHook.h"
 
 #include "input/custom/CustomActionDispatcher.h"
@@ -76,6 +79,18 @@ namespace
 
             if (dualpad::input::RuntimeConfig::GetSingleton().UseUpstreamGamepadHook()) {
                 dualpad::input::UpstreamGamepadHook::GetSingleton().Install();
+            }
+
+            if (dualpad::input::RuntimeConfig::GetSingleton().UseOrbisGamepadProbeHook()) {
+                dualpad::input::OrbisGamepadProbeHook::GetSingleton().Install();
+            }
+
+            if (dualpad::input::RuntimeConfig::GetSingleton().UseGamepadDeviceCreationProbeHook()) {
+                dualpad::input::GamepadDeviceCreationProbeHook::GetSingleton().Install();
+            }
+
+            if (dualpad::input::RuntimeConfig::GetSingleton().ForceFactoryXInputCapabilitiesFail()) {
+                dualpad::input::GamepadFactoryXInputBypassHook::GetSingleton().Install();
             }
 
             if (dualpad::input::RuntimeConfig::GetSingleton().UseUpstreamKeyboardHook()) {
@@ -155,6 +170,16 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::AllocTrampoline(1 << 9);
 
     logger::info("DualPad v1.0.0 loaded");
+
+    // The gamepad device factory can run before DataLoaded, so creation probes
+    // need their config and hook installed as early as plugin load.
+    dualpad::input::RuntimeConfig::GetSingleton().Load();
+    if (dualpad::input::RuntimeConfig::GetSingleton().UseGamepadDeviceCreationProbeHook()) {
+        dualpad::input::GamepadDeviceCreationProbeHook::GetSingleton().Install();
+    }
+    if (dualpad::input::RuntimeConfig::GetSingleton().ForceFactoryXInputCapabilitiesFail()) {
+        dualpad::input::GamepadFactoryXInputBypassHook::GetSingleton().Install();
+    }
 
     if (auto* messaging = SKSE::GetMessagingInterface(); messaging) {
 
