@@ -116,6 +116,171 @@ Do not resume these as the main design:
 
 The current `use_native_button_injector` path is now legacy experimental-only.
 
+## Scoped Retry Conditions
+
+As of 2026-03-12, a narrow retry of native `ButtonEvent` injection is allowed,
+but only under strict reverse-first conditions.
+
+This retry does not change the architectural conclusion above.
+
+It exists only to answer a smaller question:
+
+- whether there is still one safe, engine-owned injection boundary where a
+  minimal `ButtonEvent` experiment can be observed and evaluated correctly
+
+The retry must follow these rules:
+
+- do not resume arbitrary `BSInputEventQueue` writes from unrelated plugin code
+- do not treat queue/head surgery as the default forward plan
+- do not widen the old `append` / `head-prepend` / `inject` modes into
+  production routing
+- do not use stateful gameplay actions such as `Sprint` as the first proof case
+- do not interpret "node appeared in the chain" as success unless the event is
+  also consumed semantically by the game
+
+The retry order is:
+
+1. Use IDA/MCP to recover the real `PollInputDevices -> ControlMap` call path,
+   ownership, and queue reset timing.
+2. Select at most one or two candidate injection points with concrete evidence.
+3. Add observe-only probes first.
+4. Add the smallest possible `ButtonEvent` prepend/append experiment only after
+   the hook boundary is understood.
+5. Validate with simple actions first, such as menu confirm/cancel or a basic
+   gameplay pulse, before revisiting held actions.
+
+The retry should be considered failed again if any of the following remains
+true after the minimal experiment:
+
+- the hook point is not ownership-safe
+- the event can be logged on the chain but not consumed semantically
+- behavior still depends on fragile queue/head mutation details
+- stateful semantics still require mixed backend ownership
+
+## 2026-03-12 Producer-side Retry Update
+
+The narrow retry has now produced one useful success:
+
+- producer-side `engine-cache` button injection can be consumed semantically by
+  Skyrim for `Jump`
+
+This does not resurrect the old consumer-side design.
+
+It changes the retry conclusion in a narrower way:
+
+- heap-created or consumer-spliced `ButtonEvent` chains are still not the
+  forward plan
+- engine-owned queue/cache production is now a valid digital-input research
+  path
+- the remaining problem has moved from "can a native button event work" to
+  lifecycle timing, gameplay-gate awareness, and ownership policy such as
+  delayed release, held-owner, minimum-down-window behavior, and broad-gate
+  deferral when gameplay-root allow conditions are transiently closed
+
+Latest implementation note:
+
+- native pulse actions are no longer best modeled as "stage press now, hope the
+  gate is open"; they should first enter a logical pulse queue, and only be
+  materialized into engine-owned `ButtonEvent` writes when the gameplay broad
+  gate allows it
+- lifecycle actions above that queue should also stop being implicit
+  "source-down equals game-down" behavior; the first explicit policy now in tree
+  is `Activate -> MinDownWindow(40 ms)`
+
+Current architectural direction after this proof:
+
+- keep `Route B` for analog/native pad-state ownership
+- move Skyrim-native discrete controls toward lifecycle-driven native injection
+- keep `KeyboardNativeBackend` mainly for Mod virtual keys and bounded
+  provenance experiments
+
+## 2026-03-12 Producer-Facade Update
+
+Further IDA/MCP work shows that the native gamepad button path is already
+producer-driven inside Skyrim's own device poll code.
+
+Relevant chain:
+
+- `BSWin32GamepadDevice::Poll` at `0x140C1AB40`
+- device-local previous/current state comparison
+- digital producer helper `sub_140C190F0`
+- axis/trigger producer helper `sub_140C19220`
+- engine-owned queue/cache materialization through `sub_140C16900`
+
+This changes the best retry conclusion:
+
+- the strongest native-button direction is no longer "write engine-cache
+  `ButtonEvent` objects near `ControlMap`"
+- the stronger direction is "feed a synthetic current device state early enough
+  that Skyrim's own producer helpers generate the `ButtonEvent`s"
+
+In other words:
+
+- `engine-cache` queue writes proved semantic viability
+- but producer-side state diffing now looks like the cleaner and more
+  generalizable native-button route
+
+This remains on the `ButtonEvent` line, but it moves the ownership boundary
+earlier.
+
+### More-Upstream Plan B Candidates
+
+If the current Route B `XInputGetState` call-site patch is still too narrow,
+the next better candidates are:
+
+- patch the gamepad device's current-frame state buffer before the native
+  previous/current compare step
+- investigate the raw-provider boundary around `sub_140C1B600`, which appears
+  to populate a larger gamepad state block before the same producer helpers are
+  reached
+
+These are both preferable to new consumer-side `ControlMap` queue surgery,
+because they preserve the native producer ordering and state accumulation that
+`Jump`/`Sprint`/`Activate`/`Sneak` ultimately need.
+
+Latest reverse detail:
+
+- there are at least two producer-side gamepad poll variants that both feed the
+  same native button helpers:
+  - `BSWin32GamepadDevice::Poll` around `0x140C1AB40`
+  - a `BSPCOrbisGamepadDevice`-style poll path around `0x140C1BD20`
+- the lower-level raw provider around `sub_140C1B600` appears to participate in
+  selecting or populating the richer Orbis-side device state
+- for DualSense-specific work, this makes the Orbis/raw-provider boundary a
+  concrete more-upstream Plan B, not just a theoretical alternative to the
+  current XInput call-site patch
+
+### More-Upstream Plan C Candidate
+
+Further reverse work exposes a third boundary above the raw-state read itself:
+
+- the provider slot / handle registration layer around `unk_142F6C800`
+
+Relevant evidence:
+
+- `sub_140C1CD70` allocates or reuses one provider slot and assigns an
+  internal handle-like ID
+- `sub_140C1CFC0` can rebuild one slot with richer metadata/state and then
+  re-arm it
+- `sub_140C1D640` sends per-slot initialization/configuration reports
+- `sub_140C1FA00` writes HID output reports to the provider-owned device handle
+- `sub_140C1B280` later drains rich records from that same slot into the
+  Orbis-side producer path
+
+This suggests a true Plan C:
+
+- instead of only patching the current read boundary,
+- investigate whether DualPad can own, mirror, or populate one native provider
+  slot directly and let the existing provider -> Orbis poll -> producer-helper
+  chain continue naturally
+
+Status:
+
+- promising but unproven
+- likely more invasive than Plan B
+- still preferable to new `ControlMap`-side queue surgery if a broader native
+  digital route is required
+
 ## What Stays Useful
 
 These parts are still valuable and should be preserved:

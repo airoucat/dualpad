@@ -41,6 +41,70 @@ Confirmed ownership/layout after the updated `agents3` reverse notes:
 - In CommonLib terms, that layout matches `RE::BSInputEventQueue::RUNTIME_DATA::queueHead/queueTail`.
 - The current implementation should therefore treat `RE::BSInputEventQueue::GetSingleton()` as the typed wrapper for that independent singleton on SE 1.5.97.
 
+## 2026-03-12 Reverse Update
+
+IDA/MCP confirmation for SE 1.5.97:
+
+- `sub_140C150B0` is the per-frame input pump body currently treated as
+  `BSInputDeviceManager::PollInputDevices(float)`.
+- Its critical order is now confirmed as:
+  1. iterate the 4 device objects at `this + 0x60` and call each device
+     `vtbl + 0x10`
+  2. call `sub_140C11600(qword_142EC5BD0, qword_142F50B28->queueHead)`
+  3. call `sub_140C10860(delta)` for vibration state work
+  4. copy `qword_142F50B28->queueHead` into a stack local
+  5. call `sub_140C15E00(this, &stackLocalHead)`
+  6. call `sub_140C16C80(qword_142F50B28)` to clear the per-frame queue/cache
+
+Important consequence:
+
+- `sub_140C15E00` does not receive a direct alias of the singleton
+  `queueHead` field.
+- It receives a pointer to a stack-local copy created after
+  `sub_140C11600` returns.
+- Therefore modifying only the `head` argument at the `sub_140C11600`
+  call-site does not automatically guarantee that later dispatch in
+  `sub_140C15E00` sees the same synthetic chain.
+
+Independent queue singleton layout now has stronger evidence:
+
+- `sub_140C15600` initializes `qword_142F50B28` as a fixed-cache event
+  container.
+- Confirmed cache regions include:
+  - `+0x20`: 10 entries of size `0x30`
+  - `+0x200`: 5 entries of size `0x20`
+  - `+0x2A0`: 1 entry of size `0x30`
+  - `+0x2D0`: 2 entries of size `0x30`
+  - `+0x330`: 1 entry of size `0x20`
+  - `+0x350`: 1 entry of size `0x30`
+  - `+0x380`: queue head
+  - `+0x388`: queue tail
+
+Queue reset timing is also now explicit:
+
+- `sub_140C16C80` clears the queue bookkeeping fields after both
+  `sub_140C11600` and `sub_140C15E00` have consumed the frame.
+- It zeros the small count/bookkeeping region near `+0x4/+0xC/+0x14`
+  and resets `+0x380/+0x388`.
+
+Most important semantic update:
+
+- native event production is cache-backed and engine-owned
+- `sub_140C16900(qword_142F50B28, ...)` appends a button-style event into the
+  `+0x20` fixed cache and links it into `queueHead/queueTail`
+- `sub_140C169B0(qword_142F50B28, ...)` does the same for the character cache
+- `sub_140C16B60(qword_142F50B28, ...)` does the same for the connect/cache
+  region
+
+This means the game's native producer path is not "arbitrary heap
+`ButtonEvent` objects linked by hand".
+
+For retry planning, this sharply raises the importance of:
+
+- matching engine-owned cache production when possible
+- and treating heap `ButtonEvent::Create` prepend experiments only as a
+  diagnostic comparison, not as the assumed native shape
+
 Latest probe result from the failed `0xC11600` entry detour experiment:
 
 - The hook can be installed and the game reaches the main menu.

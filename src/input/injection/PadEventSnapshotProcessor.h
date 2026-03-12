@@ -5,6 +5,7 @@
 #include "input/backend/FrameActionPlan.h"
 #include "input/backend/FrameActionPlanner.h"
 #include "input/backend/NativeStateBackend.h"
+#include "input/injection/ButtonLifecyclePolicy.h"
 #include "input/mapping/BindingResolver.h"
 #include "input/injection/CompatibilityInputInjector.h"
 #include "input/injection/NativeInputInjector.h"
@@ -28,6 +29,7 @@ namespace dualpad::input
         void PrependInjectedInputEvents(RE::InputEvent*& head);
         std::size_t PrependInjectedInputEventsUsingQueueCache(RE::InputEvent*& head);
         std::size_t PrependInjectedInputQueueEvents(RE::InputEvent*& head, RE::InputEvent*& tail);
+        std::size_t AppendInjectedInputEventsUsingEngineCache(RE::InputEvent*& head);
         std::size_t GetPendingInjectedButtonCount() const;
         void DiscardPendingInjectedButtonEvents();
         void ReleaseInjectedInputEvents();
@@ -38,6 +40,9 @@ namespace dualpad::input
         {
             bool active{ false };
             std::string actionId{};
+            ButtonLifecyclePolicy policy{};
+            std::uint64_t logicalPressedAtUs{ 0 };
+            std::uint64_t releaseNotBeforeUs{ 0 };
             std::uint64_t lastObservedHoldBucket{ std::numeric_limits<std::uint64_t>::max() };
         };
 

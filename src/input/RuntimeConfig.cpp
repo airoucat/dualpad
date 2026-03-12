@@ -62,6 +62,9 @@ namespace dualpad::input
             if (normalized == "append" || normalized == "queue") {
                 return NativeButtonHookMode::Append;
             }
+            if (normalized == "engine-cache" || normalized == "engine_cache" || normalized == "cache") {
+                return NativeButtonHookMode::EngineCache;
+            }
             if (normalized == "append-probe" || normalized == "queue-probe" || normalized == "append_probe") {
                 return NativeButtonHookMode::AppendProbe;
             }
@@ -82,6 +85,8 @@ namespace dualpad::input
                 return "append-probe";
             case NativeButtonHookMode::Append:
                 return "append";
+            case NativeButtonHookMode::EngineCache:
+                return "engine-cache";
             case NativeButtonHookMode::DropProbe:
             default:
                 return "drop";
@@ -352,7 +357,7 @@ namespace dualpad::input
         }
         if (_useNativeButtonInjector) {
             logger::warn(
-                "[DualPad][RuntimeConfig] use_native_button_injector enables the deprecated consumer-side native-button experiment; keep it off unless you are reproducing old PollInputDevices/ControlMap failures (mode={})",
+                "[DualPad][RuntimeConfig] use_native_button_injector enables experimental native button injection; prefer mode=engine-cache, while older append/prepend modes remain reverse-engineering only (mode={})",
                 ToString(_nativeButtonHookMode));
         }
         if (_useNativeFrameInjector) {

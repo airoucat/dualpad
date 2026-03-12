@@ -17,22 +17,13 @@ namespace dualpad::input
     {
         bool ShouldPreferCompatibilityState(std::string_view actionId)
         {
-            return actionId == actions::Sprint ||
-                actionId == actions::MenuScrollUp ||
-                actionId == actions::MenuScrollDown ||
-                actionId == actions::MenuPageUp ||
-                actionId == actions::MenuPageDown;
+            return actionId == actions::Sprint;
         }
 
         bool ShouldPreferKeyboardNative(std::string_view actionId)
         {
-            return actionId == actions::Sprint ||
-                actionId == actions::Jump ||
-                actionId == actions::Activate ||
-                actionId == actions::Sneak ||
-                actionId == actions::Shout ||
-                (RuntimeConfig::GetSingleton().TestKeyboardAcceptDumpRoute() &&
-                    actionId == actions::MenuConfirm);
+            return RuntimeConfig::GetSingleton().TestKeyboardAcceptDumpRoute() &&
+                actionId == actions::MenuConfirm;
         }
 
         bool IsSyntheticTouchpadPadEvent(const PadEvent& event)
@@ -79,11 +70,18 @@ namespace dualpad::input
 
         if (const auto pulseBit = ResolveCompatibilityPulseBit(actionId); pulseBit != 0) {
             if (_nativeInjector.ShouldUseForButtonActions() &&
-                _nativeInjector.IsAvailable() &&
-                _nativeInjector.CanHandleAction(actionId) &&
-                _nativeInjector.PulseButtonAction(actionId)) {
-                logger::info("[DualPad][Dispatch] Routed action '{}' through native pulse injection", actionId);
-                return { true, ActionDispatchTarget::NativePulse };
+                _nativeInjector.IsAvailable()) {
+                if (_nativeInjector.CanHandleAction(actionId) &&
+                    _nativeInjector.PulseButtonAction(actionId)) {
+                    logger::info("[DualPad][Dispatch] Routed action '{}' through native mapped pulse injection", actionId);
+                    return { true, ActionDispatchTarget::NativePulse };
+                }
+
+                if (_nativeInjector.CanHandleRawPadButton(pulseBit) &&
+                    _nativeInjector.PulseRawPadButton(pulseBit, context)) {
+                    logger::info("[DualPad][Dispatch] Routed action '{}' through native raw pulse injection", actionId);
+                    return { true, ActionDispatchTarget::NativePulse };
+                }
             }
 
             _compatibilityInjector.PulseButton(pulseBit, actionId);
@@ -114,10 +112,16 @@ namespace dualpad::input
         if (const auto pulseBit = ResolveCompatibilityPulseBit(actionId); pulseBit != 0) {
             if (!ShouldPreferCompatibilityState(actionId) &&
                 _nativeInjector.ShouldUseForButtonActions() &&
-                _nativeInjector.IsAvailable() &&
-                _nativeInjector.CanHandleAction(actionId) &&
-                _nativeInjector.QueueButtonAction(actionId, down, heldSeconds)) {
-                return { true, ActionDispatchTarget::NativeState };
+                _nativeInjector.IsAvailable()) {
+                if (_nativeInjector.CanHandleAction(actionId) &&
+                    _nativeInjector.QueueButtonAction(actionId, down, heldSeconds)) {
+                    return { true, ActionDispatchTarget::NativeState };
+                }
+
+                if (_nativeInjector.CanHandleRawPadButton(pulseBit) &&
+                    _nativeInjector.QueueRawPadButton(pulseBit, context, down, heldSeconds)) {
+                    return { true, ActionDispatchTarget::NativeState };
+                }
             }
 
             _compatibilityInjector.SetButtonState(pulseBit, down, actionId);

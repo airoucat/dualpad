@@ -14,17 +14,6 @@ namespace dualpad::input
 {
     namespace
     {
-        bool IsLifecycleAction(std::string_view actionId)
-        {
-            return actionId == actions::Sprint ||
-                actionId == actions::Activate ||
-                actionId == actions::Sneak ||
-                actionId == actions::MenuScrollUp ||
-                actionId == actions::MenuScrollDown ||
-                actionId == actions::MenuPageUp ||
-                actionId == actions::MenuPageDown;
-        }
-
         bool IsSprintObservationEnabled()
         {
             return RuntimeConfig::GetSingleton().LogSprintObservation();
@@ -38,6 +27,39 @@ namespace dualpad::input
         std::size_t BitIndex(std::uint32_t code)
         {
             return static_cast<std::size_t>(std::countr_zero(code));
+        }
+
+        std::uint64_t ResolveLifecycleNowUs(
+            const SyntheticPadFrame& frame,
+            const SyntheticButtonState& button,
+            std::uint64_t logicalPressedAtUs)
+        {
+            if (frame.sourceTimestampUs != 0) {
+                return frame.sourceTimestampUs;
+            }
+
+            if (button.releasedAtUs != 0) {
+                return button.releasedAtUs;
+            }
+
+            if (button.pressedAtUs != 0) {
+                return button.pressedAtUs +
+                    static_cast<std::uint64_t>(button.heldSeconds * 1000000.0f);
+            }
+
+            return logicalPressedAtUs;
+        }
+
+        float ComputeLogicalHeldSeconds(
+            std::uint64_t logicalPressedAtUs,
+            std::uint64_t nowUs,
+            float fallbackHeldSeconds)
+        {
+            if (logicalPressedAtUs != 0 && nowUs >= logicalPressedAtUs) {
+                return static_cast<float>(nowUs - logicalPressedAtUs) / 1000000.0f;
+            }
+
+            return fallbackHeldSeconds;
         }
 
         bool ShouldBlockPhysicalButton(const PadEvent& event)
@@ -94,6 +116,11 @@ namespace dualpad::input
         return _nativeInjector.PrependStagedButtonEventsToInputQueue(head, tail);
     }
 
+    std::size_t PadEventSnapshotProcessor::AppendInjectedInputEventsUsingEngineCache(RE::InputEvent*& head)
+    {
+        return _nativeInjector.AppendStagedButtonEventsUsingEngineCache(head);
+    }
+
     std::size_t PadEventSnapshotProcessor::GetPendingInjectedButtonCount() const
     {
         return _nativeInjector.GetStagedButtonEventCount();
@@ -137,10 +164,13 @@ namespace dualpad::input
 
             if (event.type == PadEventType::ButtonPress &&
                 IsSyntheticPadBitCode(event.code) &&
-                IsLifecycleAction(resolved->actionId)) {
+                RequiresButtonLifecycleTracking(resolved->actionId)) {
                 auto& activeAction = _activeButtonActions[BitIndex(event.code)];
                 activeAction.active = true;
                 activeAction.actionId = resolved->actionId;
+                activeAction.policy = ResolveButtonLifecyclePolicy(resolved->actionId);
+                activeAction.logicalPressedAtUs = event.timestampUs;
+                activeAction.releaseNotBeforeUs = event.timestampUs + activeAction.policy.minDownUs;
                 activeAction.lastObservedHoldBucket = std::numeric_limits<std::uint64_t>::max();
                 _blockedSourceButtons |= event.code;
                 handledButtons |= event.code;
@@ -209,12 +239,35 @@ namespace dualpad::input
 
             const auto sourceCode = (1u << bitIndex);
             const auto& button = frame.buttons[bitIndex];
+            const auto nowUs = ResolveLifecycleNowUs(frame, button, activeAction.logicalPressedAtUs);
+            const auto logicalHeldSeconds = ComputeLogicalHeldSeconds(
+                activeAction.logicalPressedAtUs,
+                nowUs,
+                button.heldSeconds);
+            bool effectiveDown = false;
+            float effectiveHeldSeconds = button.heldSeconds;
 
-            if (button.down) {
+            switch (activeAction.policy.mode) {
+            case ButtonLifecycleMode::MinDownWindow:
+                effectiveDown = button.down || nowUs < activeAction.releaseNotBeforeUs;
+                effectiveHeldSeconds = logicalHeldSeconds;
+                break;
+            case ButtonLifecycleMode::HoldWhileSourceDown:
+            default:
+                effectiveDown = button.down;
+                effectiveHeldSeconds = button.down ?
+                    (button.pressed ? 0.0f : button.heldSeconds) :
+                    (button.released && button.releasedAtUs > button.pressedAtUs && button.pressedAtUs != 0 ?
+                        static_cast<float>(button.releasedAtUs - button.pressedAtUs) / 1000000.0f :
+                        button.heldSeconds);
+                break;
+            }
+
+            if (effectiveDown) {
                 _shadowPlanner.PlanButtonState(
                     activeAction.actionId,
                     true,
-                    button.pressed ? 0.0f : button.heldSeconds,
+                    effectiveHeldSeconds,
                     sourceCode,
                     context,
                     _shadowPlan);
@@ -222,7 +275,7 @@ namespace dualpad::input
                 const auto dispatchResult = _actionDispatcher.DispatchButtonState(
                     activeAction.actionId,
                     true,
-                    button.pressed ? 0.0f : button.heldSeconds,
+                    effectiveHeldSeconds,
                     context);
                 if (!dispatchResult.handled) {
                     continue;
@@ -246,20 +299,17 @@ namespace dualpad::input
                 continue;
             }
 
-            const auto heldSeconds = button.released && button.releasedAtUs > button.pressedAtUs && button.pressedAtUs != 0 ?
-                static_cast<float>(button.releasedAtUs - button.pressedAtUs) / 1000000.0f :
-                button.heldSeconds;
             _shadowPlanner.PlanButtonState(
                 activeAction.actionId,
                 false,
-                heldSeconds,
+                effectiveHeldSeconds,
                 sourceCode,
                 context,
                 _shadowPlan);
             const auto dispatchResult = _actionDispatcher.DispatchButtonState(
                 activeAction.actionId,
                 false,
-                heldSeconds,
+                effectiveHeldSeconds,
                 context);
 
             if (dispatchResult.handled &&

@@ -8,6 +8,8 @@
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/SeInputEventQueueAccess.h"
 
+#include <SKSE/Version.h>
+
 #include <array>
 #include <cmath>
 #include <span>
@@ -19,12 +21,21 @@ namespace dualpad::input
     namespace
     {
         using ContextID = RE::ControlMap::InputContextID;
+        using EngineQueueButtonEvent_t = void(__fastcall*)(
+            RE::BSInputEventQueue*,
+            std::uint32_t,
+            std::uint32_t,
+            float,
+            float);
 
         struct NativeRawButtonBinding
         {
             std::uint32_t padBit{ 0 };
             std::uint32_t gamepadId{ RE::ControlMap::kInvalid };
         };
+
+        constexpr auto kSupportedRuntime = SKSE::RUNTIME_SSE_1_5_97;
+        constexpr std::uintptr_t kEngineQueueButtonEventRva = 0xC16900;
 
         constexpr NativeButtonActionBinding kButtonBindings[] = {
             { actions::Jump, "Jump", ContextID::kGameplay, 0x8000 },
@@ -147,6 +158,7 @@ namespace dualpad::input
         };
 
         constexpr float kAxisEpsilon = 0.0001f;
+        constexpr float kDeferredPulseReleaseHeldSeconds = 0.016f;
         constexpr float kThumbstickDeadzone = 0.08f;
         constexpr float kThumbstickDeltaEpsilon = 0.01f;
 
@@ -378,6 +390,8 @@ namespace dualpad::input
     void NativeInputInjector::Reset()
     {
         ClearStagedButtonEvents();
+        ClearPendingButtonPulses();
+        ClearPendingButtonReleases();
         ReleaseInjectedButtonEvents();
         _submittedDownMask = 0;
         _pendingDigitalReleaseMask = 0;
@@ -600,6 +614,11 @@ namespace dualpad::input
         return ResolveButtonAction(actionId).has_value();
     }
 
+    bool NativeInputInjector::CanHandleRawPadButton(std::uint32_t padBit) const
+    {
+        return ResolveRawGamepadId(padBit).has_value();
+    }
+
     std::optional<NativeButtonActionBinding> NativeInputInjector::ResolveButtonAction(std::string_view actionId) const
     {
         for (const auto& binding : kButtonBindings) {
@@ -626,10 +645,72 @@ namespace dualpad::input
         return binding.fallbackGamepadId;
     }
 
+    std::optional<std::uint32_t> NativeInputInjector::ResolveRawGamepadId(std::uint32_t padBit) const
+    {
+        for (const auto& binding : GetDigitalButtonBindings()) {
+            if (binding.padBit == padBit) {
+                return binding.gamepadId;
+            }
+        }
+
+        const auto& bits = GetPadBits(GetActivePadProfile());
+        if (padBit == bits.l2Button) {
+            return 0x0009;
+        }
+        if (padBit == bits.r2Button) {
+            return 0x000A;
+        }
+
+        return std::nullopt;
+    }
+
+    NativeInputInjector::ButtonLifecycleDescriptor NativeInputInjector::MakeLifecycleDescriptor(
+        RE::ControlMap::InputContextID context,
+        bool deferUntilGameplayGateOpens) const
+    {
+        return {
+            .context = context,
+            .deferUntilGameplayGateOpens = deferUntilGameplayGateOpens
+        };
+    }
+
     bool NativeInputInjector::PulseButtonAction(std::string_view actionId)
     {
-        return QueueButtonAction(actionId, true, 0.0f) &&
-            QueueButtonAction(actionId, false, 0.016f);
+        if (!CanStageButtonEvents()) {
+            return false;
+        }
+
+        const auto binding = ResolveButtonAction(actionId);
+        if (!binding) {
+            return false;
+        }
+
+        const auto gamepadId = ResolveMappedGamepadId(*binding);
+        if (gamepadId == RE::ControlMap::kInvalid) {
+            logger::debug("[DualPad][NativeInjector] No mapped gamepad id for action '{}'", actionId);
+            return false;
+        }
+
+        const RE::BSFixedString userEvent(binding->userEvent.data());
+        const auto lifecycle = MakeLifecycleDescriptor(binding->context, binding->context == ContextID::kGameplay);
+        if (!SchedulePendingButtonPulse(
+                gamepadId,
+                userEvent,
+                kDeferredPulseReleaseHeldSeconds,
+                lifecycle)) {
+            return false;
+        }
+
+        if (IsDebugLoggingEnabled()) {
+            logger::info(
+                "[DualPad][NativeInjector] queued pulse action={} id=0x{:04X} event={} gateAware={}",
+                actionId,
+                gamepadId,
+                userEvent.c_str(),
+                lifecycle.deferUntilGameplayGateOpens);
+        }
+
+        return true;
     }
 
     bool NativeInputInjector::QueueButtonAction(std::string_view actionId, bool pressed, float heldSeconds)
@@ -650,7 +731,12 @@ namespace dualpad::input
         }
 
         const RE::BSFixedString userEvent(binding->userEvent.data());
-        if (!StageButtonEvent(gamepadId, userEvent, pressed ? 1.0f : 0.0f, heldSeconds)) {
+        if (!StageButtonEvent(
+                gamepadId,
+                userEvent,
+                pressed ? 1.0f : 0.0f,
+                heldSeconds,
+                MakeLifecycleDescriptor(binding->context, false))) {
             return false;
         }
 
@@ -664,6 +750,63 @@ namespace dualpad::input
         }
 
         return true;
+    }
+
+    bool NativeInputInjector::PulseRawPadButton(std::uint32_t padBit, InputContext context)
+    {
+        if (!CanStageButtonEvents()) {
+            return false;
+        }
+
+        const auto gamepadId = ResolveRawGamepadId(padBit);
+        if (!gamepadId) {
+            return false;
+        }
+
+        const auto userEvent = ResolveRawUserEvent(*gamepadId, context);
+        if (!userEvent) {
+            return false;
+        }
+
+        const auto lifecycle = MakeLifecycleDescriptor(
+            ResolveContextSearchOrder(context).empty() ? ContextID::kGameplay : ResolveContextSearchOrder(context).front(),
+            ResolveContextSearchOrder(context).empty() ? false : ResolveContextSearchOrder(context).front() == ContextID::kGameplay);
+        if (!SchedulePendingButtonPulse(
+                *gamepadId,
+                *userEvent,
+                kDeferredPulseReleaseHeldSeconds,
+                lifecycle)) {
+            return false;
+        }
+
+        if (IsDebugLoggingEnabled()) {
+            logger::info(
+                "[DualPad][NativeInjector] queued raw pulse context={} event={} id=0x{:04X} gateAware={}",
+                ToString(context),
+                userEvent->c_str(),
+                *gamepadId,
+                lifecycle.deferUntilGameplayGateOpens);
+        }
+
+        return true;
+    }
+
+    bool NativeInputInjector::QueueRawPadButton(
+        std::uint32_t padBit,
+        InputContext context,
+        bool pressed,
+        float heldSeconds)
+    {
+        const auto gamepadId = ResolveRawGamepadId(padBit);
+        if (!gamepadId) {
+            return false;
+        }
+
+        return QueueRawButton(
+            *gamepadId,
+            context,
+            pressed ? 1.0f : 0.0f,
+            heldSeconds);
     }
 
     bool NativeInputInjector::QueueThumbstick(
@@ -740,7 +883,14 @@ namespace dualpad::input
             return false;
         }
 
-        if (!StageButtonEvent(gamepadId, *userEvent, value, heldSeconds)) {
+        const auto searchOrder = ResolveContextSearchOrder(context);
+        const auto nativeContext = searchOrder.empty() ? ContextID::kGameplay : searchOrder.front();
+        if (!StageButtonEvent(
+                gamepadId,
+                *userEvent,
+                value,
+                heldSeconds,
+                MakeLifecycleDescriptor(nativeContext, false))) {
             return false;
         }
 
@@ -759,8 +909,17 @@ namespace dualpad::input
 
     std::size_t NativeInputInjector::FlushStagedButtonEventsToInputQueue()
     {
+        const auto gameplayGateOpen = IsGameplayGateOpenForFlush();
+        PromotePendingButtonPulses(gameplayGateOpen);
+        PromotePendingButtonReleases(gameplayGateOpen);
+        if (_stagedButtonEventCount == 0) {
+            ArmPendingButtonReleases();
+            return 0;
+        }
+
         auto* queue = RE::BSInputEventQueue::GetSingleton();
         if (!queue) {
+            ClearPendingButtonReleases();
             return 0;
         }
 
@@ -798,6 +957,7 @@ namespace dualpad::input
         }
 
         ClearStagedButtonEvents();
+        ArmPendingButtonReleases();
 
         if (droppedCount != 0) {
             logger::warn(
@@ -818,7 +978,11 @@ namespace dualpad::input
         RE::InputEvent*& head,
         RE::InputEvent*& tail)
     {
+        const auto gameplayGateOpen = IsGameplayGateOpenForFlush();
+        PromotePendingButtonPulses(gameplayGateOpen);
+        PromotePendingButtonReleases(gameplayGateOpen);
         if (_stagedButtonEventCount == 0) {
+            ArmPendingButtonReleases();
             return 0;
         }
 
@@ -826,6 +990,7 @@ namespace dualpad::input
         if (!queue) {
             logger::warn("[DualPad][NativeInjector] Independent input queue singleton is unavailable; dropping staged button events");
             ClearStagedButtonEvents();
+            ClearPendingButtonReleases();
             return 0;
         }
 
@@ -880,6 +1045,7 @@ namespace dualpad::input
         }
 
         ClearStagedButtonEvents();
+        ArmPendingButtonReleases();
 
         if (!stagedHead) {
             if (droppedCount != 0) {
@@ -913,7 +1079,11 @@ namespace dualpad::input
 
     std::size_t NativeInputInjector::PrependStagedButtonEventsUsingQueueCache(RE::InputEvent*& head)
     {
+        const auto gameplayGateOpen = IsGameplayGateOpenForFlush();
+        PromotePendingButtonPulses(gameplayGateOpen);
+        PromotePendingButtonReleases(gameplayGateOpen);
         if (_stagedButtonEventCount == 0) {
+            ArmPendingButtonReleases();
             return 0;
         }
 
@@ -921,6 +1091,7 @@ namespace dualpad::input
         if (!queue) {
             logger::warn("[DualPad][NativeInjector] Independent input queue singleton is unavailable; dropping staged button events");
             ClearStagedButtonEvents();
+            ClearPendingButtonReleases();
             return 0;
         }
 
@@ -991,6 +1162,7 @@ namespace dualpad::input
         }
 
         ClearStagedButtonEvents();
+        ArmPendingButtonReleases();
 
         if (!stagedHead) {
             if (droppedCount != 0) {
@@ -1028,21 +1200,365 @@ namespace dualpad::input
         return submittedCount;
     }
 
+    std::size_t NativeInputInjector::AppendStagedButtonEventsUsingEngineCache(RE::InputEvent*& head)
+    {
+        const auto gameplayGateOpen = IsGameplayGateOpenForFlush();
+        PromotePendingButtonPulses(gameplayGateOpen);
+        PromotePendingButtonReleases(gameplayGateOpen);
+        if (_stagedButtonEventCount == 0) {
+            ArmPendingButtonReleases();
+            return 0;
+        }
+
+        if (REL::Module::get().version() != kSupportedRuntime) {
+            logger::warn(
+                "[DualPad][NativeInjector] Engine-cache append is only supported on Skyrim SE 1.5.97; dropping {} staged button events",
+                _stagedButtonEventCount);
+            ClearStagedButtonEvents();
+            ClearPendingButtonReleases();
+            return 0;
+        }
+
+        auto* queue = RE::BSInputEventQueue::GetSingleton();
+        if (!queue) {
+            logger::warn("[DualPad][NativeInjector] Independent input queue singleton is unavailable; dropping staged button events");
+            ClearStagedButtonEvents();
+            ClearPendingButtonReleases();
+            return 0;
+        }
+
+        static const REL::Relocation<EngineQueueButtonEvent_t> appendButton{
+            REL::Module::get().base() + kEngineQueueButtonEventRva
+        };
+
+        const bool logDebug = IsDebugLoggingEnabled();
+        std::size_t submittedCount = 0;
+        std::size_t droppedCount = 0;
+        const auto originalHead = detail::GetSEQueueHead(queue);
+        const auto originalTail = detail::GetSEQueueTail(queue);
+        const auto originalCount = queue->buttonEventCount;
+
+        if (logDebug) {
+            logger::info(
+                "[DualPad][NativeInjector] EngineCache begin staged={} head=0x{:X} tail=0x{:X} buttonCount={}",
+                _stagedButtonEventCount,
+                reinterpret_cast<std::uintptr_t>(originalHead),
+                reinterpret_cast<std::uintptr_t>(originalTail),
+                originalCount);
+        }
+
+        for (std::size_t i = 0; i < _stagedButtonEventCount; ++i) {
+            const auto& staged = _stagedButtonEvents[i];
+            const auto beforeCount = queue->buttonEventCount;
+            const auto beforeTail = detail::GetSEQueueTail(queue);
+
+            appendButton(
+                queue,
+                static_cast<std::uint32_t>(RE::INPUT_DEVICE::kGamepad),
+                staged.idCode,
+                staged.value,
+                staged.heldSeconds);
+
+            const auto afterCount = queue->buttonEventCount;
+            const auto afterTail = detail::GetSEQueueTail(queue);
+            if (afterCount > beforeCount && afterTail != nullptr) {
+                ++submittedCount;
+
+                if (logDebug) {
+                    std::uint32_t idCode = 0;
+                    const char* userEvent = "";
+                    if (auto* idEvent = afterTail->AsIDEvent(); idEvent) {
+                        idCode = idEvent->idCode;
+                        userEvent = idEvent->userEvent.empty() ? "" : idEvent->userEvent.c_str();
+                    }
+
+                    logger::info(
+                        "[DualPad][NativeInjector] EngineCache slot idx={} tail=0x{:X} id=0x{:04X} value={:.3f} held={:.3f} event={}",
+                        i,
+                        reinterpret_cast<std::uintptr_t>(afterTail),
+                        idCode,
+                        staged.value,
+                        staged.heldSeconds,
+                        userEvent);
+                }
+            }
+            else {
+                ++droppedCount;
+
+                if (logDebug) {
+                    logger::warn(
+                        "[DualPad][NativeInjector] EngineCache append rejected idx={} id=0x{:04X} value={:.3f} held={:.3f} countBefore={} countAfter={} tailBefore=0x{:X} tailAfter=0x{:X}",
+                        i,
+                        staged.idCode,
+                        staged.value,
+                        staged.heldSeconds,
+                        beforeCount,
+                        afterCount,
+                        reinterpret_cast<std::uintptr_t>(beforeTail),
+                        reinterpret_cast<std::uintptr_t>(afterTail));
+                }
+            }
+        }
+
+        ClearStagedButtonEvents();
+        ArmPendingButtonReleases();
+        head = detail::GetSEQueueHead(queue);
+
+        if (droppedCount != 0) {
+            logger::warn(
+                "[DualPad][NativeInjector] Engine-cache append dropped {} staged button events",
+                droppedCount);
+        }
+
+        if (submittedCount != 0 && logDebug) {
+            logger::info(
+                "[DualPad][NativeInjector] EngineCache linked submitted={} newHead=0x{:X} newTail=0x{:X} buttonCount={}",
+                submittedCount,
+                reinterpret_cast<std::uintptr_t>(detail::GetSEQueueHead(queue)),
+                reinterpret_cast<std::uintptr_t>(detail::GetSEQueueTail(queue)),
+                queue->buttonEventCount);
+        }
+
+        return submittedCount;
+    }
+
     std::size_t NativeInputInjector::GetStagedButtonEventCount() const
     {
-        return _stagedButtonEventCount;
+        return _stagedButtonEventCount + _pendingButtonPulseCount + _pendingButtonReleaseCount;
     }
 
     void NativeInputInjector::DiscardStagedButtonEvents()
     {
         ClearStagedButtonEvents();
+        ClearPendingButtonPulses();
+        ClearPendingButtonReleases();
+    }
+
+    bool NativeInputInjector::SchedulePendingButtonPulse(
+        std::uint32_t gamepadId,
+        const RE::BSFixedString& userEvent,
+        float releaseHeldSeconds,
+        const ButtonLifecycleDescriptor& lifecycle)
+    {
+        if (_pendingButtonPulseCount >= _pendingButtonPulses.size()) {
+            logger::warn(
+                "[DualPad][NativeInjector] Pending pulse buffer is full; dropping logical native pulse for gamepad id 0x{:04X}",
+                gamepadId);
+            return false;
+        }
+
+        auto& pending = _pendingButtonPulses[_pendingButtonPulseCount++];
+        pending.userEvent = userEvent;
+        pending.idCode = gamepadId;
+        pending.releaseHeldSeconds = releaseHeldSeconds;
+        pending.lifecycle = lifecycle;
+        return true;
+    }
+
+    bool NativeInputInjector::SchedulePendingButtonRelease(
+        std::uint32_t gamepadId,
+        const RE::BSFixedString& userEvent,
+        float heldSeconds,
+        const ButtonLifecycleDescriptor& lifecycle)
+    {
+        for (std::size_t i = _pendingButtonReleaseCount; i > 0; --i) {
+            auto& pending = _pendingButtonReleases[i - 1];
+            if (pending.idCode == gamepadId &&
+                pending.userEvent == userEvent &&
+                !pending.ready) {
+                pending.heldSeconds = heldSeconds;
+                pending.lifecycle = lifecycle;
+                return true;
+            }
+        }
+
+        if (_pendingButtonReleaseCount >= _pendingButtonReleases.size()) {
+            logger::warn(
+                "[DualPad][NativeInjector] Pending release buffer is full; dropping deferred release for gamepad id 0x{:04X}",
+                gamepadId);
+            return false;
+        }
+
+        auto& pending = _pendingButtonReleases[_pendingButtonReleaseCount++];
+        pending.userEvent = userEvent;
+        pending.idCode = gamepadId;
+        pending.heldSeconds = heldSeconds;
+        pending.lifecycle = lifecycle;
+        pending.ready = false;
+        return true;
+    }
+
+    void NativeInputInjector::PromotePendingButtonPulses(bool gameplayGateOpen)
+    {
+        if (_pendingButtonPulseCount == 0) {
+            return;
+        }
+
+        std::array<PendingButtonPulse, kMaxStagedButtonEvents> remaining{};
+        std::size_t remainingCount = 0;
+        std::size_t deferredByGate = 0;
+        std::size_t promotedCount = 0;
+
+        for (std::size_t i = 0; i < _pendingButtonPulseCount; ++i) {
+            const auto& pending = _pendingButtonPulses[i];
+            if (pending.lifecycle.deferUntilGameplayGateOpens && !gameplayGateOpen) {
+                remaining[remainingCount++] = pending;
+                ++deferredByGate;
+                continue;
+            }
+
+            const auto pressStaged = StageButtonEvent(
+                pending.idCode,
+                pending.userEvent,
+                1.0f,
+                0.0f,
+                pending.lifecycle);
+            if (!pressStaged) {
+                remaining[remainingCount++] = pending;
+                continue;
+            }
+
+            if (!SchedulePendingButtonRelease(
+                    pending.idCode,
+                    pending.userEvent,
+                    pending.releaseHeldSeconds,
+                    pending.lifecycle)) {
+                StageButtonEvent(
+                    pending.idCode,
+                    pending.userEvent,
+                    0.0f,
+                    pending.releaseHeldSeconds,
+                    pending.lifecycle);
+            }
+
+            ++promotedCount;
+        }
+
+        if (deferredByGate != 0 && IsDebugLoggingEnabled()) {
+            logger::info(
+                "[DualPad][NativeInjector] Deferred {} logical native pulse events because gameplay broad gate is closed",
+                deferredByGate);
+        }
+
+        if (promotedCount != 0 && IsDebugLoggingEnabled()) {
+            logger::info(
+                "[DualPad][NativeInjector] Promoted {} logical native pulse events into staged button events",
+                promotedCount);
+        }
+
+        _pendingButtonPulses = remaining;
+        _pendingButtonPulseCount = remainingCount;
+    }
+
+    void NativeInputInjector::PromotePendingButtonReleases(bool gameplayGateOpen)
+    {
+        std::size_t readyCount = 0;
+        std::size_t deferredByGate = 0;
+        for (std::size_t i = 0; i < _pendingButtonReleaseCount; ++i) {
+            const auto& pending = _pendingButtonReleases[i];
+            if (!pending.ready) {
+                continue;
+            }
+
+            if (pending.lifecycle.deferUntilGameplayGateOpens && !gameplayGateOpen) {
+                ++deferredByGate;
+                continue;
+            }
+
+            if (pending.ready) {
+                ++readyCount;
+            }
+        }
+
+        if (readyCount == 0) {
+            return;
+        }
+
+        const auto capacity = _stagedButtonEvents.size() - _stagedButtonEventCount;
+        const auto insertCount = std::min(readyCount, capacity);
+        if (insertCount == 0) {
+            logger::warn(
+                "[DualPad][NativeInjector] Staged button buffer is full; deferring {} deferred native release events to a later poll",
+                readyCount);
+        }
+
+        for (std::size_t i = _stagedButtonEventCount; i > 0 && insertCount != 0; --i) {
+            _stagedButtonEvents[i + insertCount - 1] = _stagedButtonEvents[i - 1];
+        }
+
+        std::array<PendingButtonRelease, kMaxStagedButtonEvents> remaining{};
+        std::size_t remainingCount = 0;
+        std::size_t inserted = 0;
+
+        for (std::size_t i = 0; i < _pendingButtonReleaseCount; ++i) {
+            const auto& pending = _pendingButtonReleases[i];
+            const auto shouldPromote =
+                pending.ready &&
+                (!pending.lifecycle.deferUntilGameplayGateOpens || gameplayGateOpen);
+            if (shouldPromote && inserted < insertCount) {
+                auto& staged = _stagedButtonEvents[inserted++];
+                staged.userEvent = pending.userEvent;
+                staged.idCode = pending.idCode;
+                staged.value = 0.0f;
+                staged.heldSeconds = pending.heldSeconds;
+                staged.lifecycle = pending.lifecycle;
+                continue;
+            }
+
+            if (!shouldPromote || inserted >= insertCount) {
+                remaining[remainingCount++] = pending;
+            }
+        }
+
+        if (insertCount != readyCount) {
+            logger::warn(
+                "[DualPad][NativeInjector] Deferred native release promotion inserted {} of {} events due to staged buffer pressure",
+                insertCount,
+                readyCount);
+        }
+
+        if (deferredByGate != 0 && IsDebugLoggingEnabled()) {
+            logger::info(
+                "[DualPad][NativeInjector] Deferred {} native release events because gameplay broad gate is closed",
+                deferredByGate);
+        }
+
+        _stagedButtonEventCount += insertCount;
+        _pendingButtonReleases = remaining;
+        _pendingButtonReleaseCount = remainingCount;
+    }
+
+    void NativeInputInjector::ArmPendingButtonReleases()
+    {
+        for (std::size_t i = 0; i < _pendingButtonReleaseCount; ++i) {
+            _pendingButtonReleases[i].ready = true;
+        }
+    }
+
+    void NativeInputInjector::ClearPendingButtonPulses()
+    {
+        for (std::size_t i = 0; i < _pendingButtonPulseCount; ++i) {
+            _pendingButtonPulses[i] = {};
+        }
+
+        _pendingButtonPulseCount = 0;
+    }
+
+    void NativeInputInjector::ClearPendingButtonReleases()
+    {
+        for (std::size_t i = 0; i < _pendingButtonReleaseCount; ++i) {
+            _pendingButtonReleases[i] = {};
+        }
+
+        _pendingButtonReleaseCount = 0;
     }
 
     bool NativeInputInjector::StageButtonEvent(
         std::uint32_t gamepadId,
         const RE::BSFixedString& userEvent,
         float value,
-        float heldSeconds)
+        float heldSeconds,
+        const ButtonLifecycleDescriptor& lifecycle)
     {
         const auto isPressedValue = [](float candidate) {
             return candidate > 0.0f;
@@ -1050,7 +1566,10 @@ namespace dualpad::input
 
         for (std::size_t i = _stagedButtonEventCount; i > 0; --i) {
             auto& staged = _stagedButtonEvents[i - 1];
-            if (staged.idCode != gamepadId || staged.userEvent != userEvent) {
+            if (staged.idCode != gamepadId ||
+                staged.userEvent != userEvent ||
+                staged.lifecycle.context != lifecycle.context ||
+                staged.lifecycle.deferUntilGameplayGateOpens != lifecycle.deferUntilGameplayGateOpens) {
                 continue;
             }
 
@@ -1077,12 +1596,27 @@ namespace dualpad::input
         staged.idCode = gamepadId;
         staged.value = value;
         staged.heldSeconds = heldSeconds;
+        staged.lifecycle = lifecycle;
         return true;
+    }
+
+    bool NativeInputInjector::IsGameplayGateOpenForFlush() const
+    {
+        const auto& hook = NativeInputPreControlMapHook::GetSingleton();
+        if (!hook.IsInstalled()) {
+            return true;
+        }
+
+        return hook.IsGameplayInputGateOpen();
     }
 
     void NativeInputInjector::PrependStagedButtonEvents(RE::InputEvent*& head)
     {
+        const auto gameplayGateOpen = IsGameplayGateOpenForFlush();
+        PromotePendingButtonPulses(gameplayGateOpen);
+        PromotePendingButtonReleases(gameplayGateOpen);
         if (_stagedButtonEventCount == 0) {
+            ArmPendingButtonReleases();
             return;
         }
 
@@ -1125,6 +1659,7 @@ namespace dualpad::input
         }
 
         ClearStagedButtonEvents();
+        ArmPendingButtonReleases();
 
         if (!stagedHead) {
             return;

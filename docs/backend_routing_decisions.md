@@ -66,30 +66,49 @@ This backend exists to preserve:
 
 Do not treat it as the long-term home for most digital actions.
 
+### Lifecycle-driven native backend
+
+The long-term owner for Skyrim-native digital controls is now the
+lifecycle-driven native injection path.
+
+This backend should consume already-normalized action lifecycles such as:
+
+- press -> release
+- press -> hold -> release
+- minimum-down-window pulse
+- toggle plus debounce
+
+It should then emit the matching native event family:
+
+- `ButtonEvent` for discrete controls
+- `ThumbstickEvent` or native axis state for analog controls
+- special native event helpers only when a control genuinely requires them
+
+Important rule:
+
+- not every native control should be forced through the same `ButtonEvent`
+  helper
+
 ### Keyboard-native backend
 
-The keyboard-native backend is still the intended long-term owner for most
-digital control actions.
+The keyboard-native backend is no longer the planned owner for ordinary
+Skyrim-native gameplay controls.
 
-This includes the actions that are easier, more stable, or more product-correct when expressed as native keyboard controls instead of virtual gamepad buttons.
+Its bounded long-term role is:
 
-Examples:
+- Mod virtual keys
+- compatibility experiments
+- research around true PC-keyboard provenance for external mods
 
-- sprint
-- activate
-- jump
-- hotkeys
-- menu confirm/cancel if needed
-- menu page actions if routed as keyboard-native controls
-- plugin-facing helper bindings that should behave like keyboard controls
+Practical product rule:
 
-But the current implementation is not production-ready yet.
+- do not make core Skyrim gameplay controls depend on `dinput8.dll` proxy
+  deployment unless a mod-facing virtual-key contract truly needs it
 
-Near-term runtime rule:
+Reason:
 
-- keep keyboard-native code available for reverse-engineering and future work
-- do not route production gameplay actions through it until Skyrim's internal
-  keyboard semantic contract is fully verified
+- requiring an extra `dinput8.dll` is not clean enough for the main gameplay
+  path when a native engine-owned input route is available
 
 ### Plugin backend
 
@@ -110,12 +129,14 @@ Yes, mixed device output is acceptable.
 The intended shape is:
 
 - gamepad backend emits analog stick/trigger state
-- keyboard-native backend emits digital key controls
+- lifecycle-driven native backend emits Skyrim-native discrete controls
+- keyboard-native backend emits only bounded mod/provenance keys when needed
 
 So it is valid for one frame to contain:
 
 - gamepad analog movement/look
-- keyboard-native digital actions
+- native discrete gameplay/menu actions
+- keyboard-native mod virtual keys when explicitly enabled
 
 This is not a design problem by itself.
 
@@ -157,9 +178,12 @@ If a route depends on keyboard-native controls, Skyrim's keyboard binding interp
 Therefore the backend split should reduce ambiguity:
 
 - analog gamepad semantics stay on the gamepad backend
-- most digital actions move to keyboard-native backend
+- Skyrim-native digital actions move to lifecycle-driven native injection
+- keyboard-native stays available for mod-facing virtual keys and bounded
+  provenance work
 
-This reduces dependence on Skyrim's gamepad controlmap for digital gameplay behavior.
+This reduces dependence on both Skyrim's gamepad controlmap ambiguity and the
+older keyboard provenance experiments for ordinary gameplay behavior.
 
 ### Dynamic `ControlMap` reads
 
@@ -187,7 +211,7 @@ The narrowest architecture that satisfies those constraints is:
 
 - planner decides context/combo/tap/hold first
 - analog actions go to `GamepadNativeBackend`
-- digital control actions go to `KeyboardNativeBackend`
+- discrete Skyrim controls go to lifecycle-driven native injection
 - plugin actions stay separate
 - mod events stay separate
 
@@ -195,23 +219,25 @@ The narrowest architecture that satisfies those constraints is:
 
 Near-term implementation should assume:
 
-- Route B remains the current bridge for gamepad-state injection
-- that bridge is best suited to analog controls first
-- the first keyboard-native route should be a call-site hook inside `BSWin32KeyboardDevice::Poll`
-- that keyboard route should rebuild `BSWin32KeyboardDevice::curState` from physical state plus DualPad-owned keys inside the same call-site hook
-- keyboard-native work should stay focused on non-text control injection
+- Route B remains the current bridge for analog gamepad-state injection
+- the next digital expansion target is the producer-side native button path
+  using engine-owned queue/cache helpers
+- lifecycle policy should be decided before backend emission
+- keyboard-native work should stay focused on mod virtual keys and bounded
+  provenance experiments
 
-Do not broaden the gamepad backend again just because Route B is working.
-
-The next expansion target should stay on the dedicated keyboard-native control backend, not more digital button ownership inside the gamepad backend.
+Do not broaden the gamepad backend again just because Route B is working, and
+do not put new Skyrim-native gameplay ownership back onto the keyboard route.
 
 ## Alternative Route Summary
 
 Recent reverse-engineering results changed the practical near-term split:
 
-- `Route B` remains the only production-ready path for native gameplay control feel
-- `KeyboardNativeBackend` remains useful, but as a bounded research line rather
-  than a shipping dependency
+- `Route B` remains the production-ready path for analog gameplay control feel
+- producer-side native button injection is now a viable digital research line
+  after engine-cache `Jump` proof
+- `KeyboardNativeBackend` remains useful, but as a bounded mod/provenance line
+  rather than a shipping dependency for core gameplay
 - if a feature only needs to execute the native function/semantic that a PC
   event normally triggers, a direct helper/handler route is acceptable
 
@@ -221,10 +247,15 @@ Current route matrix:
   - production path
   - owns analog stick / trigger semantics and any action that truly depends on
     native controller-state lifecycle
+- lifecycle-driven native button backend
+  - preferred destination for discrete Skyrim-native actions such as `Jump`,
+    `Activate`, `Sprint`, `Sneak`, `Shout`, and menu buttons
+  - must be implemented with explicit lifecycle policy such as `HoldOwner`,
+    `MinDownWindow`, or `Toggle`, not as blind same-poll pulses
 - `KeyboardNativeBackend`
-  - keep for reverse-engineering and future experiments
-  - do not make new product features depend on it until the current
-    `GetDeviceData` provenance gap is solved
+  - keep for Mod virtual keys, reverse-engineering, and bounded provenance
+    experiments
+  - do not make new core gameplay features depend on it
 - `PluginActionBackend`
   - preferred for screenshot, quicksave, quickload, wait, and similar plugin
     utility behavior
@@ -242,8 +273,8 @@ product plan:
   - lightweight user-mode proof-of-concept only
   - not trusted as a final answer for Skyrim's keyboard provenance
 - `dinput8.dll` / DirectInput proxy
-  - worthwhile as a more-upstream research step
-  - still has compatibility and maintenance risk
+  - worthwhile for mod-facing virtual-key research
+  - still has compatibility, deployment, and maintenance risk
 - virtual HID keyboard
   - most likely way to obtain true PC-keyboard identity for other mods
   - significantly higher engineering and deployment cost
@@ -257,6 +288,25 @@ Relevant reusable mod patterns:
   an input backend implementation
 
 ## Keyboard-Native Update
+
+2026-03-12 update:
+
+- `engine-cache` native button retry has now proven that producer-side native
+  `ButtonEvent` injection can be consumed semantically by the game for `Jump`
+- the remaining `Jump` issue is no longer best explained as pulse timing alone;
+  current reverse evidence points to the gameplay-root broad allow gate
+  (`sub_140706AF0`) being blocked on first press by a transient `FaderMenu`
+  state bit, so native button injection now needs gate-aware lifecycle staging
+- the first implementation step of that staging is now in-tree:
+  gameplay pulse actions enter a logical pulse queue first, and lifecycle
+  actions can now declare explicit policy such as `MinDownWindow`
+- `Activate` is the first action moved onto explicit lifecycle policy with a
+  40 ms minimum-down window; other lifecycle actions still retain their
+  previous semantics until migrated deliberately
+- this shifts the main digital-control plan away from keyboard-native ownership
+  and toward lifecycle-driven native injection
+- `KeyboardNativeBackend` remains useful, but primarily for Mod virtual keys
+  and provenance-sensitive integrations
 
 Recent `dinput8` proxy experiments changed the practical implementation point
 for keyboard-native controls:
@@ -287,6 +337,116 @@ Current unresolved constraint:
   family
 
 Fallback policy remains unchanged:
+
+## 2026-03-12 Producer-Driven Native Button Update
+
+Recent IDA/MCP work tightened the native-button conclusion again.
+
+The key observation is that Skyrim's native gamepad `ButtonEvent` production is
+already producer-driven inside the device poll path:
+
+- `BSWin32GamepadDevice::Poll` at `0x140C1AB40` reads current state
+- it compares previous/current digital state inside the device object
+- digital button changes are dispatched through `sub_140C190F0`
+- axis/trigger changes are dispatched through `sub_140C19220`
+- those producer helpers finally materialize engine-owned button events through
+  `sub_140C16900`
+
+This is better than the current `Poll + 0x53` engine-cache retry because it
+keeps Skyrim's own producer-side state accumulation, diff ordering, and native
+button semantics intact.
+
+Therefore, if we stay on the native `ButtonEvent` line, the preferred forward
+shape is no longer:
+
+- lifecycle plan -> manual queue/cache `ButtonEvent` write near `ControlMap`
+
+It is now:
+
+- lifecycle plan -> virtual current gamepad state -> native gamepad `Poll`
+  producer helpers -> engine-owned `ButtonEvent`
+
+Practical conclusion:
+
+- the correct "excellent" version of the native button path is
+  producer-driven, not consumer-spliced
+- `engine-cache` remains valuable as proof, reverse tooling, and fallback
+  experimentation only
+- future digital generalization should target the shared producer path used by
+  `sub_140C190F0` / `sub_140C19220`
+
+### More-Upstream Plan B
+
+If the current Route B `XInputGetState` call-site patch proves too narrow, the
+next more-upstream candidate should still stay above `ControlMap` and still
+reuse the producer-side button path.
+
+Current reverse points to two better Plan B candidates:
+
+- pre-diff current-state overlay
+  - patch or populate the gamepad device's current-frame state buffer before
+    the producer compare step runs
+  - let the existing previous/current diff logic in `BSWin32GamepadDevice::Poll`
+    call `sub_140C190F0` / `sub_140C19220` itself
+- raw-provider hook below the XInput call-site
+  - investigate the shared raw-state provider path around `sub_140C1B600`
+  - this would be earlier than the current internal `XInputGetState` patch, but
+    still feeds the same producer-side button helpers afterward
+
+Additional reverse note:
+
+- there appear to be at least two native producer-side gamepad poll paths on
+  SE 1.5.97:
+  - `BSWin32GamepadDevice::Poll` around `0x140C1AB40`
+  - `BSPCOrbisGamepadDevice::Poll`-style path around `0x140C1BD20`
+- both converge on the same producer helpers
+  `sub_140C190F0` / `sub_140C19220`
+- for DualSense-specific work, the Orbis/raw-provider side is therefore a valid
+  more-upstream Plan B, not just an unrelated side path
+
+### More-Upstream Plan C
+
+There is now enough evidence for a third native-button candidate that sits even
+earlier than the raw-state read boundary:
+
+- the provider slot / handle registration layer around `unk_142F6C800`
+
+Current reverse markers:
+
+- `sub_140C1CD70` allocates or reuses a provider slot inside the 9144-byte
+  provider table and assigns an internal handle-like ID
+- `sub_140C1CFC0` can repopulate one provider slot with richer state and
+  device metadata, then re-arm it
+- `sub_140C1D640` sends initialization/configuration reports for that slot
+- `sub_140C1FA00` writes HID output reports to the provider-owned device handle
+- `sub_140C1B280` later drains rich per-frame records from the same provider
+  slot into the Orbis-side poll path
+
+This suggests a distinct Plan C:
+
+- do not just patch reads from an existing provider
+- instead, investigate whether DualPad can own or mirror one native provider
+  slot and feed synthetic state into the same provider-managed ring/state block
+
+Why this is interesting:
+
+- it is still upstream of `ControlMap`
+- it still converges on the same native producer helpers
+- it is earlier than the current `XInputGetState` call-site patch
+- it may fit DualSense-specific work better than pretending to be plain XInput
+
+Current caution:
+
+- this is a reverse-backed candidate, not a proven implementation path yet
+- it likely has higher complexity than Plan B because it touches slot lifetime,
+  provider handles, and HID-side initialization/state ownership
+
+Important rule:
+
+- do not fall back to new `ControlMap`-side queue surgery just because the
+  current `engine-cache` retry proved semantic consumption
+- if we need a broader native-button route, move earlier into the producer
+  state path, not later into the consumer path
 
 - if the proxy consumer is absent, `KeyboardNativeBackend` may still fall back
   to the old in-plugin staging path during transition

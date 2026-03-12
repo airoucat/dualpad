@@ -9,6 +9,7 @@ namespace dualpad::input
         DropProbe,
         AppendProbe,
         Append,
+        EngineCache,
         HeadPrepend,
         Inject
     };

@@ -81,31 +81,6 @@ namespace dualpad::input::backend
             return NativeControlCode::None;
         }
 
-        constexpr bool ShouldUseKeyboardNative(std::string_view actionId)
-        {
-            return actionId == actions::Jump ||
-                actionId == actions::Activate ||
-                actionId == actions::Sprint ||
-                actionId == actions::Sneak ||
-                actionId == actions::Shout ||
-                actionId == actions::MenuConfirm ||
-                actionId == actions::MenuCancel ||
-                actionId == actions::MenuScrollUp ||
-                actionId == actions::MenuScrollDown ||
-                actionId == actions::MenuPageUp ||
-                actionId == actions::MenuPageDown ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Book.NextPage"sv ||
-                actionId == "Book.Close"sv ||
-                actionId == "Console.Execute"sv ||
-                actionId == "Console.HistoryUp"sv ||
-                actionId == "Console.HistoryDown"sv;
-        }
-
         constexpr NativeControlCode TryMapNativeAxis(std::string_view actionId)
         {
             if (actionId == "Game.Move"sv) {
@@ -148,11 +123,11 @@ namespace dualpad::input::backend
             };
         }
 
-        if (ShouldUseKeyboardNative(actionId)) {
+        if (const auto button = TryMapNativeButton(actionId); button != NativeControlCode::None) {
             return {
-                .backend = PlannedBackend::KeyboardNative,
-                .kind = PlannedActionKind::KeyboardKey,
-                .nativeCode = NativeControlCode::None,
+                .backend = PlannedBackend::NativeState,
+                .kind = PlannedActionKind::NativeButton,
+                .nativeCode = button,
                 .ownsLifecycle = true
             };
         }

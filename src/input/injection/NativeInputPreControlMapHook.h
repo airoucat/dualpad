@@ -10,6 +10,7 @@ namespace dualpad::input
         void Install();
         bool IsInstalled() const;
         bool CanInject() const;
+        bool IsGameplayInputGateOpen() const;
 
     private:
         NativeInputPreControlMapHook() = default;
