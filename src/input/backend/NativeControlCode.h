@@ -19,6 +19,8 @@ namespace dualpad::input::backend
         MenuCancel,
         MenuScrollUp,
         MenuScrollDown,
+        MenuLeft,
+        MenuRight,
         MenuPageUp,
         MenuPageDown,
         MoveStick,
@@ -53,10 +55,14 @@ namespace dualpad::input::backend
             return 1u << 9;
         case NativeControlCode::MenuScrollDown:
             return 1u << 10;
-        case NativeControlCode::MenuPageUp:
+        case NativeControlCode::MenuLeft:
             return 1u << 11;
-        case NativeControlCode::MenuPageDown:
+        case NativeControlCode::MenuRight:
             return 1u << 12;
+        case NativeControlCode::MenuPageUp:
+            return 1u << 13;
+        case NativeControlCode::MenuPageDown:
+            return 1u << 14;
         case NativeControlCode::None:
         case NativeControlCode::MoveStick:
         case NativeControlCode::LookStick:
@@ -93,6 +99,10 @@ namespace dualpad::input::backend
             return "MenuScrollUp";
         case NativeControlCode::MenuScrollDown:
             return "MenuScrollDown";
+        case NativeControlCode::MenuLeft:
+            return "MenuLeft";
+        case NativeControlCode::MenuRight:
+            return "MenuRight";
         case NativeControlCode::MenuPageUp:
             return "MenuPageUp";
         case NativeControlCode::MenuPageDown:
@@ -110,6 +120,37 @@ namespace dualpad::input::backend
         case NativeControlCode::None:
         default:
             return "None";
+        }
+    }
+
+    inline constexpr bool IsDigitalNativeControl(NativeControlCode code)
+    {
+        switch (code) {
+        case NativeControlCode::Jump:
+        case NativeControlCode::Attack:
+        case NativeControlCode::Block:
+        case NativeControlCode::Activate:
+        case NativeControlCode::Sprint:
+        case NativeControlCode::Sneak:
+        case NativeControlCode::Shout:
+        case NativeControlCode::MenuConfirm:
+        case NativeControlCode::MenuCancel:
+        case NativeControlCode::MenuScrollUp:
+        case NativeControlCode::MenuScrollDown:
+        case NativeControlCode::MenuLeft:
+        case NativeControlCode::MenuRight:
+        case NativeControlCode::MenuPageUp:
+        case NativeControlCode::MenuPageDown:
+            return true;
+
+        case NativeControlCode::None:
+        case NativeControlCode::MoveStick:
+        case NativeControlCode::LookStick:
+        case NativeControlCode::MenuStick:
+        case NativeControlCode::LeftTriggerAxis:
+        case NativeControlCode::RightTriggerAxis:
+        default:
+            return false;
         }
     }
 }

@@ -180,6 +180,14 @@ namespace dualpad::input
             return bits.dpadDown;
         }
 
+        if (actionId == actions::MenuLeft) {
+            return bits.dpadLeft;
+        }
+
+        if (actionId == actions::MenuRight) {
+            return bits.dpadRight;
+        }
+
         if (actionId == actions::MenuPageUp ||
             actionId == "Book.PreviousPage"sv ||
             actionId == "Menu.SortByName"sv) {

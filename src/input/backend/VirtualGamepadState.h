@@ -1,6 +1,5 @@
 #pragma once
 
-#include <bit>
 #include <cstdint>
 
 namespace dualpad::input::backend
@@ -23,9 +22,14 @@ namespace dualpad::input::backend
 
     struct VirtualGamepadState
     {
+        std::uint64_t pollIndex{ 0 };
+        std::uint32_t packetNumber{ 0 };
+        std::uint32_t previousDownMask{ 0 };
         std::uint32_t downMask{ 0 };
         std::uint32_t pressedMask{ 0 };
         std::uint32_t releasedMask{ 0 };
+        std::uint16_t previousRawButtons{ 0 };
+        std::uint16_t rawButtons{ 0 };
 
         float moveX{ 0.0f };
         float moveY{ 0.0f };
@@ -36,9 +40,14 @@ namespace dualpad::input::backend
 
         void Reset()
         {
+            pollIndex = 0;
+            packetNumber = 0;
+            previousDownMask = 0;
             downMask = 0;
             pressedMask = 0;
             releasedMask = 0;
+            previousRawButtons = 0;
+            rawButtons = 0;
             moveX = 0.0f;
             moveY = 0.0f;
             lookX = 0.0f;
@@ -47,31 +56,20 @@ namespace dualpad::input::backend
             rightTrigger = 0.0f;
         }
 
-        void BeginFrame()
+        void SetCommittedDigitalState(
+            std::uint64_t nextPollIndex,
+            std::uint32_t nextPacketNumber,
+            std::uint32_t nextDownMask,
+            std::uint16_t nextRawButtons)
         {
-            pressedMask = 0;
-            releasedMask = 0;
-        }
-
-        void ApplyButton(std::uint32_t code, bool down)
-        {
-            if (code == 0 || !std::has_single_bit(code)) {
-                return;
-            }
-
-            const auto wasDown = (downMask & code) != 0;
-            if (down) {
-                if (!wasDown) {
-                    pressedMask |= code;
-                    downMask |= code;
-                }
-                return;
-            }
-
-            if (wasDown) {
-                downMask &= ~code;
-                releasedMask |= code;
-            }
+            pollIndex = nextPollIndex;
+            packetNumber = nextPacketNumber;
+            previousDownMask = downMask;
+            previousRawButtons = rawButtons;
+            downMask = nextDownMask;
+            rawButtons = nextRawButtons;
+            pressedMask = downMask & ~previousDownMask;
+            releasedMask = previousDownMask & ~downMask;
         }
 
         void SetAxis(VirtualGamepadAxis axis, float value)
@@ -110,11 +108,6 @@ namespace dualpad::input::backend
                 lookY = y;
                 break;
             }
-        }
-
-        [[nodiscard]] bool IsDown(std::uint32_t code) const
-        {
-            return (downMask & code) != 0;
         }
     };
 }

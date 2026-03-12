@@ -24,6 +24,9 @@ namespace dualpad::input
     public:
         static constexpr std::size_t kMaxStagedButtonEvents = 64;
 
+        // Legacy experimental fallback only. Producer-side Poll current-state
+        // commit owns the main digital path now; keep this route for reverse
+        // probes, debug, and explicit rollback experiments.
         void Reset() override;
         void SubmitFrame(const SyntheticPadFrame& frame, std::uint32_t handledButtons) override;
         std::uint32_t SubmitDigitalButtons(const SyntheticPadFrame& frame, std::uint32_t handledButtons);

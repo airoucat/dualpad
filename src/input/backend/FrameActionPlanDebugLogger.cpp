@@ -65,6 +65,21 @@ namespace dualpad::input::backend
                 return "None";
             }
         }
+
+        constexpr std::string_view ToString(ButtonCommitPolicy policy)
+        {
+            switch (policy) {
+            case ButtonCommitPolicy::HoldOwner:
+                return "HoldOwner";
+            case ButtonCommitPolicy::DeferredPulseWhenAllowed:
+                return "DeferredPulseWhenAllowed";
+            case ButtonCommitPolicy::MinDownWindowPulse:
+                return "MinDownWindowPulse";
+            case ButtonCommitPolicy::None:
+            default:
+                return "None";
+            }
+        }
     }
 
     void LogFrameActionPlan(const FrameActionPlan& plan)
@@ -81,7 +96,7 @@ namespace dualpad::input::backend
         for (std::size_t i = 0; i < plan.Size(); ++i) {
             const auto& action = plan[i];
             logger::info(
-                "[DualPad][ActionPlan] idx={} backend={} kind={} phase={} context={} action='{}' source=0x{:08X} output=0x{:08X} modifiers=0x{:08X} valueX={:.3f} valueY={:.3f} held={:.3f}",
+                "[DualPad][ActionPlan] idx={} backend={} kind={} phase={} context={} action='{}' source=0x{:08X} output=0x{:08X} modifiers=0x{:08X} valueX={:.3f} valueY={:.3f} held={:.3f} policy={} minDownUs={} minVisiblePolls={} maxDeferredPolls={} gateClass={}",
                 i,
                 ToString(action.backend),
                 ToString(action.kind),
@@ -93,7 +108,12 @@ namespace dualpad::input::backend
                 action.modifierMask,
                 action.valueX,
                 action.valueY,
-                action.heldSeconds);
+                action.heldSeconds,
+                ToString(action.lifecycle.policy),
+                action.lifecycle.minDownUs,
+                action.lifecycle.minVisiblePolls,
+                action.lifecycle.maxDeferredPolls,
+                backend::ToString(action.lifecycle.gateClass));
         }
     }
 
@@ -104,7 +124,11 @@ namespace dualpad::input::backend
         }
 
         logger::info(
-            "[DualPad][ActionPlan] virtualPad down=0x{:08X} pressed=0x{:08X} released=0x{:08X} move=({:.3f},{:.3f}) look=({:.3f},{:.3f}) triggers=({:.3f},{:.3f})",
+            "[DualPad][ActionPlan] virtualPad poll={} packet={} rawButtons=0x{:04X} prevDown=0x{:08X} down=0x{:08X} pressed=0x{:08X} released=0x{:08X} move=({:.3f},{:.3f}) look=({:.3f},{:.3f}) triggers=({:.3f},{:.3f})",
+            state.pollIndex,
+            state.packetNumber,
+            state.rawButtons,
+            state.previousDownMask,
             state.downMask,
             state.pressedMask,
             state.releasedMask,

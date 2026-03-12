@@ -7,7 +7,9 @@
 #include <array>
 
 #include "input/IATHook.h"
+#include "input/injection/JumpCoexistencePreprocessHook.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
+#include "input/injection/PollStateCommitter.h"
 
 namespace logger = SKSE::log;
 
@@ -37,7 +39,8 @@ namespace dualpad::input
 
                 UpstreamGamepadHook::GetSingleton().NotePollCallActivity();
                 PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread();
-                const auto result = FillSyntheticXInputState(currentState);
+                const auto committed = PollStateCommitter::GetSingleton().Commit(currentState);
+                const auto result = committed ? ERROR_SUCCESS : FillSyntheticXInputState(currentState);
 
                 struct XInputGamepadView
                 {
@@ -158,6 +161,8 @@ namespace dualpad::input
             pollAddress,
             callAddress,
             PollXInputCallHook::_originalTarget);
+
+        JumpCoexistencePreprocessHook::GetSingleton().Install();
     }
 
     bool UpstreamGamepadHook::IsInstalled() const

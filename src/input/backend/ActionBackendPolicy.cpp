@@ -9,6 +9,41 @@ namespace dualpad::input::backend
 {
     namespace
     {
+        constexpr NativeButtonLifecycleHint MakeHoldOwnerPolicy(ButtonCommitGateClass gateClass)
+        {
+            return {
+                .policy = ButtonCommitPolicy::HoldOwner,
+                .minDownUs = 0,
+                .minVisiblePolls = 1,
+                .maxDeferredPolls = 0,
+                .gateClass = gateClass
+            };
+        }
+
+        constexpr NativeButtonLifecycleHint MakeDeferredPulsePolicy(ButtonCommitGateClass gateClass)
+        {
+            return {
+                .policy = ButtonCommitPolicy::DeferredPulseWhenAllowed,
+                .minDownUs = 0,
+                .minVisiblePolls = 1,
+                .maxDeferredPolls = 1,
+                .gateClass = gateClass
+            };
+        }
+
+        constexpr NativeButtonLifecycleHint MakeMinDownWindowPolicy(
+            std::uint32_t minDownUs,
+            ButtonCommitGateClass gateClass)
+        {
+            return {
+                .policy = ButtonCommitPolicy::MinDownWindowPulse,
+                .minDownUs = minDownUs,
+                .minVisiblePolls = 1,
+                .maxDeferredPolls = 1,
+                .gateClass = gateClass
+            };
+        }
+
         constexpr bool IsPluginActionId(std::string_view actionId)
         {
             return actionId == actions::OpenInventory ||
@@ -67,6 +102,12 @@ namespace dualpad::input::backend
                 actionId == "Console.HistoryDown"sv) {
                 return NativeControlCode::MenuScrollDown;
             }
+            if (actionId == actions::MenuLeft) {
+                return NativeControlCode::MenuLeft;
+            }
+            if (actionId == actions::MenuRight) {
+                return NativeControlCode::MenuRight;
+            }
             if (actionId == actions::MenuPageUp ||
                 actionId == "Book.PreviousPage"sv ||
                 actionId == "Menu.SortByName"sv) {
@@ -101,6 +142,79 @@ namespace dualpad::input::backend
 
             return NativeControlCode::None;
         }
+
+        constexpr ButtonCommitGateClass ResolveGateClass(std::string_view actionId)
+        {
+            if (actionId == actions::Jump) {
+                return ButtonCommitGateClass::GameplayJumping;
+            }
+
+            if (actionId == actions::Activate) {
+                return ButtonCommitGateClass::GameplayActivate;
+            }
+
+            if (actionId == actions::Sprint) {
+                return ButtonCommitGateClass::GameplayMovement;
+            }
+
+            if (actionId == actions::Sneak) {
+                return ButtonCommitGateClass::GameplaySneaking;
+            }
+
+            if (actionId == actions::Attack ||
+                actionId == actions::Block ||
+                actionId == actions::Shout) {
+                return ButtonCommitGateClass::GameplayFighting;
+            }
+
+            if (actionId == "Gameplay.Broad"sv) {
+                return ButtonCommitGateClass::GameplayBroad;
+            }
+
+            if (actionId == actions::MenuConfirm ||
+                actionId == actions::MenuCancel ||
+                actionId == actions::MenuScrollUp ||
+                actionId == actions::MenuScrollDown ||
+                actionId == actions::MenuLeft ||
+                actionId == actions::MenuRight ||
+                actionId == actions::MenuPageUp ||
+                actionId == actions::MenuPageDown ||
+                actionId == "Console.Execute"sv ||
+                actionId == "Book.Close"sv ||
+                actionId == "Dialogue.PreviousOption"sv ||
+                actionId == "Dialogue.NextOption"sv ||
+                actionId == "Favorites.PreviousItem"sv ||
+                actionId == "Favorites.NextItem"sv ||
+                actionId == "Console.HistoryUp"sv ||
+                actionId == "Console.HistoryDown"sv ||
+                actionId == "Book.PreviousPage"sv ||
+                actionId == "Book.NextPage"sv ||
+                actionId == "Menu.SortByName"sv ||
+                actionId == "Menu.SortByValue"sv) {
+                return ButtonCommitGateClass::MenuControls;
+            }
+
+            return ButtonCommitGateClass::None;
+        }
+
+        constexpr NativeButtonLifecycleHint ResolveLifecyclePolicy(std::string_view actionId)
+        {
+            const auto gateClass = ResolveGateClass(actionId);
+            if (actionId == actions::Jump) {
+                return MakeMinDownWindowPolicy(70000, gateClass);
+            }
+            if (actionId == actions::Activate) {
+                return MakeMinDownWindowPolicy(40000, gateClass);
+            }
+            if (actionId == actions::MenuConfirm ||
+                actionId == actions::MenuCancel ||
+                actionId == "Console.Execute"sv ||
+                actionId == "Book.Close"sv) {
+                return MakeDeferredPulsePolicy(gateClass);
+            }
+
+            return MakeHoldOwnerPolicy(gateClass);
+        }
     }
 
     ActionRoutingDecision ActionBackendPolicy::Decide(std::string_view actionId)
@@ -110,7 +224,8 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::Plugin,
                 .kind = PlannedActionKind::PluginAction,
                 .nativeCode = NativeControlCode::None,
-                .ownsLifecycle = false
+                .ownsLifecycle = false,
+                .lifecycle = {}
             };
         }
 
@@ -119,7 +234,8 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::ModEvent,
                 .kind = PlannedActionKind::ModEvent,
                 .nativeCode = NativeControlCode::None,
-                .ownsLifecycle = false
+                .ownsLifecycle = false,
+                .lifecycle = {}
             };
         }
 
@@ -128,7 +244,8 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::NativeState,
                 .kind = PlannedActionKind::NativeButton,
                 .nativeCode = button,
-                .ownsLifecycle = true
+                .ownsLifecycle = true,
+                .lifecycle = ResolveLifecyclePolicy(actionId)
             };
         }
 
@@ -140,7 +257,8 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::NativeState,
                 .kind = kind,
                 .nativeCode = axis,
-                .ownsLifecycle = true
+                .ownsLifecycle = true,
+                .lifecycle = {}
             };
         }
 
@@ -148,7 +266,8 @@ namespace dualpad::input::backend
             .backend = PlannedBackend::CompatibilityFallback,
             .kind = PlannedActionKind::NativeButton,
             .nativeCode = NativeControlCode::None,
-            .ownsLifecycle = false
+            .ownsLifecycle = false,
+            .lifecycle = {}
         };
     }
 

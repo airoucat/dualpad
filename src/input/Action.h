@@ -20,6 +20,8 @@ namespace dualpad::input
         inline constexpr std::string_view MenuCancel = "Menu.Cancel";
         inline constexpr std::string_view MenuScrollUp = "Menu.ScrollUp";
         inline constexpr std::string_view MenuScrollDown = "Menu.ScrollDown";
+        inline constexpr std::string_view MenuLeft = "Menu.Left";
+        inline constexpr std::string_view MenuRight = "Menu.Right";
         inline constexpr std::string_view MenuPageUp = "Menu.PageUp";
         inline constexpr std::string_view MenuPageDown = "Menu.PageDown";
 

@@ -2,10 +2,10 @@
 
 #include "input/ActionDispatcher.h"
 #include "input/Action.h"
+#include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/FrameActionPlan.h"
 #include "input/backend/FrameActionPlanner.h"
 #include "input/backend/NativeStateBackend.h"
-#include "input/injection/ButtonLifecyclePolicy.h"
 #include "input/mapping/BindingResolver.h"
 #include "input/injection/CompatibilityInputInjector.h"
 #include "input/injection/NativeInputInjector.h"
@@ -25,6 +25,8 @@ namespace dualpad::input
         static PadEventSnapshotProcessor& GetSingleton();
 
         void Process(const PadEventSnapshot& snapshot);
+        const backend::VirtualGamepadState& CommitNativeStateForPoll(std::uint64_t pollTimestampUs);
+        const backend::DigitalCommitFrame& GetLastNativeCommitFrame() const { return _nativeStateBackend.GetLastCommitFrame(); }
         void ResetState();
         void PrependInjectedInputEvents(RE::InputEvent*& head);
         std::size_t PrependInjectedInputEventsUsingQueueCache(RE::InputEvent*& head);
@@ -40,10 +42,9 @@ namespace dualpad::input
         {
             bool active{ false };
             std::string actionId{};
-            ButtonLifecyclePolicy policy{};
             std::uint64_t logicalPressedAtUs{ 0 };
-            std::uint64_t releaseNotBeforeUs{ 0 };
-            std::uint64_t lastObservedHoldBucket{ std::numeric_limits<std::uint64_t>::max() };
+            backend::NativeButtonLifecycleHint lifecycle{};
+            bool sawReleaseThisSnapshot{ false };
         };
 
         PadEventSnapshotProcessor();
@@ -56,24 +57,15 @@ namespace dualpad::input
         std::uint64_t _lastProcessedSequence{ 0 };
         std::uint32_t _blockedSourceButtons{ 0 };
         std::array<ActiveButtonAction, 32> _activeButtonActions{};
-        bool _rawSprintObservedDown{ false };
-        std::uint64_t _rawSprintHoldBucket{ std::numeric_limits<std::uint64_t>::max() };
 
         std::uint32_t DispatchPadEvents(const PadEventBuffer& events, InputContext context);
         void UpdateActiveButtonActions(const SyntheticPadFrame& frame, InputContext context);
-        void ObserveSprintState(
-            std::string_view phase,
-            const SyntheticPadFrame& frame,
-            const SyntheticButtonState& button,
-            ActionDispatchTarget target,
-            std::uint32_t sourceCode) const;
-        void ObserveRawSprintCompatibilityState(const SyntheticPadFrame& frame, std::uint32_t handledButtons);
-        void ResetShadowPlanning();
-        void BeginShadowPlanning(InputContext context);
-        void FinishShadowPlanning();
+        void ResetPlanningState();
+        void BeginPlanning(InputContext context);
+        void FinishPlanning();
 
-        backend::FrameActionPlanner _shadowPlanner{};
-        backend::FrameActionPlan _shadowPlan{};
-        backend::NativeStateBackend _shadowNativeState{};
+        backend::FrameActionPlanner _planner{};
+        backend::FrameActionPlan _currentPlan{};
+        backend::NativeStateBackend _nativeStateBackend{};
     };
 }

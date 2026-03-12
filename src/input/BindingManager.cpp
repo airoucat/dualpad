@@ -311,6 +311,8 @@ namespace dualpad::input
             addIfMissing(MakeButtonBinding(context, bits.circle, actions::MenuCancel));
             addIfMissing(MakeButtonBinding(context, bits.dpadUp, actions::MenuScrollUp));
             addIfMissing(MakeButtonBinding(context, bits.dpadDown, actions::MenuScrollDown));
+            addIfMissing(MakeButtonBinding(context, bits.dpadLeft, actions::MenuLeft));
+            addIfMissing(MakeButtonBinding(context, bits.dpadRight, actions::MenuRight));
             addIfMissing(MakeButtonBinding(context, bits.l1, actions::MenuPageUp));
             addIfMissing(MakeButtonBinding(context, bits.r1, actions::MenuPageDown));
         }

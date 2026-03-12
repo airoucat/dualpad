@@ -1617,7 +1617,7 @@ namespace dualpad::input
 
     bool NativeInputPreControlMapHook::IsGameplayInputGateOpen() const
     {
-        if (!_installed || REL::Module::get().version() != kSupportedRuntime) {
+        if (REL::Module::get().version() != kSupportedRuntime) {
             return true;
         }
 

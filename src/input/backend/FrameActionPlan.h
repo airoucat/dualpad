@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/InputContext.h"
+#include "input/backend/ButtonCommitGate.h"
 
 #include <array>
 #include <cstddef>
@@ -38,6 +39,23 @@ namespace dualpad::input::backend
         Value
     };
 
+    enum class ButtonCommitPolicy : std::uint8_t
+    {
+        None = 0,
+        HoldOwner,
+        DeferredPulseWhenAllowed,
+        MinDownWindowPulse
+    };
+
+    struct NativeButtonLifecycleHint
+    {
+        ButtonCommitPolicy policy{ ButtonCommitPolicy::None };
+        std::uint32_t minDownUs{ 0 };
+        std::uint8_t minVisiblePolls{ 0 };
+        std::uint8_t maxDeferredPolls{ 0 };
+        ButtonCommitGateClass gateClass{ ButtonCommitGateClass::None };
+    };
+
     struct PlannedAction
     {
         PlannedBackend backend{ PlannedBackend::CompatibilityFallback };
@@ -52,6 +70,7 @@ namespace dualpad::input::backend
         float valueX{ 0.0f };
         float valueY{ 0.0f };
         float heldSeconds{ 0.0f };
+        NativeButtonLifecycleHint lifecycle{};
     };
 
     class FrameActionPlan

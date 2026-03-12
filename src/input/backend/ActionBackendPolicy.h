@@ -13,6 +13,7 @@ namespace dualpad::input::backend
         PlannedActionKind kind{ PlannedActionKind::NativeButton };
         NativeControlCode nativeCode{ NativeControlCode::None };
         bool ownsLifecycle{ false };
+        NativeButtonLifecycleHint lifecycle{};
     };
 
     class ActionBackendPolicy

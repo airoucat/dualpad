@@ -7,6 +7,9 @@
 
 namespace dualpad::input
 {
+    // Legacy event-injector lifecycle helpers retained only for experimental
+    // fallback paths. Poll-owned native digital commits now use the planner
+    // backend lifecycle policy in src/input/backend/.
     enum class ButtonLifecycleMode : std::uint8_t
     {
         HoldWhileSourceDown,

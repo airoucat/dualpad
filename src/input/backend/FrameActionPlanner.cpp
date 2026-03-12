@@ -9,8 +9,12 @@ namespace dualpad::input::backend
         {
             switch (event.type) {
             case PadEventType::ButtonPress:
-            case PadEventType::Combo:
+                return PlannedActionPhase::Press;
+
             case PadEventType::Hold:
+                return PlannedActionPhase::Hold;
+
+            case PadEventType::Combo:
             case PadEventType::Tap:
             case PadEventType::Gesture:
             case PadEventType::TouchpadPress:
@@ -49,6 +53,7 @@ namespace dualpad::input::backend
         action.modifierMask = event.modifierMask;
         action.timestampUs = event.timestampUs;
         action.valueX = event.value;
+        action.lifecycle = decision.lifecycle;
 
         if (action.phase == PlannedActionPhase::None) {
             return false;
@@ -75,6 +80,7 @@ namespace dualpad::input::backend
         action.sourceCode = sourceCode;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.heldSeconds = heldSeconds;
+        action.lifecycle = decision.lifecycle;
         return outPlan.Push(action);
     }
 
@@ -97,6 +103,7 @@ namespace dualpad::input::backend
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.valueX = valueX;
         action.valueY = valueY;
+        action.lifecycle = decision.lifecycle;
         return outPlan.Push(action);
     }
 }

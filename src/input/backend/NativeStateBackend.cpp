@@ -1,38 +1,25 @@
 #include "pch.h"
 #include "input/backend/NativeStateBackend.h"
 
+#include "input/backend/NativeButtonMapping.h"
 #include "input/backend/NativeControlCode.h"
+#include "input/backend/PollInputAllowance.h"
 
 namespace dualpad::input::backend
 {
-    namespace
-    {
-        bool IsPressedState(PlannedActionPhase phase)
-        {
-            switch (phase) {
-            case PlannedActionPhase::Pulse:
-            case PlannedActionPhase::Press:
-            case PlannedActionPhase::Hold:
-                return true;
-            case PlannedActionPhase::Release:
-            case PlannedActionPhase::None:
-            case PlannedActionPhase::Value:
-            default:
-                return false;
-            }
-        }
-    }
-
     void NativeStateBackend::Reset()
     {
+        _digitalCoordinator.Reset();
         _state.Reset();
+        _lastCommitFrame = {};
         _lastContext = InputContext::Gameplay;
+        _pollIndex = 0;
+        _packetNumber = 0;
     }
 
     void NativeStateBackend::BeginFrame(InputContext context)
     {
         _lastContext = context;
-        _state.BeginFrame();
     }
 
     void NativeStateBackend::ApplyPlan(const FrameActionPlan& plan)
@@ -46,9 +33,12 @@ namespace dualpad::input::backend
             case PlannedActionKind::NativeButton:
                 {
                     const auto code = static_cast<NativeControlCode>(action.outputCode);
-                    const auto mask = ToVirtualButtonMask(code);
-                    if (mask != 0) {
-                    _state.ApplyButton(mask, IsPressedState(action.phase));
+                    if (IsDigitalNativeControl(code)) {
+                        _digitalCoordinator.NoteButtonAction(
+                            code,
+                            action.phase,
+                            action.timestampUs,
+                            action.lifecycle);
                     }
                 }
                 break;
@@ -86,5 +76,45 @@ namespace dualpad::input::backend
                 break;
             }
         }
+    }
+
+    const VirtualGamepadState& NativeStateBackend::CommitPollState(std::uint64_t pollTimestampUs)
+    {
+        // Sample all commit-allowance families once per Poll so lifecycle
+        // policy can defer by gate class without falling back to per-action
+        // if-else fixes in the injection layer.
+        const auto allowance = SamplePollInputAllowance(_lastContext);
+        _digitalCoordinator.SetPollAllowance(allowance);
+        _lastCommitFrame = _digitalCoordinator.Commit(pollTimestampUs);
+
+        std::uint16_t rawButtons = 0;
+        for (const auto& slot : _digitalCoordinator.GetSlots()) {
+            if (slot.committedDown) {
+                rawButtons |= ResolveMappedGamepadButton(slot.control);
+            }
+        }
+
+        ++_pollIndex;
+        ++_packetNumber;
+        _state.SetCommittedDigitalState(
+            _pollIndex,
+            _packetNumber,
+            _lastCommitFrame.nextDownMask,
+            rawButtons);
+        return _state;
+    }
+
+    void NativeStateBackend::SetRawAnalogState(
+        float moveX,
+        float moveY,
+        float lookX,
+        float lookY,
+        float leftTrigger,
+        float rightTrigger)
+    {
+        _state.SetStick(VirtualGamepadStick::Move, moveX, moveY);
+        _state.SetStick(VirtualGamepadStick::Look, lookX, lookY);
+        _state.SetAxis(VirtualGamepadAxis::LeftTrigger, leftTrigger);
+        _state.SetAxis(VirtualGamepadAxis::RightTrigger, rightTrigger);
     }
 }

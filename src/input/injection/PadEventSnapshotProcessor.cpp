@@ -1,12 +1,13 @@
 #include "pch.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
 
-#include "input/backend/FrameActionPlanDebugLogger.h"
-#include "input/backend/KeyboardNativeBackend.h"
-#include "input/injection/SyntheticStateDebugLogger.h"
 #include "input/InputContext.h"
 #include "input/PadProfile.h"
 #include "input/RuntimeConfig.h"
+#include "input/backend/FrameActionPlanDebugLogger.h"
+#include "input/backend/KeyboardNativeBackend.h"
+#include "input/injection/SyntheticStateDebugLogger.h"
+#include "input/injection/UpstreamGamepadHook.h"
 
 namespace logger = SKSE::log;
 
@@ -14,52 +15,9 @@ namespace dualpad::input
 {
     namespace
     {
-        bool IsSprintObservationEnabled()
-        {
-            return RuntimeConfig::GetSingleton().LogSprintObservation();
-        }
-
-        std::uint64_t HoldLogBucket(float heldSeconds)
-        {
-            return static_cast<std::uint64_t>(heldSeconds / 0.25f);
-        }
-
         std::size_t BitIndex(std::uint32_t code)
         {
             return static_cast<std::size_t>(std::countr_zero(code));
-        }
-
-        std::uint64_t ResolveLifecycleNowUs(
-            const SyntheticPadFrame& frame,
-            const SyntheticButtonState& button,
-            std::uint64_t logicalPressedAtUs)
-        {
-            if (frame.sourceTimestampUs != 0) {
-                return frame.sourceTimestampUs;
-            }
-
-            if (button.releasedAtUs != 0) {
-                return button.releasedAtUs;
-            }
-
-            if (button.pressedAtUs != 0) {
-                return button.pressedAtUs +
-                    static_cast<std::uint64_t>(button.heldSeconds * 1000000.0f);
-            }
-
-            return logicalPressedAtUs;
-        }
-
-        float ComputeLogicalHeldSeconds(
-            std::uint64_t logicalPressedAtUs,
-            std::uint64_t nowUs,
-            float fallbackHeldSeconds)
-        {
-            if (logicalPressedAtUs != 0 && nowUs >= logicalPressedAtUs) {
-                return static_cast<float>(nowUs - logicalPressedAtUs) / 1000000.0f;
-            }
-
-            return fallbackHeldSeconds;
         }
 
         bool ShouldBlockPhysicalButton(const PadEvent& event)
@@ -74,6 +32,34 @@ namespace dualpad::input
             }
         }
 
+        float ComputeHeldSeconds(
+            const SyntheticPadFrame& frame,
+            const SyntheticButtonState& button,
+            std::uint64_t logicalPressedAtUs)
+        {
+            if (button.down) {
+                if (button.pressed) {
+                    return 0.0f;
+                }
+
+                return button.heldSeconds;
+            }
+
+            const auto releaseTimestampUs =
+                button.releasedAtUs != 0 ? button.releasedAtUs : frame.sourceTimestampUs;
+            if (logicalPressedAtUs != 0 &&
+                releaseTimestampUs != 0 &&
+                releaseTimestampUs >= logicalPressedAtUs) {
+                return static_cast<float>(releaseTimestampUs - logicalPressedAtUs) / 1000000.0f;
+            }
+
+            return button.heldSeconds;
+        }
+
+        bool UsePollCommittedNativeState()
+        {
+            return UpstreamGamepadHook::GetSingleton().IsRouteActive();
+        }
     }
 
     PadEventSnapshotProcessor::PadEventSnapshotProcessor() :
@@ -92,13 +78,16 @@ namespace dualpad::input
         _lastProcessedSequence = 0;
         _blockedSourceButtons = 0;
         _activeButtonActions = {};
-        _rawSprintObservedDown = false;
-        _rawSprintHoldBucket = std::numeric_limits<std::uint64_t>::max();
         _stateReducer.Reset();
         _compatibilityInjector.Reset();
         _nativeInjector.Reset();
         backend::KeyboardNativeBackend::GetSingleton().Reset();
-        ResetShadowPlanning();
+        ResetPlanningState();
+    }
+
+    const backend::VirtualGamepadState& PadEventSnapshotProcessor::CommitNativeStateForPoll(std::uint64_t pollTimestampUs)
+    {
+        return _nativeStateBackend.CommitPollState(pollTimestampUs);
     }
 
     void PadEventSnapshotProcessor::PrependInjectedInputEvents(RE::InputEvent*& head)
@@ -145,7 +134,9 @@ namespace dualpad::input
         const PadEventBuffer& events,
         InputContext context)
     {
+        const bool useCommittedNativeState = UsePollCommittedNativeState();
         std::uint32_t handledButtons = _blockedSourceButtons;
+
         for (std::size_t i = 0; i < events.count; ++i) {
             const auto& event = events[i];
             _actionDispatcher.DispatchDirectPadEvent(event);
@@ -153,8 +144,11 @@ namespace dualpad::input
             if (event.type == PadEventType::ButtonRelease &&
                 IsSyntheticPadBitCode(event.code) &&
                 (_blockedSourceButtons & event.code) != 0) {
-                handledButtons |= event.code;
-                _blockedSourceButtons &= ~event.code;
+                const auto bitIndex = BitIndex(event.code);
+                if (!_activeButtonActions[bitIndex].active) {
+                    handledButtons |= event.code;
+                    _blockedSourceButtons &= ~event.code;
+                }
             }
 
             const auto resolved = _bindingResolver.Resolve(event, context);
@@ -162,57 +156,74 @@ namespace dualpad::input
                 continue;
             }
 
-            if (event.type == PadEventType::ButtonPress &&
-                IsSyntheticPadBitCode(event.code) &&
-                RequiresButtonLifecycleTracking(resolved->actionId)) {
+            auto routedBinding = *resolved;
+            if (IsSyntheticPadBitCode(event.code)) {
+                auto& activeAction = _activeButtonActions[BitIndex(event.code)];
+                if (activeAction.active &&
+                    (event.type == PadEventType::ButtonRelease || event.type == PadEventType::Hold)) {
+                    routedBinding.actionId = activeAction.actionId;
+                }
+            }
+
+            const auto decision = backend::ActionBackendPolicy::Decide(routedBinding.actionId);
+            const bool isTrackedNativeButton =
+                decision.backend == backend::PlannedBackend::NativeState &&
+                decision.kind == backend::PlannedActionKind::NativeButton &&
+                IsSyntheticPadBitCode(event.code);
+
+            if (isTrackedNativeButton &&
+                event.type == PadEventType::ButtonPress) {
                 auto& activeAction = _activeButtonActions[BitIndex(event.code)];
                 activeAction.active = true;
-                activeAction.actionId = resolved->actionId;
-                activeAction.policy = ResolveButtonLifecyclePolicy(resolved->actionId);
+                activeAction.actionId = routedBinding.actionId;
                 activeAction.logicalPressedAtUs = event.timestampUs;
-                activeAction.releaseNotBeforeUs = event.timestampUs + activeAction.policy.minDownUs;
-                activeAction.lastObservedHoldBucket = std::numeric_limits<std::uint64_t>::max();
+                activeAction.lifecycle = decision.lifecycle;
+                activeAction.sawReleaseThisSnapshot = false;
                 _blockedSourceButtons |= event.code;
                 handledButtons |= event.code;
+            }
 
-                if (IsSprintObservationEnabled() && resolved->actionId == actions::Sprint) {
-                    logger::info(
-                        "[DualPad][Sprint] Registered lifecycle source=0x{:08X} context={}",
-                        event.code,
-                        ToString(context));
+            if (isTrackedNativeButton &&
+                event.type == PadEventType::ButtonRelease) {
+                auto& activeAction = _activeButtonActions[BitIndex(event.code)];
+                if (activeAction.active) {
+                    activeAction.sawReleaseThisSnapshot = true;
+                }
+                handledButtons |= event.code;
+            }
+
+            if (useCommittedNativeState &&
+                decision.backend == backend::PlannedBackend::NativeState) {
+                _planner.PlanResolvedEvent(routedBinding, event, context, _currentPlan);
+
+                if (isTrackedNativeButton || ShouldBlockPhysicalButton(event)) {
+                    handledButtons |= event.code;
                 }
 
                 continue;
             }
 
-            _shadowPlanner.PlanResolvedEvent(*resolved, event, context, _shadowPlan);
+            if (isTrackedNativeButton) {
+                continue;
+            }
 
             const auto dispatchResult = _actionDispatcher.Dispatch(
-                resolved->actionId,
+                routedBinding.actionId,
                 context);
             if (!dispatchResult.handled) {
                 continue;
             }
 
-            logger::info("[DualPad][Mapping] Event {} mapped to action {} via {}",
+            logger::info(
+                "[DualPad][Mapping] Event {} mapped to action {} via {}",
                 ToString(event.type),
-                resolved->actionId,
+                routedBinding.actionId,
                 ToString(dispatchResult.target));
 
             if (event.type == PadEventType::ButtonPress &&
                 IsSyntheticPadBitCode(event.code)) {
                 _blockedSourceButtons |= event.code;
                 handledButtons |= event.code;
-            }
-
-            if (IsSprintObservationEnabled() &&
-                resolved->actionId == actions::Sprint) {
-                logger::info(
-                    "[DualPad][Sprint] Routed event={} source=0x{:08X} context={} via {}",
-                    ToString(event.type),
-                    event.code,
-                    ToString(context),
-                    ToString(dispatchResult.target));
             }
 
             if (ShouldBlockPhysicalButton(event)) {
@@ -231,6 +242,8 @@ namespace dualpad::input
         const SyntheticPadFrame& frame,
         InputContext context)
     {
+        const bool useCommittedNativeState = UsePollCommittedNativeState();
+
         for (std::size_t bitIndex = 0; bitIndex < _activeButtonActions.size(); ++bitIndex) {
             auto& activeAction = _activeButtonActions[bitIndex];
             if (!activeAction.active) {
@@ -239,83 +252,47 @@ namespace dualpad::input
 
             const auto sourceCode = (1u << bitIndex);
             const auto& button = frame.buttons[bitIndex];
-            const auto nowUs = ResolveLifecycleNowUs(frame, button, activeAction.logicalPressedAtUs);
-            const auto logicalHeldSeconds = ComputeLogicalHeldSeconds(
-                activeAction.logicalPressedAtUs,
-                nowUs,
-                button.heldSeconds);
-            bool effectiveDown = false;
-            float effectiveHeldSeconds = button.heldSeconds;
+            const auto heldSeconds = ComputeHeldSeconds(frame, button, activeAction.logicalPressedAtUs);
 
-            switch (activeAction.policy.mode) {
-            case ButtonLifecycleMode::MinDownWindow:
-                effectiveDown = button.down || nowUs < activeAction.releaseNotBeforeUs;
-                effectiveHeldSeconds = logicalHeldSeconds;
-                break;
-            case ButtonLifecycleMode::HoldWhileSourceDown:
-            default:
-                effectiveDown = button.down;
-                effectiveHeldSeconds = button.down ?
-                    (button.pressed ? 0.0f : button.heldSeconds) :
-                    (button.released && button.releasedAtUs > button.pressedAtUs && button.pressedAtUs != 0 ?
-                        static_cast<float>(button.releasedAtUs - button.pressedAtUs) / 1000000.0f :
-                        button.heldSeconds);
-                break;
-            }
-
-            if (effectiveDown) {
-                _shadowPlanner.PlanButtonState(
-                    activeAction.actionId,
-                    true,
-                    effectiveHeldSeconds,
-                    sourceCode,
-                    context,
-                    _shadowPlan);
-
-                const auto dispatchResult = _actionDispatcher.DispatchButtonState(
-                    activeAction.actionId,
-                    true,
-                    effectiveHeldSeconds,
-                    context);
-                if (!dispatchResult.handled) {
-                    continue;
+            if (button.down) {
+                if (useCommittedNativeState) {
+                    if (!button.pressed) {
+                        _planner.PlanButtonState(
+                            activeAction.actionId,
+                            true,
+                            heldSeconds,
+                            sourceCode,
+                            context,
+                            _currentPlan);
+                    }
+                } else {
+                    (void)_actionDispatcher.DispatchButtonState(
+                        activeAction.actionId,
+                        true,
+                        heldSeconds,
+                        context);
                 }
 
-                if (IsSprintObservationEnabled() &&
-                    activeAction.actionId == actions::Sprint) {
-                    if (button.pressed) {
-                        ObserveSprintState("press", frame, button, dispatchResult.target, sourceCode);
-                        activeAction.lastObservedHoldBucket = HoldLogBucket(button.heldSeconds);
-                    }
-                    else {
-                        const auto bucket = HoldLogBucket(button.heldSeconds);
-                        if (bucket != activeAction.lastObservedHoldBucket) {
-                            ObserveSprintState("hold", frame, button, dispatchResult.target, sourceCode);
-                            activeAction.lastObservedHoldBucket = bucket;
-                        }
-                    }
-                }
-
+                activeAction.sawReleaseThisSnapshot = false;
                 continue;
             }
 
-            _shadowPlanner.PlanButtonState(
-                activeAction.actionId,
-                false,
-                effectiveHeldSeconds,
-                sourceCode,
-                context,
-                _shadowPlan);
-            const auto dispatchResult = _actionDispatcher.DispatchButtonState(
-                activeAction.actionId,
-                false,
-                effectiveHeldSeconds,
-                context);
-
-            if (dispatchResult.handled &&
-                IsSprintObservationEnabled() &&
-                activeAction.actionId == actions::Sprint) {
-                ObserveSprintState("release", frame, button, dispatchResult.target, sourceCode);
+            if (useCommittedNativeState) {
+                if (!activeAction.sawReleaseThisSnapshot) {
+                    _planner.PlanButtonState(
+                        activeAction.actionId,
+                        false,
+                        heldSeconds,
+                        sourceCode,
+                        context,
+                        _currentPlan);
+                }
+            } else {
+                (void)_actionDispatcher.DispatchButtonState(
+                    activeAction.actionId,
+                    false,
+                    heldSeconds,
+                    context);
             }
 
             _blockedSourceButtons &= ~sourceCode;
@@ -323,128 +300,25 @@ namespace dualpad::input
         }
     }
 
-    void PadEventSnapshotProcessor::ObserveSprintState(
-        std::string_view phase,
-        const SyntheticPadFrame& frame,
-        const SyntheticButtonState& button,
-        ActionDispatchTarget target,
-        std::uint32_t sourceCode) const
+    void PadEventSnapshotProcessor::ResetPlanningState()
     {
-        logger::info(
-            "[DualPad][Sprint] phase={} seq={} context={} source=0x{:08X} route={} down={} pressed={} released={} held={:.3f} blocked=0x{:08X}",
-            phase,
-            frame.sequence,
-            ToString(frame.context),
-            sourceCode,
-            ToString(target),
-            button.down,
-            button.pressed,
-            button.released,
-            button.heldSeconds,
-            _blockedSourceButtons);
+        _currentPlan.Clear();
+        _nativeStateBackend.Reset();
     }
 
-    void PadEventSnapshotProcessor::ObserveRawSprintCompatibilityState(
-        const SyntheticPadFrame& frame,
-        std::uint32_t handledButtons)
+    void PadEventSnapshotProcessor::BeginPlanning(InputContext context)
     {
-        if (!IsSprintObservationEnabled()) {
-            return;
+        _currentPlan.Clear();
+        _nativeStateBackend.BeginFrame(context);
+        for (auto& activeAction : _activeButtonActions) {
+            activeAction.sawReleaseThisSnapshot = false;
         }
-
-        const auto sprintBit = GetPadBits(GetActivePadProfile()).sprint;
-        if (sprintBit == 0 || !std::has_single_bit(sprintBit)) {
-            return;
-        }
-
-        const auto bitIndex = BitIndex(sprintBit);
-        const auto& button = frame.buttons[bitIndex];
-        const bool blocked = (handledButtons & sprintBit) != 0;
-
-        if (blocked) {
-            if (_rawSprintObservedDown) {
-                logger::info(
-                    "[DualPad][SprintRaw] phase=blocked-release route=Blocked seq={} context={} source=0x{:08X} down={} pressed={} released={} held={:.3f}",
-                    frame.sequence,
-                    ToString(frame.context),
-                    sprintBit,
-                    button.down,
-                    button.pressed,
-                    button.released,
-                    button.heldSeconds);
-            }
-
-            _rawSprintObservedDown = false;
-            _rawSprintHoldBucket = std::numeric_limits<std::uint64_t>::max();
-            return;
-        }
-
-        if (button.down) {
-            if (!_rawSprintObservedDown || button.pressed) {
-                logger::info(
-                    "[DualPad][SprintRaw] phase=press route=Compatibility seq={} context={} source=0x{:08X} down={} pressed={} released={} held={:.3f}",
-                    frame.sequence,
-                    ToString(frame.context),
-                    sprintBit,
-                    button.down,
-                    button.pressed,
-                    button.released,
-                    button.heldSeconds);
-                _rawSprintHoldBucket = HoldLogBucket(button.heldSeconds);
-            }
-            else {
-                const auto bucket = HoldLogBucket(button.heldSeconds);
-                if (bucket != _rawSprintHoldBucket) {
-                    logger::info(
-                        "[DualPad][SprintRaw] phase=hold route=Compatibility seq={} context={} source=0x{:08X} down={} pressed={} released={} held={:.3f}",
-                        frame.sequence,
-                        ToString(frame.context),
-                        sprintBit,
-                        button.down,
-                        button.pressed,
-                        button.released,
-                        button.heldSeconds);
-                    _rawSprintHoldBucket = bucket;
-                }
-            }
-
-            _rawSprintObservedDown = true;
-            return;
-        }
-
-        if (_rawSprintObservedDown || button.released) {
-            logger::info(
-                "[DualPad][SprintRaw] phase=release route=Compatibility seq={} context={} source=0x{:08X} down={} pressed={} released={} held={:.3f}",
-                frame.sequence,
-                ToString(frame.context),
-                sprintBit,
-                button.down,
-                button.pressed,
-                button.released,
-                button.heldSeconds);
-        }
-
-        _rawSprintObservedDown = false;
-        _rawSprintHoldBucket = std::numeric_limits<std::uint64_t>::max();
     }
 
-    void PadEventSnapshotProcessor::ResetShadowPlanning()
+    void PadEventSnapshotProcessor::FinishPlanning()
     {
-        _shadowPlan.Clear();
-        _shadowNativeState.Reset();
-    }
-
-    void PadEventSnapshotProcessor::BeginShadowPlanning(InputContext context)
-    {
-        _shadowPlan.Clear();
-        _shadowNativeState.BeginFrame(context);
-    }
-
-    void PadEventSnapshotProcessor::FinishShadowPlanning()
-    {
-        _shadowNativeState.ApplyPlan(_shadowPlan);
-        backend::LogFrameActionPlan(_shadowPlan);
-        backend::LogVirtualGamepadState(_shadowNativeState.GetState());
+        _nativeStateBackend.ApplyPlan(_currentPlan);
+        backend::LogFrameActionPlan(_currentPlan);
     }
 
     void PadEventSnapshotProcessor::Process(const PadEventSnapshot& snapshot)
@@ -467,7 +341,7 @@ namespace dualpad::input
         if (_lastProcessedSequence != 0 &&
             snapshot.firstSequence != (_lastProcessedSequence + 1)) {
             logger::warn(
-                "[DualPad][Snapshot] Sequence gap detected: expected {} got {}. Resetting compatibility state.",
+                "[DualPad][Snapshot] Sequence gap detected: expected {} got {}. Resetting injected state owners.",
                 _lastProcessedSequence + 1,
                 snapshot.firstSequence);
             ResetState();
@@ -476,19 +350,26 @@ namespace dualpad::input
         const auto context = ContextManager::GetSingleton().GetCurrentContext();
         const auto& syntheticFrame = _stateReducer.Reduce(snapshot, context);
         LogSyntheticPadFrame(syntheticFrame);
-        BeginShadowPlanning(context);
+        BeginPlanning(context);
 
         const auto handledButtons = DispatchPadEvents(snapshot.events, context);
-        ObserveRawSprintCompatibilityState(syntheticFrame, handledButtons);
         UpdateActiveButtonActions(syntheticFrame, context);
-        FinishShadowPlanning();
+        _nativeStateBackend.SetRawAnalogState(
+            syntheticFrame.leftStickX.value,
+            syntheticFrame.leftStickY.value,
+            syntheticFrame.rightStickX.value,
+            syntheticFrame.rightStickY.value,
+            syntheticFrame.leftTrigger.value,
+            syntheticFrame.rightTrigger.value);
+        FinishPlanning();
+
         if (_nativeInjector.ShouldUseAsMainPath() &&
-            _nativeInjector.IsAvailable()) {
+            _nativeInjector.IsAvailable() &&
+            !UsePollCommittedNativeState()) {
+            // Legacy experimental fallback only. Plan A owns the primary
+            // digital path once the producer-side Poll commit route is active.
             _nativeInjector.SubmitFrame(syntheticFrame, handledButtons);
-        }
-        else {
-            // Stable compatibility path until native button injection moves to a
-            // pre-ControlMap/consumer hook instead of the current input-pump sink.
+        } else if (!UsePollCommittedNativeState()) {
             _compatibilityInjector.SubmitFrame(syntheticFrame, handledButtons);
         }
 

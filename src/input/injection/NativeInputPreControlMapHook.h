@@ -2,6 +2,8 @@
 
 namespace dualpad::input
 {
+    // Legacy experimental ControlMap-side probe. It remains installable only as
+    // a reverse/debug fallback and is no longer the primary digital backend.
     class NativeInputPreControlMapHook
     {
     public:
