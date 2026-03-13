@@ -1,5 +1,6 @@
 #pragma once
 
+#include "input/backend/ActionOutputContract.h"
 #include "input/backend/FrameActionPlan.h"
 #include "input/backend/NativeControlCode.h"
 
@@ -11,6 +12,7 @@ namespace dualpad::input::backend
     {
         PlannedBackend backend{ PlannedBackend::CompatibilityFallback };
         PlannedActionKind kind{ PlannedActionKind::NativeButton };
+        ActionOutputContract contract{ ActionOutputContract::Pulse };
         NativeControlCode nativeCode{ NativeControlCode::None };
         bool ownsLifecycle{ false };
     };

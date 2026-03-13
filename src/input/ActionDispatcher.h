@@ -14,6 +14,7 @@ namespace dualpad::input
     enum class ActionDispatchTarget : std::uint8_t
     {
         None = 0,
+        ButtonEvent,
         KeyboardNative,
         CompatibilityPulse,
         CompatibilityState,

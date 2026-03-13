@@ -32,13 +32,62 @@ namespace dualpad::input::backend
             float,
             bool,
             bool);
-        using ControlMapPreprocess_t = void(RE::ControlMap*, RE::InputEvent*);
-        using InputDispatch_t = void(void*, RE::InputEvent**);
         using KeyboardGetDeviceData_t = std::uint32_t(__fastcall*)(
             void*,
             REX::W32::IDirectInputDevice8A*,
             std::uint32_t*,
             REX::W32::DIDEVICEOBJECTDATA*);
+
+        constexpr bool UsesContinuousState(ActionOutputContract contract)
+        {
+            return contract == ActionOutputContract::Hold;
+        }
+
+        constexpr bool UsesDebouncedPulse(ActionOutputContract contract)
+        {
+            return contract == ActionOutputContract::Pulse;
+        }
+
+        constexpr bool UsesScheduledPulseContract(ActionOutputContract contract)
+        {
+            return contract == ActionOutputContract::Toggle ||
+                contract == ActionOutputContract::Repeat;
+        }
+
+        constexpr std::uint8_t GetScheduledPulseDownConsumes(ActionOutputContract contract)
+        {
+            switch (contract) {
+            case ActionOutputContract::Toggle:
+                return 2;
+            case ActionOutputContract::Repeat:
+                return 1;
+            case ActionOutputContract::Pulse:
+            case ActionOutputContract::Hold:
+            case ActionOutputContract::Axis:
+            case ActionOutputContract::None:
+            default:
+                return 1;
+            }
+        }
+
+        constexpr std::uint8_t GetScheduledPulseGapConsumes(ActionOutputContract contract)
+        {
+            switch (contract) {
+            case ActionOutputContract::Repeat:
+                return 1;
+            case ActionOutputContract::Toggle:
+            case ActionOutputContract::Pulse:
+            case ActionOutputContract::Hold:
+            case ActionOutputContract::Axis:
+            case ActionOutputContract::None:
+            default:
+                return 0;
+            }
+        }
+
+        constexpr float kRepeatInitialDelaySeconds = 0.35f;
+        constexpr float kRepeatIntervalSeconds = 0.08f;
+        constexpr float kRepeatScheduleEpsilon = 0.0001f;
 
         constexpr auto kSupportedRuntime = SKSE::RUNTIME_SSE_1_5_97;
         constexpr std::uintptr_t kKeyboardPollRva = 0xC1A130;
@@ -46,16 +95,12 @@ namespace dualpad::input::backend
         constexpr std::uintptr_t kGlobalInputManagerPointerRva = 0x2F50B28;
         constexpr std::uintptr_t kPreprocessGlobalObjectPointerRva = 0x2EC5BD0;
         constexpr std::uintptr_t kDispatchOwnerGlobalObjectPointerRva = 0x2F257A8;
-        constexpr std::uintptr_t kGameplayRootGlobalObjectPointerRva = 0x2EC5BD8;
         constexpr std::uintptr_t kValidateCompareGlobalPointerRva = 0x2F25250;
         constexpr std::uintptr_t kClickFamilyStateByteRva = 0x2F4E650;
         constexpr std::ptrdiff_t kValidateCompareFieldOffset = 696;
-        constexpr std::uintptr_t kEmptyStringGlobalPointerRva = 0x1EBEAA0;
         constexpr std::size_t kShadowVtableEntryCount = 32;
         constexpr std::ptrdiff_t kKeyboardPollPostEventOffset = 0x250;
         constexpr std::ptrdiff_t kKeyboardPollPostEventWindowOffset = 0x24B;
-        constexpr std::ptrdiff_t kPreprocessCallOffset = 0x53;
-        constexpr std::ptrdiff_t kDispatchCallOffset = 0x7B;
         constexpr std::size_t kDiObjDataCallSearchLength = 0x100;
         constexpr std::uintptr_t kKeyboardControlEventRva = 0xC190F0;
         constexpr std::ptrdiff_t kDeviceHashtableOffset = 0x38;
@@ -71,43 +116,13 @@ namespace dualpad::input::backend
         constexpr std::ptrdiff_t kQueueEventScanCodeOffset = 0x20;
         constexpr std::ptrdiff_t kQueueEventParam4Offset = 0x28;
         constexpr std::ptrdiff_t kQueueEventHoldTimeOffset = 0x2C;
-        constexpr std::ptrdiff_t kHandlerFilterFlagOffset130 = 130;
-        constexpr std::ptrdiff_t kHandlerFilterFlagOffset131 = 131;
         constexpr std::array<std::uint8_t, 32> kExpectedPollPostEventWindow = {
             0x4C, 0x8B, 0x64, 0x24, 0x58, 0x4C, 0x8B, 0x6C,
             0x24, 0x50, 0x48, 0x8B, 0xAC, 0x24, 0x88, 0x00,
             0x00, 0x00, 0x0F, 0x1F, 0x00, 0x80, 0xBE, 0x00,
             0xFF, 0xFF, 0xFF, 0x00, 0x74, 0x1A, 0x80, 0x3E
         };
-        constexpr std::array<std::uint8_t, 5> kExpectedPreprocessCallInstruction = {
-            0xE8, 0xF8, 0xC4, 0xFF, 0xFF
-        };
-        constexpr std::array<std::uint8_t, 5> kExpectedDispatchCallInstruction = {
-            0xE8, 0xD0, 0x0C, 0x00, 0x00
-        };
-        struct PreprocessInternalExperimentContext;
-        void EnsureDispatchHandlerHooksInstalled(void* owner);
-        void EnsureGameplayRootValidateHooksInstalled();
-        bool HeadContainsJumpCandidate(RE::InputEvent* head);
-        enum class JumpCandidateKind
-        {
-            None,
-            RawSpace,
-            TranslatedJump
-        };
-        std::string_view DescribeJumpCandidateKind(JumpCandidateKind value);
-        JumpCandidateKind ClassifyJumpCandidate(RE::InputEvent* head);
-        void LogKeyboardFamilyDispatchProbe(std::string_view phase, RE::InputEvent* head);
-        void LogPreprocessConditionSnapshot(
-            std::string_view phase,
-            RE::ControlMap* controlMap,
-            RE::InputEvent* head);
-        void LogPreprocessDescriptorSelectionState(
-            std::string_view label,
-            const PreprocessInternalExperimentContext& context,
-            std::uintptr_t eventNode,
-            std::uintptr_t chosenSrc);
-        void LogPreprocessWriteSummary(const PreprocessInternalExperimentContext& context);
+        static thread_local bool t_replayingDeferredActions = false;
         void LogJumpInjectionDecision(
             std::uint8_t scancode,
             const RE::BSWin32KeyboardDevice& device,
@@ -140,41 +155,11 @@ namespace dualpad::input::backend
             const REX::W32::DIDEVICEOBJECTDATA* eventBuffer,
             std::uint32_t count,
             std::uint32_t maxEvents);
-        RE::InputEvent* FindJumpCandidateNode(RE::InputEvent* head);
-        std::uintptr_t FindRelativeCallSiteByTarget(
-            std::uintptr_t functionAddress,
-            std::size_t scanLength,
-            std::uintptr_t targetAddress,
-            std::uint32_t occurrenceIndex);
-        void LogBsFixedStringSlotState(std::string_view label, std::uintptr_t slotAddress);
-        void LogPreprocessDescriptorRecord(std::string_view label, std::uintptr_t recordAddress);
-        void LogPreprocessJumpNodeVirtualState(std::string_view label, RE::InputEvent* head);
-        std::ptrdiff_t FindField18NodeIndex(RE::InputEvent* head, std::uintptr_t slotAddress);
-        void LogPreprocessHelperEventState(std::string_view label, std::uintptr_t eventNode);
         void LogRuntimeGlobalObjectDebug(std::string_view phase);
         std::string DescribeStringPointer(std::uintptr_t address);
         bool TryReadQword(std::uintptr_t address, std::uint64_t& value);
         bool TryReadDword(std::uintptr_t address, std::uint32_t& value);
         bool TryReadByte(std::uintptr_t address, std::uint8_t& value);
-
-        bool IsTemplateDumpTargetEvent(std::uintptr_t eventNode)
-        {
-            if (eventNode == 0) {
-                return false;
-            }
-
-            std::uint32_t code = 0;
-            if (TryReadDword(eventNode + kQueueEventScanCodeOffset, code) && code == 0x39) {
-                return true;
-            }
-
-            std::uint64_t descriptor = 0;
-            if (!TryReadQword(eventNode + kQueueEventTimeStampOffset, descriptor) || descriptor == 0) {
-                return false;
-            }
-
-            return DescribeStringPointer(static_cast<std::uintptr_t>(descriptor)) == "Jump";
-        }
 
         std::optional<std::uintptr_t> FindDirectCallSiteToTarget(
             std::uintptr_t start,
@@ -746,657 +731,8 @@ namespace dualpad::input::backend
             return preview;
         }
 
-        struct KnownControlSlot
-        {
-            std::uintptr_t offset;
-            const char* name;
-        };
-
-        constexpr std::array<KnownControlSlot, 4> kKnownControlSlots = {{
-            { 0x28, "Move" },
-            { 0x128, "Accept" },
-            { 0x140, "Down" },
-            { 0x2B8, "Click" },
-        }};
-
-        std::string DescribeKnownControlSlotMatch(std::uintptr_t value)
-        {
-            const auto compareGlobalAddress = ReadGlobalObjectPointer(kValidateCompareGlobalPointerRva);
-            if (compareGlobalAddress == 0 || value == 0) {
-                return "unknown";
-            }
-
-            for (const auto& slot : kKnownControlSlots) {
-                std::uint64_t slotValue = 0;
-                if (!TryReadQword(compareGlobalAddress + slot.offset, slotValue)) {
-                    continue;
-                }
-                if (static_cast<std::uintptr_t>(slotValue) == value) {
-                    char buffer[64]{};
-                    std::snprintf(buffer, sizeof(buffer), "%s(+0x%zX)", slot.name, static_cast<std::size_t>(slot.offset));
-                    return buffer;
-                }
-            }
-
-            return "unknown";
-        }
-
-        void LogBsFixedStringSlotState(std::string_view label, const std::uintptr_t slotAddress)
-        {
-            if (slotAddress == 0) {
-                logger::info("[DualPad][KeyboardNative]   {} slot=null", label);
-                return;
-            }
-
-            std::uint64_t value = 0;
-            std::uint32_t flags = 0;
-            const auto hasValue = TryReadQword(slotAddress, value);
-            const auto hasFlags =
-                hasValue &&
-                value != 0 &&
-                TryReadDword(static_cast<std::uintptr_t>(value) + 0x10, flags);
-
-            logger::info(
-                "[DualPad][KeyboardNative]   {} slot=0x{:X} value=0x{:X}{} ({}) known={} flags=0x{:X}{}",
-                label,
-                slotAddress,
-                value,
-                hasValue ? "" : " (unreadable)",
-                hasValue ? DescribeStringPointer(static_cast<std::uintptr_t>(value)) : "unreadable",
-                hasValue ? DescribeKnownControlSlotMatch(static_cast<std::uintptr_t>(value)) : "unknown",
-                flags,
-                hasFlags ? "" : " (unreadable)");
-        }
-
-        void LogPreprocessDescriptorRecord(std::string_view label, const std::uintptr_t recordAddress)
-        {
-            if (recordAddress == 0) {
-                logger::info("[DualPad][KeyboardNative]   {} record=null", label);
-                return;
-            }
-
-            std::uint64_t name = 0;
-            std::uint32_t code = 0;
-            std::uint16_t extra12 = 0;
-            std::uint8_t extra12Lo = 0;
-            std::uint8_t extra12Hi = 0;
-            std::uint8_t extra14 = 0;
-            std::uint32_t flags = 0;
-            const auto hasName = TryReadQword(recordAddress + 0x00, name);
-            const auto hasCode = TryReadDword(recordAddress + 0x08, code);
-            const auto hasExtra12 =
-                TryReadByte(recordAddress + 0x0C, extra12Lo) &&
-                TryReadByte(recordAddress + 0x0D, extra12Hi);
-            if (hasExtra12) {
-                extra12 = static_cast<std::uint16_t>(extra12Lo) |
-                    (static_cast<std::uint16_t>(extra12Hi) << 8);
-            }
-            const auto hasExtra14 = TryReadByte(recordAddress + 0x0E, extra14);
-            const auto hasFlags = TryReadDword(recordAddress + 0x10, flags);
-
-            logger::info(
-                "[DualPad][KeyboardNative]   {} record=0x{:X} name=0x{:X}{} ({}) known={} code=0x{:X}{} extra12=0x{:04X}{} extra14=0x{:02X}{} flags=0x{:X}{}",
-                label,
-                recordAddress,
-                name,
-                hasName ? "" : " (unreadable)",
-                hasName ? DescribeStringPointer(static_cast<std::uintptr_t>(name)) : "unreadable",
-                hasName ? DescribeKnownControlSlotMatch(static_cast<std::uintptr_t>(name)) : "unknown",
-                code,
-                hasCode ? "" : " (unreadable)",
-                extra12,
-                hasExtra12 ? "" : " (unreadable)",
-                extra14,
-                hasExtra14 ? "" : " (unreadable)",
-                flags,
-                hasFlags ? "" : " (unreadable)");
-        }
-
-        void LogPreprocessJumpNodeVirtualState(std::string_view label, RE::InputEvent* head)
-        {
-            auto* jumpNode = FindJumpCandidateNode(head);
-            if (!RuntimeConfig::GetSingleton().LogKeyboardInjection() || jumpNode == nullptr) {
-                return;
-            }
-
-            const auto nodeAddress = reinterpret_cast<std::uintptr_t>(jumpNode);
-            std::uint64_t vtable = 0;
-            std::uint64_t slot1Function = 0;
-            std::uint64_t slot2Function = 0;
-            std::uintptr_t slot1Result = 0;
-            std::uintptr_t slot2Result = 0;
-            std::uint64_t slot2Value = 0;
-
-            const auto hasVtable = TryReadQword(nodeAddress, vtable);
-            const auto hasSlot1 = hasVtable && vtable != 0 && TryReadQword(vtable + 0x08, slot1Function);
-            const auto hasSlot2 = hasVtable && vtable != 0 && TryReadQword(vtable + 0x10, slot2Function);
-            const auto slot1Ok =
-                hasSlot1 &&
-                slot1Function != 0 &&
-                TryCallEventSourceAccessor(static_cast<std::uintptr_t>(slot1Function), nodeAddress, slot1Result);
-            const auto slot2Ok =
-                hasSlot2 &&
-                slot2Function != 0 &&
-                TryCallEventSourceAccessor(static_cast<std::uintptr_t>(slot2Function), nodeAddress, slot2Result);
-            const auto hasSlot2Value =
-                slot2Ok &&
-                slot2Result != 0 &&
-                TryReadQword(slot2Result, slot2Value);
-
-            logger::info(
-                "[DualPad][KeyboardNative] {} node=0x{:X} vtable=0x{:X} slot1=0x{:X} slot1Result=0x{:X}{} slot2=0x{:X} slot2Result=0x{:X}{} slot2IsField18={} slot2Value=0x{:X}{} ({}) known={}",
-                label,
-                nodeAddress,
-                vtable,
-                slot1Function,
-                slot1Result,
-                slot1Ok ? "" : " (call failed)",
-                slot2Function,
-                slot2Result,
-                slot2Ok ? "" : " (call failed)",
-                slot2Ok && slot2Result == nodeAddress + 0x18 ? "true" : "false",
-                slot2Value,
-                hasSlot2Value ? "" : " (unreadable)",
-                hasSlot2Value ? DescribeStringPointer(static_cast<std::uintptr_t>(slot2Value)) : "unreadable",
-                hasSlot2Value ? DescribeKnownControlSlotMatch(static_cast<std::uintptr_t>(slot2Value)) : "unknown");
-        }
-
-        std::ptrdiff_t FindField18NodeIndex(RE::InputEvent* head, const std::uintptr_t slotAddress)
-        {
-            auto* current = head;
-            for (std::size_t index = 0; current != nullptr && index < 4; ++index) {
-                if (reinterpret_cast<std::uintptr_t>(current) + 0x18 == slotAddress) {
-                    return static_cast<std::ptrdiff_t>(index);
-                }
-                current = current->next;
-            }
-
-            return -1;
-        }
-
-        void LogPreprocessHelperEventState(std::string_view label, const std::uintptr_t eventNode)
-        {
-            if (eventNode == 0) {
-                logger::info("[DualPad][KeyboardNative]   {} event=null", label);
-                return;
-            }
-
-            std::uint32_t code = 0;
-            std::uint64_t field18 = 0;
-            const auto hasCode = TryReadDword(eventNode + 0x20, code);
-            const auto hasField18 = TryReadQword(eventNode + 0x18, field18);
-
-            logger::info(
-                "[DualPad][KeyboardNative]   {} event=0x{:X} code=0x{:X}{} field18=0x{:X}{} ({}) known={}",
-                label,
-                eventNode,
-                code,
-                hasCode ? "" : " (unreadable)",
-                field18,
-                hasField18 ? "" : " (unreadable)",
-                hasField18 ? DescribeStringPointer(static_cast<std::uintptr_t>(field18)) : "unreadable",
-                hasField18 ? DescribeKnownControlSlotMatch(static_cast<std::uintptr_t>(field18)) : "unknown");
-        }
-
-        std::uintptr_t ReadEmptyStringDescriptor()
-        {
-            std::uint64_t value = 0;
-            if (!TryReadQword(REL::Module::get().base() + kEmptyStringGlobalPointerRva, value)) {
-                return 0;
-            }
-
-            return static_cast<std::uintptr_t>(value);
-        }
-
-        bool HeadContainsJumpCandidate(RE::InputEvent* head)
-        {
-            auto* current = head;
-            for (std::size_t index = 0; current != nullptr && index < 4; ++index) {
-                if (IsTemplateDumpTargetEvent(reinterpret_cast<std::uintptr_t>(current))) {
-                    return true;
-                }
-                current = current->next;
-            }
-
-            return false;
-        }
-
-        JumpCandidateKind ClassifyJumpCandidate(RE::InputEvent* head)
-        {
-            auto* current = head;
-            for (std::size_t index = 0; current != nullptr && index < 4; ++index) {
-                const auto nodeAddress = reinterpret_cast<std::uintptr_t>(current);
-                if (!IsTemplateDumpTargetEvent(nodeAddress)) {
-                    current = current->next;
-                    continue;
-                }
-
-                std::uint32_t code = 0;
-                std::uint64_t field18 = 0;
-                const auto hasCode = TryReadDword(nodeAddress + 0x20, code);
-                const auto hasField18 = TryReadQword(nodeAddress + 0x18, field18);
-                const auto descriptor = hasField18 ? DescribeStringPointer(static_cast<std::uintptr_t>(field18)) : ""s;
-
-                if (hasCode && code == 0x39 && descriptor == "Jump") {
-                    return JumpCandidateKind::TranslatedJump;
-                }
-
-                if (hasCode && code == 0x39 && descriptor == "empty") {
-                    return JumpCandidateKind::RawSpace;
-                }
-
-                if (descriptor == "Jump") {
-                    return JumpCandidateKind::TranslatedJump;
-                }
-                if (descriptor == "empty") {
-                    return JumpCandidateKind::RawSpace;
-                }
-
-                return JumpCandidateKind::None;
-            }
-
-            return JumpCandidateKind::None;
-        }
-
-        std::string_view DescribeJumpCandidateKind(const JumpCandidateKind value)
-        {
-            switch (value) {
-            case JumpCandidateKind::RawSpace:
-                return "raw-space";
-            case JumpCandidateKind::TranslatedJump:
-                return "translated-jump";
-            default:
-                return "none";
-            }
-        }
-
-        struct KeyboardFamilyWatchSpec
-        {
-            std::string_view actionId;
-            std::uint32_t scancode;
-            std::string_view translatedName;
-        };
-
-        constexpr std::array kKeyboardFamilyWatchSpecs{
-            KeyboardFamilyWatchSpec{ actions::Jump, static_cast<std::uint32_t>(REX::W32::DIK::DIK_SPACE), "Jump"sv },
-            KeyboardFamilyWatchSpec{ actions::Activate, static_cast<std::uint32_t>(REX::W32::DIK::DIK_E), "Activate"sv },
-            KeyboardFamilyWatchSpec{ actions::Sprint, static_cast<std::uint32_t>(REX::W32::DIK::DIK_LMENU), "Sprint"sv },
-            KeyboardFamilyWatchSpec{ actions::Sneak, static_cast<std::uint32_t>(REX::W32::DIK::DIK_LCONTROL), "Sneak"sv }
-        };
-
-        std::string_view ClassifyKeyboardFamilyCandidate(
-            const KeyboardFamilyWatchSpec& spec,
-            const std::uint32_t code,
-            const std::string_view descriptor)
-        {
-            if (descriptor == spec.translatedName) {
-                return "translated";
-            }
-            if (code == spec.scancode && descriptor == "empty") {
-                return "raw";
-            }
-            if (code == spec.scancode) {
-                return "raw-other";
-            }
-            return "other";
-        }
-
-        void LogKeyboardFamilyDispatchProbe(std::string_view phase, RE::InputEvent* head)
-        {
-            if (!RuntimeConfig::GetSingleton().LogKeyboardInjection() || head == nullptr) {
-                return;
-            }
-
-            for (const auto& spec : kKeyboardFamilyWatchSpecs) {
-                auto* current = head;
-                for (std::size_t index = 0; current != nullptr && index < 6; ++index, current = current->next) {
-                    const auto nodeAddress = reinterpret_cast<std::uintptr_t>(current);
-                    std::uint32_t code = 0;
-                    std::uint32_t field08 = 0;
-                    std::uint32_t field0C = 0;
-                    std::uint64_t field18 = 0;
-                    if (!TryReadDword(nodeAddress + 0x20, code) ||
-                        !TryReadDword(nodeAddress + 0x08, field08) ||
-                        !TryReadDword(nodeAddress + 0x0C, field0C) ||
-                        !TryReadQword(nodeAddress + 0x18, field18)) {
-                        continue;
-                    }
-
-                    const auto descriptor = field18 != 0 ?
-                        DescribeStringPointer(static_cast<std::uintptr_t>(field18)) :
-                        "empty"s;
-                    if (code != spec.scancode && descriptor != spec.translatedName) {
-                        continue;
-                    }
-
-                    logger::info(
-                        "[DualPad][KeyboardNative] FAMILY DISPATCH {} action={} node[{}]=0x{:X} kind={} field08=0x{:X} field0C=0x{:X} code=0x{:X} field18=0x{:X}({})",
-                        phase,
-                        spec.actionId,
-                        index,
-                        nodeAddress,
-                        ClassifyKeyboardFamilyCandidate(spec, code, descriptor),
-                        field08,
-                        field0C,
-                        code,
-                        field18,
-                        descriptor);
-                    break;
-                }
-            }
-        }
-
-        RE::InputEvent* FindJumpCandidateNode(RE::InputEvent* head)
-        {
-            auto* current = head;
-            for (std::size_t index = 0; current != nullptr && index < 4; ++index) {
-                if (IsTemplateDumpTargetEvent(reinterpret_cast<std::uintptr_t>(current))) {
-                    return current;
-                }
-                current = current->next;
-            }
-
-            return nullptr;
-        }
-
-        std::uintptr_t FindRelativeCallSiteByTarget(
-            const std::uintptr_t functionAddress,
-            const std::size_t scanLength,
-            const std::uintptr_t targetAddress,
-            const std::uint32_t occurrenceIndex)
-        {
-            std::uint32_t seen = 0;
-            for (std::size_t offset = 0; offset + 5 <= scanLength; ++offset) {
-                const auto candidate = functionAddress + offset;
-                std::uint8_t opcode = 0;
-                if (!TryReadByte(candidate, opcode) || opcode != 0xE8) {
-                    continue;
-                }
-
-                std::uint32_t displacementRaw = 0;
-                if (!TryReadDword(candidate + 1, displacementRaw)) {
-                    continue;
-                }
-
-                const auto displacement = static_cast<std::int32_t>(displacementRaw);
-                const auto resolvedTarget = candidate + 5 + displacement;
-                if (resolvedTarget != targetAddress) {
-                    continue;
-                }
-
-                if (seen == occurrenceIndex) {
-                    return candidate;
-                }
-                ++seen;
-            }
-
-            return 0;
-        }
-
-        struct PreprocessInternalExperimentContext
-        {
-            RE::ControlMap* controlMap{ nullptr };
-            RE::InputEvent* head{ nullptr };
-            JumpCandidateKind jumpKind{ JumpCandidateKind::None };
-            bool traceEnabled{ false };
-            std::uint32_t invocationId{ 0 };
-            std::uintptr_t iteratorBegin{ 0 };
-            std::uintptr_t iteratorEnd{ 0 };
-            std::uintptr_t lookupCopyDest{ 0 };
-            std::uintptr_t lookupCopySrc{ 0 };
-            std::uintptr_t lookupCopyName{ 0 };
-            std::uint32_t lookupCopyCode{ 0 };
-            std::uint32_t lookupCopyFlags{ 0 };
-            bool lookupCopyValid{ false };
-            bool finalField18WriteSeen{ false };
-            bool lateField18WriteSeen{ false };
-            std::ptrdiff_t finalField18WriteNodeIndex{ -1 };
-            std::ptrdiff_t lateField18WriteNodeIndex{ -1 };
-            std::uintptr_t finalField18WriteSrc{ 0 };
-            std::uintptr_t lateField18WriteSrc{ 0 };
-        };
-
-        thread_local PreprocessInternalExperimentContext g_preprocessInternalExperimentContext{};
-
-        std::atomic_uint32_t g_preprocessInvocationCounter{ 0 };
         std::atomic_uint32_t g_syntheticKeyboardEventTimeStamp{ 0x100000 };
         std::atomic_uint32_t g_syntheticKeyboardEventSequence{ 0x200000 };
-
-
-        void LogPreprocessConditionSnapshot(
-            std::string_view phase,
-            RE::ControlMap* controlMap,
-            RE::InputEvent* head)
-        {
-            if (!RuntimeConfig::GetSingleton().LogKeyboardInjection() || controlMap == nullptr || head == nullptr) {
-                return;
-            }
-
-            auto* jumpNode = head;
-            std::size_t jumpIndex = 0;
-            for (; jumpNode != nullptr && jumpIndex < 4; ++jumpIndex) {
-                if (IsTemplateDumpTargetEvent(reinterpret_cast<std::uintptr_t>(jumpNode))) {
-                    break;
-                }
-                jumpNode = jumpNode->next;
-            }
-
-            if (jumpNode == nullptr || jumpIndex >= 4) {
-                return;
-            }
-
-            const auto gateObjectAddress = reinterpret_cast<std::uintptr_t>(controlMap);
-            std::uint32_t field118 = 0;
-            std::uint8_t field120 = 0;
-            std::uint8_t field121 = 0;
-            std::uint8_t field122 = 0;
-            std::uint32_t field08 = 0;
-            std::uint32_t code = 0;
-            std::uint64_t field18 = 0;
-            std::uint32_t descriptorFlags = 0;
-            const auto nodeAddress = reinterpret_cast<std::uintptr_t>(jumpNode);
-
-            // Hex-Rays showed a1+280/+288/+289/+290 as decimal offsets.
-            // The live binary uses +0x118/+0x120/+0x121/+0x122.
-            const auto hasField118 = TryReadDword(gateObjectAddress + 0x118, field118);
-            const auto hasField120 = TryReadByte(gateObjectAddress + 0x120, field120);
-            const auto hasField121 = TryReadByte(gateObjectAddress + 0x121, field121);
-            const auto hasField122 = TryReadByte(gateObjectAddress + 0x122, field122);
-            const auto hasField08 = TryReadDword(nodeAddress + 0x08, field08);
-            const auto hasCode = TryReadDword(nodeAddress + 0x20, code);
-            const auto hasField18 = TryReadQword(nodeAddress + 0x18, field18);
-            const auto hasDescriptorFlags =
-                hasField18 &&
-                field18 != 0 &&
-                TryReadDword(static_cast<std::uintptr_t>(field18) + 0x10, descriptorFlags);
-
-            const bool gateReadable =
-                hasField118 &&
-                hasField120 &&
-                hasField121 &&
-                hasField122 &&
-                hasField08 &&
-                hasCode &&
-                hasDescriptorFlags;
-            const bool candidateIsAll = gateReadable && descriptorFlags == 0xFFFFFFFFu;
-            const bool condDirectAllow = gateReadable && ((descriptorFlags & 0x10u) == descriptorFlags);
-            const bool condOuter = gateReadable && (!field122 || (descriptorFlags & 4u) == 0);
-            const bool condSingleButton = gateReadable && field121 && field08 <= 1u && candidateIsAll;
-            const bool condFamilyMask =
-                gateReadable &&
-                (!field120 || field08 != 0) &&
-                (candidateIsAll || (descriptorFlags & field118) == descriptorFlags);
-            const bool chooseDescriptor =
-                gateReadable && (condDirectAllow || (condOuter && (condSingleButton || condFamilyMask)));
-            const auto asmTarget = chooseDescriptor ? "0x140C119ED(lookup)"sv : "0x140C119E4(global)"sv;
-
-            logger::info(
-                "[DualPad][KeyboardNative] {} jumpNode[{}]=0x{:X} field08=0x{:X}{} code=0x{:X}{} field18=0x{:X}{}({}) descriptorFlags=0x{:X}{} gateObj+118=0x{:X}{} +120={}{} +121={}{} +122={}{}",
-                phase,
-                jumpIndex,
-                nodeAddress,
-                field08,
-                hasField08 ? "" : " (unreadable)",
-                code,
-                hasCode ? "" : " (unreadable)",
-                field18,
-                hasField18 ? "" : " (unreadable)",
-                hasField18 ? DescribeStringPointer(static_cast<std::uintptr_t>(field18)) : "unreadable",
-                descriptorFlags,
-                hasDescriptorFlags ? "" : " (unreadable)",
-                field118,
-                hasField118 ? "" : " (unreadable)",
-                field120,
-                hasField120 ? "" : " (unreadable)",
-                field121,
-                hasField121 ? "" : " (unreadable)",
-                field122,
-                hasField122 ? "" : " (unreadable)");
-
-            logger::info(
-                "[DualPad][KeyboardNative]   {} gate readable={} directAllow={} outer={} singleButton={} familyMask={} chooseDescriptor={} asmSelect={}",
-                phase,
-                gateReadable,
-                condDirectAllow,
-                condOuter,
-                condSingleButton,
-                condFamilyMask,
-                chooseDescriptor,
-                asmTarget);
-        }
-
-        void LogPreprocessDescriptorSelectionState(
-            std::string_view label,
-            const PreprocessInternalExperimentContext& context,
-            const std::uintptr_t eventNode,
-            const std::uintptr_t chosenSrc)
-        {
-            if (!RuntimeConfig::GetSingleton().LogKeyboardInjection() ||
-                context.controlMap == nullptr ||
-                eventNode == 0) {
-                return;
-            }
-
-            const auto gateObjectAddress = reinterpret_cast<std::uintptr_t>(context.controlMap);
-            std::uint32_t eventField08 = 0;
-            std::uint32_t eventCode = 0;
-            std::uint32_t gateField118 = 0;
-            std::uint8_t gateField120 = 0;
-            std::uint8_t gateField121 = 0;
-            std::uint8_t gateField122 = 0;
-            std::uint64_t chosenName = 0;
-
-            const auto hasEventField08 = TryReadDword(eventNode + 0x08, eventField08);
-            const auto hasEventCode = TryReadDword(eventNode + 0x20, eventCode);
-            const auto hasGateField118 = TryReadDword(gateObjectAddress + 0x118, gateField118);
-            const auto hasGateField120 = TryReadByte(gateObjectAddress + 0x120, gateField120);
-            const auto hasGateField121 = TryReadByte(gateObjectAddress + 0x121, gateField121);
-            const auto hasGateField122 = TryReadByte(gateObjectAddress + 0x122, gateField122);
-            const auto hasChosenName =
-                chosenSrc != 0 &&
-                TryReadQword(chosenSrc + 0x00, chosenName);
-
-            const auto candidateFlags = context.lookupCopyFlags;
-            const auto candidateIsAll = context.lookupCopyValid && candidateFlags == 0xFFFFFFFFu;
-            const auto fastPass = context.lookupCopyValid && (candidateFlags & 0x10u) == candidateFlags;
-            const auto gate122Pass =
-                !hasGateField122 ||
-                gateField122 == 0 ||
-                !context.lookupCopyValid ||
-                (candidateFlags & 0x04u) == 0;
-            const auto branch121Active =
-                hasGateField121 &&
-                gateField121 != 0 &&
-                hasEventField08 &&
-                eventField08 <= 1;
-            const auto gate120Pass =
-                !hasGateField120 ||
-                gateField120 == 0 ||
-                (hasEventField08 && eventField08 != 0);
-            const auto maskPass =
-                context.lookupCopyValid &&
-                (candidateIsAll ||
-                    (hasGateField118 && (candidateFlags & gateField118) == candidateFlags));
-
-            bool expectedLookupSelected = fastPass;
-            if (!expectedLookupSelected && gate122Pass) {
-                if (branch121Active) {
-                    expectedLookupSelected = candidateIsAll;
-                } else {
-                    expectedLookupSelected = gate120Pass && maskPass;
-                }
-            }
-            const auto asmSelectedSrc = expectedLookupSelected ? "0x140C119ED(lookup)"sv : "0x140C119E4(global)"sv;
-            const auto liveSelectedSrc =
-                chosenSrc != 0 && chosenSrc == context.lookupCopyDest ?
-                    "lookup"sv :
-                chosenSrc != 0 && chosenSrc == context.lookupCopySrc ?
-                    "lookup-src"sv :
-                    "global/other"sv;
-
-            logger::info(
-                "[DualPad][KeyboardNative]   {} invocation={} event=0x{:X} field08=0x{:X}{} eventCode=0x{:X}{} lookupValid={} lookupDest=0x{:X} lookupSrc=0x{:X} lookupName=0x{:X}({}) lookupCode=0x{:X} lookupFlags=0x{:X} chosenSrc=0x{:X} chosenName=0x{:X}{}({}) chosenIsLookupTemp={} chosenIsLookupSource={} fastPass={} gate122Pass={} branch121Active={} gate120Pass={} maskPass={} expectLookupSelected={} asmSelect={} liveSelect={}",
-                label,
-                context.invocationId,
-                eventNode,
-                eventField08,
-                hasEventField08 ? "" : " (unreadable)",
-                eventCode,
-                hasEventCode ? "" : " (unreadable)",
-                context.lookupCopyValid ? "true" : "false",
-                context.lookupCopyDest,
-                context.lookupCopySrc,
-                context.lookupCopyName,
-                context.lookupCopyName != 0 ? DescribeStringPointer(context.lookupCopyName) : "null",
-                context.lookupCopyCode,
-                context.lookupCopyFlags,
-                chosenSrc,
-                chosenName,
-                hasChosenName ? "" : " (unreadable)",
-                hasChosenName ? DescribeStringPointer(static_cast<std::uintptr_t>(chosenName)) : "unreadable",
-                chosenSrc != 0 && chosenSrc == context.lookupCopyDest ? "true" : "false",
-                chosenSrc != 0 && chosenSrc == context.lookupCopySrc ? "true" : "false",
-                fastPass ? "true" : "false",
-                gate122Pass ? "true" : "false",
-                branch121Active ? "true" : "false",
-                gate120Pass ? "true" : "false",
-                maskPass ? "true" : "false",
-                expectedLookupSelected ? "true" : "false",
-                asmSelectedSrc,
-                liveSelectedSrc);
-
-            logger::info(
-                "[DualPad][KeyboardNative]   {} gateObj+118=0x{:X}{} +120={}{} +121={}{} +122={}{}",
-                label,
-                gateField118,
-                hasGateField118 ? "" : " (unreadable)",
-                gateField120,
-                hasGateField120 ? "" : " (unreadable)",
-                gateField121,
-                hasGateField121 ? "" : " (unreadable)",
-                gateField122,
-                hasGateField122 ? "" : " (unreadable)");
-        }
-
-        void LogPreprocessWriteSummary(const PreprocessInternalExperimentContext& context)
-        {
-            if (!RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                return;
-            }
-
-            logger::info(
-                "[DualPad][KeyboardNative] PreprocessWriteSummary invocation={} head=0x{:X} jumpKind={} finalSeen={} finalNodeIndex={} finalSrc=0x{:X} lateSeen={} lateNodeIndex={} lateSrc=0x{:X}",
-                context.invocationId,
-                reinterpret_cast<std::uintptr_t>(context.head),
-                DescribeJumpCandidateKind(context.jumpKind),
-                context.finalField18WriteSeen ? "true" : "false",
-                context.finalField18WriteNodeIndex,
-                context.finalField18WriteSrc,
-                context.lateField18WriteSeen ? "true" : "false",
-                context.lateField18WriteNodeIndex,
-                context.lateField18WriteSrc);
-        }
-
         void LogJumpInjectionDecision(
             const std::uint8_t scancode,
             const RE::BSWin32KeyboardDevice& device,
@@ -1405,6 +741,7 @@ namespace dualpad::input::backend
             const std::uint32_t totalCount,
             const std::uint8_t desiredCount,
             const std::uint8_t pendingPulseCount,
+            const std::uint8_t pendingTransactionalPulseCount,
             const bool syntheticPrevDown,
             const bool predictedCurrent,
             const bool synthDesired,
@@ -1438,12 +775,13 @@ namespace dualpad::input::backend
             }
 
             logger::info(
-                "[DualPad][KeyboardNative] JumpInjectionDecision scancode=0x{:02X} prevDown={} curDown={} desiredCount={} pulseCount={} synthPrev={} predictedCurrent={} synthDesired={} synthCurrent={} nativeCandidate={} injected={} injectedSlot={} pairedPulse={} finalPredictedCurrent={} originalCount={} totalCount={} matchingOriginalEvents={} matchingTotalEvents={} textEntry={}",
+                "[DualPad][KeyboardNative] JumpInjectionDecision scancode=0x{:02X} prevDown={} curDown={} desiredCount={} pulseCount={} transactionalPulseCount={} synthPrev={} predictedCurrent={} synthDesired={} synthCurrent={} nativeCandidate={} injected={} injectedSlot={} pairedPulse={} finalPredictedCurrent={} originalCount={} totalCount={} matchingOriginalEvents={} matchingTotalEvents={} textEntry={}",
                 static_cast<std::uint32_t>(scancode),
                 prevDown,
                 curDown,
                 desiredCount,
                 pendingPulseCount,
+                pendingTransactionalPulseCount,
                 syntheticPrevDown,
                 predictedCurrent,
                 synthDesired,
@@ -1578,90 +916,6 @@ namespace dualpad::input::backend
                     eventBuffer[i].sequence,
                     eventBuffer[i].appData);
             }
-        }
-
-        void LogPreprocessField18Summary(std::string_view phase, RE::InputEvent* head)
-        {
-            if (!RuntimeConfig::GetSingleton().LogKeyboardInjection() || head == nullptr) {
-                return;
-            }
-
-            static constexpr std::size_t kMaxNodes = 4;
-            const auto emptyDescriptor = ReadEmptyStringDescriptor();
-            logger::info(
-                "[DualPad][KeyboardNative] {} emptyDescriptor=0x{:X} ({})",
-                phase,
-                emptyDescriptor,
-                emptyDescriptor != 0 ? DescribeStringPointer(emptyDescriptor) : "unreadable");
-
-            auto* current = head;
-            for (std::size_t index = 0; current != nullptr && index < kMaxNodes; ++index) {
-                const auto node = reinterpret_cast<std::uintptr_t>(current);
-                std::uint64_t field18 = 0;
-                std::uint32_t code = 0;
-                std::uint32_t raw28 = 0;
-                std::uint32_t raw2C = 0;
-                const auto hasField18 = TryReadQword(node + 0x18, field18);
-                const auto hasCode = TryReadDword(node + 0x20, code);
-                const auto hasRaw28 = TryReadDword(node + 0x28, raw28);
-                const auto hasRaw2C = TryReadDword(node + 0x2C, raw2C);
-                const auto value = hasRaw28 ? *reinterpret_cast<float*>(&raw28) : 0.0f;
-                const auto holdTime = hasRaw2C ? *reinterpret_cast<float*>(&raw2C) : 0.0f;
-
-                logger::info(
-                    "[DualPad][KeyboardNative]   PreprocessEvent[{}] node=0x{:X} code=0x{:X}{} field18=0x{:X}{}({}) matchesEmpty={} known={} value={:.3f} hold={:.3f}",
-                    index,
-                    node,
-                    code,
-                    hasCode ? "" : " (unreadable)",
-                    field18,
-                    hasField18 ? "" : " (unreadable)",
-                    hasField18 ? DescribeStringPointer(static_cast<std::uintptr_t>(field18)) : "unreadable",
-                    hasField18 && emptyDescriptor != 0 && static_cast<std::uintptr_t>(field18) == emptyDescriptor ? "true" : "false",
-                    hasField18 ? DescribeKnownControlSlotMatch(static_cast<std::uintptr_t>(field18)) : "unknown",
-                    value,
-                    holdTime);
-
-                current = current->next;
-            }
-        }
-
-        void LogKnownControlSlotsIfNeeded()
-        {
-            if (!RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                return;
-            }
-
-            static std::once_flag once;
-            std::call_once(once, []() {
-                const auto compareGlobalAddress = ReadGlobalObjectPointer(kValidateCompareGlobalPointerRva);
-                if (compareGlobalAddress == 0) {
-                    logger::warn("[DualPad][KeyboardNative] Known control slot log skipped; compare global is null");
-                    return;
-                }
-
-                logger::info(
-                    "[DualPad][KeyboardNative] === KNOWN CONTROL SLOTS === compareGlobal=0x{:X}",
-                    compareGlobalAddress);
-                for (const auto& slot : kKnownControlSlots) {
-                    std::uint64_t slotValue = 0;
-                    const auto readable = TryReadQword(compareGlobalAddress + slot.offset, slotValue);
-                    logger::info(
-                        "[DualPad][KeyboardNative]   {}(+0x{:X}) = 0x{:X}{} -> {}",
-                        slot.name,
-                        slot.offset,
-                        slotValue,
-                        readable ? "" : " (unreadable)",
-                        readable ? DescribeStringPointer(static_cast<std::uintptr_t>(slotValue)) : "unreadable");
-                }
-            });
-        }
-
-        void EnsureDispatchHandlerHooksInstalled(void*)
-        {
-            // Historical dispatch-tree probes were removed during cleanup.
-            // The current successful routes no longer require runtime parent/child
-            // probe installation at dispatch entry.
         }
 
         std::span<const ContextID> ResolveContextSearchOrder(InputContext context)
@@ -1836,6 +1090,32 @@ namespace dualpad::input::backend
             return std::nullopt;
         }
 
+        std::optional<std::uint8_t> ResolveCanonicalUiScancode(std::string_view actionId)
+        {
+            if (actionId == actions::MenuConfirm ||
+                actionId == actions::MenuCancel ||
+                actionId == actions::MenuScrollUp ||
+                actionId == actions::MenuScrollDown ||
+                actionId == actions::MenuPageUp ||
+                actionId == actions::MenuPageDown ||
+                actionId == "Dialogue.PreviousOption"sv ||
+                actionId == "Dialogue.NextOption"sv ||
+                actionId == "Favorites.PreviousItem"sv ||
+                actionId == "Favorites.NextItem"sv ||
+                actionId == "Book.PreviousPage"sv ||
+                actionId == "Book.NextPage"sv ||
+                actionId == "Book.Close"sv ||
+                actionId == "Menu.SortByName"sv ||
+                actionId == "Menu.SortByValue"sv ||
+                actionId == "Console.Execute"sv ||
+                actionId == "Console.HistoryUp"sv ||
+                actionId == "Console.HistoryDown"sv) {
+                return ResolveFallbackScancode(actionId);
+            }
+
+            return std::nullopt;
+        }
+
         constexpr bool IsCoexistenceValidationAction(std::string_view actionId)
         {
             return actionId == actions::Jump ||
@@ -1997,209 +1277,6 @@ namespace dualpad::input::backend
             }
         }
 
-        using GameplayValidate_t = bool(__fastcall*)(void*, RE::InputEvent*);
-
-        bool EventMatchesSecondFamilyRawScancode(RE::InputEvent* event, std::uint8_t expectedScancode)
-        {
-            if (!event) {
-                return false;
-            }
-
-            std::uint32_t code = 0;
-            if (!TryReadDword(reinterpret_cast<std::uintptr_t>(event) + 0x20, code)) {
-                return false;
-            }
-
-            return static_cast<std::uint8_t>(code) == expectedScancode;
-        }
-
-        template <std::uint8_t ExpectedScancode>
-        struct GameplayRootValidateThunk;
-
-        template <std::uint8_t ExpectedScancode>
-        struct GameplayRootValidateSlotHook
-        {
-            static inline bool _installed{ false };
-            static inline std::uintptr_t _handlerObject{ 0 };
-            static inline GameplayValidate_t _original{ nullptr };
-            static inline std::array<std::uintptr_t, kShadowVtableEntryCount> _shadowVtable{};
-
-            static bool InstallForHandler(std::uintptr_t handlerObject, std::string_view actionName)
-            {
-                if (handlerObject == 0) {
-                    return false;
-                }
-
-                if (_installed && _handlerObject == handlerObject) {
-                    return true;
-                }
-
-                std::uint64_t originalVtable = 0;
-                if (!TryReadQword(handlerObject, originalVtable) || originalVtable == 0) {
-                    return false;
-                }
-
-                for (std::size_t i = 0; i < _shadowVtable.size(); ++i) {
-                    std::uint64_t entry = 0;
-                    if (!TryReadQword(static_cast<std::uintptr_t>(originalVtable) + i * sizeof(std::uint64_t), entry)) {
-                        return false;
-                    }
-                    _shadowVtable[i] = static_cast<std::uintptr_t>(entry);
-                }
-
-                _original = reinterpret_cast<GameplayValidate_t>(_shadowVtable[1]);
-                _shadowVtable[1] = reinterpret_cast<std::uintptr_t>(&GameplayRootValidateThunk<ExpectedScancode>::Thunk);
-                *reinterpret_cast<std::uintptr_t*>(handlerObject) = reinterpret_cast<std::uintptr_t>(_shadowVtable.data());
-
-                _handlerObject = handlerObject;
-                _installed = true;
-
-                if (RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                    logger::info(
-                        "[DualPad][KeyboardNative] Installed gameplay-root validate hook action={} handler=0x{:X} original=0x{:X}",
-                        actionName,
-                        handlerObject,
-                        reinterpret_cast<std::uintptr_t>(_original));
-                }
-
-                return true;
-            }
-        };
-
-        template <std::uint8_t ExpectedScancode>
-        struct GameplayRootValidateThunk
-        {
-            static bool __fastcall Thunk(void* self, RE::InputEvent* event)
-            {
-                using SlotHook = GameplayRootValidateSlotHook<ExpectedScancode>;
-                const auto originalResult = SlotHook::_original ? SlotHook::_original(self, event) : false;
-                if (originalResult) {
-                    return true;
-                }
-
-                if (!EventMatchesSecondFamilyRawScancode(event, ExpectedScancode)) {
-                    return false;
-                }
-
-                if (RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                    std::uint32_t code = 0;
-                    TryReadDword(reinterpret_cast<std::uintptr_t>(event) + 0x20, code);
-                    logger::info(
-                        "[DualPad][KeyboardNative] SecondFamily gameplay-root validate override handler=0x{:X} event=0x{:X} code=0x{:X}",
-                        reinterpret_cast<std::uintptr_t>(self),
-                        reinterpret_cast<std::uintptr_t>(event),
-                        code);
-                }
-
-                return true;
-            }
-        };
-
-        void EnsureGameplayRootValidateHooksInstalled()
-        {
-            const auto gameplayRoot = ReadGlobalObjectPointer(kGameplayRootGlobalObjectPointerRva);
-            if (gameplayRoot == 0) {
-                return;
-            }
-
-            std::uint64_t sprintHandlerObject = 0;
-            if (TryReadQword(gameplayRoot + 48 * sizeof(std::uint64_t), sprintHandlerObject) && sprintHandlerObject != 0) {
-                GameplayRootValidateSlotHook<static_cast<std::uint8_t>(REX::W32::DIK::DIK_LMENU)>::InstallForHandler(
-                    static_cast<std::uintptr_t>(sprintHandlerObject),
-                    "Sprint");
-            }
-
-            std::uint64_t activateHandlerObject = 0;
-            if (TryReadQword(gameplayRoot + 52 * sizeof(std::uint64_t), activateHandlerObject) && activateHandlerObject != 0) {
-                GameplayRootValidateSlotHook<static_cast<std::uint8_t>(REX::W32::DIK::DIK_E)>::InstallForHandler(
-                    static_cast<std::uintptr_t>(activateHandlerObject),
-                    "Activate");
-            }
-
-            std::uint64_t sneakHandlerObject = 0;
-            if (TryReadQword(gameplayRoot + 57 * sizeof(std::uint64_t), sneakHandlerObject) && sneakHandlerObject != 0) {
-                GameplayRootValidateSlotHook<static_cast<std::uint8_t>(REX::W32::DIK::DIK_LCONTROL)>::InstallForHandler(
-                    static_cast<std::uintptr_t>(sneakHandlerObject),
-                    "Sneak");
-            }
-        }
-
-        struct PreprocessCallHook
-        {
-            static inline REL::Relocation<ControlMapPreprocess_t> _original{};
-            static inline bool _installed{ false };
-
-            static void Thunk(RE::ControlMap* controlMap, RE::InputEvent* head)
-            {
-                std::uint8_t* gateObj = reinterpret_cast<std::uint8_t*>(controlMap);
-                std::optional<std::uint8_t> savedGate121{};
-
-                if (controlMap && head && HeadContainsJumpCandidate(head)) {
-                    auto& gate121 = gateObj[0x121];
-                    if (gate121 != 0) {
-                        savedGate121 = gate121;
-                        gate121 = 0;
-
-                        if (RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                            logger::info(
-                                "[DualPad][KeyboardNative] Scoped preprocess gate override gateObj=0x{:X} +0x121 {}->0",
-                                reinterpret_cast<std::uintptr_t>(gateObj),
-                                *savedGate121);
-                        }
-                    }
-
-                    if (RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                        LogPreprocessConditionSnapshot(
-                            "RAW SPACE CONDITION BEFORE sub_140C11600",
-                            controlMap,
-                            head);
-                    }
-                }
-
-                _original(controlMap, head);
-
-                if (controlMap && head && HeadContainsJumpCandidate(head) &&
-                    RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                    LogPreprocessConditionSnapshot(
-                        "RAW SPACE CONDITION AFTER sub_140C11600",
-                        controlMap,
-                        head);
-                }
-
-                if (savedGate121) {
-                    gateObj[0x121] = *savedGate121;
-
-                    if (RuntimeConfig::GetSingleton().LogKeyboardInjection()) {
-                        logger::info(
-                            "[DualPad][KeyboardNative] Scoped preprocess gate restore gateObj=0x{:X} +0x121 restored={}",
-                            reinterpret_cast<std::uintptr_t>(gateObj),
-                            *savedGate121);
-                    }
-                }
-            }
-        };
-
-        struct DispatchCallHook
-        {
-            static inline REL::Relocation<InputDispatch_t> _original{};
-            static inline bool _installed{ false };
-
-            static void Thunk(void* owner, RE::InputEvent** head)
-            {
-                EnsureDispatchHandlerHooksInstalled(owner);
-                EnsureGameplayRootValidateHooksInstalled();
-
-                if (RuntimeConfig::GetSingleton().LogKeyboardInjection() && head && *head) {
-                    LogKeyboardFamilyDispatchProbe("ENTRY", *head);
-                }
-
-                _original(owner, head);
-
-                if (RuntimeConfig::GetSingleton().LogKeyboardInjection() && head && *head) {
-                    LogKeyboardFamilyDispatchProbe("EXIT", *head);
-                }
-            }
-        };
     }
 
     KeyboardNativeBackend& KeyboardNativeBackend::GetSingleton()
@@ -2232,57 +1309,9 @@ namespace dualpad::input::backend
 
         const auto base = REL::Module::get().base();
         const auto pollAddress = base + kKeyboardPollRva;
-        if (!PreprocessCallHook::_installed) {
-            REL::Relocation<std::uintptr_t> inputLoopTarget{ RELOCATION_ID(67315, 68617) };
-            const auto preprocessCallAddress = inputLoopTarget.address() + kPreprocessCallOffset;
-            if (REL::verify_code(preprocessCallAddress, kExpectedPreprocessCallInstruction)) {
-                PreprocessCallHook::_original = SKSE::GetTrampoline().write_call<5>(
-                    preprocessCallAddress,
-                    PreprocessCallHook::Thunk);
-                PreprocessCallHook::_installed = PreprocessCallHook::_original.address() != 0;
-
-                if (PreprocessCallHook::_installed) {
-                    if (config.LogKeyboardInjection()) {
-                        logger::info(
-                            "[DualPad][KeyboardNative] Installed sub_140C11600 coexistence gate hook callSite=0x{:X}",
-                            preprocessCallAddress);
-                    }
-                } else {
-                    logger::warn(
-                        "[DualPad][KeyboardNative] Failed to install sub_140C11600 coexistence gate hook callSite=0x{:X}",
-                        preprocessCallAddress);
-                }
-            } else {
-                logger::warn(
-                    "[DualPad][KeyboardNative] sub_140C11600 coexistence gate call-site check failed at 0x{:X}",
-                    preprocessCallAddress);
-            }
-
-            const auto dispatchCallAddress = inputLoopTarget.address() + kDispatchCallOffset;
-            if (!DispatchCallHook::_installed) {
-                if (REL::verify_code(dispatchCallAddress, kExpectedDispatchCallInstruction)) {
-                    DispatchCallHook::_original = SKSE::GetTrampoline().write_call<5>(
-                        dispatchCallAddress,
-                        DispatchCallHook::Thunk);
-                    DispatchCallHook::_installed = DispatchCallHook::_original.address() != 0;
-
-                    if (DispatchCallHook::_installed) {
-                        if (config.LogKeyboardInjection()) {
-                            logger::info(
-                                "[DualPad][KeyboardNative] Installed sub_140C15E00 family dispatch hook callSite=0x{:X}",
-                                dispatchCallAddress);
-                        }
-                    } else {
-                        logger::warn(
-                            "[DualPad][KeyboardNative] Failed to install sub_140C15E00 family dispatch hook callSite=0x{:X}",
-                            dispatchCallAddress);
-                    }
-                } else {
-                    logger::warn(
-                        "[DualPad][KeyboardNative] sub_140C15E00 family dispatch call-site check failed at 0x{:X}",
-                        dispatchCallAddress);
-                }
-            }
+        if (config.LogKeyboardInjection()) {
+            logger::info(
+                "[DualPad][KeyboardNative] Legacy preprocess/family-dispatch diagnostics remain disabled on the default install path");
         }
 
         if (GetHookMode() == UpstreamKeyboardHookMode::DiObjDataCall) {
@@ -2393,11 +1422,11 @@ namespace dualpad::input::backend
     {
         {
             std::scoped_lock lock(_mutex);
-            _desiredRefCounts.fill(0);
+            _localDesiredState.Clear();
             _bridgeDesiredRefCounts.fill(0);
-            _pendingPulseCounts.fill(0);
             _syntheticLatchedDown.fill(false);
             _activeActionScancodes.clear();
+            _deferredActions.clear();
         }
 
         if (KeyboardNativeBridge::GetSingleton().HasConsumerHeartbeat()) {
@@ -2407,14 +1436,15 @@ namespace dualpad::input::backend
     }
 
     void KeyboardNativeBackend::ConsumeDesiredStateLocked(
-        std::array<std::uint8_t, 256>& desiredCounts,
-        std::array<std::uint8_t, 256>& pendingPulseCounts,
+        DesiredKeyboardState& desiredState,
         std::array<bool, 256>& syntheticPrevDown)
     {
-        desiredCounts = _desiredRefCounts;
-        pendingPulseCounts = _pendingPulseCounts;
+        desiredState = _localDesiredState;
         syntheticPrevDown = _syntheticLatchedDown;
-        _pendingPulseCounts.fill(0);
+        AppendScheduledPulseStateLocked(desiredState);
+        _localDesiredState.pendingPulseCounts.fill(0);
+        _localDesiredState.pendingTransactionalPulseCounts.fill(0);
+        AdvanceScheduledPulseActionsLocked();
     }
 
     void KeyboardNativeBackend::MarkProbeScancodeLocked(std::uint8_t scancode)
@@ -2427,10 +1457,170 @@ namespace dualpad::input::backend
         return ResolveUserEventCandidates(actionId).size() != 0 || ResolveFallbackScancode(actionId).has_value();
     }
 
-    bool KeyboardNativeBackend::PulseAction(std::string_view actionId, InputContext context)
+    bool KeyboardNativeBackend::CanEmitActionNow(std::string_view actionId, InputContext context) const
+    {
+        static_cast<void>(actionId);
+        static_cast<void>(context);
+        return true;
+    }
+
+    void KeyboardNativeBackend::StageDeferredTriggerLocked(
+        std::string_view actionId,
+        ActionOutputContract contract,
+        InputContext context)
+    {
+        auto& deferred = _deferredActions[std::string(actionId)];
+        deferred.contract = contract;
+        deferred.context = context;
+        deferred.pendingTriggerPulse = true;
+
+        if (IsDebugLoggingEnabled()) {
+            logger::info(
+                "[DualPad][KeyboardNative] deferred trigger action={} contract={} context={}",
+                actionId,
+                ToString(contract),
+                ToString(context));
+        }
+    }
+
+    void KeyboardNativeBackend::StageDeferredStateLocked(
+        std::string_view actionId,
+        ActionOutputContract contract,
+        bool pressed,
+        float heldSeconds,
+        InputContext context)
+    {
+        if (!pressed) {
+            _deferredActions.erase(actionId);
+            if (IsDebugLoggingEnabled()) {
+                logger::info(
+                    "[DualPad][KeyboardNative] cleared deferred state action={} contract={} context={}",
+                    actionId,
+                    ToString(contract),
+                    ToString(context));
+            }
+            return;
+        }
+
+        auto& deferred = _deferredActions[std::string(actionId)];
+        deferred.contract = contract;
+        deferred.context = context;
+        deferred.sourceDown = true;
+        deferred.heldSeconds = heldSeconds;
+        deferred.pendingTriggerPulse = false;
+
+        if (IsDebugLoggingEnabled()) {
+            logger::info(
+                "[DualPad][KeyboardNative] deferred state action={} contract={} held={:.3f} context={}",
+                actionId,
+                ToString(contract),
+                heldSeconds,
+                ToString(context));
+        }
+    }
+
+    void KeyboardNativeBackend::SuspendActiveActionLocked(std::string_view actionId)
+    {
+        const auto it = _activeActionScancodes.find(actionId);
+        if (it == _activeActionScancodes.end()) {
+            return;
+        }
+
+        const auto action = it->second;
+        if (action.viaBridge &&
+            UsesContinuousState(action.contract) &&
+            _bridgeDesiredRefCounts[action.scancode] > 0) {
+            --_bridgeDesiredRefCounts[action.scancode];
+            if (_bridgeDesiredRefCounts[action.scancode] == 0) {
+                (void)KeyboardNativeBridge::GetSingleton().EnqueueRelease(action.scancode);
+            }
+        }
+        else if (!action.viaBridge &&
+            UsesContinuousState(action.contract) &&
+            _localDesiredState.desiredRefCounts[action.scancode] > 0) {
+            --_localDesiredState.desiredRefCounts[action.scancode];
+        }
+
+        _activeActionScancodes.erase(it);
+    }
+
+    void KeyboardNativeBackend::FlushDeferredActionsIfReady()
+    {
+        if (t_replayingDeferredActions) {
+            return;
+        }
+
+        struct DeferredReplay
+        {
+            std::string actionId;
+            DeferredKeyboardAction action;
+        };
+
+        std::vector<DeferredReplay> readyActions;
+        {
+            std::scoped_lock lock(_mutex);
+            for (auto it = _deferredActions.begin(); it != _deferredActions.end();) {
+                if (!CanEmitActionNow(it->first, it->second.context)) {
+                    ++it;
+                    continue;
+                }
+
+                readyActions.push_back(DeferredReplay{ it->first, it->second });
+                it = _deferredActions.erase(it);
+            }
+        }
+
+        if (readyActions.empty()) {
+            return;
+        }
+
+        t_replayingDeferredActions = true;
+        for (const auto& replay : readyActions) {
+            if (IsDebugLoggingEnabled()) {
+                logger::info(
+                    "[DualPad][KeyboardNative] replay deferred action={} contract={} pulse={} sourceDown={} held={:.3f} context={}",
+                    replay.actionId,
+                    ToString(replay.action.contract),
+                    replay.action.pendingTriggerPulse,
+                    replay.action.sourceDown,
+                    replay.action.heldSeconds,
+                    ToString(replay.action.context));
+            }
+
+            if (replay.action.pendingTriggerPulse) {
+                (void)TriggerAction(replay.actionId, replay.action.contract, replay.action.context);
+                continue;
+            }
+
+            if (replay.action.sourceDown) {
+                (void)SubmitActionState(
+                    replay.actionId,
+                    replay.action.contract,
+                    true,
+                    replay.action.heldSeconds,
+                    replay.action.context);
+            }
+        }
+        t_replayingDeferredActions = false;
+    }
+
+    bool KeyboardNativeBackend::TriggerAction(
+        std::string_view actionId,
+        ActionOutputContract contract,
+        InputContext context)
     {
         if (!IsRouteActive()) {
             return false;
+        }
+
+        if (!t_replayingDeferredActions) {
+            FlushDeferredActionsIfReady();
+        }
+
+        if (!CanEmitActionNow(actionId, context)) {
+            std::scoped_lock lock(_mutex);
+            StageDeferredTriggerLocked(actionId, contract, context);
+            return true;
         }
 
         const auto scancode = ResolveScancode(actionId, context);
@@ -2438,13 +1628,19 @@ namespace dualpad::input::backend
             return false;
         }
 
-        const auto bridgeActive = KeyboardNativeBridge::GetSingleton().HasConsumerHeartbeat();
+        const bool useTransactionalTriggerPulse =
+            contract == ActionOutputContract::Pulse &&
+            GetHookMode() == UpstreamKeyboardHookMode::DiObjDataCall;
+        const auto bridgeActive =
+            !useTransactionalTriggerPulse &&
+            KeyboardNativeBridge::GetSingleton().HasConsumerHeartbeat();
         if (bridgeActive && KeyboardNativeBridge::GetSingleton().EnqueuePulse(*scancode)) {
             LogCoexistenceValidationProducer("pulse", actionId, *scancode, true, 1, context);
             if (IsDebugLoggingEnabled()) {
                 logger::info(
-                    "[DualPad][KeyboardNative] bridged pulse action={} scancode=0x{:02X} context={}",
+                    "[DualPad][KeyboardNative] bridged pulse action={} contract={} scancode=0x{:02X} context={}",
                     actionId,
+                    ToString(contract),
                     *scancode,
                     ToString(context));
             }
@@ -2452,30 +1648,111 @@ namespace dualpad::input::backend
         }
 
         std::scoped_lock lock(_mutex);
-        StagePulseLocked(*scancode);
+        if (useTransactionalTriggerPulse) {
+            StageTransactionalPulseLocked(*scancode);
+        } else {
+            StageWindowedPulseLocked(*scancode);
+        }
         LogCoexistenceValidationProducer("pulse", actionId, *scancode, false, 1, context);
 
         if (IsDebugLoggingEnabled()) {
             logger::info(
-                "[DualPad][KeyboardNative] staged pulse action={} scancode=0x{:02X} context={}",
+                "[DualPad][KeyboardNative] staged pulse action={} contract={} scancode=0x{:02X} context={} delivery={}",
                 actionId,
+                ToString(contract),
                 *scancode,
-                ToString(context));
+                ToString(context),
+                useTransactionalTriggerPulse ? "transactional" : "windowed");
         }
 
         return true;
     }
 
-    bool KeyboardNativeBackend::QueueAction(
+    bool KeyboardNativeBackend::SubmitActionState(
         std::string_view actionId,
+        ActionOutputContract contract,
         bool pressed,
         float heldSeconds,
         InputContext context)
     {
-        (void)heldSeconds;
-
         if (!IsRouteActive()) {
             return false;
+        }
+
+        if (!t_replayingDeferredActions) {
+            FlushDeferredActionsIfReady();
+        }
+
+        if (!CanEmitActionNow(actionId, context)) {
+            std::scoped_lock lock(_mutex);
+            SuspendActiveActionLocked(actionId);
+            StageDeferredStateLocked(actionId, contract, pressed, heldSeconds, context);
+            return true;
+        }
+
+        if (UsesScheduledPulseContract(contract)) {
+            return SubmitScheduledPulseActionState(actionId, contract, pressed, heldSeconds, context);
+        }
+
+        if (UsesDebouncedPulse(contract)) {
+            if (!pressed) {
+                std::scoped_lock lock(_mutex);
+                const auto it = _activeActionScancodes.find(actionId);
+                if (it == _activeActionScancodes.end()) {
+                    return false;
+                }
+
+                _activeActionScancodes.erase(it);
+                if (IsDebugLoggingEnabled()) {
+                    logger::info(
+                        "[DualPad][KeyboardNative] cleared source lifecycle action={} contract={} context={}",
+                        actionId,
+                        ToString(contract),
+                        ToString(context));
+                }
+                return true;
+            }
+
+            {
+                std::scoped_lock lock(_mutex);
+                if (_activeActionScancodes.find(actionId) != _activeActionScancodes.end()) {
+                    return true;
+                }
+            }
+
+            const auto scancode = ResolveScancode(actionId, context);
+            if (!scancode) {
+                return false;
+            }
+
+            const auto bridgeActive = KeyboardNativeBridge::GetSingleton().HasConsumerHeartbeat();
+            bool viaBridge = false;
+            if (bridgeActive && KeyboardNativeBridge::GetSingleton().EnqueuePulse(*scancode)) {
+                viaBridge = true;
+            }
+            else {
+                std::scoped_lock lock(_mutex);
+                StageWindowedPulseLocked(*scancode);
+            }
+
+            std::scoped_lock lock(_mutex);
+            _activeActionScancodes[std::string(actionId)] = ActiveKeyboardAction{ *scancode, viaBridge, contract };
+            if (IsDebugLoggingEnabled()) {
+                logger::info(
+                    "[DualPad][KeyboardNative] latched source lifecycle action={} contract={} scancode=0x{:02X} viaBridge={} context={} delivery={}",
+                    actionId,
+                    ToString(contract),
+                    *scancode,
+                    viaBridge,
+                    ToString(context),
+                    viaBridge ? "bridge-windowed" : "local-windowed");
+            }
+
+            return true;
+        }
+
+        if (!UsesContinuousState(contract)) {
+            return pressed ? TriggerAction(actionId, contract, context) : true;
         }
 
         const auto bridgeActive = KeyboardNativeBridge::GetSingleton().HasConsumerHeartbeat();
@@ -2500,7 +1777,7 @@ namespace dualpad::input::backend
                 const auto bridgeQueued =
                     !needsBridgePress || KeyboardNativeBridge::GetSingleton().EnqueuePress(*scancode);
                 if (bridgeQueued) {
-                    _activeActionScancodes[std::string(actionId)] = ActiveKeyboardAction{ *scancode, true };
+                    _activeActionScancodes[std::string(actionId)] = ActiveKeyboardAction{ *scancode, true, contract };
                     LogCoexistenceValidationProducer(
                         "down",
                         actionId,
@@ -2511,8 +1788,9 @@ namespace dualpad::input::backend
 
                     if (IsDebugLoggingEnabled()) {
                         logger::info(
-                            "[DualPad][KeyboardNative] bridged down action={} scancode=0x{:02X} count={} context={}",
+                            "[DualPad][KeyboardNative] bridged down action={} contract={} scancode=0x{:02X} count={} context={}",
                             actionId,
+                            ToString(contract),
                             *scancode,
                             _bridgeDesiredRefCounts[*scancode],
                             ToString(context));
@@ -2526,24 +1804,25 @@ namespace dualpad::input::backend
                 }
             }
 
-            if (_desiredRefCounts[*scancode] != std::numeric_limits<std::uint8_t>::max()) {
-                ++_desiredRefCounts[*scancode];
+            if (_localDesiredState.desiredRefCounts[*scancode] != std::numeric_limits<std::uint8_t>::max()) {
+                ++_localDesiredState.desiredRefCounts[*scancode];
             }
-            _activeActionScancodes[std::string(actionId)] = ActiveKeyboardAction{ *scancode, false };
+            _activeActionScancodes[std::string(actionId)] = ActiveKeyboardAction{ *scancode, false, contract };
             LogCoexistenceValidationProducer(
                 "down",
                 actionId,
                 *scancode,
                 false,
-                _desiredRefCounts[*scancode],
+                _localDesiredState.desiredRefCounts[*scancode],
                 context);
 
             if (IsDebugLoggingEnabled()) {
                 logger::info(
-                    "[DualPad][KeyboardNative] queued down action={} scancode=0x{:02X} count={} context={}",
+                    "[DualPad][KeyboardNative] queued down action={} contract={} scancode=0x{:02X} count={} context={}",
                     actionId,
+                    ToString(contract),
                     *scancode,
-                    _desiredRefCounts[*scancode],
+                    _localDesiredState.desiredRefCounts[*scancode],
                     ToString(context));
             }
 
@@ -2583,8 +1862,9 @@ namespace dualpad::input::backend
 
             if (IsDebugLoggingEnabled()) {
                 logger::info(
-                    "[DualPad][KeyboardNative] bridged up action={} scancode=0x{:02X} count={} context={}",
+                    "[DualPad][KeyboardNative] bridged up action={} contract={} scancode=0x{:02X} count={} context={}",
                     actionId,
+                    ToString(activeAction.contract),
                     activeAction.scancode,
                     _bridgeDesiredRefCounts[activeAction.scancode],
                     ToString(context));
@@ -2594,8 +1874,8 @@ namespace dualpad::input::backend
         }
 
         const auto scancode = activeAction.scancode;
-        if (_desiredRefCounts[scancode] > 0) {
-            --_desiredRefCounts[scancode];
+        if (_localDesiredState.desiredRefCounts[scancode] > 0) {
+            --_localDesiredState.desiredRefCounts[scancode];
         }
         _activeActionScancodes.erase(it);
         LogCoexistenceValidationProducer(
@@ -2603,15 +1883,16 @@ namespace dualpad::input::backend
             actionId,
             scancode,
             false,
-            _desiredRefCounts[scancode],
+            _localDesiredState.desiredRefCounts[scancode],
             context);
 
         if (IsDebugLoggingEnabled()) {
             logger::info(
-                "[DualPad][KeyboardNative] queued up action={} scancode=0x{:02X} count={} context={}",
+                "[DualPad][KeyboardNative] queued up action={} contract={} scancode=0x{:02X} count={} context={}",
                 actionId,
+                ToString(activeAction.contract),
                 scancode,
-                _desiredRefCounts[scancode],
+                _localDesiredState.desiredRefCounts[scancode],
                 ToString(context));
         }
 
@@ -2627,6 +1908,8 @@ namespace dualpad::input::backend
             return;
         }
 
+        FlushDeferredActionsIfReady();
+
         std::array<std::uint8_t, 0x100> physicalState{};
         if (auto* inputManager = RE::BSDirectInputManager::GetSingleton(); inputManager) {
             inputManager->GetDeviceState(
@@ -2635,20 +1918,21 @@ namespace dualpad::input::backend
                 physicalState.data());
         }
 
-        std::array<std::uint8_t, 256> desiredCounts{};
-        std::array<std::uint8_t, 256> pendingPulseCounts{};
+        DesiredKeyboardState desiredState{};
         std::array<bool, 256> syntheticPrevDown{};
         {
             std::scoped_lock lock(_mutex);
-            ConsumeDesiredStateLocked(desiredCounts, pendingPulseCounts, syntheticPrevDown);
+            ConsumeDesiredStateLocked(desiredState, syntheticPrevDown);
         }
 
         const bool textEntryActive = IsTextEntryActive();
         std::size_t updatedCount = 0;
         std::size_t transitionCount = 0;
 
-        for (std::size_t scancode = 0; scancode < desiredCounts.size(); ++scancode) {
-            const bool synthDesired = desiredCounts[scancode] > 0 || pendingPulseCounts[scancode] > 0;
+        for (std::size_t scancode = 0; scancode < desiredState.desiredRefCounts.size(); ++scancode) {
+            const bool synthDesired =
+                desiredState.desiredRefCounts[scancode] > 0 ||
+                desiredState.pendingPulseCounts[scancode] > 0;
             const bool synthCurrent = synthDesired &&
                 (!textEntryActive || IsTextSafeScancode(static_cast<std::uint8_t>(scancode)));
             const bool synthPrevious = syntheticPrevDown[scancode];
@@ -2715,6 +1999,8 @@ namespace dualpad::input::backend
             return;
         }
 
+        FlushDeferredActionsIfReady();
+
         if (reinterpret_cast<void*>(device.dInputDevice) != reinterpret_cast<void*>(directInputDevice)) {
             logger::warn(
                 "[DualPad][KeyboardNative] diObjData injection skipped due to device mismatch deviceObj=0x{:X} hookDevice=0x{:X}",
@@ -2751,21 +2037,24 @@ namespace dualpad::input::backend
             }
         }
 
-        std::array<std::uint8_t, 256> desiredCounts{};
-        std::array<std::uint8_t, 256> pendingPulseCounts{};
+        DesiredKeyboardState desiredState{};
         std::array<bool, 256> syntheticPrevDown{};
         {
             std::scoped_lock lock(_mutex);
-            ConsumeDesiredStateLocked(desiredCounts, pendingPulseCounts, syntheticPrevDown);
+            ConsumeDesiredStateLocked(desiredState, syntheticPrevDown);
         }
 
         const bool textEntryActive = IsTextEntryActive();
         std::array<std::uint8_t, 256> predictedState{};
+        std::array<bool, 256> syntheticNextDown{};
+        std::array<bool, 256> nativeCandidateByScancode{};
         std::memcpy(predictedState.data(), device.curState, predictedState.size());
+        syntheticNextDown = syntheticPrevDown;
 
         for (std::uint32_t i = 0; i < clampedOriginalCount; ++i) {
             const auto scancode = static_cast<std::uint8_t>(eventBuffer[i].ofs & 0xFFu);
             predictedState[scancode] = static_cast<std::uint8_t>(eventBuffer[i].data & 0x80u);
+            nativeCandidateByScancode[scancode] = true;
         }
 
         std::uint32_t injectedCount = 0;
@@ -2797,12 +2086,19 @@ namespace dualpad::input::backend
             syntheticEvent.appData = static_cast<decltype(syntheticEvent.appData)>(std::numeric_limits<std::uintptr_t>::max());
         };
         const auto currentContext = input::ContextManager::GetSingleton().GetCurrentContext();
+        const auto saturatingAddPulseCount = [](std::uint8_t& target, const std::uint8_t value) {
+            const auto sum = static_cast<std::uint16_t>(target) + value;
+            target = sum > 0x00FFu ?
+                static_cast<std::uint8_t>(0xFFu) :
+                static_cast<std::uint8_t>(sum);
+        };
         auto jumpScancode = ResolveScancode(actions::Jump, currentContext);
         if (!jumpScancode) {
             jumpScancode = ResolveScancode(actions::Jump, InputContext::Gameplay);
         }
         std::uint8_t jumpDesiredCount = 0;
         std::uint8_t jumpPendingPulseCount = 0;
+        std::uint8_t jumpPendingTransactionalPulseCount = 0;
         bool jumpSyntheticPrevDown = false;
         bool jumpPredictedCurrent = false;
         bool jumpSynthDesired = false;
@@ -2812,81 +2108,109 @@ namespace dualpad::input::backend
         bool nativeJumpCandidate = false;
         bool jumpPairedPulseInjected = false;
         if (jumpScancode) {
-            jumpDesiredCount = desiredCounts[*jumpScancode];
-            jumpPendingPulseCount = pendingPulseCounts[*jumpScancode];
+            jumpDesiredCount = desiredState.desiredRefCounts[*jumpScancode];
+            jumpPendingPulseCount = desiredState.pendingPulseCounts[*jumpScancode];
+            jumpPendingTransactionalPulseCount = desiredState.pendingTransactionalPulseCounts[*jumpScancode];
             jumpSyntheticPrevDown = syntheticPrevDown[*jumpScancode];
             jumpPredictedCurrent = (predictedState[*jumpScancode] & 0x80u) != 0;
-            jumpSynthDesired = jumpDesiredCount > 0 || jumpPendingPulseCount > 0;
-            jumpSynthCurrent = jumpSynthDesired &&
+            const bool jumpWindowedDesired = jumpDesiredCount > 0 || jumpPendingPulseCount > 0;
+            jumpSynthDesired = jumpWindowedDesired || jumpPendingTransactionalPulseCount > 0;
+            jumpSynthCurrent = jumpWindowedDesired &&
                 (!textEntryActive || IsTextSafeScancode(*jumpScancode));
-
-            for (std::uint32_t i = 0; i < clampedOriginalCount; ++i) {
-                if (static_cast<std::uint8_t>(eventBuffer[i].ofs & 0xFFu) == *jumpScancode) {
-                    nativeJumpCandidate = true;
-                    break;
-                }
-            }
+            nativeJumpCandidate = nativeCandidateByScancode[*jumpScancode];
         }
-        bool syntheticJumpCandidate = false;
-        if (jumpScancode) {
-            const auto scancode = *jumpScancode;
-            const bool jumpPulseOnly = jumpDesiredCount == 0 && jumpPendingPulseCount > 0;
-            const bool canInjectJumpPulsePair =
-                jumpPulseOnly &&
-                !nativeJumpCandidate &&
-                !jumpPredictedCurrent &&
-                !jumpSyntheticPrevDown &&
-                (remainingCapacity - injectedCount) >= 2;
+        for (std::size_t scancode = 0; scancode < desiredState.pendingTransactionalPulseCounts.size(); ++scancode) {
+            auto remainingTransactionalPulses = desiredState.pendingTransactionalPulseCounts[scancode];
+            if (remainingTransactionalPulses == 0) {
+                continue;
+            }
 
-            if (canInjectJumpPulsePair) {
-                const auto pressSlot = appendSyntheticEvent(scancode, true);
-                const auto releaseSlot = appendSyntheticEvent(scancode, false);
-                if (pressSlot >= 0 && releaseSlot >= 0) {
+            const auto scancodeByte = static_cast<std::uint8_t>(scancode);
+            const bool textSafe = !textEntryActive || IsTextSafeScancode(scancodeByte);
+            const bool predictedCurrent = (predictedState[scancode] & 0x80u) != 0;
+            const bool synthPrevious = syntheticPrevDown[scancode];
+            const bool canInjectTransactionalPair =
+                textSafe &&
+                !nativeCandidateByScancode[scancode] &&
+                !predictedCurrent &&
+                !synthPrevious;
+
+            if (canInjectTransactionalPair) {
+                while (remainingTransactionalPulses > 0 &&
+                    (remainingCapacity - injectedCount) >= 2) {
+                    const auto pressSlot = appendSyntheticEvent(scancodeByte, true);
+                    const auto releaseSlot = appendSyntheticEvent(scancodeByte, false);
+                    if (pressSlot < 0 || releaseSlot < 0) {
+                        break;
+                    }
+
                     const auto syntheticTimeBase = g_syntheticKeyboardEventTimeStamp.fetch_add(2, std::memory_order_relaxed);
                     const auto syntheticSequenceBase = g_syntheticKeyboardEventSequence.fetch_add(2, std::memory_order_relaxed);
                     applyNativeLikeMetadata(pressSlot, syntheticTimeBase, syntheticSequenceBase);
-
-                    syntheticJumpCandidate = true;
-                    jumpInjected = true;
-                    jumpInjectedSlot = pressSlot;
-                    jumpPairedPulseInjected = true;
+                    applyNativeLikeMetadata(releaseSlot, syntheticTimeBase + 1, syntheticSequenceBase + 1);
+                    --remainingTransactionalPulses;
 
                     {
                         std::scoped_lock lock(_mutex);
-                        MarkProbeScancodeLocked(scancode);
+                        MarkProbeScancodeLocked(scancodeByte);
+                    }
+
+                    if (jumpScancode && scancodeByte == *jumpScancode) {
+                        jumpInjected = true;
+                        jumpInjectedSlot = pressSlot;
+                        jumpPairedPulseInjected = true;
                     }
 
                     if (IsDebugLoggingEnabled()) {
                         logger::info(
-                            "[DualPad][KeyboardNative] injected paired pulse diObjData scancode=0x{:02X} pressSlot={} releaseSlot={} pressTs=0x{:X} pressSeq=0x{:X} originalCount={} textEntry={}",
-                            static_cast<std::uint32_t>(scancode),
+                            "[DualPad][KeyboardNative] injected transactional pulse diObjData scancode=0x{:02X} pressSlot={} releaseSlot={} pressTs=0x{:X} releaseTs=0x{:X} pressSeq=0x{:X} releaseSeq=0x{:X} originalCount={} textEntry={}",
+                            static_cast<std::uint32_t>(scancodeByte),
                             pressSlot,
                             releaseSlot,
                             syntheticTimeBase,
+                            syntheticTimeBase + 1,
                             syntheticSequenceBase,
+                            syntheticSequenceBase + 1,
                             clampedOriginalCount,
                             textEntryActive);
                     }
                 }
             }
+
+            if (remainingTransactionalPulses != 0) {
+                saturatingAddPulseCount(desiredState.pendingPulseCounts[scancode], remainingTransactionalPulses);
+                if (IsDebugLoggingEnabled()) {
+                    logger::info(
+                        "[DualPad][KeyboardNative] transactional pulse fallback to windowed scancode=0x{:02X} remaining={} nativeCandidate={} predictedCurrent={} synthPrev={} textSafe={} capacityLeft={}",
+                        static_cast<std::uint32_t>(scancodeByte),
+                        remainingTransactionalPulses,
+                        nativeCandidateByScancode[scancode],
+                        predictedCurrent,
+                        synthPrevious,
+                        textSafe,
+                        remainingCapacity - injectedCount);
+                }
+            }
         }
 
-        for (std::size_t scancode = 0; scancode < desiredCounts.size(); ++scancode) {
+        for (std::size_t scancode = 0; scancode < desiredState.desiredRefCounts.size(); ++scancode) {
             if (injectedCount >= remainingCapacity) {
                 break;
             }
 
-            if (jumpPairedPulseInjected &&
-                jumpScancode &&
-                static_cast<std::uint8_t>(scancode) == *jumpScancode) {
+            const bool synthDesired =
+                desiredState.desiredRefCounts[scancode] > 0 ||
+                desiredState.pendingPulseCounts[scancode] > 0;
+            const bool synthCurrent = synthDesired &&
+                (!textEntryActive || IsTextSafeScancode(static_cast<std::uint8_t>(scancode)));
+            const bool synthManaged = syntheticPrevDown[scancode] || synthCurrent;
+            if (!synthManaged) {
                 continue;
             }
 
-            const bool synthDesired = desiredCounts[scancode] > 0 || pendingPulseCounts[scancode] > 0;
-            const bool synthCurrent = synthDesired &&
-                (!textEntryActive || IsTextSafeScancode(static_cast<std::uint8_t>(scancode)));
             const bool predictedCurrent = (predictedState[scancode] & 0x80u) != 0;
             if (predictedCurrent == synthCurrent) {
+                syntheticNextDown[scancode] = (predictedState[scancode] & 0x80u) != 0;
                 continue;
             }
 
@@ -2895,8 +2219,9 @@ namespace dualpad::input::backend
                 break;
             }
 
+            syntheticNextDown[scancode] = (predictedState[scancode] & 0x80u) != 0;
+
             if (jumpScancode && static_cast<std::uint8_t>(scancode) == *jumpScancode) {
-                syntheticJumpCandidate = true;
                 jumpInjected = true;
                 jumpInjectedSlot = injectedSlot;
             }
@@ -2917,11 +2242,17 @@ namespace dualpad::input::backend
             }
         }
 
+        {
+            std::scoped_lock lock(_mutex);
+            _syntheticLatchedDown = syntheticNextDown;
+        }
+
         if (jumpScancode && IsDebugLoggingEnabled()) {
             const bool shouldLogJumpDecision =
                 nativeJumpCandidate ||
                 jumpDesiredCount != 0 ||
                 jumpPendingPulseCount != 0 ||
+                jumpPendingTransactionalPulseCount != 0 ||
                 jumpSyntheticPrevDown ||
                 jumpPredictedCurrent ||
                 jumpInjected;
@@ -2935,6 +2266,7 @@ namespace dualpad::input::backend
                     clampedOriginalCount + injectedCount,
                     jumpDesiredCount,
                     jumpPendingPulseCount,
+                    jumpPendingTransactionalPulseCount,
                     jumpSyntheticPrevDown,
                     jumpPredictedCurrent,
                     jumpSynthDesired,
@@ -2997,6 +2329,10 @@ namespace dualpad::input::backend
         std::string_view actionId,
         InputContext context) const
     {
+        if (const auto canonicalUiScancode = ResolveCanonicalUiScancode(actionId)) {
+            return canonicalUiScancode;
+        }
+
         auto* controlMap = RE::ControlMap::GetSingleton();
         const auto candidates = ResolveUserEventCandidates(actionId);
         if (controlMap && !candidates.empty()) {
@@ -3071,9 +2407,215 @@ namespace dualpad::input::backend
         }
     }
 
-    void KeyboardNativeBackend::StagePulseLocked(std::uint8_t scancode)
+    void KeyboardNativeBackend::StageWindowedPulseLocked(std::uint8_t scancode)
     {
-        _pendingPulseCounts[scancode] = 1;
+        _localDesiredState.pendingPulseCounts[scancode] = 1;
+    }
+
+    void KeyboardNativeBackend::StageTransactionalPulseLocked(std::uint8_t scancode)
+    {
+        _localDesiredState.pendingTransactionalPulseCounts[scancode] = 1;
+    }
+
+    bool KeyboardNativeBackend::SubmitScheduledPulseActionState(
+        std::string_view actionId,
+        ActionOutputContract contract,
+        bool pressed,
+        float heldSeconds,
+        InputContext context)
+    {
+        const auto describePhase = [](ScheduledPulsePhase phase) -> std::string_view {
+            switch (phase) {
+            case ScheduledPulsePhase::Down:
+                return "Down";
+            case ScheduledPulsePhase::Gap:
+                return "Gap";
+            case ScheduledPulsePhase::Idle:
+            default:
+                return "Idle";
+            }
+        };
+
+        const auto scancode = ResolveScancode(actionId, context);
+        if (!scancode) {
+            return false;
+        }
+
+        std::scoped_lock lock(_mutex);
+        if (!pressed) {
+            const auto it = _activeActionScancodes.find(actionId);
+            if (it == _activeActionScancodes.end()) {
+                return false;
+            }
+
+            auto& action = it->second;
+            action.sourceDown = false;
+            if (contract == ActionOutputContract::Repeat) {
+                action.nextRepeatAtHeldSeconds = 0.0f;
+            }
+
+            const auto phase = action.scheduledPulsePhase;
+            const auto remaining = action.scheduledPhaseRemainingConsumes;
+            const auto queued = action.queuedScheduledPulses;
+            if (action.scheduledPulsePhase == ScheduledPulsePhase::Idle &&
+                action.queuedScheduledPulses == 0) {
+                _activeActionScancodes.erase(it);
+            }
+
+            if (IsDebugLoggingEnabled()) {
+                logger::info(
+                    "[DualPad][KeyboardNative] released scheduled contract action={} contract={} scancode=0x{:02X} phase={} remaining={} queued={} context={}",
+                    actionId,
+                    ToString(contract),
+                    *scancode,
+                    describePhase(phase),
+                    remaining,
+                    queued,
+                    ToString(context));
+            }
+
+            return true;
+        }
+
+        auto [it, inserted] = _activeActionScancodes.try_emplace(std::string(actionId));
+        auto& action = it->second;
+        if (inserted) {
+            action.scancode = *scancode;
+            action.contract = contract;
+        } else {
+            action.scancode = *scancode;
+            action.contract = contract;
+        }
+
+        if (pressed) {
+            const bool pressEdge = !action.sourceDown;
+            action.sourceDown = true;
+
+            if (contract == ActionOutputContract::Toggle) {
+                if (pressEdge) {
+                    QueueScheduledPulseLocked(action);
+                }
+            } else if (contract == ActionOutputContract::Repeat) {
+                if (pressEdge) {
+                    QueueScheduledPulseLocked(action);
+                    action.nextRepeatAtHeldSeconds = kRepeatInitialDelaySeconds;
+                } else {
+                    while ((heldSeconds + kRepeatScheduleEpsilon) >= action.nextRepeatAtHeldSeconds) {
+                        QueueScheduledPulseLocked(action);
+                        action.nextRepeatAtHeldSeconds += kRepeatIntervalSeconds;
+                    }
+                }
+            }
+
+            if (IsDebugLoggingEnabled()) {
+                logger::info(
+                    "[DualPad][KeyboardNative] scheduled contract action={} contract={} scancode=0x{:02X} sourceDown={} phase={} remaining={} queued={} held={:.3f} nextRepeatAt={:.3f} context={}",
+                    actionId,
+                    ToString(contract),
+                    action.scancode,
+                    action.sourceDown,
+                    describePhase(action.scheduledPulsePhase),
+                    action.scheduledPhaseRemainingConsumes,
+                    action.queuedScheduledPulses,
+                    heldSeconds,
+                    action.nextRepeatAtHeldSeconds,
+                    ToString(context));
+            }
+
+            return true;
+        }
+        return true;
+    }
+
+    void KeyboardNativeBackend::QueueScheduledPulseLocked(ActiveKeyboardAction& action)
+    {
+        if (!UsesScheduledPulseContract(action.contract)) {
+            return;
+        }
+
+        if (action.scheduledPulsePhase == ScheduledPulsePhase::Idle) {
+            action.scheduledPulsePhase = ScheduledPulsePhase::Down;
+            action.scheduledPhaseRemainingConsumes = GetScheduledPulseDownConsumes(action.contract);
+            return;
+        }
+
+        if (action.queuedScheduledPulses != std::numeric_limits<std::uint8_t>::max()) {
+            ++action.queuedScheduledPulses;
+        }
+    }
+
+    void KeyboardNativeBackend::AppendScheduledPulseStateLocked(DesiredKeyboardState& desiredState)
+    {
+        for (const auto& [actionId, action] : _activeActionScancodes) {
+            static_cast<void>(actionId);
+            if (!UsesScheduledPulseContract(action.contract) ||
+                action.scheduledPulsePhase != ScheduledPulsePhase::Down) {
+                continue;
+            }
+
+            auto& pulseCount = desiredState.pendingPulseCounts[action.scancode];
+            if (pulseCount != std::numeric_limits<std::uint8_t>::max()) {
+                ++pulseCount;
+            }
+        }
+    }
+
+    void KeyboardNativeBackend::AdvanceScheduledPulseActionsLocked()
+    {
+        for (auto it = _activeActionScancodes.begin(); it != _activeActionScancodes.end();) {
+            auto& action = it->second;
+            if (!UsesScheduledPulseContract(action.contract)) {
+                ++it;
+                continue;
+            }
+
+            if (action.scheduledPulsePhase != ScheduledPulsePhase::Idle &&
+                action.scheduledPhaseRemainingConsumes != 0) {
+                --action.scheduledPhaseRemainingConsumes;
+            }
+
+            if (action.scheduledPulsePhase != ScheduledPulsePhase::Idle &&
+                action.scheduledPhaseRemainingConsumes == 0) {
+                switch (action.scheduledPulsePhase) {
+                case ScheduledPulsePhase::Down:
+                    if (action.queuedScheduledPulses != 0) {
+                        const auto gapConsumes = GetScheduledPulseGapConsumes(action.contract);
+                        if (gapConsumes != 0) {
+                            action.scheduledPulsePhase = ScheduledPulsePhase::Gap;
+                            action.scheduledPhaseRemainingConsumes = gapConsumes;
+                        } else {
+                            --action.queuedScheduledPulses;
+                            action.scheduledPulsePhase = ScheduledPulsePhase::Down;
+                            action.scheduledPhaseRemainingConsumes = GetScheduledPulseDownConsumes(action.contract);
+                        }
+                    } else {
+                        action.scheduledPulsePhase = ScheduledPulsePhase::Idle;
+                    }
+                    break;
+                case ScheduledPulsePhase::Gap:
+                    if (action.queuedScheduledPulses != 0) {
+                        --action.queuedScheduledPulses;
+                        action.scheduledPulsePhase = ScheduledPulsePhase::Down;
+                        action.scheduledPhaseRemainingConsumes = GetScheduledPulseDownConsumes(action.contract);
+                    } else {
+                        action.scheduledPulsePhase = ScheduledPulsePhase::Idle;
+                    }
+                    break;
+                case ScheduledPulsePhase::Idle:
+                default:
+                    break;
+                }
+            }
+
+            if (!action.sourceDown &&
+                action.scheduledPulsePhase == ScheduledPulsePhase::Idle &&
+                action.queuedScheduledPulses == 0) {
+                it = _activeActionScancodes.erase(it);
+                continue;
+            }
+
+            ++it;
+        }
     }
 
     bool KeyboardNativeBackend::IsDebugLoggingEnabled() const

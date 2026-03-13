@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/InputContext.h"
+#include "input/backend/ActionOutputContract.h"
 
 #include <array>
 #include <cstddef>
@@ -12,6 +13,7 @@ namespace dualpad::input::backend
     enum class PlannedBackend : std::uint8_t
     {
         NativeState = 0,
+        ButtonEvent,
         KeyboardNative,
         Plugin,
         ModEvent,
@@ -45,6 +47,7 @@ namespace dualpad::input::backend
         PlannedActionPhase phase{ PlannedActionPhase::None };
         InputContext context{ InputContext::Gameplay };
         std::string actionId{};
+        ActionOutputContract contract{ ActionOutputContract::Pulse };
         std::uint32_t sourceCode{ 0 };
         std::uint32_t outputCode{ 0 };
         std::uint32_t modifierMask{ 0 };

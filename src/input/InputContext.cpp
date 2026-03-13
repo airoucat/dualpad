@@ -7,6 +7,16 @@ namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
+    namespace
+    {
+        constexpr bool IsMenuOwnedContext(InputContext context)
+        {
+            const auto value = static_cast<std::uint16_t>(context);
+            return (value >= 100 && value < 2000) || context == InputContext::Console;
+        }
+
+    }
+
     ContextManager& ContextManager::GetSingleton()
     {
         static ContextManager instance;
@@ -122,32 +132,23 @@ namespace dualpad::input
         return InputContext::Gameplay;
     }
 
-    void ContextManager::UpdateGameplayContext()
+    void ContextManager::UpdateFrameState()
     {
-        {
-            std::scoped_lock lock(_mutex);
-
-            // Menu-owned contexts stay fixed until the matching close event arrives.
-            auto ctxValue = static_cast<std::uint16_t>(_baseContext);
-            if ((ctxValue >= 100 && ctxValue < 2000) || ctxValue == 200) {
-                return;
-            }
-        }
-
-        auto newContext = DetectGameplayContext();
+        auto gameplayContext = DetectGameplayContext();
 
         std::scoped_lock lock(_mutex);
-        auto ctxValue = static_cast<std::uint16_t>(_baseContext);
-        if ((ctxValue >= 100 && ctxValue < 2000) || ctxValue == 200) {
-            return;
-        }
-
-        if (newContext != _baseContext) {
+        if (!IsMenuOwnedContext(_baseContext) &&
+            gameplayContext != _baseContext) {
             logger::trace("[DualPad][Context] Gameplay context changed: {} -> {}",
-                ToString(_baseContext), ToString(newContext));
-            _baseContext = newContext;
+                ToString(_baseContext), ToString(gameplayContext));
+            _baseContext = gameplayContext;
             RefreshCurrentContextLocked();
         }
+    }
+
+    void ContextManager::UpdateGameplayContext()
+    {
+        UpdateFrameState();
     }
 
     void ContextManager::OnMenuOpen(std::string_view menuName)

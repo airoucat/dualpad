@@ -8,6 +8,10 @@ Current architecture notes are split into three documents:
   - the new target architecture and migration phases
 - `docs/backend_routing_decisions.md`
   - product-facing backend ownership rules from the Route B / keyboard-backend discussion
+- `docs/action_contract_output_experiment_zh.md`
+  - experimental notes for the actionId -> contract -> output-backend model on the keyboard-native branch
+- `docs/unified_action_lifecycle_model_zh.md`
+  - backend-neutral lifecycle model intended to be shared by ButtonEvent, keyboard, plugin, and mod routes
 - `docs/keyboard_native_backend_plan.md`
   - the current rollback-safe keyboard-native call-site route and its scope
 - `docs/native_input_reverse_targets.md`
@@ -29,6 +33,8 @@ Current rule of thumb:
 
 Current code skeleton for that direction lives under `src/input/backend/`:
 
+- `ActionLifecycleBackend.h`
+- `ButtonEventBackend.*`
 - `ActionBackendPolicy.*`
 - `FrameActionPlan.h`
 - `FrameActionPlanner.*`

@@ -16,6 +16,8 @@ namespace dualpad::input::backend
             switch (backend) {
             case PlannedBackend::NativeState:
                 return "NativeState";
+            case PlannedBackend::ButtonEvent:
+                return "ButtonEvent";
             case PlannedBackend::KeyboardNative:
                 return "KeyboardNative";
             case PlannedBackend::Plugin:
@@ -81,10 +83,11 @@ namespace dualpad::input::backend
         for (std::size_t i = 0; i < plan.Size(); ++i) {
             const auto& action = plan[i];
             logger::info(
-                "[DualPad][ActionPlan] idx={} backend={} kind={} phase={} context={} action='{}' source=0x{:08X} output=0x{:08X} modifiers=0x{:08X} valueX={:.3f} valueY={:.3f} held={:.3f}",
+                "[DualPad][ActionPlan] idx={} backend={} kind={} contract={} phase={} context={} action='{}' source=0x{:08X} output=0x{:08X} modifiers=0x{:08X} valueX={:.3f} valueY={:.3f} held={:.3f}",
                 i,
                 ToString(action.backend),
                 ToString(action.kind),
+                ToString(action.contract),
                 ToString(action.phase),
                 input::ToString(action.context),
                 action.actionId,

@@ -4,7 +4,8 @@
 #include "input/Action.h"
 #include "input/ActionExecutor.h"
 #include "input/PadProfile.h"
-#include "input/RuntimeConfig.h"
+#include "input/backend/ActionBackendPolicy.h"
+#include "input/backend/ButtonEventBackend.h"
 #include "input/backend/KeyboardNativeBackend.h"
 #include "input/injection/CompatibilityInputInjector.h"
 #include "input/injection/NativeInputInjector.h"
@@ -24,17 +25,6 @@ namespace dualpad::input
                 actionId == actions::MenuPageDown;
         }
 
-        bool ShouldPreferKeyboardNative(std::string_view actionId)
-        {
-            return actionId == actions::Sprint ||
-                actionId == actions::Jump ||
-                actionId == actions::Activate ||
-                actionId == actions::Sneak ||
-                actionId == actions::Shout ||
-                (RuntimeConfig::GetSingleton().TestKeyboardAcceptDumpRoute() &&
-                    actionId == actions::MenuConfirm);
-        }
-
         bool IsSyntheticTouchpadPadEvent(const PadEvent& event)
         {
             switch (event.type) {
@@ -45,6 +35,106 @@ namespace dualpad::input
             default:
                 return false;
             }
+        }
+
+        // Compatibility fallback injects synthetic pad bits, so it must use the
+        // semantic virtual gamepad button for the resolved action instead of the
+        // user's preferred source binding alias.
+        std::uint32_t ResolveSemanticCompatibilityBit(
+            std::string_view actionId,
+            const PadBits& bits)
+        {
+            if (actionId == actions::Jump) {
+                return bits.triangle;
+            }
+            if (actionId == actions::Activate) {
+                return bits.cross;
+            }
+            if (actionId == actions::Attack) {
+                return bits.r2Button;
+            }
+            if (actionId == actions::Block) {
+                return bits.l2Button;
+            }
+            if (actionId == actions::Sprint) {
+                return bits.l1;
+            }
+            if (actionId == actions::Sneak) {
+                return bits.l3;
+            }
+            if (actionId == actions::Shout) {
+                return bits.r1;
+            }
+
+            if (actionId == actions::MenuConfirm || actionId == "Console.Execute"sv) {
+                return bits.cross;
+            }
+
+            if (actionId == actions::MenuCancel || actionId == "Book.Close"sv) {
+                return bits.circle;
+            }
+
+            if (actionId == actions::MenuScrollUp ||
+                actionId == "Dialogue.PreviousOption"sv ||
+                actionId == "Favorites.PreviousItem"sv ||
+                actionId == "Console.HistoryUp"sv) {
+                return bits.dpadUp;
+            }
+
+            if (actionId == actions::MenuScrollDown ||
+                actionId == "Dialogue.NextOption"sv ||
+                actionId == "Favorites.NextItem"sv ||
+                actionId == "Console.HistoryDown"sv) {
+                return bits.dpadDown;
+            }
+
+            if (actionId == actions::MenuPageUp ||
+                actionId == "Book.PreviousPage"sv ||
+                actionId == "Menu.SortByName"sv) {
+                return bits.l1;
+            }
+
+            if (actionId == actions::MenuPageDown ||
+                actionId == "Book.NextPage"sv ||
+                actionId == "Menu.SortByValue"sv) {
+                return bits.r1;
+            }
+
+            return 0;
+        }
+
+        ActionDispatchResult TryDispatchLifecycleBackend(
+            backend::IActionLifecycleBackend& backend,
+            std::string_view actionId,
+            backend::ActionOutputContract contract,
+            InputContext context,
+            ActionDispatchTarget target)
+        {
+            if (!backend.IsRouteActive() ||
+                !backend.CanHandleAction(actionId) ||
+                !backend.TriggerAction(actionId, contract, context)) {
+                return {};
+            }
+
+            return { true, target };
+        }
+
+        ActionDispatchResult TryDispatchLifecycleBackendState(
+            backend::IActionLifecycleBackend& backend,
+            std::string_view actionId,
+            backend::ActionOutputContract contract,
+            bool down,
+            float heldSeconds,
+            InputContext context,
+            ActionDispatchTarget target)
+        {
+            if (!backend.IsRouteActive() ||
+                !backend.CanHandleAction(actionId) ||
+                !backend.SubmitActionState(actionId, contract, down, heldSeconds, context)) {
+                return {};
+            }
+
+            return { true, target };
         }
     }
 
@@ -69,12 +159,29 @@ namespace dualpad::input
         std::string_view actionId,
         InputContext context) const
     {
-        auto& keyboardBackend = backend::KeyboardNativeBackend::GetSingleton();
-        if (ShouldPreferKeyboardNative(actionId) &&
-            keyboardBackend.IsRouteActive() &&
-            keyboardBackend.CanHandleAction(actionId) &&
-            keyboardBackend.PulseAction(actionId, context)) {
-            return { true, ActionDispatchTarget::KeyboardNative };
+        const auto routingDecision = backend::ActionBackendPolicy::Decide(actionId);
+        if (routingDecision.backend == backend::PlannedBackend::ButtonEvent) {
+            if (const auto result = TryDispatchLifecycleBackend(
+                    backend::ButtonEventBackend::GetSingleton(),
+                    actionId,
+                    routingDecision.contract,
+                    context,
+                    ActionDispatchTarget::ButtonEvent);
+                result.handled) {
+                return result;
+            }
+        }
+
+        if (routingDecision.backend == backend::PlannedBackend::KeyboardNative) {
+            if (const auto result = TryDispatchLifecycleBackend(
+                    backend::KeyboardNativeBackend::GetSingleton(),
+                    actionId,
+                    routingDecision.contract,
+                    context,
+                    ActionDispatchTarget::KeyboardNative);
+                result.handled) {
+                return result;
+            }
         }
 
         if (const auto pulseBit = ResolveCompatibilityPulseBit(actionId); pulseBit != 0) {
@@ -103,12 +210,33 @@ namespace dualpad::input
         float heldSeconds,
         InputContext context) const
     {
-        auto& keyboardBackend = backend::KeyboardNativeBackend::GetSingleton();
-        if (ShouldPreferKeyboardNative(actionId) &&
-            keyboardBackend.IsRouteActive() &&
-            keyboardBackend.CanHandleAction(actionId) &&
-            keyboardBackend.QueueAction(actionId, down, heldSeconds, context)) {
-            return { true, ActionDispatchTarget::KeyboardNative };
+        const auto routingDecision = backend::ActionBackendPolicy::Decide(actionId);
+        if (routingDecision.backend == backend::PlannedBackend::ButtonEvent) {
+            if (const auto result = TryDispatchLifecycleBackendState(
+                    backend::ButtonEventBackend::GetSingleton(),
+                    actionId,
+                    routingDecision.contract,
+                    down,
+                    heldSeconds,
+                    context,
+                    ActionDispatchTarget::ButtonEvent);
+                result.handled) {
+                return result;
+            }
+        }
+
+        if (routingDecision.backend == backend::PlannedBackend::KeyboardNative) {
+            if (const auto result = TryDispatchLifecycleBackendState(
+                    backend::KeyboardNativeBackend::GetSingleton(),
+                    actionId,
+                    routingDecision.contract,
+                    down,
+                    heldSeconds,
+                    context,
+                    ActionDispatchTarget::KeyboardNative);
+                result.handled) {
+                return result;
+            }
         }
 
         if (const auto pulseBit = ResolveCompatibilityPulseBit(actionId); pulseBit != 0) {
@@ -134,66 +262,14 @@ namespace dualpad::input
     std::uint32_t ActionDispatcher::ResolveCompatibilityPulseBit(std::string_view actionId) const
     {
         const auto& bits = GetPadBits(GetActivePadProfile());
-
-        if (actionId == actions::Jump) {
-            return bits.jump;
-        }
-        if (actionId == actions::Activate) {
-            return bits.activate;
-        }
-        if (actionId == actions::Sprint) {
-            return bits.sprint;
-        }
-        if (actionId == actions::Attack) {
-            return bits.attack;
-        }
-        if (actionId == actions::Sneak) {
-            return bits.sneak;
-        }
-        if (actionId == actions::Shout) {
-            return bits.r2Button;
-        }
-
-        if (actionId == actions::MenuConfirm || actionId == "Console.Execute"sv) {
-            return bits.cross;
-        }
-
-        if (actionId == actions::MenuCancel || actionId == "Book.Close"sv) {
-            return bits.circle;
-        }
-
-        if (actionId == actions::MenuScrollUp ||
-            actionId == "Dialogue.PreviousOption"sv ||
-            actionId == "Favorites.PreviousItem"sv ||
-            actionId == "Console.HistoryUp"sv) {
-            return bits.dpadUp;
-        }
-
-        if (actionId == actions::MenuScrollDown ||
-            actionId == "Dialogue.NextOption"sv ||
-            actionId == "Favorites.NextItem"sv ||
-            actionId == "Console.HistoryDown"sv) {
-            return bits.dpadDown;
-        }
-
-        if (actionId == actions::MenuPageUp ||
-            actionId == "Book.PreviousPage"sv ||
-            actionId == "Menu.SortByName"sv) {
-            return bits.l1;
-        }
-
-        if (actionId == actions::MenuPageDown ||
-            actionId == "Book.NextPage"sv ||
-            actionId == "Menu.SortByValue"sv) {
-            return bits.r1;
-        }
-
-        return 0;
+        return ResolveSemanticCompatibilityBit(actionId, bits);
     }
 
     std::string_view ToString(ActionDispatchTarget target)
     {
         switch (target) {
+        case ActionDispatchTarget::ButtonEvent:
+            return "ButtonEvent";
         case ActionDispatchTarget::KeyboardNative:
             return "KeyboardNative";
         case ActionDispatchTarget::CompatibilityPulse:

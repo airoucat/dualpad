@@ -9,6 +9,22 @@ namespace dualpad::input::backend
 {
     namespace
     {
+        constexpr bool IsRepeatActionId(std::string_view actionId)
+        {
+            return actionId == actions::MenuScrollUp ||
+                actionId == actions::MenuScrollDown ||
+                actionId == actions::MenuPageUp ||
+                actionId == actions::MenuPageDown ||
+                actionId == "Dialogue.PreviousOption"sv ||
+                actionId == "Dialogue.NextOption"sv ||
+                actionId == "Favorites.PreviousItem"sv ||
+                actionId == "Favorites.NextItem"sv ||
+                actionId == "Console.HistoryUp"sv ||
+                actionId == "Console.HistoryDown"sv ||
+                actionId == "Book.PreviousPage"sv ||
+                actionId == "Book.NextPage"sv;
+        }
+
         constexpr bool IsPluginActionId(std::string_view actionId)
         {
             return actionId == actions::OpenInventory ||
@@ -81,29 +97,16 @@ namespace dualpad::input::backend
             return NativeControlCode::None;
         }
 
-        constexpr bool ShouldUseKeyboardNative(std::string_view actionId)
+        constexpr bool IsKeyboardHelperActionId(std::string_view actionId)
         {
-            return actionId == actions::Jump ||
-                actionId == actions::Activate ||
-                actionId == actions::Sprint ||
-                actionId == actions::Sneak ||
-                actionId == actions::Shout ||
-                actionId == actions::MenuConfirm ||
-                actionId == actions::MenuCancel ||
-                actionId == actions::MenuScrollUp ||
-                actionId == actions::MenuScrollDown ||
-                actionId == actions::MenuPageUp ||
-                actionId == actions::MenuPageDown ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Book.NextPage"sv ||
-                actionId == "Book.Close"sv ||
-                actionId == "Console.Execute"sv ||
-                actionId == "Console.HistoryUp"sv ||
-                actionId == "Console.HistoryDown"sv;
+            return actionId.starts_with("VirtualKey."sv) ||
+                actionId.starts_with("FKey."sv);
+        }
+
+        constexpr bool IsModEventActionId(std::string_view actionId)
+        {
+            return actionId.starts_with("Mod."sv) ||
+                actionId.starts_with("ModEvent"sv);
         }
 
         constexpr NativeControlCode TryMapNativeAxis(std::string_view actionId)
@@ -126,6 +129,37 @@ namespace dualpad::input::backend
 
             return NativeControlCode::None;
         }
+
+        constexpr ActionOutputContract ResolveDigitalContract(std::string_view actionId)
+        {
+            if (actionId == actions::Sprint) {
+                return ActionOutputContract::Hold;
+            }
+            if (actionId == actions::Sneak) {
+                return ActionOutputContract::Toggle;
+            }
+            if (IsRepeatActionId(actionId)) {
+                return ActionOutputContract::Repeat;
+            }
+
+            return ActionOutputContract::Pulse;
+        }
+
+        constexpr bool ShouldOwnLifecycle(std::string_view actionId, ActionOutputContract contract)
+        {
+            switch (contract) {
+            case ActionOutputContract::Hold:
+            case ActionOutputContract::Toggle:
+            case ActionOutputContract::Repeat:
+            case ActionOutputContract::Axis:
+                return true;
+            case ActionOutputContract::Pulse:
+                return actionId == actions::Activate;
+            case ActionOutputContract::None:
+            default:
+                return false;
+            }
+        }
     }
 
     ActionRoutingDecision ActionBackendPolicy::Decide(std::string_view actionId)
@@ -134,26 +168,40 @@ namespace dualpad::input::backend
             return {
                 .backend = PlannedBackend::Plugin,
                 .kind = PlannedActionKind::PluginAction,
+                .contract = ActionOutputContract::Pulse,
                 .nativeCode = NativeControlCode::None,
                 .ownsLifecycle = false
             };
         }
 
-        if (IsLikelyModAction(actionId)) {
-            return {
-                .backend = PlannedBackend::ModEvent,
-                .kind = PlannedActionKind::ModEvent,
-                .nativeCode = NativeControlCode::None,
-                .ownsLifecycle = false
-            };
-        }
-
-        if (ShouldUseKeyboardNative(actionId)) {
+        if (IsKeyboardHelperActionId(actionId)) {
             return {
                 .backend = PlannedBackend::KeyboardNative,
                 .kind = PlannedActionKind::KeyboardKey,
+                .contract = ActionOutputContract::Pulse,
                 .nativeCode = NativeControlCode::None,
-                .ownsLifecycle = true
+                .ownsLifecycle = false
+            };
+        }
+
+        if (IsModEventActionId(actionId)) {
+            return {
+                .backend = PlannedBackend::ModEvent,
+                .kind = PlannedActionKind::ModEvent,
+                .contract = ActionOutputContract::Pulse,
+                .nativeCode = NativeControlCode::None,
+                .ownsLifecycle = false
+            };
+        }
+
+        if (const auto nativeButton = TryMapNativeButton(actionId); nativeButton != NativeControlCode::None) {
+            const auto contract = ResolveDigitalContract(actionId);
+            return {
+                .backend = PlannedBackend::CompatibilityFallback,
+                .kind = PlannedActionKind::NativeButton,
+                .contract = contract,
+                .nativeCode = nativeButton,
+                .ownsLifecycle = ShouldOwnLifecycle(actionId, contract)
             };
         }
 
@@ -164,6 +212,7 @@ namespace dualpad::input::backend
             return {
                 .backend = PlannedBackend::NativeState,
                 .kind = kind,
+                .contract = ActionOutputContract::Axis,
                 .nativeCode = axis,
                 .ownsLifecycle = true
             };
@@ -172,6 +221,7 @@ namespace dualpad::input::backend
         return {
             .backend = PlannedBackend::CompatibilityFallback,
             .kind = PlannedActionKind::NativeButton,
+            .contract = ActionOutputContract::Pulse,
             .nativeCode = NativeControlCode::None,
             .ownsLifecycle = false
         };
@@ -184,9 +234,6 @@ namespace dualpad::input::backend
 
     bool ActionBackendPolicy::IsLikelyModAction(std::string_view actionId)
     {
-        return actionId.starts_with("Mod."sv) ||
-            actionId.starts_with("ModEvent"sv) ||
-            actionId.starts_with("VirtualKey."sv) ||
-            actionId.starts_with("FKey."sv);
+        return IsModEventActionId(actionId) || IsKeyboardHelperActionId(actionId);
     }
 }

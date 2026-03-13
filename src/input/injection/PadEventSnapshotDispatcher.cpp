@@ -8,34 +8,6 @@ namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
-    namespace
-    {
-        void MergeSnapshots(PadEventSnapshot& pending, const PadEventSnapshot& incoming)
-        {
-            pending.type = PadEventSnapshotType::Input;
-            pending.sequence = incoming.sequence;
-            pending.sourceTimestampUs = incoming.sourceTimestampUs;
-            pending.state = incoming.state;
-            pending.compatFrame = incoming.compatFrame;
-            pending.coalesced = true;
-
-            pending.overflowed = pending.overflowed ||
-                incoming.overflowed ||
-                incoming.events.overflowed;
-
-            for (std::size_t i = 0; i < incoming.events.count; ++i) {
-                if (!pending.events.Push(incoming.events[i])) {
-                    pending.overflowed = true;
-                }
-            }
-
-            if (incoming.events.overflowed) {
-                pending.events.overflowed = true;
-                pending.events.droppedCount += incoming.events.droppedCount;
-            }
-        }
-    }
-
     PadEventSnapshotDispatcher& PadEventSnapshotDispatcher::GetSingleton()
     {
         static PadEventSnapshotDispatcher instance;
@@ -49,21 +21,27 @@ namespace dualpad::input
             std::scoped_lock lock(_mutex);
 
             if (snapshot.type == PadEventSnapshotType::Reset) {
-                _pending = snapshot;
-                _hasPending = true;
-            }
-            else if (!_hasPending || _pending.type == PadEventSnapshotType::Reset) {
-                _pending = snapshot;
-                _pending.firstSequence = snapshot.sequence;
-                _pending.coalesced = false;
-                _pending.overflowed = snapshot.overflowed || snapshot.events.overflowed;
-                _hasPending = true;
+                _pendingHead = 0;
+                _pendingCount = 0;
+                _droppedSnapshots = 0;
+                _pending[0] = snapshot;
+                _pendingCount = 1;
             }
             else {
-                // Transitional coalescing patch: keep the latest state and merge per-packet
-                // events until the formal BSInputDeviceManager/Main::Update hook replaces the
-                // current task-driven main-thread consumer.
-                MergeSnapshots(_pending, snapshot);
+                if (_pendingCount >= _pending.size()) {
+                    _pendingHead = (_pendingHead + 1) % _pending.size();
+                    --_pendingCount;
+                    ++_droppedSnapshots;
+                }
+
+                auto queuedSnapshot = snapshot;
+                queuedSnapshot.firstSequence = snapshot.sequence;
+                queuedSnapshot.coalesced = false;
+                queuedSnapshot.overflowed = snapshot.overflowed || snapshot.events.overflowed;
+
+                const auto tail = (_pendingHead + _pendingCount) % _pending.size();
+                _pending[tail] = queuedSnapshot;
+                ++_pendingCount;
             }
 
             if (!_drainTaskQueued.exchange(true, std::memory_order_acq_rel)) {
@@ -87,16 +65,27 @@ namespace dualpad::input
     {
         for (;;) {
             PadEventSnapshot snapshot{};
+            std::uint64_t droppedSnapshots = 0;
             {
                 std::scoped_lock lock(_mutex);
-                if (!_hasPending) {
+                if (_pendingCount == 0) {
                     _drainTaskQueued.store(false, std::memory_order_release);
                     return;
                 }
 
-                snapshot = _pending;
-                _pending = {};
-                _hasPending = false;
+                droppedSnapshots = _droppedSnapshots;
+                _droppedSnapshots = 0;
+                snapshot = _pending[_pendingHead];
+                _pending[_pendingHead] = {};
+                _pendingHead = (_pendingHead + 1) % _pending.size();
+                --_pendingCount;
+            }
+
+            if (droppedSnapshots != 0) {
+                logger::warn(
+                    "[DualPad][Snapshot] Dropped {} pending snapshots due to dispatcher queue overflow (capacity={})",
+                    droppedSnapshots,
+                    kPendingSnapshotCapacity);
             }
 
             ContextManager::GetSingleton().UpdateGameplayContext();

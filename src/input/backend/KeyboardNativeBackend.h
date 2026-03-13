@@ -2,6 +2,9 @@
 
 #include "input/InputContext.h"
 #include "input/RuntimeConfig.h"
+#include "input/backend/ActionLifecycleBackend.h"
+#include "input/backend/ActionOutputContract.h"
+#include "input/backend/DesiredKeyboardState.h"
 
 #include <array>
 #include <cstdint>
@@ -24,19 +27,24 @@ namespace REX::W32
 
 namespace dualpad::input::backend
 {
-    class KeyboardNativeBackend
+    class KeyboardNativeBackend final : public IActionLifecycleBackend
     {
     public:
         static KeyboardNativeBackend& GetSingleton();
 
         void Install();
         bool IsInstalled() const;
-        bool IsRouteActive() const;
 
-        void Reset();
-        bool CanHandleAction(std::string_view actionId) const;
-        bool PulseAction(std::string_view actionId, InputContext context);
-        bool QueueAction(std::string_view actionId, bool pressed, float heldSeconds, InputContext context);
+        void Reset() override;
+        bool IsRouteActive() const override;
+        bool CanHandleAction(std::string_view actionId) const override;
+        bool TriggerAction(std::string_view actionId, ActionOutputContract contract, InputContext context) override;
+        bool SubmitActionState(
+            std::string_view actionId,
+            ActionOutputContract contract,
+            bool pressed,
+            float heldSeconds,
+            InputContext context) override;
 
         void InjectControlSemantics(RE::BSWin32KeyboardDevice& device, float timeDelta);
         void InjectDiObjDataEvents(
@@ -48,10 +56,32 @@ namespace dualpad::input::backend
         UpstreamKeyboardHookMode GetHookMode() const;
 
     private:
+        enum class ScheduledPulsePhase : std::uint8_t
+        {
+            Idle = 0,
+            Down,
+            Gap
+        };
+
         struct ActiveKeyboardAction
         {
             std::uint8_t scancode{ 0 };
             bool viaBridge{ false };
+            ActionOutputContract contract{ ActionOutputContract::Pulse };
+            bool sourceDown{ false };
+            ScheduledPulsePhase scheduledPulsePhase{ ScheduledPulsePhase::Idle };
+            std::uint8_t scheduledPhaseRemainingConsumes{ 0 };
+            std::uint8_t queuedScheduledPulses{ 0 };
+            float nextRepeatAtHeldSeconds{ 0.0f };
+        };
+
+        struct DeferredKeyboardAction
+        {
+            ActionOutputContract contract{ ActionOutputContract::None };
+            InputContext context{ InputContext::Gameplay };
+            bool sourceDown{ false };
+            float heldSeconds{ 0.0f };
+            bool pendingTriggerPulse{ false };
         };
 
         struct TransparentStringHash
@@ -79,22 +109,44 @@ namespace dualpad::input::backend
         std::optional<std::uint8_t> ResolveScancode(std::string_view actionId, InputContext context) const;
         bool IsTextEntryActive() const;
         bool IsTextSafeScancode(std::uint8_t scancode) const;
-        void StagePulseLocked(std::uint8_t scancode);
+        void StageWindowedPulseLocked(std::uint8_t scancode);
+        void StageTransactionalPulseLocked(std::uint8_t scancode);
+        bool SubmitScheduledPulseActionState(
+            std::string_view actionId,
+            ActionOutputContract contract,
+            bool pressed,
+            float heldSeconds,
+            InputContext context);
+        void QueueScheduledPulseLocked(ActiveKeyboardAction& action);
+        void AppendScheduledPulseStateLocked(DesiredKeyboardState& desiredState);
+        void AdvanceScheduledPulseActionsLocked();
         bool IsDebugLoggingEnabled() const;
         void ConsumeDesiredStateLocked(
-            std::array<std::uint8_t, 256>& desiredCounts,
-            std::array<std::uint8_t, 256>& pendingPulseCounts,
+            DesiredKeyboardState& desiredState,
             std::array<bool, 256>& syntheticPrevDown);
         void MarkProbeScancodeLocked(std::uint8_t scancode);
+        bool CanEmitActionNow(std::string_view actionId, InputContext context) const;
+        void FlushDeferredActionsIfReady();
+        void StageDeferredTriggerLocked(
+            std::string_view actionId,
+            ActionOutputContract contract,
+            InputContext context);
+        void StageDeferredStateLocked(
+            std::string_view actionId,
+            ActionOutputContract contract,
+            bool pressed,
+            float heldSeconds,
+            InputContext context);
+        void SuspendActiveActionLocked(std::string_view actionId);
 
         std::mutex _mutex;
-        std::array<std::uint8_t, 256> _desiredRefCounts{};
+        DesiredKeyboardState _localDesiredState{};
         std::array<std::uint8_t, 256> _bridgeDesiredRefCounts{};
-        std::array<std::uint8_t, 256> _pendingPulseCounts{};
         std::array<bool, 256> _syntheticLatchedDown{};
         std::array<bool, 256> _pendingPostEventProbe{};
         bool _pendingNativeGlobalDebug{ false };
         std::unordered_map<std::string, ActiveKeyboardAction, TransparentStringHash, std::equal_to<>> _activeActionScancodes{};
+        std::unordered_map<std::string, DeferredKeyboardAction, TransparentStringHash, std::equal_to<>> _deferredActions{};
         bool _attemptedInstall{ false };
         bool _installed{ false };
         bool _loggedUnsupportedRuntime{ false };

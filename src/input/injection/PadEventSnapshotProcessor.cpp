@@ -2,6 +2,8 @@
 #include "input/injection/PadEventSnapshotProcessor.h"
 
 #include "input/backend/FrameActionPlanDebugLogger.h"
+#include "input/backend/ActionBackendPolicy.h"
+#include "input/backend/ButtonEventBackend.h"
 #include "input/backend/KeyboardNativeBackend.h"
 #include "input/injection/SyntheticStateDebugLogger.h"
 #include "input/InputContext.h"
@@ -16,13 +18,7 @@ namespace dualpad::input
     {
         bool IsLifecycleAction(std::string_view actionId)
         {
-            return actionId == actions::Sprint ||
-                actionId == actions::Activate ||
-                actionId == actions::Sneak ||
-                actionId == actions::MenuScrollUp ||
-                actionId == actions::MenuScrollDown ||
-                actionId == actions::MenuPageUp ||
-                actionId == actions::MenuPageDown;
+            return backend::ActionBackendPolicy::Decide(actionId).ownsLifecycle;
         }
 
         bool IsSprintObservationEnabled()
@@ -75,6 +71,7 @@ namespace dualpad::input
         _stateReducer.Reset();
         _compatibilityInjector.Reset();
         _nativeInjector.Reset();
+        backend::ButtonEventBackend::GetSingleton().Reset();
         backend::KeyboardNativeBackend::GetSingleton().Reset();
         ResetShadowPlanning();
     }
@@ -164,8 +161,10 @@ namespace dualpad::input
                 continue;
             }
 
-            logger::info("[DualPad][Mapping] Event {} mapped to action {} via {}",
+            logger::info("[DualPad][Mapping] Event {} source=0x{:08X} context={} mapped to action {} via {}",
                 ToString(event.type),
+                event.code,
+                ToString(context),
                 resolved->actionId,
                 ToString(dispatchResult.target));
 

@@ -137,6 +137,7 @@ namespace dualpad::input
         void OnMenuClose(std::string_view menuName);
 
         // Polls player state for gameplay-only transitions such as sneak or death.
+        void UpdateFrameState();
         void UpdateGameplayContext();
 
         void PushContext(InputContext context);

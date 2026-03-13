@@ -44,6 +44,7 @@ namespace dualpad::input::backend
         action.phase = PhaseFromEvent(event);
         action.context = context;
         action.actionId = binding.actionId;
+        action.contract = decision.contract;
         action.sourceCode = event.code;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.modifierMask = event.modifierMask;
@@ -72,6 +73,7 @@ namespace dualpad::input::backend
         action.phase = down ? (heldSeconds > 0.0f ? PlannedActionPhase::Hold : PlannedActionPhase::Press) : PlannedActionPhase::Release;
         action.context = context;
         action.actionId = actionId;
+        action.contract = decision.contract;
         action.sourceCode = sourceCode;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.heldSeconds = heldSeconds;
@@ -93,6 +95,7 @@ namespace dualpad::input::backend
         action.phase = PlannedActionPhase::Value;
         action.context = context;
         action.actionId = actionId;
+        action.contract = decision.contract;
         action.sourceCode = sourceCode;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.valueX = valueX;
