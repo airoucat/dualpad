@@ -4,8 +4,8 @@
 #include <SKSE/Version.h>
 
 #include "input/RuntimeConfig.h"
+#include "input/injection/LegacyNativeButtonSurface.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
-#include "input/injection/PadEventSnapshotProcessor.h"
 #include "input/injection/SeInputEventQueueAccess.h"
 
 #include <array>
@@ -132,17 +132,17 @@ namespace dualpad::input
 
                 RE::InputEvent* combinedHead = head;
                 std::size_t submittedCount = 0;
-                auto& processor = PadEventSnapshotProcessor::GetSingleton();
+                auto& legacySurface = LegacyNativeButtonSurface::GetSingleton();
                 const auto mode = config.GetNativeButtonHookMode();
 
                 if (mode == NativeButtonHookMode::DropProbe) {
-                    submittedCount = processor.GetPendingInjectedButtonCount();
+                    submittedCount = legacySurface.GetPendingInjectedButtonCount();
                     if (submittedCount != 0) {
-                        processor.DiscardPendingInjectedButtonEvents();
+                        legacySurface.DiscardPendingInjectedButtonEvents();
                     }
                 }
                 else if (mode == NativeButtonHookMode::AppendProbe) {
-                    submittedCount = processor.GetPendingInjectedButtonCount();
+                    submittedCount = legacySurface.GetPendingInjectedButtonCount();
                     if (submittedCount != 0) {
                         if (auto* queue = RE::BSInputEventQueue::GetSingleton(); queue) {
                             logger::info(
@@ -154,11 +154,11 @@ namespace dualpad::input
                                 queue->buttonEventCount);
                             LogInputHeadSample(combinedHead, queue);
                         }
-                        processor.DiscardPendingInjectedButtonEvents();
+                        legacySurface.DiscardPendingInjectedButtonEvents();
                     }
                 }
                 else if (mode == NativeButtonHookMode::Append) {
-                    submittedCount = processor.FlushInjectedInputQueue();
+                    submittedCount = legacySurface.FlushInjectedInputQueue();
                     if (submittedCount != 0 && !combinedHead) {
                         if (auto* queue = RE::BSInputEventQueue::GetSingleton(); queue) {
                             combinedHead = detail::GetSEQueueHead(queue);
@@ -175,13 +175,13 @@ namespace dualpad::input
                 }
                 else if (mode == NativeButtonHookMode::HeadPrepend) {
                     RE::InputEvent* combinedTail = nullptr;
-                    submittedCount = processor.PrependInjectedInputQueueEvents(
+                    submittedCount = legacySurface.PrependInjectedInputQueueEvents(
                         combinedHead,
                         combinedTail);
                 }
                 else {
                     RE::InputEvent* combinedTail = nullptr;
-                    submittedCount = processor.PrependInjectedInputQueueEvents(
+                    submittedCount = legacySurface.PrependInjectedInputQueueEvents(
                         combinedHead,
                         combinedTail);
                 }

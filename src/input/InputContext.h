@@ -27,6 +27,8 @@ namespace dualpad::input
         LevelUpMenu,
         RaceSexMenu,
         StatsMenu,
+        // Project-reserved alias for modded UI. Vanilla SE 1.5.97 skill/perk flow
+        // normally remains inside StatsMenu instead of opening an independent menu.
         SkillMenu,
         BookMenu,
         MessageBoxMenu,
@@ -131,6 +133,7 @@ namespace dualpad::input
         static ContextManager& GetSingleton();
 
         InputContext GetCurrentContext() const;
+        std::uint32_t GetCurrentEpoch() const;
 
         // Menu events push and restore UI contexts around their lifetime.
         void OnMenuOpen(std::string_view menuName);
@@ -155,6 +158,7 @@ namespace dualpad::input
 
         InputContext _currentContext{ InputContext::Gameplay };
         InputContext _baseContext{ InputContext::Gameplay };
+        std::uint32_t _contextEpoch{ 1 };
         std::vector<InputContext> _contextStack;
         std::vector<MenuContextEntry> _menuStack;
         mutable std::mutex _mutex;

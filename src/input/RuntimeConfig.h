@@ -42,7 +42,6 @@ namespace dualpad::input
         bool LogActionPlan() const { return _logActionPlan; }
         bool LogNativeInjection() const { return _logNativeInjection; }
         bool LogKeyboardInjection() const { return _logKeyboardInjection; }
-        bool LogSprintObservation() const { return _logSprintObservation; }
 
         bool UseUpstreamGamepadHook() const { return _useUpstreamGamepadHook; }
         UpstreamGamepadHookMode GetUpstreamGamepadHookMode() const { return _upstreamGamepadHookMode; }
@@ -72,7 +71,6 @@ namespace dualpad::input
         bool _logActionPlan{ false };
         bool _logNativeInjection{ false };
         bool _logKeyboardInjection{ false };
-        bool _logSprintObservation{ false };
 
         bool _useUpstreamGamepadHook{ true };
         UpstreamGamepadHookMode _upstreamGamepadHookMode{ UpstreamGamepadHookMode::PollXInputCall };

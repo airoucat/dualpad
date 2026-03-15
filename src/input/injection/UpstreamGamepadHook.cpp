@@ -6,7 +6,7 @@
 
 #include <array>
 
-#include "input/IATHook.h"
+#include "input/XInputStateBridge.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 
 namespace logger = SKSE::log;
@@ -29,10 +29,12 @@ namespace dualpad::input
 
         struct PollXInputCallHook
         {
+            using OriginalXInputGetState_t = std::uint32_t(WINAPI*)(std::uint32_t, void*);
+
             static std::uint32_t WINAPI Thunk(std::uint32_t userIndex, void* currentState)
             {
                 if (!currentState || userIndex != 0) {
-                    return CallOriginalXInputGetState(userIndex, currentState);
+                    return CallOriginal(userIndex, currentState);
                 }
 
                 UpstreamGamepadHook::GetSingleton().NotePollCallActivity();
@@ -93,6 +95,16 @@ namespace dualpad::input
             }
 
             static inline std::uintptr_t _originalTarget{ 0 };
+
+            static std::uint32_t CallOriginal(std::uint32_t userIndex, void* currentState)
+            {
+                const auto original = reinterpret_cast<OriginalXInputGetState_t>(_originalTarget);
+                if (!original) {
+                    return ERROR_DEVICE_NOT_CONNECTED;
+                }
+
+                return original(userIndex, currentState);
+            }
         };
     }
 

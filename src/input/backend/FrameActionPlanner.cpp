@@ -1,10 +1,19 @@
 #include "pch.h"
 #include "input/backend/FrameActionPlanner.h"
 
+#include "input/Action.h"
+#include "input/InputContext.h"
+
 namespace dualpad::input::backend
 {
+    using namespace std::literals;
+
     namespace
     {
+        constexpr std::uint32_t kDefaultPulseMinDownMs = 40;
+        constexpr std::uint32_t kDefaultRepeatDelayMs = 350;
+        constexpr std::uint32_t kDefaultRepeatIntervalMs = 75;
+
         PlannedActionPhase PhaseFromEvent(const PadEvent& event)
         {
             switch (event.type) {
@@ -29,6 +38,79 @@ namespace dualpad::input::backend
                 return PlannedActionPhase::None;
             }
         }
+
+        NativeDigitalPolicyKind ResolveDigitalPolicy(
+            std::string_view actionId,
+            PlannedBackend backend,
+            PlannedActionKind kind,
+            ActionOutputContract contract)
+        {
+            (void)actionId;
+            if (backend != PlannedBackend::ButtonEvent ||
+                kind != PlannedActionKind::NativeButton) {
+                return NativeDigitalPolicyKind::None;
+            }
+
+            switch (contract) {
+            case ActionOutputContract::Hold:
+                return NativeDigitalPolicyKind::HoldOwner;
+            case ActionOutputContract::Repeat:
+                return NativeDigitalPolicyKind::RepeatOwner;
+            case ActionOutputContract::Toggle:
+                return NativeDigitalPolicyKind::ToggleDebounced;
+            case ActionOutputContract::Pulse:
+                return NativeDigitalPolicyKind::PulseMinDown;
+            case ActionOutputContract::Axis:
+            case ActionOutputContract::None:
+            default:
+                return NativeDigitalPolicyKind::None;
+            }
+        }
+
+        bool ResolveGateAware(std::string_view actionId, NativeDigitalPolicyKind policy)
+        {
+            if (policy == NativeDigitalPolicyKind::None) {
+                return false;
+            }
+
+            return actionId == actions::Jump ||
+                actionId == actions::Activate ||
+                actionId == actions::Sprint;
+        }
+
+        std::uint32_t ResolveMinDownMs(std::string_view actionId, NativeDigitalPolicyKind policy)
+        {
+            (void)actionId;
+            if (policy != NativeDigitalPolicyKind::PulseMinDown) {
+                return 0;
+            }
+
+            return kDefaultPulseMinDownMs;
+        }
+
+        std::uint32_t ResolveRepeatDelayMs(NativeDigitalPolicyKind policy)
+        {
+            return policy == NativeDigitalPolicyKind::RepeatOwner ? kDefaultRepeatDelayMs : 0;
+        }
+
+        std::uint32_t ResolveRepeatIntervalMs(NativeDigitalPolicyKind policy)
+        {
+            return policy == NativeDigitalPolicyKind::RepeatOwner ? kDefaultRepeatIntervalMs : 0;
+        }
+
+        void ApplyDigitalMetadata(PlannedAction& action)
+        {
+            action.digitalPolicy = ResolveDigitalPolicy(
+                action.actionId,
+                action.backend,
+                action.kind,
+                action.contract);
+            action.gateAware = ResolveGateAware(action.actionId, action.digitalPolicy);
+            action.minDownMs = ResolveMinDownMs(action.actionId, action.digitalPolicy);
+            action.repeatDelayMs = ResolveRepeatDelayMs(action.digitalPolicy);
+            action.repeatIntervalMs = ResolveRepeatIntervalMs(action.digitalPolicy);
+            action.contextEpoch = ContextManager::GetSingleton().GetCurrentEpoch();
+        }
     }
 
     bool FrameActionPlanner::PlanResolvedEvent(
@@ -45,11 +127,13 @@ namespace dualpad::input::backend
         action.context = context;
         action.actionId = binding.actionId;
         action.contract = decision.contract;
+        action.lifecyclePolicy = decision.lifecyclePolicy;
         action.sourceCode = event.code;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.modifierMask = event.modifierMask;
         action.timestampUs = event.timestampUs;
         action.valueX = event.value;
+        ApplyDigitalMetadata(action);
 
         if (action.phase == PlannedActionPhase::None) {
             return false;
@@ -74,9 +158,11 @@ namespace dualpad::input::backend
         action.context = context;
         action.actionId = actionId;
         action.contract = decision.contract;
+        action.lifecyclePolicy = decision.lifecyclePolicy;
         action.sourceCode = sourceCode;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.heldSeconds = heldSeconds;
+        ApplyDigitalMetadata(action);
         return outPlan.Push(action);
     }
 
@@ -96,10 +182,12 @@ namespace dualpad::input::backend
         action.context = context;
         action.actionId = actionId;
         action.contract = decision.contract;
+        action.lifecyclePolicy = decision.lifecyclePolicy;
         action.sourceCode = sourceCode;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.valueX = valueX;
         action.valueY = valueY;
+        ApplyDigitalMetadata(action);
         return outPlan.Push(action);
     }
 }

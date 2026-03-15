@@ -88,63 +88,6 @@ namespace dualpad::input
             return true;
         }
 
-        if (actionId == actions::TogglePOV) {
-            logger::info("[DualPad][Executor] Scheduling POV toggle on main thread");
-
-            static std::chrono::steady_clock::time_point lastToggleTime;
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastToggleTime).count();
-
-            if (elapsed < 500) {
-                logger::trace("[DualPad][Executor] POV toggle debounced ({}ms)", elapsed);
-                return true;
-            }
-            lastToggleTime = now;
-
-            auto* taskInterface = SKSE::GetTaskInterface();
-            if (taskInterface) {
-                taskInterface->AddTask([]() {
-                    auto* player = RE::PlayerCharacter::GetSingleton();
-                    auto* camera = RE::PlayerCamera::GetSingleton();
-
-                    if (!player || !camera) {
-                        logger::warn("[DualPad][Executor] Player or Camera not found");
-                        return;
-                    }
-
-                    auto* state = camera->currentState.get();
-                    if (!state) {
-                        logger::warn("[DualPad][Executor] Camera state is null");
-                        return;
-                    }
-
-                    try {
-                        bool isFirstPerson = (state->id == RE::CameraState::kFirstPerson);
-
-                        if (isFirstPerson) {
-                            camera->ForceThirdPerson();
-                            logger::info("[DualPad][Executor] Switched to Third Person");
-                        }
-                        else {
-                            camera->ForceFirstPerson();
-                            logger::info("[DualPad][Executor] Switched to First Person");
-                        }
-                    }
-                    catch (const std::exception& e) {
-                        logger::error("[DualPad][Executor] Exception during POV toggle: {}", e.what());
-                    }
-                    catch (...) {
-                        logger::error("[DualPad][Executor] Unknown exception during POV toggle");
-                    }
-                    });
-
-                return true;
-            }
-
-            logger::warn("[DualPad][Executor] Failed to get TaskInterface");
-            return false;
-        }
-
         if (actionId == actions::ToggleHUD) {
             logger::info("[DualPad][Executor] Scheduling HUD toggle on main thread");
 

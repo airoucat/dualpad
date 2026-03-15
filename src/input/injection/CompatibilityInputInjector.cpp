@@ -18,6 +18,14 @@ namespace dualpad::input
         const SyntheticPadFrame& frame,
         std::uint32_t handledButtons)
     {
+        SubmitLegacyDigitalFallback(frame, handledButtons);
+        SubmitAnalogState(frame);
+    }
+
+    void CompatibilityInputInjector::SubmitLegacyDigitalFallback(
+        const SyntheticPadFrame& frame,
+        std::uint32_t handledButtons)
+    {
         if (handledButtons != 0) {
             // Hold/Tap bindings may resolve after the original press already
             // entered the compatibility mask. Clear them explicitly so the
@@ -54,7 +62,10 @@ namespace dualpad::input
         }
 
         _submittedVirtualHeldDown = _virtualHeldDown;
+    }
 
+    void CompatibilityInputInjector::SubmitAnalogState(const SyntheticPadFrame& frame)
+    {
         SyntheticPadState::GetSingleton().SetAxis(
             frame.leftStickX.value,
             frame.leftStickY.value,

@@ -18,7 +18,7 @@ namespace dualpad::input
         }
 
         logger::debug(
-            "[DualPad][Synthetic] seq={} firstSeq={} ctx={} down=0x{:08X} pressed=0x{:08X} released=0x{:08X} held=0x{:08X} pulse=0x{:08X} tap=0x{:08X} hold=0x{:08X} combo=0x{:08X} coalesced={} overflowed={} gestures={} tpPress={} tpRelease={} tpSlide={} ls=({:.3f},{:.3f}) rs=({:.3f},{:.3f}) tr=({:.3f},{:.3f})",
+            "[DualPad][Synthetic] seq={} firstSeq={} ctx={} down=0x{:08X} pressed=0x{:08X} released=0x{:08X} held=0x{:08X} transientPress=0x{:08X} transientRelease=0x{:08X} pulse=0x{:08X} tap=0x{:08X} hold=0x{:08X} combo=0x{:08X} coalesced={} overflowed={} gestures={} tpPress={} tpRelease={} tpSlide={} ls=({:.3f},{:.3f}) rs=({:.3f},{:.3f}) tr=({:.3f},{:.3f})",
             frame.sequence,
             frame.firstSequence,
             ToString(frame.context),
@@ -26,6 +26,8 @@ namespace dualpad::input
             frame.pressedMask,
             frame.releasedMask,
             frame.heldMask,
+            frame.transientPressedMask,
+            frame.transientReleasedMask,
             frame.pulseMask,
             frame.tapMask,
             frame.holdMask,

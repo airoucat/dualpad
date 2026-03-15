@@ -13,16 +13,14 @@ namespace dualpad::input::backend
         {
             return actionId == actions::MenuScrollUp ||
                 actionId == actions::MenuScrollDown ||
-                actionId == actions::MenuPageUp ||
-                actionId == actions::MenuPageDown ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Console.HistoryUp"sv ||
-                actionId == "Console.HistoryDown"sv ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Book.NextPage"sv;
+                actionId == actions::MenuLeft ||
+                actionId == actions::MenuRight ||
+                actionId == actions::DialoguePreviousOption ||
+                actionId == actions::DialogueNextOption ||
+                actionId == actions::FavoritesPreviousItem ||
+                actionId == actions::FavoritesNextItem ||
+                actionId == actions::ConsoleHistoryUp ||
+                actionId == actions::ConsoleHistoryDown;
         }
 
         constexpr bool IsPluginActionId(std::string_view actionId)
@@ -33,7 +31,6 @@ namespace dualpad::input::backend
                 actionId == actions::OpenJournal ||
                 actionId == actions::OpenFavorites ||
                 actionId == actions::OpenSkills ||
-                actionId == actions::TogglePOV ||
                 actionId == actions::ToggleHUD ||
                 actionId == actions::Screenshot ||
                 actionId == actions::Wait ||
@@ -41,16 +38,10 @@ namespace dualpad::input::backend
                 actionId == actions::QuickLoad;
         }
 
-        constexpr NativeControlCode TryMapNativeButton(std::string_view actionId)
+        constexpr NativeControlCode TryMapButtonEventButton(std::string_view actionId)
         {
             if (actionId == actions::Jump) {
                 return NativeControlCode::Jump;
-            }
-            if (actionId == actions::Attack) {
-                return NativeControlCode::Attack;
-            }
-            if (actionId == actions::Block) {
-                return NativeControlCode::Block;
             }
             if (actionId == actions::Activate) {
                 return NativeControlCode::Activate;
@@ -64,36 +55,67 @@ namespace dualpad::input::backend
             if (actionId == actions::Shout) {
                 return NativeControlCode::Shout;
             }
+            if (actionId == actions::TogglePOV) {
+                return NativeControlCode::TogglePOV;
+            }
 
-            if (actionId == actions::MenuConfirm || actionId == "Console.Execute"sv) {
+            // Console.Execute currently reuses the same physical A/Cross
+            // materialization as MenuConfirm. This is a project-side
+            // approximation, not a vanilla one-to-one user-event identity.
+            if (actionId == actions::MenuConfirm || actionId == actions::ConsoleExecute) {
                 return NativeControlCode::MenuConfirm;
             }
-            if (actionId == actions::MenuCancel || actionId == "Book.Close"sv) {
+            if (actionId == actions::MenuCancel || actionId == actions::BookClose) {
                 return NativeControlCode::MenuCancel;
             }
+            // Console history navigation currently reuses the DPad Up/Down
+            // physical materialization from menu scroll. This is a project-side
+            // approximation of the same hardware bit, not a native handler
+            // identity claim.
             if (actionId == actions::MenuScrollUp ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Console.HistoryUp"sv) {
+                actionId == actions::DialoguePreviousOption ||
+                actionId == actions::FavoritesPreviousItem ||
+                actionId == actions::ConsoleHistoryUp) {
                 return NativeControlCode::MenuScrollUp;
             }
             if (actionId == actions::MenuScrollDown ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Console.HistoryDown"sv) {
+                actionId == actions::DialogueNextOption ||
+                actionId == actions::FavoritesNextItem ||
+                actionId == actions::ConsoleHistoryDown) {
                 return NativeControlCode::MenuScrollDown;
             }
+            if (actionId == actions::MenuLeft) {
+                return NativeControlCode::MenuLeft;
+            }
+            if (actionId == actions::MenuRight) {
+                return NativeControlCode::MenuRight;
+            }
             if (actionId == actions::MenuPageUp ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Menu.SortByName"sv) {
+                actionId == actions::MenuSortByName) {
                 return NativeControlCode::MenuPageUp;
             }
             if (actionId == actions::MenuPageDown ||
-                actionId == "Book.NextPage"sv ||
-                actionId == "Menu.SortByValue"sv) {
+                actionId == actions::MenuSortByValue) {
                 return NativeControlCode::MenuPageDown;
             }
+            if (actionId == actions::BookPreviousPage) {
+                return NativeControlCode::BookPreviousPage;
+            }
+            if (actionId == actions::BookNextPage) {
+                return NativeControlCode::BookNextPage;
+            }
 
+            return NativeControlCode::None;
+        }
+
+        constexpr NativeControlCode TryMapCompatibilityNativeButton(std::string_view actionId)
+        {
+            if (actionId == actions::Attack) {
+                return NativeControlCode::Attack;
+            }
+            if (actionId == actions::Block) {
+                return NativeControlCode::Block;
+            }
             return NativeControlCode::None;
         }
 
@@ -132,7 +154,10 @@ namespace dualpad::input::backend
 
         constexpr ActionOutputContract ResolveDigitalContract(std::string_view actionId)
         {
-            if (actionId == actions::Sprint) {
+            if (actionId == actions::Sprint ||
+                actionId == actions::Attack ||
+                actionId == actions::Block ||
+                actionId == actions::Shout) {
                 return ActionOutputContract::Hold;
             }
             if (actionId == actions::Sneak) {
@@ -145,17 +170,38 @@ namespace dualpad::input::backend
             return ActionOutputContract::Pulse;
         }
 
-        constexpr bool ShouldOwnLifecycle(std::string_view actionId, ActionOutputContract contract)
+        constexpr ActionLifecyclePolicy ResolveLifecyclePolicy(std::string_view actionId, ActionOutputContract contract)
         {
             switch (contract) {
             case ActionOutputContract::Hold:
+                return ActionLifecyclePolicy::HoldOwner;
             case ActionOutputContract::Toggle:
+                return ActionLifecyclePolicy::ToggleOwner;
             case ActionOutputContract::Repeat:
+                return ActionLifecyclePolicy::RepeatOwner;
             case ActionOutputContract::Axis:
-                return true;
+                return ActionLifecyclePolicy::AxisValue;
             case ActionOutputContract::Pulse:
-                return actionId == actions::Activate;
+                return actionId == actions::Activate ?
+                    ActionLifecyclePolicy::MinDownWindowPulse :
+                    ActionLifecyclePolicy::DeferredPulse;
             case ActionOutputContract::None:
+            default:
+                return ActionLifecyclePolicy::None;
+            }
+        }
+
+        constexpr bool ShouldOwnLifecycle(ActionLifecyclePolicy policy)
+        {
+            switch (policy) {
+            case ActionLifecyclePolicy::HoldOwner:
+            case ActionLifecyclePolicy::ToggleOwner:
+            case ActionLifecyclePolicy::RepeatOwner:
+            case ActionLifecyclePolicy::AxisValue:
+                return true;
+            case ActionLifecyclePolicy::DeferredPulse:
+            case ActionLifecyclePolicy::MinDownWindowPulse:
+            case ActionLifecyclePolicy::None:
             default:
                 return false;
             }
@@ -169,6 +215,7 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::Plugin,
                 .kind = PlannedActionKind::PluginAction,
                 .contract = ActionOutputContract::Pulse,
+                .lifecyclePolicy = ActionLifecyclePolicy::None,
                 .nativeCode = NativeControlCode::None,
                 .ownsLifecycle = false
             };
@@ -179,6 +226,7 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::KeyboardNative,
                 .kind = PlannedActionKind::KeyboardKey,
                 .contract = ActionOutputContract::Pulse,
+                .lifecyclePolicy = ActionLifecyclePolicy::None,
                 .nativeCode = NativeControlCode::None,
                 .ownsLifecycle = false
             };
@@ -189,19 +237,35 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::ModEvent,
                 .kind = PlannedActionKind::ModEvent,
                 .contract = ActionOutputContract::Pulse,
+                .lifecyclePolicy = ActionLifecyclePolicy::None,
                 .nativeCode = NativeControlCode::None,
                 .ownsLifecycle = false
             };
         }
 
-        if (const auto nativeButton = TryMapNativeButton(actionId); nativeButton != NativeControlCode::None) {
+        if (const auto nativeButton = TryMapButtonEventButton(actionId); nativeButton != NativeControlCode::None) {
             const auto contract = ResolveDigitalContract(actionId);
+            const auto lifecyclePolicy = ResolveLifecyclePolicy(actionId, contract);
+            return {
+                .backend = PlannedBackend::ButtonEvent,
+                .kind = PlannedActionKind::NativeButton,
+                .contract = contract,
+                .lifecyclePolicy = lifecyclePolicy,
+                .nativeCode = nativeButton,
+                .ownsLifecycle = ShouldOwnLifecycle(lifecyclePolicy)
+            };
+        }
+
+        if (const auto nativeButton = TryMapCompatibilityNativeButton(actionId); nativeButton != NativeControlCode::None) {
+            const auto contract = ResolveDigitalContract(actionId);
+            const auto lifecyclePolicy = ResolveLifecyclePolicy(actionId, contract);
             return {
                 .backend = PlannedBackend::CompatibilityFallback,
                 .kind = PlannedActionKind::NativeButton,
                 .contract = contract,
+                .lifecyclePolicy = lifecyclePolicy,
                 .nativeCode = nativeButton,
-                .ownsLifecycle = ShouldOwnLifecycle(actionId, contract)
+                .ownsLifecycle = ShouldOwnLifecycle(lifecyclePolicy)
             };
         }
 
@@ -213,6 +277,7 @@ namespace dualpad::input::backend
                 .backend = PlannedBackend::NativeState,
                 .kind = kind,
                 .contract = ActionOutputContract::Axis,
+                .lifecyclePolicy = ActionLifecyclePolicy::AxisValue,
                 .nativeCode = axis,
                 .ownsLifecycle = true
             };
@@ -222,6 +287,7 @@ namespace dualpad::input::backend
             .backend = PlannedBackend::CompatibilityFallback,
             .kind = PlannedActionKind::NativeButton,
             .contract = ActionOutputContract::Pulse,
+            .lifecyclePolicy = ActionLifecyclePolicy::None,
             .nativeCode = NativeControlCode::None,
             .ownsLifecycle = false
         };

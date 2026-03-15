@@ -1007,32 +1007,32 @@ namespace dualpad::input::backend
             if (actionId == actions::Shout) {
                 return kShout;
             }
-            if (actionId == actions::MenuConfirm || actionId == "Console.Execute"sv) {
+            if (actionId == actions::MenuConfirm || actionId == actions::ConsoleExecute) {
                 return kAccept;
             }
-            if (actionId == actions::MenuCancel || actionId == "Book.Close"sv) {
+            if (actionId == actions::MenuCancel || actionId == actions::BookClose) {
                 return kCancel;
             }
             if (actionId == actions::MenuScrollUp ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Console.HistoryUp"sv) {
+                actionId == actions::DialoguePreviousOption ||
+                actionId == actions::FavoritesPreviousItem ||
+                actionId == actions::ConsoleHistoryUp) {
                 return kUp;
             }
             if (actionId == actions::MenuScrollDown ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Console.HistoryDown"sv) {
+                actionId == actions::DialogueNextOption ||
+                actionId == actions::FavoritesNextItem ||
+                actionId == actions::ConsoleHistoryDown) {
                 return kDown;
             }
             if (actionId == actions::MenuPageUp ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Menu.SortByName"sv) {
+                actionId == actions::BookPreviousPage ||
+                actionId == actions::MenuSortByName) {
                 return kPrevPage;
             }
             if (actionId == actions::MenuPageDown ||
-                actionId == "Book.NextPage"sv ||
-                actionId == "Menu.SortByValue"sv) {
+                actionId == actions::BookNextPage ||
+                actionId == actions::MenuSortByValue) {
                 return kNextPage;
             }
 
@@ -1058,32 +1058,32 @@ namespace dualpad::input::backend
             if (actionId == actions::Shout) {
                 return static_cast<std::uint8_t>(DIK_Z);
             }
-            if (actionId == actions::MenuConfirm || actionId == "Console.Execute"sv) {
+            if (actionId == actions::MenuConfirm || actionId == actions::ConsoleExecute) {
                 return static_cast<std::uint8_t>(DIK_RETURN);
             }
-            if (actionId == actions::MenuCancel || actionId == "Book.Close"sv) {
+            if (actionId == actions::MenuCancel || actionId == actions::BookClose) {
                 return static_cast<std::uint8_t>(DIK_TAB);
             }
             if (actionId == actions::MenuScrollUp ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Console.HistoryUp"sv) {
+                actionId == actions::DialoguePreviousOption ||
+                actionId == actions::FavoritesPreviousItem ||
+                actionId == actions::ConsoleHistoryUp) {
                 return static_cast<std::uint8_t>(DIK_UP);
             }
             if (actionId == actions::MenuScrollDown ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Console.HistoryDown"sv) {
+                actionId == actions::DialogueNextOption ||
+                actionId == actions::FavoritesNextItem ||
+                actionId == actions::ConsoleHistoryDown) {
                 return static_cast<std::uint8_t>(DIK_DOWN);
             }
             if (actionId == actions::MenuPageUp ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Menu.SortByName"sv) {
+                actionId == actions::BookPreviousPage ||
+                actionId == actions::MenuSortByName) {
                 return static_cast<std::uint8_t>(DIK_PRIOR);
             }
             if (actionId == actions::MenuPageDown ||
-                actionId == "Book.NextPage"sv ||
-                actionId == "Menu.SortByValue"sv) {
+                actionId == actions::BookNextPage ||
+                actionId == actions::MenuSortByValue) {
                 return static_cast<std::uint8_t>(DIK_NEXT);
             }
 
@@ -1098,18 +1098,18 @@ namespace dualpad::input::backend
                 actionId == actions::MenuScrollDown ||
                 actionId == actions::MenuPageUp ||
                 actionId == actions::MenuPageDown ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Book.NextPage"sv ||
-                actionId == "Book.Close"sv ||
-                actionId == "Menu.SortByName"sv ||
-                actionId == "Menu.SortByValue"sv ||
-                actionId == "Console.Execute"sv ||
-                actionId == "Console.HistoryUp"sv ||
-                actionId == "Console.HistoryDown"sv) {
+                actionId == actions::DialoguePreviousOption ||
+                actionId == actions::DialogueNextOption ||
+                actionId == actions::FavoritesPreviousItem ||
+                actionId == actions::FavoritesNextItem ||
+                actionId == actions::BookPreviousPage ||
+                actionId == actions::BookNextPage ||
+                actionId == actions::BookClose ||
+                actionId == actions::MenuSortByName ||
+                actionId == actions::MenuSortByValue ||
+                actionId == actions::ConsoleExecute ||
+                actionId == actions::ConsoleHistoryUp ||
+                actionId == actions::ConsoleHistoryDown) {
                 return ResolveFallbackScancode(actionId);
             }
 

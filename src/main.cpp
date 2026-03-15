@@ -4,7 +4,7 @@
 
 #include "input/HidReader.h"
 
-#include "input/IATHook.h"
+#include "input/XInputHapticsBridge.h"
 
 #include "input/ContextEventSink.h"
 
@@ -93,17 +93,17 @@ namespace
 
             dualpad::input::custom::CustomActionDispatcher::GetSingleton().Start();
 
-            const bool usesXInput = dualpad::input::InstallXInputIATHook();
+            const bool usesXInputSetState = dualpad::input::InstallXInputHapticsBridge();
 
-            if (usesXInput) {
+            if (usesXInputSetState) {
 
-                logger::info("[DualPad] XInput IAT hook active");
+                logger::info("[DualPad] XInputSetState IAT hook active for haptics");
 
             }
 
             else {
 
-                logger::warn("[DualPad] Skyrim does not use XInput");
+                logger::warn("[DualPad] Skyrim does not expose XInputSetState; haptics bridge disabled");
 
             }
 

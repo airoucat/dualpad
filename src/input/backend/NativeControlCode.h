@@ -15,12 +15,17 @@ namespace dualpad::input::backend
         Sprint,
         Sneak,
         Shout,
+        TogglePOV,
         MenuConfirm,
         MenuCancel,
         MenuScrollUp,
         MenuScrollDown,
+        MenuLeft,
+        MenuRight,
         MenuPageUp,
         MenuPageDown,
+        BookPreviousPage,
+        BookNextPage,
         MoveStick,
         LookStick,
         MenuStick,
@@ -45,18 +50,28 @@ namespace dualpad::input::backend
             return 1u << 5;
         case NativeControlCode::Shout:
             return 1u << 6;
-        case NativeControlCode::MenuConfirm:
+        case NativeControlCode::TogglePOV:
             return 1u << 7;
-        case NativeControlCode::MenuCancel:
+        case NativeControlCode::MenuConfirm:
             return 1u << 8;
-        case NativeControlCode::MenuScrollUp:
+        case NativeControlCode::MenuCancel:
             return 1u << 9;
-        case NativeControlCode::MenuScrollDown:
+        case NativeControlCode::MenuScrollUp:
             return 1u << 10;
-        case NativeControlCode::MenuPageUp:
+        case NativeControlCode::MenuScrollDown:
             return 1u << 11;
-        case NativeControlCode::MenuPageDown:
+        case NativeControlCode::MenuLeft:
             return 1u << 12;
+        case NativeControlCode::MenuRight:
+            return 1u << 13;
+        case NativeControlCode::MenuPageUp:
+            return 1u << 14;
+        case NativeControlCode::MenuPageDown:
+            return 1u << 15;
+        case NativeControlCode::BookPreviousPage:
+            return 1u << 16;
+        case NativeControlCode::BookNextPage:
+            return 1u << 17;
         case NativeControlCode::None:
         case NativeControlCode::MoveStick:
         case NativeControlCode::LookStick:
@@ -85,6 +100,8 @@ namespace dualpad::input::backend
             return "Sneak";
         case NativeControlCode::Shout:
             return "Shout";
+        case NativeControlCode::TogglePOV:
+            return "TogglePOV";
         case NativeControlCode::MenuConfirm:
             return "MenuConfirm";
         case NativeControlCode::MenuCancel:
@@ -93,10 +110,18 @@ namespace dualpad::input::backend
             return "MenuScrollUp";
         case NativeControlCode::MenuScrollDown:
             return "MenuScrollDown";
+        case NativeControlCode::MenuLeft:
+            return "MenuLeft";
+        case NativeControlCode::MenuRight:
+            return "MenuRight";
         case NativeControlCode::MenuPageUp:
             return "MenuPageUp";
         case NativeControlCode::MenuPageDown:
             return "MenuPageDown";
+        case NativeControlCode::BookPreviousPage:
+            return "BookPreviousPage";
+        case NativeControlCode::BookNextPage:
+            return "BookNextPage";
         case NativeControlCode::MoveStick:
             return "MoveStick";
         case NativeControlCode::LookStick:

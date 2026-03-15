@@ -56,6 +56,8 @@ namespace dualpad::input
         TransportType transport{ TransportType::Unknown };
         TransportConfidence transportConfidence{ TransportConfidence::Unknown };
         std::uint8_t reportId{ 0 };
+        // Borrowed view into DualSenseDevice's internal read buffer. Callers must
+        // consume it before the next ReadPacket() overwrites the storage.
         const std::uint8_t* data{ nullptr };
         std::size_t size{ 0 };
         std::uint64_t timestampUs{ 0 };

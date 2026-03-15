@@ -136,6 +136,7 @@ namespace dualpad::input
 
         for (std::size_t i = 0; i < snapshot.events.count; ++i) {
             const auto& event = snapshot.events[i];
+            const auto eventTimestampUs = event.timestampUs != 0 ? event.timestampUs : snapshot.sourceTimestampUs;
 
             const auto updateButtonFlag = [&](std::uint32_t mask, auto flagSetter) {
                 if (mask == 0 || !IsSyntheticPadBitCode(mask)) {
@@ -150,12 +151,24 @@ namespace dualpad::input
             case PadEventType::ButtonPress:
                 if (IsSyntheticPadBitCode(event.code)) {
                     transientPressedMask |= event.code;
+                    updateButtonFlag(event.code, [&](SyntheticButtonState& button) {
+                        button.sawPressEdge = true;
+                        if (button.firstPressUs == 0 || eventTimestampUs < button.firstPressUs) {
+                            button.firstPressUs = eventTimestampUs;
+                        }
+                        });
                 }
                 break;
 
             case PadEventType::ButtonRelease:
                 if (IsSyntheticPadBitCode(event.code)) {
                     transientReleasedMask |= event.code;
+                    updateButtonFlag(event.code, [&](SyntheticButtonState& button) {
+                        button.sawReleaseEdge = true;
+                        if (eventTimestampUs > button.lastReleaseUs) {
+                            button.lastReleaseUs = eventTimestampUs;
+                        }
+                        });
                 }
                 break;
 
@@ -207,6 +220,15 @@ namespace dualpad::input
             }
         }
 
+        _latest.transientPressedMask = transientPressedMask;
+        _latest.transientReleasedMask = transientReleasedMask;
         _latest.pulseMask = (transientPressedMask & transientReleasedMask) & ~_latest.downMask;
+
+        for (int bitIndex = 0; bitIndex < 32; ++bitIndex) {
+            const auto bit = (1u << bitIndex);
+            if ((_latest.pulseMask & bit) != 0) {
+                _latest.buttons[bitIndex].sawPulse = true;
+            }
+        }
     }
 }

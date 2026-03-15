@@ -251,9 +251,6 @@ namespace dualpad::input
             if (auto it = values.find("log_keyboard_injection"); it != values.end()) {
                 _logKeyboardInjection = ParseBool(it->second, _logKeyboardInjection);
             }
-            if (auto it = values.find("log_sprint_observation"); it != values.end()) {
-                _logSprintObservation = ParseBool(it->second, _logSprintObservation);
-            }
         };
 
         const auto parseInjection = [&](const auto& values) {
@@ -308,7 +305,7 @@ namespace dualpad::input
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} sprint={} injection upstreamGamepad={} upstreamMode={} upstreamKeyboard={} upstreamKeyboardMode={} keyboardSourcePatchTest={} keyboardManagerHeadPatchTest={} keyboardAcceptDumpRouteTest={} nativeButton={} nativeButtonMode={} nativeFrame={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} upstreamKeyboard={} upstreamKeyboardMode={} keyboardSourcePatchTest={} keyboardManagerHeadPatchTest={} keyboardAcceptDumpRouteTest={} nativeButton={} nativeButtonMode={} nativeFrame={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -317,7 +314,6 @@ namespace dualpad::input
             _logActionPlan,
             _logNativeInjection,
             _logKeyboardInjection,
-            _logSprintObservation,
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
             _useUpstreamKeyboardHook,
@@ -372,7 +368,6 @@ namespace dualpad::input
         _logActionPlan = false;
         _logNativeInjection = false;
         _logKeyboardInjection = false;
-        _logSprintObservation = false;
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;

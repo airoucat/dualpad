@@ -15,6 +15,28 @@ namespace dualpad::input
             return (value >= 100 && value < 2000) || context == InputContext::Console;
         }
 
+        constexpr bool IsGameplayDomainContext(InputContext context)
+        {
+            return !IsMenuOwnedContext(context);
+        }
+
+        constexpr bool ShouldAdvanceContextEpoch(InputContext previous, InputContext next)
+        {
+            if (previous == next) {
+                return false;
+            }
+
+            if (IsGameplayDomainContext(previous) &&
+                IsGameplayDomainContext(next)) {
+                // Gameplay sub-context flips such as Gameplay <-> Sneaking are
+                // part of the same native digital ownership domain. They should
+                // not invalidate in-flight hold/toggle transactions.
+                return false;
+            }
+
+            return true;
+        }
+
     }
 
     ContextManager& ContextManager::GetSingleton()
@@ -29,14 +51,25 @@ namespace dualpad::input
         return _currentContext;
     }
 
+    std::uint32_t ContextManager::GetCurrentEpoch() const
+    {
+        std::scoped_lock lock(_mutex);
+        return _contextEpoch;
+    }
+
     void ContextManager::RefreshCurrentContextLocked()
     {
+        const auto previousContext = _currentContext;
         if (!_menuStack.empty()) {
             _currentContext = _menuStack.back().context;
-            return;
+        }
+        else {
+            _currentContext = _baseContext;
         }
 
-        _currentContext = _baseContext;
+        if (ShouldAdvanceContextEpoch(previousContext, _currentContext)) {
+            ++_contextEpoch;
+        }
     }
 
     bool ContextManager::ShouldTrackMenu(std::string_view menuName) const
@@ -60,25 +93,31 @@ namespace dualpad::input
         if (menuName == RE::MapMenu::MENU_NAME) return InputContext::MapMenu;
         if (menuName == RE::JournalMenu::MENU_NAME) return InputContext::JournalMenu;
 
-        if (menuName == "DialogueMenu") return InputContext::DialogueMenu;
-        if (menuName == "FavoritesMenu") return InputContext::FavoritesMenu;
-        if (menuName == "TweenMenu") return InputContext::TweenMenu;
-        if (menuName == "ContainerMenu") return InputContext::ContainerMenu;
-        if (menuName == "BarterMenu") return InputContext::BarterMenu;
+        if (menuName == "DialogueMenu" || menuName == "Dialogue Menu") return InputContext::DialogueMenu;
+        if (menuName == "FavoritesMenu" || menuName == "Favorites Menu") return InputContext::FavoritesMenu;
+        if (menuName == "TweenMenu" || menuName == "Tween Menu") return InputContext::TweenMenu;
+        if (menuName == "ContainerMenu" || menuName == "Container Menu") return InputContext::ContainerMenu;
+        if (menuName == "BarterMenu" || menuName == "Barter Menu") return InputContext::BarterMenu;
         if (menuName == "Training Menu") return InputContext::TrainingMenu;
         if (menuName == "LevelUp Menu") return InputContext::LevelUpMenu;
         if (menuName == "RaceSex Menu") return InputContext::RaceSexMenu;
-        if (menuName == "StatsMenu") return InputContext::StatsMenu;
-        if (menuName == "SkillMenu") return InputContext::SkillMenu;
-        if (menuName == "Book Menu") return InputContext::BookMenu;
-        if (menuName == "MessageBoxMenu") return InputContext::MessageBoxMenu;
-        if (menuName == "QuantityMenu") return InputContext::QuantityMenu;
-        if (menuName == "GiftMenu") return InputContext::GiftMenu;
-        if (menuName == "Creations Menu") return InputContext::CreationsMenu;
+        if (menuName == "StatsMenu" || menuName == "Stats Menu") return InputContext::StatsMenu;
+        // Project-reserved alias for modded UI. Vanilla SE 1.5.97 skill/perk
+        // flow is expected to remain under StatsMenu.
+        if (menuName == "SkillMenu" || menuName == "Skill Menu") return InputContext::SkillMenu;
+        if (menuName == "Book Menu" || menuName == "BookMenu") return InputContext::BookMenu;
+        if (menuName == "MessageBoxMenu" || menuName == "MessageBox Menu") return InputContext::MessageBoxMenu;
+        if (menuName == "QuantityMenu" || menuName == "Quantity Menu") return InputContext::QuantityMenu;
+        if (menuName == "GiftMenu" || menuName == "Gift Menu") return InputContext::GiftMenu;
+        if (menuName == "Creations Menu" || menuName == "Creation Club Menu" || menuName == "Mod Manager Menu") return InputContext::CreationsMenu;
 
-        if (menuName == "Console") return InputContext::Console;
-        if (menuName == "Lockpicking Menu") return InputContext::Lockpicking;
-        if (menuName == "Loading Menu") return InputContext::Menu;
+        if (menuName == "Console" || menuName == "Console Native UI Menu") return InputContext::Console;
+        if (menuName == "Lockpicking Menu" || menuName == "LockpickingMenu") return InputContext::Lockpicking;
+        if (menuName == "Loading Menu" || menuName == "Main Menu" || menuName == "Credits Menu" ||
+            menuName == "Crafting Menu" || menuName == "TitleSequence Menu" || menuName == "Sleep/Wait Menu" ||
+            menuName == "Kinect Menu" || menuName == "SafeZoneMenu" || menuName == "StreamingInstallMenu") {
+            return InputContext::Menu;
+        }
 
         return InputContext::Menu;
     }

@@ -2,14 +2,12 @@
 #include "input/injection/NativeInputInjector.h"
 
 #include "input/Action.h"
-#include "input/PadProfile.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/NativeInputPreControlMapHook.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/SeInputEventQueueAccess.h"
 
 #include <array>
-#include <cmath>
 #include <span>
 
 namespace logger = SKSE::log;
@@ -19,12 +17,6 @@ namespace dualpad::input
     namespace
     {
         using ContextID = RE::ControlMap::InputContextID;
-
-        struct NativeRawButtonBinding
-        {
-            std::uint32_t padBit{ 0 };
-            std::uint32_t gamepadId{ RE::ControlMap::kInvalid };
-        };
 
         constexpr NativeButtonActionBinding kButtonBindings[] = {
             { actions::Jump, "Jump", ContextID::kGameplay, 0x8000 },
@@ -145,40 +137,6 @@ namespace dualpad::input
         constexpr std::array kFavorCandidates = {
             "Cancel"sv
         };
-
-        constexpr float kAxisEpsilon = 0.0001f;
-        constexpr float kThumbstickDeadzone = 0.08f;
-        constexpr float kThumbstickDeltaEpsilon = 0.01f;
-
-        float ApplyThumbstickDeadzone(float value)
-        {
-            return std::fabs(value) >= kThumbstickDeadzone ? value : 0.0f;
-        }
-
-        std::span<const NativeRawButtonBinding> GetDigitalButtonBindings()
-        {
-            static const auto bindings = []() {
-                const auto& bits = GetPadBits(GetActivePadProfile());
-                return std::array{
-                    NativeRawButtonBinding{ bits.dpadUp, 0x0001 },
-                    NativeRawButtonBinding{ bits.dpadDown, 0x0002 },
-                    NativeRawButtonBinding{ bits.dpadLeft, 0x0004 },
-                    NativeRawButtonBinding{ bits.dpadRight, 0x0008 },
-                    NativeRawButtonBinding{ bits.options, 0x0010 },
-                    NativeRawButtonBinding{ bits.create, 0x0020 },
-                    NativeRawButtonBinding{ bits.l3, 0x0040 },
-                    NativeRawButtonBinding{ bits.r3, 0x0080 },
-                    NativeRawButtonBinding{ bits.l1, 0x0100 },
-                    NativeRawButtonBinding{ bits.r1, 0x0200 },
-                    NativeRawButtonBinding{ bits.cross, 0x1000 },
-                    NativeRawButtonBinding{ bits.circle, 0x2000 },
-                    NativeRawButtonBinding{ bits.square, 0x4000 },
-                    NativeRawButtonBinding{ bits.triangle, 0x8000 },
-                };
-            }();
-
-            return bindings;
-        }
 
         std::span<const ContextID> ResolveContextSearchOrder(InputContext context)
         {
@@ -319,41 +277,6 @@ namespace dualpad::input
             }
         }
 
-        float ComputeReleaseHeldSeconds(const SyntheticButtonState& button)
-        {
-            if (button.releasedAtUs > button.pressedAtUs && button.pressedAtUs != 0) {
-                return static_cast<float>(button.releasedAtUs - button.pressedAtUs) / 1000000.0f;
-            }
-
-            return button.heldSeconds;
-        }
-
-        bool ShouldQueueThumbstick(
-            const SyntheticAxisState& xAxis,
-            const SyntheticAxisState& yAxis,
-            float lastX,
-            float lastY,
-            bool wasActive,
-            float& filteredX,
-            float& filteredY,
-            bool& isActive)
-        {
-            filteredX = ApplyThumbstickDeadzone(xAxis.value);
-            filteredY = ApplyThumbstickDeadzone(yAxis.value);
-            isActive = std::fabs(filteredX) > kAxisEpsilon || std::fabs(filteredY) > kAxisEpsilon;
-
-            if (!isActive && !wasActive) {
-                return false;
-            }
-
-            const bool activeChanged = isActive != wasActive;
-            const bool deltaChanged =
-                std::fabs(filteredX - lastX) > kThumbstickDeltaEpsilon ||
-                std::fabs(filteredY - lastY) > kThumbstickDeltaEpsilon;
-
-            return activeChanged || deltaChanged || ((xAxis.changed || yAxis.changed) && isActive);
-        }
-
         RE::InputEvent* FindInputEventTail(RE::InputEvent* head)
         {
             auto* tail = head;
@@ -379,220 +302,6 @@ namespace dualpad::input
     {
         ClearStagedButtonEvents();
         ReleaseInjectedButtonEvents();
-        _submittedDownMask = 0;
-        _pendingDigitalReleaseMask = 0;
-        _leftTriggerPressedAtUs = 0;
-        _rightTriggerPressedAtUs = 0;
-        _pendingDigitalReleaseHeldSeconds.fill(0.0f);
-        _lastLeftThumbX = 0.0f;
-        _lastLeftThumbY = 0.0f;
-        _lastRightThumbX = 0.0f;
-        _lastRightThumbY = 0.0f;
-        _leftThumbActive = false;
-        _rightThumbActive = false;
-    }
-
-    std::uint32_t NativeInputInjector::SubmitDigitalButtons(const SyntheticPadFrame& frame, std::uint32_t handledButtons)
-    {
-        if (!IsAvailable()) {
-            return 0;
-        }
-
-        return SubmitDigitalButtonsInternal(frame, handledButtons);
-    }
-
-    void NativeInputInjector::SubmitFrame(const SyntheticPadFrame& frame, std::uint32_t handledButtons)
-    {
-        if (!IsAvailable()) {
-            return;
-        }
-
-        (void)SubmitDigitalButtonsInternal(frame, handledButtons);
-
-        const auto& bits = GetPadBits(GetActivePadProfile());
-        const auto submitTrigger = [&](std::uint32_t padBit,
-                                   std::uint32_t gamepadId,
-                                   const SyntheticAxisState& axisState,
-                                   std::uint64_t& pressedAtUs) {
-            const bool blocked = (handledButtons & padBit) != 0;
-            const bool active = (_submittedDownMask & padBit) != 0;
-            const float value = std::clamp(axisState.value, 0.0f, 1.0f);
-
-            if (blocked) {
-                if (active &&
-                    QueueRawButton(gamepadId, frame.context, 0.0f,
-                        pressedAtUs != 0 && frame.sourceTimestampUs >= pressedAtUs ?
-                            static_cast<float>(frame.sourceTimestampUs - pressedAtUs) / 1000000.0f :
-                            0.0f)) {
-                    _submittedDownMask &= ~padBit;
-                    pressedAtUs = 0;
-                }
-                return;
-            }
-
-            if (value > kAxisEpsilon) {
-                if (!active) {
-                    pressedAtUs = frame.sourceTimestampUs;
-                }
-
-                const auto heldSeconds =
-                    pressedAtUs != 0 && frame.sourceTimestampUs >= pressedAtUs ?
-                    static_cast<float>(frame.sourceTimestampUs - pressedAtUs) / 1000000.0f :
-                    0.0f;
-
-                if (QueueRawButton(gamepadId, frame.context, value, active ? heldSeconds : 0.0f)) {
-                    _submittedDownMask |= padBit;
-                }
-                return;
-            }
-
-            if ((axisState.changed || active) && active) {
-                const auto heldSeconds =
-                    pressedAtUs != 0 && frame.sourceTimestampUs >= pressedAtUs ?
-                    static_cast<float>(frame.sourceTimestampUs - pressedAtUs) / 1000000.0f :
-                    0.0f;
-
-                if (QueueRawButton(gamepadId, frame.context, 0.0f, heldSeconds)) {
-                    _submittedDownMask &= ~padBit;
-                    pressedAtUs = 0;
-                }
-            }
-        };
-
-        submitTrigger(bits.l2Button, 0x0009, frame.leftTrigger, _leftTriggerPressedAtUs);
-        submitTrigger(bits.r2Button, 0x000A, frame.rightTrigger, _rightTriggerPressedAtUs);
-
-        const auto submitThumbstick = [&](RE::ThumbstickEvent::InputType inputType,
-                                      const SyntheticAxisState& xAxis,
-                                      const SyntheticAxisState& yAxis,
-                                      float& lastX,
-                                      float& lastY,
-                                      bool& wasActive) {
-            float filteredX = 0.0f;
-            float filteredY = 0.0f;
-            bool isActive = false;
-            if (!ShouldQueueThumbstick(
-                    xAxis,
-                    yAxis,
-                    lastX,
-                    lastY,
-                    wasActive,
-                    filteredX,
-                    filteredY,
-                    isActive)) {
-                return;
-            }
-
-            if (QueueThumbstick(inputType, filteredX, filteredY)) {
-                lastX = filteredX;
-                lastY = filteredY;
-                wasActive = isActive;
-            }
-        };
-
-        submitThumbstick(
-            RE::ThumbstickEvent::InputType::kLeftThumbstick,
-            frame.leftStickX,
-            frame.leftStickY,
-            _lastLeftThumbX,
-            _lastLeftThumbY,
-            _leftThumbActive);
-
-        submitThumbstick(
-            RE::ThumbstickEvent::InputType::kRightThumbstick,
-            frame.rightStickX,
-            frame.rightStickY,
-            _lastRightThumbX,
-            _lastRightThumbY,
-            _rightThumbActive);
-    }
-
-    std::uint32_t NativeInputInjector::SubmitDigitalButtonsInternal(
-        const SyntheticPadFrame& frame,
-        std::uint32_t handledButtons)
-    {
-        std::uint32_t nativeHandledButtons = 0;
-
-        for (const auto& binding : GetDigitalButtonBindings()) {
-            const auto bitIndex = static_cast<std::size_t>(std::countr_zero(binding.padBit));
-            const auto& button = frame.buttons[bitIndex];
-            const bool blocked = (handledButtons & binding.padBit) != 0;
-            const bool wasSubmitted = (_submittedDownMask & binding.padBit) != 0;
-            const bool hasPendingRelease = (_pendingDigitalReleaseMask & binding.padBit) != 0;
-            const bool pulsed = (frame.pulseMask & binding.padBit) != 0;
-
-            if (!blocked && pulsed && !wasSubmitted) {
-                if (QueueRawButton(binding.gamepadId, frame.context, 1.0f, 0.0f)) {
-                    nativeHandledButtons |= binding.padBit;
-                    _submittedDownMask |= binding.padBit;
-
-                    if (QueueRawButton(binding.gamepadId, frame.context, 0.0f, 0.016f)) {
-                        _submittedDownMask &= ~binding.padBit;
-                        _pendingDigitalReleaseMask &= ~binding.padBit;
-                        _pendingDigitalReleaseHeldSeconds[bitIndex] = 0.0f;
-                    }
-                    else {
-                        _pendingDigitalReleaseMask |= binding.padBit;
-                        _pendingDigitalReleaseHeldSeconds[bitIndex] = 0.016f;
-                    }
-                }
-                continue;
-            }
-
-            if (!blocked && button.down) {
-                _pendingDigitalReleaseMask &= ~binding.padBit;
-                _pendingDigitalReleaseHeldSeconds[bitIndex] = 0.0f;
-
-                const auto heldSeconds = button.pressed ? 0.0f : button.heldSeconds;
-                if (!wasSubmitted) {
-                    if (QueueRawButton(binding.gamepadId, frame.context, 1.0f, heldSeconds)) {
-                        _submittedDownMask |= binding.padBit;
-                        nativeHandledButtons |= binding.padBit;
-                    }
-                }
-                else {
-                    nativeHandledButtons |= binding.padBit;
-                    (void)QueueRawButton(binding.gamepadId, frame.context, 1.0f, heldSeconds);
-                }
-                continue;
-            }
-
-            if (wasSubmitted || hasPendingRelease) {
-                nativeHandledButtons |= binding.padBit;
-
-                const auto releaseHeldSeconds = hasPendingRelease ?
-                    _pendingDigitalReleaseHeldSeconds[bitIndex] :
-                    ComputeReleaseHeldSeconds(button);
-
-                if (QueueRawButton(binding.gamepadId, frame.context, 0.0f, releaseHeldSeconds)) {
-                    _submittedDownMask &= ~binding.padBit;
-                    _pendingDigitalReleaseMask &= ~binding.padBit;
-                    _pendingDigitalReleaseHeldSeconds[bitIndex] = 0.0f;
-                }
-                else {
-                    _pendingDigitalReleaseMask |= binding.padBit;
-                    _pendingDigitalReleaseHeldSeconds[bitIndex] = releaseHeldSeconds;
-                }
-            }
-        }
-
-        return nativeHandledButtons;
-    }
-
-    bool NativeInputInjector::IsAvailable() const
-    {
-        return RE::ControlMap::GetSingleton() != nullptr;
-    }
-
-    bool NativeInputInjector::ShouldUseAsMainPath() const
-    {
-        return RuntimeConfig::GetSingleton().UseNativeFrameInjector();
-    }
-
-    bool NativeInputInjector::ShouldUseForButtonActions() const
-    {
-        const auto& config = RuntimeConfig::GetSingleton();
-        return config.UseNativeButtonInjector() || config.UseNativeFrameInjector();
     }
 
     bool NativeInputInjector::CanHandleAction(std::string_view actionId) const
@@ -661,34 +370,6 @@ namespace dualpad::input
                 gamepadId,
                 pressed ? 1.0f : 0.0f,
                 heldSeconds);
-        }
-
-        return true;
-    }
-
-    bool NativeInputInjector::QueueThumbstick(
-        RE::ThumbstickEvent::InputType inputType,
-        float xValue,
-        float yValue) const
-    {
-        auto* queue = RE::BSInputEventQueue::GetSingleton();
-        if (!queue) {
-            return false;
-        }
-
-        if (queue->thumbstickEventCount >= RE::BSInputEventQueue::MAX_THUMBSTICK_EVENTS) {
-            logger::warn("[DualPad][NativeInjector] Thumbstick event queue is full; dropping native axis event");
-            return false;
-        }
-
-        queue->AddThumbstickEvent(inputType, RE::INPUT_DEVICE::kGamepad, xValue, yValue);
-
-        if (IsDebugLoggingEnabled()) {
-            logger::info(
-                "[DualPad][NativeInjector] thumbstick={} x={:.3f} y={:.3f}",
-                inputType == RE::ThumbstickEvent::InputType::kLeftThumbstick ? "Left" : "Right",
-                xValue,
-                yValue);
         }
 
         return true;
@@ -905,123 +586,6 @@ namespace dualpad::input
         if (IsDebugLoggingEnabled()) {
             logger::info(
                 "[DualPad][NativeInjector] Prepended {} staged button events to the independent input queue singleton before ControlMap",
-                submittedCount);
-        }
-
-        return submittedCount;
-    }
-
-    std::size_t NativeInputInjector::PrependStagedButtonEventsUsingQueueCache(RE::InputEvent*& head)
-    {
-        if (_stagedButtonEventCount == 0) {
-            return 0;
-        }
-
-        auto* queue = RE::BSInputEventQueue::GetSingleton();
-        if (!queue) {
-            logger::warn("[DualPad][NativeInjector] Independent input queue singleton is unavailable; dropping staged button events");
-            ClearStagedButtonEvents();
-            return 0;
-        }
-
-        auto& queueHead = detail::GetSEQueueHead(queue);
-        auto& queueTail = detail::GetSEQueueTail(queue);
-        RE::InputEvent* stagedHead = nullptr;
-        RE::InputEvent* stagedTail = nullptr;
-        std::size_t submittedCount = 0;
-        std::size_t droppedCount = 0;
-        const bool logDebug = IsDebugLoggingEnabled();
-
-        if (logDebug) {
-            logger::info(
-                "[DualPad][NativeInjector] HeadPrepend begin staged={} head=0x{:X} buttonCount={} queueHead=0x{:X} queueTail=0x{:X}",
-                _stagedButtonEventCount,
-                reinterpret_cast<std::uintptr_t>(head),
-                queue->buttonEventCount,
-                reinterpret_cast<std::uintptr_t>(queueHead),
-                reinterpret_cast<std::uintptr_t>(queueTail));
-        }
-
-        for (std::size_t i = 0; i < _stagedButtonEventCount; ++i) {
-            const auto& staged = _stagedButtonEvents[i];
-            if (queue->buttonEventCount >= RE::BSInputEventQueue::MAX_BUTTON_EVENTS) {
-                ++droppedCount;
-                continue;
-            }
-
-            const auto slotIndex = queue->buttonEventCount++;
-            auto* buttonEvent = detail::GetSEButtonEventSlot(queue, slotIndex);
-            if (logDebug) {
-                logger::info(
-                    "[DualPad][NativeInjector] HeadPrepend slot idx={} slotIndex={} ptr=0x{:X} id=0x{:04X} value={:.3f} held={:.3f} event={}",
-                    i,
-                    slotIndex,
-                    reinterpret_cast<std::uintptr_t>(buttonEvent),
-                    staged.idCode,
-                    staged.value,
-                    staged.heldSeconds,
-                    staged.userEvent.empty() ? "" : staged.userEvent.c_str());
-            }
-
-            buttonEvent->Init(
-                RE::INPUT_DEVICE::kGamepad,
-                static_cast<std::int32_t>(staged.idCode),
-                staged.value,
-                staged.heldSeconds,
-                staged.userEvent);
-            buttonEvent->device = RE::INPUT_DEVICE::kGamepad;
-            buttonEvent->eventType = RE::INPUT_EVENT_TYPE::kButton;
-            buttonEvent->next = nullptr;
-
-            if (logDebug) {
-                logger::info(
-                    "[DualPad][NativeInjector] HeadPrepend initialized idx={} ptr=0x{:X} next=0x{:X}",
-                    i,
-                    reinterpret_cast<std::uintptr_t>(buttonEvent),
-                    reinterpret_cast<std::uintptr_t>(buttonEvent->next));
-            }
-
-            if (!stagedHead) {
-                stagedHead = buttonEvent;
-            } else {
-                stagedTail->next = buttonEvent;
-            }
-            stagedTail = buttonEvent;
-            ++submittedCount;
-        }
-
-        ClearStagedButtonEvents();
-
-        if (!stagedHead) {
-            if (droppedCount != 0) {
-                logger::warn(
-                    "[DualPad][NativeInjector] Head-prepend dropped {} staged button events because the input queue singleton cache is full",
-                    droppedCount);
-            }
-            return 0;
-        }
-
-        stagedTail->next = head;
-        head = stagedHead;
-
-        if (logDebug) {
-            logger::info(
-                "[DualPad][NativeInjector] HeadPrepend linked submitted={} newHead=0x{:X} newTail=0x{:X} tailNext=0x{:X}",
-                submittedCount,
-                reinterpret_cast<std::uintptr_t>(head),
-                reinterpret_cast<std::uintptr_t>(stagedTail),
-                reinterpret_cast<std::uintptr_t>(stagedTail ? stagedTail->next : nullptr));
-        }
-
-        if (droppedCount != 0) {
-            logger::warn(
-                "[DualPad][NativeInjector] Head-prepend dropped {} staged button events because the input queue singleton cache is full",
-                droppedCount);
-        }
-
-        if (IsDebugLoggingEnabled()) {
-            logger::info(
-                "[DualPad][NativeInjector] Prepended {} staged button events onto the current ControlMap head using queue cache",
                 submittedCount);
         }
 

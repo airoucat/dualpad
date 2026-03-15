@@ -20,8 +20,26 @@ namespace dualpad::input
         inline constexpr std::string_view MenuCancel = "Menu.Cancel";
         inline constexpr std::string_view MenuScrollUp = "Menu.ScrollUp";
         inline constexpr std::string_view MenuScrollDown = "Menu.ScrollDown";
+        inline constexpr std::string_view MenuLeft = "Menu.Left";
+        inline constexpr std::string_view MenuRight = "Menu.Right";
         inline constexpr std::string_view MenuPageUp = "Menu.PageUp";
         inline constexpr std::string_view MenuPageDown = "Menu.PageDown";
+        inline constexpr std::string_view MenuSortByName = "Menu.SortByName";
+        inline constexpr std::string_view MenuSortByValue = "Menu.SortByValue";
+
+        inline constexpr std::string_view ConsoleExecute = "Console.Execute";
+        inline constexpr std::string_view ConsoleHistoryUp = "Console.HistoryUp";
+        inline constexpr std::string_view ConsoleHistoryDown = "Console.HistoryDown";
+
+        inline constexpr std::string_view DialoguePreviousOption = "Dialogue.PreviousOption";
+        inline constexpr std::string_view DialogueNextOption = "Dialogue.NextOption";
+
+        inline constexpr std::string_view FavoritesPreviousItem = "Favorites.PreviousItem";
+        inline constexpr std::string_view FavoritesNextItem = "Favorites.NextItem";
+
+        inline constexpr std::string_view BookClose = "Book.Close";
+        inline constexpr std::string_view BookPreviousPage = "Book.PreviousPage";
+        inline constexpr std::string_view BookNextPage = "Book.NextPage";
 
         // Extended actions that open UI screens or toggle presentation state.
         inline constexpr std::string_view OpenInventory = "Game.OpenInventory";

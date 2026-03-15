@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/InputContext.h"
+#include "input/backend/ActionLifecyclePolicy.h"
 #include "input/backend/ActionOutputContract.h"
 
 #include <array>
@@ -20,6 +21,25 @@ namespace dualpad::input::backend
         CompatibilityFallback
     };
 
+    inline constexpr std::string_view ToString(PlannedBackend backend)
+    {
+        switch (backend) {
+        case PlannedBackend::NativeState:
+            return "NativeState";
+        case PlannedBackend::ButtonEvent:
+            return "ButtonEvent";
+        case PlannedBackend::KeyboardNative:
+            return "KeyboardNative";
+        case PlannedBackend::Plugin:
+            return "Plugin";
+        case PlannedBackend::ModEvent:
+            return "ModEvent";
+        case PlannedBackend::CompatibilityFallback:
+        default:
+            return "CompatibilityFallback";
+        }
+    }
+
     enum class PlannedActionKind : std::uint8_t
     {
         NativeButton = 0,
@@ -29,6 +49,25 @@ namespace dualpad::input::backend
         PluginAction,
         ModEvent
     };
+
+    inline constexpr std::string_view ToString(PlannedActionKind kind)
+    {
+        switch (kind) {
+        case PlannedActionKind::NativeButton:
+            return "NativeButton";
+        case PlannedActionKind::KeyboardKey:
+            return "KeyboardKey";
+        case PlannedActionKind::NativeAxis1D:
+            return "NativeAxis1D";
+        case PlannedActionKind::NativeAxis2D:
+            return "NativeAxis2D";
+        case PlannedActionKind::PluginAction:
+            return "PluginAction";
+        case PlannedActionKind::ModEvent:
+        default:
+            return "ModEvent";
+        }
+    }
 
     enum class PlannedActionPhase : std::uint8_t
     {
@@ -40,6 +79,51 @@ namespace dualpad::input::backend
         Value
     };
 
+    inline constexpr std::string_view ToString(PlannedActionPhase phase)
+    {
+        switch (phase) {
+        case PlannedActionPhase::Pulse:
+            return "Pulse";
+        case PlannedActionPhase::Press:
+            return "Press";
+        case PlannedActionPhase::Hold:
+            return "Hold";
+        case PlannedActionPhase::Release:
+            return "Release";
+        case PlannedActionPhase::Value:
+            return "Value";
+        case PlannedActionPhase::None:
+        default:
+            return "None";
+        }
+    }
+
+    enum class NativeDigitalPolicyKind : std::uint8_t
+    {
+        None = 0,
+        PulseMinDown,
+        HoldOwner,
+        RepeatOwner,
+        ToggleDebounced
+    };
+
+    inline constexpr std::string_view ToString(NativeDigitalPolicyKind policy)
+    {
+        switch (policy) {
+        case NativeDigitalPolicyKind::PulseMinDown:
+            return "PulseMinDown";
+        case NativeDigitalPolicyKind::HoldOwner:
+            return "HoldOwner";
+        case NativeDigitalPolicyKind::RepeatOwner:
+            return "RepeatOwner";
+        case NativeDigitalPolicyKind::ToggleDebounced:
+            return "ToggleDebounced";
+        case NativeDigitalPolicyKind::None:
+        default:
+            return "None";
+        }
+    }
+
     struct PlannedAction
     {
         PlannedBackend backend{ PlannedBackend::CompatibilityFallback };
@@ -48,6 +132,7 @@ namespace dualpad::input::backend
         InputContext context{ InputContext::Gameplay };
         std::string actionId{};
         ActionOutputContract contract{ ActionOutputContract::Pulse };
+        ActionLifecyclePolicy lifecyclePolicy{ ActionLifecyclePolicy::None };
         std::uint32_t sourceCode{ 0 };
         std::uint32_t outputCode{ 0 };
         std::uint32_t modifierMask{ 0 };
@@ -55,6 +140,12 @@ namespace dualpad::input::backend
         float valueX{ 0.0f };
         float valueY{ 0.0f };
         float heldSeconds{ 0.0f };
+        NativeDigitalPolicyKind digitalPolicy{ NativeDigitalPolicyKind::None };
+        bool gateAware{ false };
+        std::uint32_t minDownMs{ 0 };
+        std::uint32_t repeatDelayMs{ 0 };
+        std::uint32_t repeatIntervalMs{ 0 };
+        std::uint32_t contextEpoch{ 0 };
     };
 
     class FrameActionPlan

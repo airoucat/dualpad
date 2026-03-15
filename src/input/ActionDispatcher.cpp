@@ -7,8 +7,8 @@
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/ButtonEventBackend.h"
 #include "input/backend/KeyboardNativeBackend.h"
+#include "input/backend/NativeControlCode.h"
 #include "input/injection/CompatibilityInputInjector.h"
-#include "input/injection/NativeInputInjector.h"
 
 namespace logger = SKSE::log;
 
@@ -16,15 +16,6 @@ namespace dualpad::input
 {
     namespace
     {
-        bool ShouldPreferCompatibilityState(std::string_view actionId)
-        {
-            return actionId == actions::Sprint ||
-                actionId == actions::MenuScrollUp ||
-                actionId == actions::MenuScrollDown ||
-                actionId == actions::MenuPageUp ||
-                actionId == actions::MenuPageDown;
-        }
-
         bool IsSyntheticTouchpadPadEvent(const PadEvent& event)
         {
             switch (event.type) {
@@ -65,38 +56,47 @@ namespace dualpad::input
             if (actionId == actions::Shout) {
                 return bits.r1;
             }
+            if (actionId == actions::TogglePOV) {
+                return bits.r3;
+            }
 
-            if (actionId == actions::MenuConfirm || actionId == "Console.Execute"sv) {
+            if (actionId == actions::MenuConfirm || actionId == actions::ConsoleExecute) {
                 return bits.cross;
             }
 
-            if (actionId == actions::MenuCancel || actionId == "Book.Close"sv) {
+            if (actionId == actions::MenuCancel || actionId == actions::BookClose) {
                 return bits.circle;
             }
 
             if (actionId == actions::MenuScrollUp ||
-                actionId == "Dialogue.PreviousOption"sv ||
-                actionId == "Favorites.PreviousItem"sv ||
-                actionId == "Console.HistoryUp"sv) {
+                actionId == actions::DialoguePreviousOption ||
+                actionId == actions::FavoritesPreviousItem ||
+                actionId == actions::ConsoleHistoryUp) {
                 return bits.dpadUp;
             }
 
             if (actionId == actions::MenuScrollDown ||
-                actionId == "Dialogue.NextOption"sv ||
-                actionId == "Favorites.NextItem"sv ||
-                actionId == "Console.HistoryDown"sv) {
+                actionId == actions::DialogueNextOption ||
+                actionId == actions::FavoritesNextItem ||
+                actionId == actions::ConsoleHistoryDown) {
                 return bits.dpadDown;
+            }
+            if (actionId == actions::MenuLeft ||
+                actionId == actions::BookPreviousPage) {
+                return bits.dpadLeft;
+            }
+            if (actionId == actions::MenuRight ||
+                actionId == actions::BookNextPage) {
+                return bits.dpadRight;
             }
 
             if (actionId == actions::MenuPageUp ||
-                actionId == "Book.PreviousPage"sv ||
-                actionId == "Menu.SortByName"sv) {
+                actionId == actions::MenuSortByName) {
                 return bits.l1;
             }
 
             if (actionId == actions::MenuPageDown ||
-                actionId == "Book.NextPage"sv ||
-                actionId == "Menu.SortByValue"sv) {
+                actionId == actions::MenuSortByValue) {
                 return bits.r1;
             }
 
@@ -136,13 +136,142 @@ namespace dualpad::input
 
             return { true, target };
         }
+
+        ActionDispatchResult TryDispatchPlannedLifecycleBackend(
+            backend::IActionLifecycleBackend& lifecycleBackend,
+            const backend::PlannedAction& action,
+            ActionDispatchTarget target)
+        {
+            switch (action.phase) {
+            case backend::PlannedActionPhase::Pulse:
+                return TryDispatchLifecycleBackend(
+                    lifecycleBackend,
+                    action.actionId,
+                    action.contract,
+                    action.context,
+                    target);
+
+            case backend::PlannedActionPhase::Press:
+            case backend::PlannedActionPhase::Hold:
+                return TryDispatchLifecycleBackendState(
+                    lifecycleBackend,
+                    action.actionId,
+                    action.contract,
+                    true,
+                    action.heldSeconds,
+                    action.context,
+                    target);
+
+            case backend::PlannedActionPhase::Release:
+                return TryDispatchLifecycleBackendState(
+                    lifecycleBackend,
+                    action.actionId,
+                    action.contract,
+                    false,
+                    action.heldSeconds,
+                    action.context,
+                    target);
+
+            case backend::PlannedActionPhase::Value:
+            case backend::PlannedActionPhase::None:
+            default:
+                return {};
+            }
+        }
+
+        std::uint32_t ResolveSemanticBitFromNativeCode(
+            backend::NativeControlCode code,
+            const PadBits& bits)
+        {
+            switch (code) {
+            case backend::NativeControlCode::Jump:
+                return bits.triangle;
+            case backend::NativeControlCode::Activate:
+            case backend::NativeControlCode::MenuConfirm:
+                return bits.cross;
+            case backend::NativeControlCode::Attack:
+                return bits.r2Button;
+            case backend::NativeControlCode::Block:
+                return bits.l2Button;
+            case backend::NativeControlCode::Sprint:
+            case backend::NativeControlCode::MenuPageUp:
+                return bits.l1;
+            case backend::NativeControlCode::Sneak:
+                return bits.l3;
+            case backend::NativeControlCode::Shout:
+            case backend::NativeControlCode::MenuPageDown:
+                return bits.r1;
+            case backend::NativeControlCode::TogglePOV:
+                return bits.r3;
+            case backend::NativeControlCode::MenuCancel:
+                return bits.circle;
+            case backend::NativeControlCode::MenuScrollUp:
+                return bits.dpadUp;
+            case backend::NativeControlCode::MenuScrollDown:
+                return bits.dpadDown;
+            case backend::NativeControlCode::MenuLeft:
+            case backend::NativeControlCode::BookPreviousPage:
+                return bits.dpadLeft;
+            case backend::NativeControlCode::MenuRight:
+            case backend::NativeControlCode::BookNextPage:
+                return bits.dpadRight;
+            case backend::NativeControlCode::None:
+            case backend::NativeControlCode::MoveStick:
+            case backend::NativeControlCode::LookStick:
+            case backend::NativeControlCode::MenuStick:
+            case backend::NativeControlCode::LeftTriggerAxis:
+            case backend::NativeControlCode::RightTriggerAxis:
+            default:
+                return 0;
+            }
+        }
+
+        std::uint32_t ResolvePlannedCompatibilityBit(const backend::PlannedAction& action)
+        {
+            const auto& bits = GetPadBits(GetActivePadProfile());
+            const auto plannedCode = static_cast<backend::NativeControlCode>(action.outputCode);
+            if (const auto semanticBit = ResolveSemanticBitFromNativeCode(plannedCode, bits);
+                semanticBit != 0) {
+                return semanticBit;
+            }
+
+            return ResolveSemanticCompatibilityBit(action.actionId, bits);
+        }
+
+        ActionDispatchResult TryDispatchPlannedCompatibilityAction(
+            const backend::PlannedAction& action,
+            CompatibilityInputInjector& compatibilityInjector)
+        {
+            const auto pulseBit = ResolvePlannedCompatibilityBit(action);
+            if (pulseBit == 0) {
+                return {};
+            }
+
+            switch (action.phase) {
+            case backend::PlannedActionPhase::Pulse:
+                compatibilityInjector.PulseButton(pulseBit, action.actionId);
+                return { true, ActionDispatchTarget::CompatibilityPulse };
+
+            case backend::PlannedActionPhase::Press:
+            case backend::PlannedActionPhase::Hold:
+                compatibilityInjector.SetButtonState(pulseBit, true, action.actionId);
+                return { true, ActionDispatchTarget::CompatibilityState };
+
+            case backend::PlannedActionPhase::Release:
+                compatibilityInjector.SetButtonState(pulseBit, false, action.actionId);
+                return { true, ActionDispatchTarget::CompatibilityState };
+
+            case backend::PlannedActionPhase::Value:
+            case backend::PlannedActionPhase::None:
+            default:
+                return {};
+            }
+        }
     }
 
     ActionDispatcher::ActionDispatcher(
-        CompatibilityInputInjector& compatibilityInjector,
-        NativeInputInjector& nativeInjector) :
-        _compatibilityInjector(compatibilityInjector),
-        _nativeInjector(nativeInjector)
+        CompatibilityInputInjector& compatibilityInjector) :
+        _compatibilityInjector(compatibilityInjector)
     {
     }
 
@@ -155,114 +284,40 @@ namespace dualpad::input
         _compatibilityInjector.PulseButton(event.code, ToString(event.type));
     }
 
-    ActionDispatchResult ActionDispatcher::Dispatch(
-        std::string_view actionId,
-        InputContext context) const
+    ActionDispatchResult ActionDispatcher::DispatchPlannedAction(const backend::PlannedAction& action) const
     {
-        const auto routingDecision = backend::ActionBackendPolicy::Decide(actionId);
-        if (routingDecision.backend == backend::PlannedBackend::ButtonEvent) {
-            if (const auto result = TryDispatchLifecycleBackend(
-                    backend::ButtonEventBackend::GetSingleton(),
-                    actionId,
-                    routingDecision.contract,
-                    context,
-                    ActionDispatchTarget::ButtonEvent);
-                result.handled) {
-                return result;
+        switch (action.backend) {
+        case backend::PlannedBackend::ButtonEvent:
+            if (backend::ButtonEventBackend::GetSingleton().IsRouteActive() &&
+                backend::ButtonEventBackend::GetSingleton().ApplyPlannedAction(action)) {
+                return { true, ActionDispatchTarget::ButtonEvent };
             }
-        }
+            return {};
 
-        if (routingDecision.backend == backend::PlannedBackend::KeyboardNative) {
-            if (const auto result = TryDispatchLifecycleBackend(
-                    backend::KeyboardNativeBackend::GetSingleton(),
-                    actionId,
-                    routingDecision.contract,
-                    context,
-                    ActionDispatchTarget::KeyboardNative);
-                result.handled) {
-                return result;
+        case backend::PlannedBackend::KeyboardNative:
+            return TryDispatchPlannedLifecycleBackend(
+                backend::KeyboardNativeBackend::GetSingleton(),
+                action,
+                ActionDispatchTarget::KeyboardNative);
+
+        case backend::PlannedBackend::Plugin:
+            if ((action.phase == backend::PlannedActionPhase::Pulse ||
+                 action.phase == backend::PlannedActionPhase::Press) &&
+                ActionExecutor::GetSingleton().Execute(action.actionId, action.context)) {
+                return { true, ActionDispatchTarget::Plugin };
             }
+            return {};
+
+        case backend::PlannedBackend::CompatibilityFallback:
+            return TryDispatchPlannedCompatibilityAction(
+                action,
+                _compatibilityInjector);
+
+        case backend::PlannedBackend::NativeState:
+        case backend::PlannedBackend::ModEvent:
+        default:
+            return {};
         }
-
-        if (const auto pulseBit = ResolveCompatibilityPulseBit(actionId); pulseBit != 0) {
-            if (_nativeInjector.ShouldUseForButtonActions() &&
-                _nativeInjector.IsAvailable() &&
-                _nativeInjector.CanHandleAction(actionId) &&
-                _nativeInjector.PulseButtonAction(actionId)) {
-                logger::info("[DualPad][Dispatch] Routed action '{}' through native pulse injection", actionId);
-                return { true, ActionDispatchTarget::NativePulse };
-            }
-
-            _compatibilityInjector.PulseButton(pulseBit, actionId);
-            return { true, ActionDispatchTarget::CompatibilityPulse };
-        }
-
-        if (ActionExecutor::GetSingleton().Execute(actionId, context)) {
-            return { true, ActionDispatchTarget::Plugin };
-        }
-
-        return {};
-    }
-
-    ActionDispatchResult ActionDispatcher::DispatchButtonState(
-        std::string_view actionId,
-        bool down,
-        float heldSeconds,
-        InputContext context) const
-    {
-        const auto routingDecision = backend::ActionBackendPolicy::Decide(actionId);
-        if (routingDecision.backend == backend::PlannedBackend::ButtonEvent) {
-            if (const auto result = TryDispatchLifecycleBackendState(
-                    backend::ButtonEventBackend::GetSingleton(),
-                    actionId,
-                    routingDecision.contract,
-                    down,
-                    heldSeconds,
-                    context,
-                    ActionDispatchTarget::ButtonEvent);
-                result.handled) {
-                return result;
-            }
-        }
-
-        if (routingDecision.backend == backend::PlannedBackend::KeyboardNative) {
-            if (const auto result = TryDispatchLifecycleBackendState(
-                    backend::KeyboardNativeBackend::GetSingleton(),
-                    actionId,
-                    routingDecision.contract,
-                    down,
-                    heldSeconds,
-                    context,
-                    ActionDispatchTarget::KeyboardNative);
-                result.handled) {
-                return result;
-            }
-        }
-
-        if (const auto pulseBit = ResolveCompatibilityPulseBit(actionId); pulseBit != 0) {
-            if (!ShouldPreferCompatibilityState(actionId) &&
-                _nativeInjector.ShouldUseForButtonActions() &&
-                _nativeInjector.IsAvailable() &&
-                _nativeInjector.CanHandleAction(actionId) &&
-                _nativeInjector.QueueButtonAction(actionId, down, heldSeconds)) {
-                return { true, ActionDispatchTarget::NativeState };
-            }
-
-            _compatibilityInjector.SetButtonState(pulseBit, down, actionId);
-            return { true, ActionDispatchTarget::CompatibilityState };
-        }
-
-        if (down && ActionExecutor::GetSingleton().Execute(actionId, context)) {
-            return { true, ActionDispatchTarget::Plugin };
-        }
-
-        return {};
-    }
-
-    std::uint32_t ActionDispatcher::ResolveCompatibilityPulseBit(std::string_view actionId) const
-    {
-        const auto& bits = GetPadBits(GetActivePadProfile());
-        return ResolveSemanticCompatibilityBit(actionId, bits);
     }
 
     std::string_view ToString(ActionDispatchTarget target)
@@ -276,10 +331,6 @@ namespace dualpad::input
             return "CompatibilityPulse";
         case ActionDispatchTarget::CompatibilityState:
             return "CompatibilityState";
-        case ActionDispatchTarget::NativePulse:
-            return "NativePulse";
-        case ActionDispatchTarget::NativeState:
-            return "NativeState";
         case ActionDispatchTarget::Plugin:
             return "Plugin";
         default:

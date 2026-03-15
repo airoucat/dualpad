@@ -51,12 +51,15 @@ namespace dualpad::input
         std::uint32_t tpSwipeLeft{ 0x20000000 };
         std::uint32_t tpSwipeRight{ 0x40000000 };
 
+        // Historical semantic helpers. Keep these aligned with the current
+        // fallback bindings, but do not treat them as authoritative controlmap
+        // truth.
         std::uint32_t activate{ cross };
-        std::uint32_t jump{ cross };
+        std::uint32_t jump{ triangle };
         std::uint32_t cancel{ circle };
-        std::uint32_t sneak{ circle };
+        std::uint32_t sneak{ l3 };
         std::uint32_t readyWeapon{ square };
-        std::uint32_t togglePOV{ triangle };
+        std::uint32_t togglePOV{ r3 };
         std::uint32_t sprint{ l1 };
         std::uint32_t attack{ r1 };
         std::uint32_t menu{ options };

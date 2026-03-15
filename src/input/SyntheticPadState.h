@@ -32,6 +32,8 @@ namespace dualpad::input
 
         void SetAxis(float lx, float ly, float rx, float ry, float l2, float r2);
 
+        // Non-destructive read of the latest-known compatibility state. Held
+        // bits persist until explicitly cleared; pulse bits self-expire.
         SyntheticFrame ConsumeFrame();
 
     private:

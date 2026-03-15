@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/InputContext.h"
+#include "input/backend/FrameActionPlan.h"
 #include "input/mapping/PadEvent.h"
 
 #include <cstdint>
@@ -9,7 +10,6 @@
 namespace dualpad::input
 {
     class CompatibilityInputInjector;
-    class NativeInputInjector;
 
     enum class ActionDispatchTarget : std::uint8_t
     {
@@ -18,8 +18,6 @@ namespace dualpad::input
         KeyboardNative,
         CompatibilityPulse,
         CompatibilityState,
-        NativePulse,
-        NativeState,
         Plugin
     };
 
@@ -32,23 +30,13 @@ namespace dualpad::input
     class ActionDispatcher
     {
     public:
-        ActionDispatcher(
-            CompatibilityInputInjector& compatibilityInjector,
-            NativeInputInjector& nativeInjector);
+        explicit ActionDispatcher(CompatibilityInputInjector& compatibilityInjector);
 
         void DispatchDirectPadEvent(const PadEvent& event) const;
-        ActionDispatchResult Dispatch(std::string_view actionId, InputContext context) const;
-        ActionDispatchResult DispatchButtonState(
-            std::string_view actionId,
-            bool down,
-            float heldSeconds,
-            InputContext context) const;
+        ActionDispatchResult DispatchPlannedAction(const backend::PlannedAction& action) const;
 
     private:
-        std::uint32_t ResolveCompatibilityPulseBit(std::string_view actionId) const;
-
         CompatibilityInputInjector& _compatibilityInjector;
-        NativeInputInjector& _nativeInjector;
     };
 
     std::string_view ToString(ActionDispatchTarget target);

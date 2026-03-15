@@ -93,6 +93,15 @@ namespace dualpad::input
         outPacket.data = _buffer.data();
         outPacket.size = bytesRead;
         outPacket.timestampUs = CaptureInputTimestampUs();
+        // Current contract uses a per-session software sequence so downstream
+        // still gets a stable monotonic frame id even when the transport path
+        // does not expose verified hardware packet counters.
+        //
+        // TODO(protocol upgrade): also capture the hardware packet sequence
+        // byte (USB byte 7 / BT31 byte 8) and surface gap observations for
+        // diagnostics. Keep the software sequence as the primary frame id
+        // unless and until the hardware counter behavior is fully verified
+        // across reconnects and wraparound.
         outPacket.sequence = ++_sequence;
 
         MaybeVerifyTransport(outPacket);

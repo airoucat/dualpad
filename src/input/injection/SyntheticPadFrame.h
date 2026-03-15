@@ -11,16 +11,33 @@ namespace dualpad::input
     struct SyntheticButtonState
     {
         std::uint32_t code{ 0 };
+        // Final reduced state for this frame.
         bool down{ false };
         bool pressed{ false };
         bool released{ false };
         bool held{ false };
+
+        // Explicit transient edge facts observed inside this reduced frame.
+        bool sawPressEdge{ false };
+        bool sawReleaseEdge{ false };
+        bool sawPulse{ false };
         bool tapTriggered{ false };
         bool holdTriggered{ false };
         bool comboTriggered{ false };
+
         float heldSeconds{ 0.0f };
+
+        // Running timestamps across frames derived from net down-mask changes.
+        // For same-frame pulse buttons (press+release ending in up), these stay
+        // as the last persistent mask-level transition, not the current frame's
+        // transient edge time.
         std::uint64_t pressedAtUs{ 0 };
         std::uint64_t releasedAtUs{ 0 };
+
+        // Edge timestamps observed inside this reduced frame. These are the
+        // authoritative timestamps for transient pulse-style edges.
+        std::uint64_t firstPressUs{ 0 };
+        std::uint64_t lastReleaseUs{ 0 };
     };
 
     struct SyntheticAxisState
@@ -37,10 +54,15 @@ namespace dualpad::input
         std::uint64_t sourceTimestampUs{ 0 };
         InputContext context{ InputContext::Gameplay };
 
+        // Final reduced button state.
         std::uint32_t downMask{ 0 };
         std::uint32_t pressedMask{ 0 };
         std::uint32_t releasedMask{ 0 };
         std::uint32_t heldMask{ 0 };
+
+        // Explicit transient edges observed inside this reduced frame.
+        std::uint32_t transientPressedMask{ 0 };
+        std::uint32_t transientReleasedMask{ 0 };
         std::uint32_t pulseMask{ 0 };
         std::uint32_t tapMask{ 0 };
         std::uint32_t holdMask{ 0 };

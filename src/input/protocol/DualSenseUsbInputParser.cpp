@@ -10,6 +10,13 @@ namespace dualpad::input
 {
     namespace
     {
+        enum class TouchDataLayout
+        {
+            None,
+            Main,
+            Legacy
+        };
+
         namespace raw
         {
             inline constexpr std::size_t kMinPacketSize = 11;
@@ -44,7 +51,7 @@ namespace dualpad::input
 
         }
 
-        void ApplyTouchData(const RawInputPacket& packet, PadState& state)
+        TouchDataLayout ApplyTouchData(const RawInputPacket& packet, PadState& state)
         {
             if (packet.size > (raw::kTouch2 + 3)) {
                 const auto touch1 = protocol::common::ParseTouchPoint(packet.data + raw::kTouch1);
@@ -53,14 +60,22 @@ namespace dualpad::input
                     protocol::common::IsPlausibleTouchPoint(touch2)) {
                     state.touch1 = touch1;
                     state.touch2 = touch2;
-                    return;
+                    return TouchDataLayout::Main;
                 }
             }
 
             if (packet.size > (raw::kLegacyTouch2 + 3)) {
-                state.touch1 = protocol::common::ParseTouchPoint(packet.data + raw::kLegacyTouch1);
-                state.touch2 = protocol::common::ParseTouchPoint(packet.data + raw::kLegacyTouch2);
+                const auto touch1 = protocol::common::ParseTouchPoint(packet.data + raw::kLegacyTouch1);
+                const auto touch2 = protocol::common::ParseTouchPoint(packet.data + raw::kLegacyTouch2);
+                if (protocol::common::IsPlausibleTouchPoint(touch1) &&
+                    protocol::common::IsPlausibleTouchPoint(touch2)) {
+                    state.touch1 = touch1;
+                    state.touch2 = touch2;
+                    return TouchDataLayout::Legacy;
+                }
             }
+
+            return TouchDataLayout::None;
         }
     }
 
@@ -107,11 +122,14 @@ namespace dualpad::input
             state.imu.valid = true;
         }
 
-        if (packet.size > raw::kStatus1) {
+        const auto touchLayout = ApplyTouchData(packet, state);
+
+        // The legacy touch fallback overlaps the bytes currently used for battery
+        // parsing. When that legacy layout wins, prefer touch correctness and skip
+        // battery decoding rather than reading touch bytes as fake battery data.
+        if (packet.size > raw::kStatus1 && touchLayout != TouchDataLayout::Legacy) {
             protocol::common::ApplyBattery(state, packet.data[raw::kStatus0], packet.data[raw::kStatus1]);
         }
-
-        ApplyTouchData(packet, state);
 
         outState = state;
         return true;

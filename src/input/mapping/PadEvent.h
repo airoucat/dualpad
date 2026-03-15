@@ -28,12 +28,15 @@ namespace dualpad::input
     enum class PadAxisId : std::uint8_t
     {
         None,
-        LeftStickX,
-        LeftStickY,
-        RightStickX,
-        RightStickY,
-        LeftTrigger,
-        RightTrigger
+        // Keep axis event codes outside the synthetic digital pad-bit space so
+        // generic helpers such as IsSyntheticPadBitCode() cannot mistake an
+        // AxisChange event for a button bitmask.
+        LeftStickX = 0x91,
+        LeftStickY = 0x92,
+        RightStickX = 0x93,
+        RightStickY = 0x94,
+        LeftTrigger = 0x95,
+        RightTrigger = 0x96
     };
 
     enum class TouchpadMode : std::uint8_t
