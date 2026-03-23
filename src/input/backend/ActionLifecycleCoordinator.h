@@ -32,7 +32,7 @@ namespace dualpad::input::backend
 
         // Materialize planner-owned lifecycle actions into this frame's plan.
         // The returned mask contains source bits whose ownership ended here and
-        // should therefore be unblocked from legacy physical fallback.
+        // should therefore be unblocked from unmanaged raw digital publish.
         [[nodiscard]] std::uint32_t PlanFrame(
             const SyntheticPadFrame& frame,
             InputContext context,

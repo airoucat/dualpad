@@ -13,30 +13,31 @@ namespace dualpad::input::backend
 {
     enum class PlannedBackend : std::uint8_t
     {
-        NativeState = 0,
-        ButtonEvent,
-        KeyboardNative,
+        None = 0,
+        NativeState,
+        NativeButtonCommit,
+        KeyboardHelper,
         Plugin,
-        ModEvent,
-        CompatibilityFallback
+        ModEvent
     };
 
     inline constexpr std::string_view ToString(PlannedBackend backend)
     {
         switch (backend) {
+        case PlannedBackend::None:
+            return "None";
         case PlannedBackend::NativeState:
             return "NativeState";
-        case PlannedBackend::ButtonEvent:
-            return "ButtonEvent";
-        case PlannedBackend::KeyboardNative:
-            return "KeyboardNative";
+        case PlannedBackend::NativeButtonCommit:
+            return "NativeButtonCommit";
+        case PlannedBackend::KeyboardHelper:
+            return "KeyboardHelper";
         case PlannedBackend::Plugin:
             return "Plugin";
         case PlannedBackend::ModEvent:
             return "ModEvent";
-        case PlannedBackend::CompatibilityFallback:
         default:
-            return "CompatibilityFallback";
+            return "None";
         }
     }
 
@@ -126,7 +127,7 @@ namespace dualpad::input::backend
 
     struct PlannedAction
     {
-        PlannedBackend backend{ PlannedBackend::CompatibilityFallback };
+        PlannedBackend backend{ PlannedBackend::None };
         PlannedActionKind kind{ PlannedActionKind::PluginAction };
         PlannedActionPhase phase{ PlannedActionPhase::None };
         InputContext context{ InputContext::Gameplay };

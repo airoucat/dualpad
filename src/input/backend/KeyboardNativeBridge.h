@@ -10,6 +10,7 @@
 
 #include <Windows.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -70,5 +71,7 @@ namespace dualpad::input::backend
         mutable bool _initAttempted{ false };
         mutable bool _initialized{ false };
         mutable std::uint32_t _producerSequence{ 0 };
+        mutable std::atomic<std::uint64_t> _cachedConsumerHeartbeatCheckMs{ 0 };
+        mutable std::atomic_bool _cachedConsumerHeartbeatActive{ false };
     };
 }

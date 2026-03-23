@@ -1,258 +1,165 @@
-# Final Native-State Backend Plan
+﻿# Final Native-State Backend Plan
 
-## Goal
+## 目标
 
-Reach a stable architecture where:
+维持一条稳定、可调试、可继续扩展的输入主线：
 
-- one physical key can map to different actions in different contexts
-- stateful actions do not lose hold/repeat semantics
-- plugin actions and mod events stay independent from Skyrim control routing
-- the injector consumes one complete snapshot update at a time
-- fallback compatibility remains available without contaminating the main design
+- 一个 DualSense 输入快照只进入一次主线程规划
+- 动作语义先于 backend 决定
+- 数字动作和模拟量各走清晰 owner
+- 插件动作、mod 事件与 Skyrim control routing 解耦
+- unmanaged raw digital publish 保留，但不污染主线
 
-## Current Runtime Bridge
+## 当前已经落地的主线
 
-Until the planner-owned upstream native-state backend exists, the official runtime bridge is:
+### Snapshot ingress
 
-- `BSWin32GamepadDevice::Poll` internal `XInputGetState` call-site patch on SE 1.5.97
-- fixed byte verification before patching
-- compatibility IAT path retained only as fallback
+- `HidReader` 读取 DualSense 报文
+- 协议层解出 `PadState`
+- 映射层生成 `PadEventSnapshot`
+- `PadEventSnapshotDispatcher` 把 snapshot 转交主线程
 
-This bridge is good enough to keep as the current shipping route, but it does not replace the long-term backend split described below.
+### Main-thread planning
 
-## Current Snapshot Assessment
+- `SyntheticStateReducer` 生成 `SyntheticPadFrame`
+- `BindingResolver / TriggerMapper / TouchpadMapper` 做触发器解析
+- `FrameActionPlanner` 生成 `PlannedAction`
+- `ActionLifecycleCoordinator` 负责 lifecycle-owned 动作
+- `ActionLifecycleTransaction` 显式承接 lifecycle 事实
 
-### What is already correct
+### Digital mainline
 
-`PadEventGenerator::Generate()` currently emits a complete event list for one HID snapshot transition in a deterministic order:
+- `NativeButtonCommitBackend` 作为 `PlannedAction -> PollCommitRequest` translator
+- `PollCommitCoordinator` 负责 Poll 可见性 materialization
+- 标准手柄数字位发布到 `AuthoritativePollState`
 
-1. button press/release
-2. axis change
-3. tap/hold
-4. combo
-5. touchpad press/slide/release
+### Analog mainline
 
-`TouchpadMapper` and `ComboEvaluator` append into the same `PadEventBuffer`, so the injector receives one complete logical list for that HID sample.
+- `PadEventSnapshotProcessor` 内部的 planned analog publish
+- `AuthoritativePollState`
+- 对扳机，正式输出是 `LT/RT` 硬件字节，不在插件里重做 `AttackBlockHandler`
 
-### What is not correct yet
+### Final bridge
 
-This should not be called a game-frame atomic snapshot yet.
+- `UpstreamGamepadHook` 在 `BSWin32GamepadDevice::Poll` 的 upstream call-site 中：
+  1. `DrainOnMainThread()`
+  2. 提交并读取最新 unified poll state
+  3. 填充 `XINPUT_STATE`
 
-Today it is:
+## 当前已经明确不是主线的路线
 
-- one atomic event list per HID state transition
-- handed off to the injector as one `PadEventSnapshot`
+- `XInputGetState` IAT 输入 fallback
+- consumer-side `ButtonEvent` 队列拼接
+- `keyboard-native` 作为 Skyrim PC 原生事件主线
+- legacy native button splice 重新回流为默认实现
 
-But it is not yet:
+## 当前架构不变式
 
-- exactly one list per game frame
-- guaranteed to be consumed without coalescing before game injection
+### 1. `FrameActionPlan` 是运行时合同
 
-Therefore the next architecture must treat `PadEventSnapshot` as the authoritative HID-sample unit, then do deterministic main-thread planning from there.
+planner 决定：
 
-## Final Architecture
+- `actionId`
+- `backend`
+- `contract`
+- `phase`
+- `outputCode`
+- `contextEpoch`
 
-### 1. Snapshot ingress
+dispatch 和 commit 层不应再重新解释 routing contract。
 
-- HID thread reads `PadState`
-- mapping layer produces one `PadEventSnapshot`
-- snapshot handoff to the main thread stays single-owner and fixed-buffer
+### 2. 数字主线采用 Poll-owned ownership
 
-### 2. Main-thread state reduction
+当前设计的核心不是“直接往游戏事件队列塞动作名”，而是：
 
-- `SyntheticStateReducer` remains the place that derives:
-  - down
-  - pressed
-  - released
-  - held
-  - tap
-  - combo
-  - axis state
-- this reduction step owns lifecycle truth
+- 先维护一份 Poll 时刻可见的数字 current-state
+- 再让 Skyrim 自己的 producer 从 current-state 推导原生行为
 
-### 3. Context-aware action planning
+补充：
 
-Add a planner layer above all output backends:
+- `AuthoritativePollState` 表示的是虚拟 XInput 手柄硬件状态
+- 这套原则同样适用于摇杆与扳机
+- 对扳机，插件侧只负责稳定输出 `LT/RT`，原生 `Attack / Block / Dual Attack / ForceRelease` 由游戏自己处理
 
-- input: `PadEventSnapshot` + reduced synthetic frame + current `InputContext`
-- output: one `FrameActionPlan`
+### 3. lifecycle 与 commit 分层
 
-The planner is where:
+- `ActionLifecycleCoordinator` 负责 lifecycle 事实
+- `ActionLifecycleTransaction` 负责显式中间表达
+- `PollCommitCoordinator` 只负责 Poll visible materialization
 
-- context-specific action choice happens
-- forbidden combinations are rejected
-- tap/hold/combo semantics are normalized
-- source-button blocking is decided only after ownership is known
+### 4. unmanaged raw digital publish 必须降级
 
-Initial code skeleton for this layer now exists under `src/input/backend/`:
+当前只剩 `PadEventSnapshotProcessor` 内部的 unmanaged raw digital publish 步骤仍在主树中，且它只能保留为：
 
-- `FrameActionPlan.h`
-- `ActionBackendPolicy.*`
-- `FrameActionPlanner.*`
+- unmanaged raw digital fallback
+- reverse / diagnostics
+- 对比材料
 
-### 4. Backend split
+补充：
 
-Use three final backends plus one fallback backend:
+- 它现在只消费 `SyntheticPadFrame` 已缩减出的 raw digital edge 事实
+- 不再承担 touchpad/gesture 的 dispatcher 旁路脉冲职责
+- `CompatibilityFallback` 已退出当前运行时代码里的 backend 枚举与默认 planner 兜底
 
-- `NativeStateBackend`
-  - owns Skyrim control actions that need true pad-state semantics
-  - uses an internal `VirtualGamepadState`
-  - near-term target scope should stay narrow:
-    - left stick
-    - right stick
-    - left trigger
-    - right trigger
-  - do not expand it into the default home for most digital actions
-- `KeyboardNativeBackend`
-  - owns most digital control actions
-  - is an implementation tool backend, not a public-facing identity change for the mod
-  - should handle non-text control keys only
-  - must not intentionally produce visible character input in text-entry UI
-- `PluginActionBackend`
-  - owns plugin-local actions such as screenshot-style features
-- `ModEventBackend`
-  - owns reserved mod-facing virtual key or event publication
-  - implementation can stay stubbed for now
-- `CompatibilityFallbackBackend`
-  - stays available only when the native-state path is unavailable
-  - not mixed ad hoc with the main stateful path
+旧 consumer-side native-button experiment 代码入口已经删除，不能重新长回平行主线。
 
-### 5. Upstream hook requirement
+## 仍未解决但已明确归位的问题
 
-The final native path must hook before Skyrim finalizes or consumes pad input semantics.
+### 1. 跨按钮微小时序
 
-Do not use these as the final hook site:
+例如：
 
-- `PrependEventSink`
-- `PlayerControls::ProcessEvent`
-- `MenuControls::ProcessEvent`
-- `ControlMap` consumer-side chain splicing
+- `Menu.ScrollDown -> Menu.Confirm`
+- 方向键下 + `A` 快速连按
 
-The correct target is an upstream gamepad/raw-state generation boundary where the plugin can provide a native-style virtual state before engine semantics are derived.
+当前已经确认：
 
-## Routing Rules
+- 单键 first-edge 保留已成立
+- 剩余问题属于跨按钮时序，不是单键 pulse 丢失
 
-### Stateful gameplay and menu actions
+未来只能走两条之一：
 
-These must not bounce between backends mid-lifecycle:
+- planner/commit 边界上的窄保序 contract
+- 极少数顺序敏感 UI 场景的 `direct native event`
 
-- sprint
-- movement
-- look
-- menu up/down/left/right
-- menu page up/down
-- any action that relies on hold/repeat behavior
+### 2. 游戏侧 transition/readiness
 
-Once planned, they belong to one backend for the full lifecycle.
+例如：
 
-### Mixed device output
+- `Loading / Fader / menu transition` 尾巴
 
-Mixed device output is acceptable when ownership is clear.
+当前只记录为 future reverse target，不在当前主线继续硬修。
 
-Expected final shape:
+### 3. Upstream native-state 进一步逆向
 
-- gamepad backend for analog state
-- keyboard-native backend for most digital controls
+当前 `poll-xinput-call` 已经够用，但更上游、更窄、更 native 的 state boundary 仍值得继续逆向验证。
 
-This means one frame may legitimately contain both:
+### 4. 硬件序列号 gap 检测
 
-- gamepad analog movement/look/trigger input
-- keyboard-native digital actions
+已经记为 TODO，等待之后在 HID / snapshot 层升级时接入。
 
-That is allowed.
-
-What is not allowed is a single stateful action bouncing between those backends during one hold lifecycle.
-
-### Plugin actions
-
-These stay fully event-driven and bypass game-control injection:
-
-- screenshot
-- multi-screenshot
-- future plugin-local utilities
-
-### Mod events
-
-These stay separate from game controls and should never require the gameplay backend to fake ownership.
-
-### Text input
-
-Text input is out of scope for the current architecture phase.
-
-Do not add a text-input backend right now.
-
-Hard rule:
-
-- controller buttons must not accidentally type text into visible text-entry UI
-
-If the game is in a text-entry context, keyboard-native character-producing routes should be suppressed rather than guessed.
-
-## Mod Virtual-Key Pool
-
-Local resource verification currently confirms these names in `keyboard_english.txt`:
-
-- `F13`
-- `F14`
-- `F15`
-- `DIK_KANA`
-- `DIK_ABNT_C1`
-- `DIK_CONVERT`
-- `DIK_NOCONVERT`
-- `DIK_ABNT_C2`
-- `NumPadEqual`
-- `PrintSrc`
-- `L-Windows`
-- `R-Windows`
-- `Apps`
-- `Sleep`
-- `Wake`
-- `WebSearch`
-- `WebFavorites`
-- `WebRefresh`
-- `WebStop`
-- `WebForward`
-- `WebBack`
-- `Mail`
-- `MediaSelect`
-
-Do not assume `F16`-`F20` are available locally until they are verified in the actual resource tables used by this build.
-
-Final mod-key selection still needs one last validation pass against the shipped `controlmap.txt` codes before release.
-
-## Migration Plan
-
-### Phase 1
-
-- freeze the current consumer-side native button experiment
-- keep it disabled by default
-- document the dead end and preserve only the reverse-engineering notes
-
-### Phase 2
-
-- introduce a standalone `FrameActionPlan`
-- split native-state, plugin, and mod backends
-- stop routing stateful actions directly from the current mixed dispatcher
-- run the planner in shadow mode first, without changing stable runtime behavior
-
-### Phase 3
-
-- implement `VirtualGamepadState`
-- move stateful gameplay/menu ownership to the native-state backend
-- keep compatibility as whole-backend fallback only
+## 后续阶段
 
 ### Phase 4
 
-- reverse and hook the upstream gamepad state boundary
-- feed the virtual state there instead of splicing `ButtonEvent` objects near `ControlMap`
+在不破坏当前主线的前提下，只处理两类 future work：
+
+- 跨动作保序 contract
+- 少量 direct native event 场景
 
 ### Phase 5
 
-- shrink `IATHook` and compatibility injection to fallback support
-- keep native-state as the primary gameplay/menu path
+继续做 upstream native-state reverse，目标是：
 
-## Non-Negotiable Rules
+- 更窄的 hook 边界
+- 更少的 bridge 假设
+- 更明确的与 Skyrim producer 对齐
 
-- No new production features on top of the current `use_native_button_injector` experiment.
-- No consumer-side queue/head mutation as the final design.
-- No per-action mixed backend ownership for stateful controls.
-- No source-button blocking before the owning backend has committed to the action lifecycle.
+### Phase 6
+
+对 keyboard-native / mod-helper 路线继续收窄职责，而不是重新上升为默认控制主线。
+
+另见：
+
+- [authoritative_poll_state_refactor_plan_zh.md](authoritative_poll_state_refactor_plan_zh.md)
+  - 统一最终输出状态的新方案重构计划

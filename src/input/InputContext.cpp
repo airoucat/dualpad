@@ -9,6 +9,26 @@ namespace dualpad::input
 {
     namespace
     {
+        constexpr bool IsPassiveOverlayMenu(std::string_view menuName)
+        {
+            return menuName == "HUD Menu" ||
+                menuName == "Fader Menu" ||
+                menuName == "Cursor Menu" ||
+                menuName == "Mist Menu" ||
+                menuName == "Tutorial Menu" ||
+                menuName == "LoadWaitSpinner" ||
+                menuName == "TrueHUD" ||
+                menuName == "STBActiveEffects" ||
+                menuName == "resistWidget" ||
+                menuName == "goldWidget" ||
+                menuName == "weightWidget" ||
+                menuName == "equipWidget_STB" ||
+                menuName == "shoutWidget" ||
+                menuName == "lvlWidget" ||
+                menuName == "playtimeWidget" ||
+                menuName == "gametimeWidget";
+        }
+
         constexpr bool IsMenuOwnedContext(InputContext context)
         {
             const auto value = static_cast<std::uint16_t>(context);
@@ -76,12 +96,7 @@ namespace dualpad::input
     {
         // These overlays are frequently open during normal gameplay and should not
         // steal the logical input context from the active gameplay/menu state.
-        return menuName != "HUD Menu" &&
-            menuName != "Fader Menu" &&
-            menuName != "Cursor Menu" &&
-            menuName != "Mist Menu" &&
-            menuName != "Tutorial Menu" &&
-            menuName != "LoadWaitSpinner";
+        return !IsPassiveOverlayMenu(menuName);
     }
 
     // Maps Skyrim menu names to the plugin's context enum.

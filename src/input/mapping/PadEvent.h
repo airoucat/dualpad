@@ -80,7 +80,7 @@ namespace dualpad::input
         inline constexpr std::uint32_t kTpSwipeRight = 0x40000000;
 
         // These identifiers live only in the mapping layer and are not forwarded
-        // through the legacy XInput compatibility mask.
+        // through the runtime gamepad poll-state contract.
         inline constexpr std::uint32_t kTpEdgeTopPress = 0x81000001;
         inline constexpr std::uint32_t kTpEdgeBottomPress = 0x81000002;
         inline constexpr std::uint32_t kTpEdgeLeftPress = 0x81000003;

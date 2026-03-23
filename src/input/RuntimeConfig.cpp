@@ -48,46 +48,6 @@ namespace dualpad::input
             return defaultValue;
         }
 
-        inline NativeButtonHookMode ParseNativeButtonHookMode(
-            const std::string& value,
-            NativeButtonHookMode defaultValue)
-        {
-            const auto normalized = ToLower(Trim(value));
-            if (normalized == "inject" || normalized == "prepend") {
-                return NativeButtonHookMode::Inject;
-            }
-            if (normalized == "head-prepend" || normalized == "head_prepend" || normalized == "controlmap-only") {
-                return NativeButtonHookMode::HeadPrepend;
-            }
-            if (normalized == "append" || normalized == "queue") {
-                return NativeButtonHookMode::Append;
-            }
-            if (normalized == "append-probe" || normalized == "queue-probe" || normalized == "append_probe") {
-                return NativeButtonHookMode::AppendProbe;
-            }
-            if (normalized == "drop" || normalized == "drop-probe" || normalized == "probe") {
-                return NativeButtonHookMode::DropProbe;
-            }
-            return defaultValue;
-        }
-
-        inline const char* ToString(NativeButtonHookMode mode)
-        {
-            switch (mode) {
-            case NativeButtonHookMode::Inject:
-                return "inject";
-            case NativeButtonHookMode::HeadPrepend:
-                return "head-prepend";
-            case NativeButtonHookMode::AppendProbe:
-                return "append-probe";
-            case NativeButtonHookMode::Append:
-                return "append";
-            case NativeButtonHookMode::DropProbe:
-            default:
-                return "drop";
-            }
-        }
-
         inline UpstreamGamepadHookMode ParseUpstreamGamepadHookMode(
             const std::string& value,
             UpstreamGamepadHookMode defaultValue)
@@ -116,30 +76,6 @@ namespace dualpad::input
             }
         }
 
-        inline UpstreamKeyboardHookMode ParseUpstreamKeyboardHookMode(
-            const std::string& value,
-            UpstreamKeyboardHookMode defaultValue)
-        {
-            const auto normalized = ToLower(Trim(value));
-            if (normalized == "semantic-mid" || normalized == "semantic_mid" || normalized == "mid" || normalized == "semantic") {
-                return UpstreamKeyboardHookMode::SemanticMid;
-            }
-            if (normalized == "diobjdata-call" || normalized == "diobjdata_call" || normalized == "diobjdata" || normalized == "call-site" || normalized == "callsite") {
-                return UpstreamKeyboardHookMode::DiObjDataCall;
-            }
-            return defaultValue;
-        }
-
-        inline const char* ToString(UpstreamKeyboardHookMode mode)
-        {
-            switch (mode) {
-            case UpstreamKeyboardHookMode::DiObjDataCall:
-                return "diobjdata-call";
-            case UpstreamKeyboardHookMode::SemanticMid:
-            default:
-                return "semantic-mid";
-            }
-        }
     }
 
     RuntimeConfig& RuntimeConfig::GetSingleton()
@@ -266,30 +202,6 @@ namespace dualpad::input
                 }
                 _upstreamGamepadHookMode = ParseUpstreamGamepadHookMode(it->second, _upstreamGamepadHookMode);
             }
-            if (auto it = values.find("use_upstream_keyboard_hook"); it != values.end()) {
-                _useUpstreamKeyboardHook = ParseBool(it->second, _useUpstreamKeyboardHook);
-            }
-            if (auto it = values.find("upstream_keyboard_hook_mode"); it != values.end()) {
-                _upstreamKeyboardHookMode = ParseUpstreamKeyboardHookMode(it->second, _upstreamKeyboardHookMode);
-            }
-            if (auto it = values.find("test_keyboard_event_source_patch"); it != values.end()) {
-                _testKeyboardEventSourcePatch = ParseBool(it->second, _testKeyboardEventSourcePatch);
-            }
-            if (auto it = values.find("test_keyboard_manager_head_patch"); it != values.end()) {
-                _testKeyboardManagerHeadPatch = ParseBool(it->second, _testKeyboardManagerHeadPatch);
-            }
-            if (auto it = values.find("test_keyboard_accept_dump_route"); it != values.end()) {
-                _testKeyboardAcceptDumpRoute = ParseBool(it->second, _testKeyboardAcceptDumpRoute);
-            }
-            if (auto it = values.find("use_native_button_injector"); it != values.end()) {
-                _useNativeButtonInjector = ParseBool(it->second, _useNativeButtonInjector);
-            }
-            if (auto it = values.find("use_native_frame_injector"); it != values.end()) {
-                _useNativeFrameInjector = ParseBool(it->second, _useNativeFrameInjector);
-            }
-            if (auto it = values.find("native_button_hook_mode"); it != values.end()) {
-                _nativeButtonHookMode = ParseNativeButtonHookMode(it->second, _nativeButtonHookMode);
-            }
         };
 
         try {
@@ -305,7 +217,7 @@ namespace dualpad::input
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} upstreamKeyboard={} upstreamKeyboardMode={} keyboardSourcePatchTest={} keyboardManagerHeadPatchTest={} keyboardAcceptDumpRouteTest={} nativeButton={} nativeButtonMode={} nativeFrame={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -315,45 +227,11 @@ namespace dualpad::input
             _logNativeInjection,
             _logKeyboardInjection,
             _useUpstreamGamepadHook,
-            ToString(_upstreamGamepadHookMode),
-            _useUpstreamKeyboardHook,
-            ToString(_upstreamKeyboardHookMode),
-            _testKeyboardEventSourcePatch,
-            _testKeyboardManagerHeadPatch,
-            _testKeyboardAcceptDumpRoute,
-            _useNativeButtonInjector,
-            ToString(_nativeButtonHookMode),
-            _useNativeFrameInjector);
+            ToString(_upstreamGamepadHookMode));
         if (_useUpstreamGamepadHook) {
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
                 ToString(_upstreamGamepadHookMode));
-        }
-        if (_useUpstreamKeyboardHook) {
-            logger::warn(
-                "[DualPad][RuntimeConfig] use_upstream_keyboard_hook enables the keyboard experimental route (mode={}); rollback remains use_upstream_keyboard_hook=false",
-                ToString(_upstreamKeyboardHookMode));
-        }
-        if (_testKeyboardEventSourcePatch) {
-            logger::warn(
-                "[DualPad][RuntimeConfig] test_keyboard_event_source_patch is enabled; dispatch-hook will overwrite event+0x18 with the expected global source object for reverse-engineering validation");
-        }
-        if (_testKeyboardManagerHeadPatch) {
-            logger::warn(
-                "[DualPad][RuntimeConfig] test_keyboard_manager_head_patch is enabled; dispatch-hook will temporarily write qword_142F50B28+0x380/currentHead before sub_140C15E00 for reverse-engineering validation");
-        }
-        if (_testKeyboardAcceptDumpRoute) {
-            logger::warn(
-                "[DualPad][RuntimeConfig] test_keyboard_accept_dump_route is enabled; Menu.Confirm will temporarily prefer KeyboardNative so native/synthetic Accept templates can be captured");
-        }
-        if (_useNativeButtonInjector) {
-            logger::warn(
-                "[DualPad][RuntimeConfig] use_native_button_injector enables the deprecated consumer-side native-button experiment; keep it off unless you are reproducing old PollInputDevices/ControlMap failures (mode={})",
-                ToString(_nativeButtonHookMode));
-        }
-        if (_useNativeFrameInjector) {
-            logger::warn(
-                "[DualPad][RuntimeConfig] use_native_frame_injector is experimental while thumbsticks still use BSInputEventQueue fallback");
         }
         return true;
     }
@@ -371,13 +249,5 @@ namespace dualpad::input
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
-        _useUpstreamKeyboardHook = false;
-        _upstreamKeyboardHookMode = UpstreamKeyboardHookMode::SemanticMid;
-        _testKeyboardEventSourcePatch = false;
-        _testKeyboardManagerHeadPatch = false;
-        _testKeyboardAcceptDumpRoute = false;
-        _useNativeButtonInjector = false;
-        _useNativeFrameInjector = false;
-        _nativeButtonHookMode = NativeButtonHookMode::DropProbe;
     }
 }

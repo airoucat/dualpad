@@ -5,7 +5,6 @@
 #include "input/hid/DualSenseDevice.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/PadEventSnapshot.h"
-#include "input/legacy/InputCompatBridge.h"
 #include "input/mapping/PadEvent.h"
 #include "input/mapping/PadEventGenerator.h"
 #include "input/protocol/DualSenseProtocol.h"
@@ -85,7 +84,6 @@ namespace
             dualpad::input::NormalizePadState(currentState);
             dualpad::input::LogStateSummary(currentState);
 
-            const auto compatFrame = dualpad::input::BuildCompatFrame(currentState);
             dualpad::input::PadEventBuffer events{};
             eventGenerator.Generate(previousState, currentState, events);
 
@@ -95,7 +93,6 @@ namespace
             snapshot.sequence = currentState.sequence;
             snapshot.sourceTimestampUs = currentState.timestampUs;
             snapshot.state = currentState;
-            snapshot.compatFrame = compatFrame;
             snapshot.events = events;
             snapshot.overflowed = events.overflowed;
             dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitSnapshot(snapshot);

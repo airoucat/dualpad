@@ -21,7 +21,7 @@
   - 兼容性好
   - 主要服务于 `ModEvent / VirtualKey / F13-F20 / 辅助键盘输出`
 
-因此，真正需要保留和统一的不是“KeyboardNativeBackend 的具体交付细节”，而是“动作生命周期模型”本身。
+因此，真正需要保留和统一的不是“KeyboardHelperBackend 的具体交付细节”，而是“动作生命周期模型”本身。
 
 ## 设计目标
 

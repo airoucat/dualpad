@@ -9,13 +9,14 @@
 #include "input/ContextEventSink.h"
 
 #include "input/BindingConfig.h"
+#include "input/ControlMapOverlay.h"
 
 #include "input/InputFramePump.h"
+#include "input/InputModalityTracker.h"
 
 #include "input/RuntimeConfig.h"
-#include "input/backend/KeyboardNativeBackend.h"
+#include "input/backend/KeyboardHelperBackend.h"
 
-#include "input/injection/NativeInputPreControlMapHook.h"
 #include "input/injection/UpstreamGamepadHook.h"
 
 #include "input/custom/CustomActionDispatcher.h"
@@ -61,6 +62,11 @@ namespace
 
         }
 
+        if (msg->type == SKSE::MessagingInterface::kInputLoaded) {
+            dualpad::input::InputModalityTracker::GetSingleton().Register();
+            return;
+        }
+
         if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
 
             logger::info("[DualPad] Initializing systems");
@@ -71,6 +77,7 @@ namespace
             dualpad::input::RuntimeConfig::GetSingleton().Load();
 
             dualpad::input::BindingConfig::GetSingleton().Load();
+            dualpad::input::ControlMapOverlay::GetSingleton().Apply();
 
             dualpad::input::InputFramePump::GetSingleton().Register();
 
@@ -78,18 +85,7 @@ namespace
                 dualpad::input::UpstreamGamepadHook::GetSingleton().Install();
             }
 
-            if (dualpad::input::RuntimeConfig::GetSingleton().UseUpstreamKeyboardHook()) {
-                dualpad::input::backend::KeyboardNativeBackend::GetSingleton().Install();
-            }
-
-            // Do not force mixed platform arbitration during gameplay. Current
-            // experiments show global gamepad-family overrides break
-            // keyboard-native semantics even when dinput8 bridge injection is
-            // otherwise correct.
-
-            if (dualpad::input::RuntimeConfig::GetSingleton().UseNativeButtonInjector()) {
-                dualpad::input::NativeInputPreControlMapHook::GetSingleton().Install();
-            }
+            dualpad::input::backend::KeyboardHelperBackend::GetSingleton().Install();
 
             dualpad::input::custom::CustomActionDispatcher::GetSingleton().Start();
 
@@ -152,7 +148,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
 {
 
     SKSE::Init(skse);
-    SKSE::AllocTrampoline(1 << 9);
+    SKSE::AllocTrampoline(1 << 10);
+    dualpad::input::InputModalityTracker::GetSingleton().Install();
 
     logger::info("DualPad v1.0.0 loaded");
 
@@ -169,3 +166,4 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     return true;
 
 }
+

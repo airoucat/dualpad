@@ -21,6 +21,32 @@ namespace dualpad::input
             return binding;
         }
 
+        Binding MakeAxisBinding(InputContext context, PadAxisId axis, std::string_view actionId)
+        {
+            Binding binding{};
+            binding.context = context;
+            binding.actionId = std::string(actionId);
+            binding.trigger.type = TriggerType::Axis;
+            binding.trigger.code = static_cast<std::uint32_t>(axis);
+            return binding;
+        }
+
+        Binding MakeComboBinding(
+            InputContext context,
+            std::uint32_t code,
+            std::initializer_list<std::uint32_t> modifiers,
+            std::string_view actionId)
+        {
+            Binding binding{};
+            binding.context = context;
+            binding.actionId = std::string(actionId);
+            binding.trigger.type = TriggerType::Combo;
+            binding.trigger.code = code;
+            binding.trigger.modifiers.assign(modifiers.begin(), modifiers.end());
+            (std::sort)(binding.trigger.modifiers.begin(), binding.trigger.modifiers.end());
+            return binding;
+        }
+
         std::uint32_t ModifiersToMask(const std::vector<std::uint32_t>& modifiers)
         {
             std::uint32_t mask = 0;
@@ -195,57 +221,12 @@ namespace dualpad::input
         return std::nullopt;
     }
 
-    // These defaults keep the plugin usable when no INI file is present.
+    // Explicit legacy defaults are retired; the standard fallback set below
+    // now provides the baseline gameplay/menu bindings when no INI is present.
     void BindingManager::InitDefaultBindings()
     {
         logger::info("[DualPad][BindingMgr] Initializing default bindings");
-
-        {
-            Binding b;
-            b.context = InputContext::Gameplay;
-            b.actionId = "Game.OpenInventory";
-            b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = mapping_codes::kTpLeftPress;
-            AddBinding(b);
-        }
-
-        {
-            Binding b;
-            b.context = InputContext::Gameplay;
-            b.actionId = "Game.OpenMap";
-            b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = mapping_codes::kTpSwipeUp;
-            AddBinding(b);
-        }
-
-        {
-            Binding b;
-            b.context = InputContext::Gameplay;
-            b.actionId = "Game.OpenMagic";
-            b.trigger.type = TriggerType::Gesture;
-            b.trigger.code = mapping_codes::kTpRightPress;
-            AddBinding(b);
-        }
-
-        {
-            Binding b;
-            b.context = InputContext::Gameplay;
-            b.actionId = "Game.QuickSave";
-            b.trigger.type = TriggerType::Button;
-            b.trigger.code = 0x00400000;
-            AddBinding(b);
-        }
-
-        {
-            Binding b;
-            b.context = InputContext::Gameplay;
-            b.actionId = "Game.QuickLoad";
-            b.trigger.type = TriggerType::Button;
-            b.trigger.code = 0x00800000;
-            AddBinding(b);
-        }
-
-        logger::info("[DualPad][BindingMgr] Default bindings initialized");
+        logger::info("[DualPad][BindingMgr] Legacy explicit default bindings retired; relying on standard fallback set");
     }
 
     std::size_t BindingManager::ApplyStandardFallbackBindings()
@@ -261,14 +242,10 @@ namespace dualpad::input
             InputContext::VampireLord
         };
 
-        static constexpr std::array kMenuContexts = {
+        static constexpr std::array kGenericMenuContexts = {
             InputContext::Menu,
             InputContext::InventoryMenu,
             InputContext::MagicMenu,
-            InputContext::MapMenu,
-            InputContext::JournalMenu,
-            InputContext::DialogueMenu,
-            InputContext::FavoritesMenu,
             InputContext::TweenMenu,
             InputContext::ContainerMenu,
             InputContext::BarterMenu,
@@ -277,12 +254,9 @@ namespace dualpad::input
             InputContext::RaceSexMenu,
             InputContext::StatsMenu,
             InputContext::SkillMenu,
-            InputContext::BookMenu,
             InputContext::MessageBoxMenu,
             InputContext::QuantityMenu,
-            InputContext::GiftMenu,
-            InputContext::CreationsMenu,
-            InputContext::Book
+            InputContext::GiftMenu
         };
 
         std::size_t addedCount = 0;
@@ -297,25 +271,159 @@ namespace dualpad::input
             ++addedCount;
         };
 
-        for (const auto context : kGameplayContexts) {
-            addIfMissing(MakeButtonBinding(context, bits.cross, actions::Activate));
-            addIfMissing(MakeButtonBinding(context, bits.triangle, actions::Jump));
-            addIfMissing(MakeButtonBinding(context, bits.l1, actions::Sprint));
-            addIfMissing(MakeButtonBinding(context, bits.l3, actions::Sneak));
-            addIfMissing(MakeButtonBinding(context, bits.r1, actions::Shout));
-            addIfMissing(MakeButtonBinding(context, bits.r3, actions::TogglePOV));
-        }
-
-        for (const auto context : kMenuContexts) {
+        const auto addBaseMenuBindings = [&](InputContext context) {
             addIfMissing(MakeButtonBinding(context, bits.cross, actions::MenuConfirm));
             addIfMissing(MakeButtonBinding(context, bits.circle, actions::MenuCancel));
+            addIfMissing(MakeButtonBinding(context, bits.triangle, actions::MenuDownloadAll));
             addIfMissing(MakeButtonBinding(context, bits.dpadUp, actions::MenuScrollUp));
             addIfMissing(MakeButtonBinding(context, bits.dpadDown, actions::MenuScrollDown));
             addIfMissing(MakeButtonBinding(context, bits.dpadLeft, actions::MenuLeft));
             addIfMissing(MakeButtonBinding(context, bits.dpadRight, actions::MenuRight));
-            addIfMissing(MakeButtonBinding(context, bits.l1, actions::MenuPageUp));
-            addIfMissing(MakeButtonBinding(context, bits.r1, actions::MenuPageDown));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::LeftStickX, "Menu.LeftStick"));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::LeftStickY, "Menu.LeftStick"));
+        };
+
+        for (const auto context : kGameplayContexts) {
+            addIfMissing(MakeButtonBinding(context, bits.cross, actions::Activate));
+            addIfMissing(MakeButtonBinding(context, bits.square, actions::ReadyWeapon));
+            addIfMissing(MakeButtonBinding(context, bits.circle, actions::TweenMenu));
+            addIfMissing(MakeButtonBinding(context, bits.triangle, actions::Jump));
+            addIfMissing(MakeButtonBinding(context, bits.l1, actions::Sprint));
+            addIfMissing(MakeButtonBinding(context, bits.create, actions::Wait));
+            addIfMissing(MakeButtonBinding(context, bits.l3, actions::Sneak));
+            addIfMissing(MakeButtonBinding(context, bits.options, actions::OpenJournal));
+            addIfMissing(MakeButtonBinding(context, bits.r1, actions::Shout));
+            addIfMissing(MakeButtonBinding(context, bits.r3, actions::TogglePOV));
+            addIfMissing(MakeButtonBinding(context, bits.dpadLeft, actions::Hotkey1));
+            addIfMissing(MakeButtonBinding(context, bits.dpadRight, actions::Hotkey2));
+            addIfMissing(MakeButtonBinding(context, bits.dpadUp, actions::Favorites));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::LeftStickX, "Game.Move"));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::LeftStickY, "Game.Move"));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::RightStickX, "Game.Look"));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::RightStickY, "Game.Look"));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::LeftTrigger, "Game.LeftTrigger"));
+            addIfMissing(MakeAxisBinding(context, PadAxisId::RightTrigger, "Game.RightTrigger"));
         }
+
+        for (const auto context : kGenericMenuContexts) {
+            addBaseMenuBindings(context);
+        }
+
+        addIfMissing(MakeButtonBinding(InputContext::InventoryMenu, bits.r1, actions::InventoryChargeItem));
+
+        addBaseMenuBindings(InputContext::DialogueMenu);
+        addIfMissing(MakeButtonBinding(InputContext::DialogueMenu, bits.dpadUp, actions::DialoguePreviousOption));
+        addIfMissing(MakeButtonBinding(InputContext::DialogueMenu, bits.dpadDown, actions::DialogueNextOption));
+
+        addBaseMenuBindings(InputContext::FavoritesMenu);
+        addIfMissing(MakeButtonBinding(InputContext::FavoritesMenu, bits.cross, actions::FavoritesAccept));
+        addIfMissing(MakeButtonBinding(InputContext::FavoritesMenu, bits.circle, actions::FavoritesCancel));
+        addIfMissing(MakeButtonBinding(InputContext::FavoritesMenu, bits.dpadUp, actions::FavoritesUp));
+        addIfMissing(MakeButtonBinding(InputContext::FavoritesMenu, bits.dpadDown, actions::FavoritesDown));
+        addIfMissing(MakeAxisBinding(InputContext::FavoritesMenu, PadAxisId::LeftStickX, actions::FavoritesLeftStick));
+        addIfMissing(MakeAxisBinding(InputContext::FavoritesMenu, PadAxisId::LeftStickY, actions::FavoritesLeftStick));
+
+        addBaseMenuBindings(InputContext::JournalMenu);
+        addIfMissing(MakeButtonBinding(InputContext::JournalMenu, bits.square, actions::JournalXButton));
+        addIfMissing(MakeButtonBinding(InputContext::JournalMenu, bits.triangle, actions::JournalYButton));
+        addIfMissing(MakeAxisBinding(InputContext::JournalMenu, PadAxisId::LeftTrigger, actions::JournalTabLeft));
+        addIfMissing(MakeAxisBinding(InputContext::JournalMenu, PadAxisId::RightTrigger, actions::JournalTabRight));
+
+        addBaseMenuBindings(InputContext::BookMenu);
+        addIfMissing(MakeButtonBinding(InputContext::BookMenu, bits.circle, actions::BookClose));
+        addIfMissing(MakeButtonBinding(InputContext::BookMenu, bits.dpadLeft, actions::BookPreviousPage));
+        addIfMissing(MakeButtonBinding(InputContext::BookMenu, bits.dpadRight, actions::BookNextPage));
+
+        addBaseMenuBindings(InputContext::Book);
+        addIfMissing(MakeButtonBinding(InputContext::Book, bits.circle, actions::BookClose));
+        addIfMissing(MakeButtonBinding(InputContext::Book, bits.dpadLeft, actions::BookPreviousPage));
+        addIfMissing(MakeButtonBinding(InputContext::Book, bits.dpadRight, actions::BookNextPage));
+
+        addIfMissing(MakeButtonBinding(InputContext::MapMenu, bits.cross, actions::MapClick));
+        addIfMissing(MakeButtonBinding(InputContext::MapMenu, bits.circle, actions::MapCancel));
+        addIfMissing(MakeButtonBinding(InputContext::MapMenu, bits.square, actions::MapLocalMap));
+        addIfMissing(MakeButtonBinding(InputContext::MapMenu, bits.triangle, actions::MapPlayerPosition));
+        addIfMissing(MakeButtonBinding(InputContext::MapMenu, bits.dpadLeft, actions::MapOpenJournal));
+        addIfMissing(MakeAxisBinding(InputContext::MapMenu, PadAxisId::LeftStickX, actions::MapCursor));
+        addIfMissing(MakeAxisBinding(InputContext::MapMenu, PadAxisId::LeftStickY, actions::MapCursor));
+        addIfMissing(MakeAxisBinding(InputContext::MapMenu, PadAxisId::RightStickX, actions::MapLook));
+        addIfMissing(MakeAxisBinding(InputContext::MapMenu, PadAxisId::RightStickY, actions::MapLook));
+        addIfMissing(MakeAxisBinding(InputContext::MapMenu, PadAxisId::LeftTrigger, actions::MapZoomOut));
+        addIfMissing(MakeAxisBinding(InputContext::MapMenu, PadAxisId::RightTrigger, actions::MapZoomIn));
+
+        addIfMissing(MakeButtonBinding(InputContext::Console, bits.cross, actions::ConsoleExecute));
+        addIfMissing(MakeButtonBinding(InputContext::Console, bits.circle, actions::MenuCancel));
+        addIfMissing(MakeButtonBinding(InputContext::Console, bits.dpadUp, actions::ConsolePickNext));
+        addIfMissing(MakeButtonBinding(InputContext::Console, bits.dpadDown, actions::ConsolePickPrevious));
+        addIfMissing(MakeButtonBinding(InputContext::Console, bits.l1, actions::ConsolePreviousFocus));
+        addIfMissing(MakeButtonBinding(InputContext::Console, bits.r1, actions::ConsoleNextFocus));
+
+        addIfMissing(MakeAxisBinding(InputContext::ItemMenu, PadAxisId::LeftTrigger, actions::ItemLeftEquip));
+        addIfMissing(MakeAxisBinding(InputContext::ItemMenu, PadAxisId::RightTrigger, actions::ItemRightEquip));
+        addIfMissing(MakeButtonBinding(InputContext::ItemMenu, bits.r3, actions::ItemZoom));
+        addIfMissing(MakeButtonBinding(InputContext::ItemMenu, bits.square, actions::ItemXButton));
+        addIfMissing(MakeButtonBinding(InputContext::ItemMenu, bits.r3, actions::ItemYButton));
+        addIfMissing(MakeAxisBinding(InputContext::ItemMenu, PadAxisId::RightStickX, actions::ItemRotate));
+        addIfMissing(MakeAxisBinding(InputContext::ItemMenu, PadAxisId::RightStickY, actions::ItemRotate));
+
+        addIfMissing(MakeAxisBinding(InputContext::Stats, PadAxisId::LeftStickX, actions::StatsRotate));
+        addIfMissing(MakeAxisBinding(InputContext::Stats, PadAxisId::LeftStickY, actions::StatsRotate));
+
+        addIfMissing(MakeAxisBinding(InputContext::Cursor, PadAxisId::RightStickX, actions::CursorMove));
+        addIfMissing(MakeAxisBinding(InputContext::Cursor, PadAxisId::RightStickY, actions::CursorMove));
+        addIfMissing(MakeButtonBinding(InputContext::Cursor, bits.cross, actions::CursorClick));
+
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.l1, actions::DebugOverlayPreviousFocus));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.r1, actions::DebugOverlayNextFocus));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.dpadUp, actions::DebugOverlayUp));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.dpadDown, actions::DebugOverlayDown));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.dpadLeft, actions::DebugOverlayLeft));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.dpadRight, actions::DebugOverlayRight));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.create, actions::DebugOverlayToggleMinimize));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.r3, actions::DebugOverlayToggleMove));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.circle, actions::DebugOverlayB));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.triangle, actions::DebugOverlayY));
+        addIfMissing(MakeButtonBinding(InputContext::DebugOverlay, bits.square, actions::DebugOverlayX));
+        addIfMissing(MakeAxisBinding(InputContext::DebugOverlay, PadAxisId::LeftTrigger, actions::DebugOverlayLeftTrigger));
+        addIfMissing(MakeAxisBinding(InputContext::DebugOverlay, PadAxisId::RightTrigger, actions::DebugOverlayRightTrigger));
+
+        addIfMissing(MakeButtonBinding(InputContext::TFCMode, bits.square, actions::TFCLockToZPlane));
+        addIfMissing(MakeButtonBinding(InputContext::TFCMode, bits.l1, actions::TFCWorldZDown));
+        addIfMissing(MakeButtonBinding(InputContext::TFCMode, bits.r1, actions::TFCWorldZUp));
+        addIfMissing(MakeAxisBinding(InputContext::TFCMode, PadAxisId::LeftTrigger, actions::TFCCameraZDown));
+        addIfMissing(MakeAxisBinding(InputContext::TFCMode, PadAxisId::RightTrigger, actions::TFCCameraZUp));
+
+        addIfMissing(MakeAxisBinding(InputContext::DebugMapMenu, PadAxisId::LeftStickX, actions::DebugMapMove));
+        addIfMissing(MakeAxisBinding(InputContext::DebugMapMenu, PadAxisId::LeftStickY, actions::DebugMapMove));
+        addIfMissing(MakeAxisBinding(InputContext::DebugMapMenu, PadAxisId::RightStickX, actions::DebugMapLook));
+        addIfMissing(MakeAxisBinding(InputContext::DebugMapMenu, PadAxisId::RightStickY, actions::DebugMapLook));
+        addIfMissing(MakeAxisBinding(InputContext::DebugMapMenu, PadAxisId::LeftTrigger, actions::DebugMapZoomOut));
+        addIfMissing(MakeAxisBinding(InputContext::DebugMapMenu, PadAxisId::RightTrigger, actions::DebugMapZoomIn));
+
+        addIfMissing(MakeButtonBinding(InputContext::Lockpicking, bits.circle, actions::LockpickingCancel));
+        addIfMissing(MakeButtonBinding(InputContext::Lockpicking, bits.square, actions::LockpickingDebugMode));
+        addIfMissing(MakeAxisBinding(InputContext::Lockpicking, PadAxisId::LeftStickX, actions::LockpickingRotatePick));
+        addIfMissing(MakeAxisBinding(InputContext::Lockpicking, PadAxisId::LeftStickY, actions::LockpickingRotatePick));
+        addIfMissing(MakeAxisBinding(InputContext::Lockpicking, PadAxisId::RightStickX, actions::LockpickingRotateLock));
+        addIfMissing(MakeAxisBinding(InputContext::Lockpicking, PadAxisId::RightStickY, actions::LockpickingRotateLock));
+
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.cross, actions::CreationsAccept));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.circle, actions::CreationsCancel));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.dpadUp, actions::CreationsUp));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.dpadDown, actions::CreationsDown));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.dpadLeft, actions::CreationsLeft));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.dpadRight, actions::CreationsRight));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.options, actions::CreationsOptions));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.triangle, actions::CreationsLoadOrderAndDelete));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.r1, actions::CreationsLikeUnlike));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.l1, actions::CreationsSearchEdit));
+        addIfMissing(MakeButtonBinding(InputContext::CreationsMenu, bits.square, actions::CreationsPurchaseCredits));
+        addIfMissing(MakeAxisBinding(InputContext::CreationsMenu, PadAxisId::LeftStickX, actions::CreationsLeftStick));
+        addIfMissing(MakeAxisBinding(InputContext::CreationsMenu, PadAxisId::LeftStickY, actions::CreationsLeftStick));
+        addIfMissing(MakeAxisBinding(InputContext::CreationsMenu, PadAxisId::LeftTrigger, actions::CreationsCategorySideBar));
+        addIfMissing(MakeAxisBinding(InputContext::CreationsMenu, PadAxisId::RightTrigger, actions::CreationsFilter));
+
+        addIfMissing(MakeButtonBinding(InputContext::Favor, bits.circle, actions::FavorCancel));
 
         if (addedCount != 0) {
             logger::info("[DualPad][BindingMgr] Added {} standard fallback bindings", addedCount);

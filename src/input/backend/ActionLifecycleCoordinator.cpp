@@ -24,7 +24,7 @@ namespace dualpad::input::backend
             ActionOutputContract contract)
         {
             (void)actionId;
-            if (backend != PlannedBackend::ButtonEvent ||
+            if (backend != PlannedBackend::NativeButtonCommit ||
                 kind != PlannedActionKind::NativeButton) {
                 return NativeDigitalPolicyKind::None;
             }

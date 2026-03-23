@@ -110,7 +110,7 @@ namespace dualpad::input::backend
         }
     }
 
-    void PollCommitCoordinator::Flush(INativeDigitalEmitter& emitter, std::uint64_t nowUs)
+    void PollCommitCoordinator::Flush(IPollCommitEmitter& emitter, std::uint64_t nowUs)
     {
         for (auto& slot : _slots) {
             if (slot.actionId.empty() || !HasManagedState(slot)) {

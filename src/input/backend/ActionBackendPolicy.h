@@ -11,7 +11,7 @@ namespace dualpad::input::backend
 {
     struct ActionRoutingDecision
     {
-        PlannedBackend backend{ PlannedBackend::CompatibilityFallback };
+        PlannedBackend backend{ PlannedBackend::None };
         PlannedActionKind kind{ PlannedActionKind::NativeButton };
         ActionOutputContract contract{ ActionOutputContract::Pulse };
         ActionLifecyclePolicy lifecyclePolicy{ ActionLifecyclePolicy::None };

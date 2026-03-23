@@ -106,6 +106,7 @@ namespace dualpad::dinput8_proxy
         mutable std::atomic_uint32_t _pollLogCount{ 0 };
         mutable std::atomic_uint32_t _getDeviceDataLogCount{ 0 };
         mutable std::atomic_uint32_t _getDeviceStateLogCount{ 0 };
+        mutable std::atomic_uint32_t _bridgeSequence{ 1 };
         mutable std::mutex _bridgePendingMutex;
         std::array<DIDEVICEOBJECTDATA, 32> _bridgePendingEvents{};
         std::uint32_t _bridgePendingCount{ 0 };

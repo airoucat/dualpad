@@ -1,9 +1,7 @@
 #include "pch.h"
 #include "input/InputFramePump.h"
 
-#include "input/backend/KeyboardNativeBackend.h"
 #include "input/RuntimeConfig.h"
-#include "input/injection/NativeInputPreControlMapHook.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/UpstreamGamepadHook.h"
 
@@ -75,45 +73,9 @@ namespace dualpad::input
             }
         }
 
-        if (RuntimeConfig::GetSingleton().UseUpstreamKeyboardHook()) {
-            auto& keyboardBackend = backend::KeyboardNativeBackend::GetSingleton();
-            if (!keyboardBackend.IsInstalled()) {
-                keyboardBackend.Install();
-            }
-
-            if (keyboardBackend.IsRouteActive()) {
-                static bool logged = false;
-                if (!logged) {
-                    logger::info(
-                        "[DualPad][FramePump] Keyboard upstream route owns snapshot draining; event sink is observing only");
-                    logged = true;
-                }
-                return RE::BSEventNotifyControl::kContinue;
-            }
-        }
-
-        if (RuntimeConfig::GetSingleton().UseNativeButtonInjector()) {
-            auto& nativeButtonHook = NativeInputPreControlMapHook::GetSingleton();
-            if (nativeButtonHook.IsInstalled()) {
-                static bool logged = false;
-                if (!logged) {
-                    logger::info(
-                        "[DualPad][FramePump] Legacy native button injector owns snapshot draining; event sink is observing only");
-                    logged = true;
-                }
-                return RE::BSEventNotifyControl::kContinue;
-            }
-
-            static bool warned = false;
-            if (!warned) {
-                logger::warn(
-                    "[DualPad][FramePump] use_native_button_injector is enabled but the legacy pre-ControlMap hook is unavailable; frame pump keeps snapshot draining ownership");
-                warned = true;
-            }
-        }
-
         PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread();
 
         return RE::BSEventNotifyControl::kContinue;
     }
 }
+

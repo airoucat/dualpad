@@ -14,6 +14,11 @@ namespace dualpad::input::backend
         constexpr std::uint32_t kDefaultRepeatDelayMs = 350;
         constexpr std::uint32_t kDefaultRepeatIntervalMs = 75;
 
+        bool IsDispatchableRoute(const ActionRoutingDecision& decision)
+        {
+            return decision.backend != PlannedBackend::None;
+        }
+
         PlannedActionPhase PhaseFromEvent(const PadEvent& event)
         {
             switch (event.type) {
@@ -46,7 +51,7 @@ namespace dualpad::input::backend
             ActionOutputContract contract)
         {
             (void)actionId;
-            if (backend != PlannedBackend::ButtonEvent ||
+            if (backend != PlannedBackend::NativeButtonCommit ||
                 kind != PlannedActionKind::NativeButton) {
                 return NativeDigitalPolicyKind::None;
             }
@@ -120,6 +125,9 @@ namespace dualpad::input::backend
         FrameActionPlan& outPlan) const
     {
         const auto decision = ActionBackendPolicy::Decide(binding.actionId);
+        if (!IsDispatchableRoute(decision)) {
+            return false;
+        }
         auto action = PlannedAction{};
         action.backend = decision.backend;
         action.kind = decision.kind;
@@ -151,6 +159,9 @@ namespace dualpad::input::backend
         FrameActionPlan& outPlan) const
     {
         const auto decision = ActionBackendPolicy::Decide(actionId);
+        if (!IsDispatchableRoute(decision)) {
+            return false;
+        }
         auto action = PlannedAction{};
         action.backend = decision.backend;
         action.kind = decision.kind;
@@ -175,6 +186,9 @@ namespace dualpad::input::backend
         FrameActionPlan& outPlan) const
     {
         const auto decision = ActionBackendPolicy::Decide(actionId);
+        if (!IsDispatchableRoute(decision)) {
+            return false;
+        }
         auto action = PlannedAction{};
         action.backend = decision.backend;
         action.kind = decision.kind;

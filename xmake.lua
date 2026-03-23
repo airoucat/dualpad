@@ -59,9 +59,23 @@ target("DualPad")
         end
         local debug_ini_src = path.join(os.projectdir(), "config", "DualPadDebug.ini")
         local debug_ini_dst = path.join(mo2_plugins_dir, "DualPadDebug.ini")
+        local controlmap_overlay_src = path.join(
+            os.projectdir(),
+            "config",
+            "controlmap_profiles",
+            "DualPadNativeCombo",
+            "Interface",
+            "Controls",
+            "PC",
+            "controlmap.txt")
+        local controlmap_overlay_dst = path.join(mo2_plugins_dir, "DualPadControlMap.txt")
         if os.isfile(debug_ini_src) and not os.isfile(debug_ini_dst) then
             os.mkdir(mo2_plugins_dir)
             os.cp(debug_ini_src, debug_ini_dst)
+        end
+        if os.isfile(controlmap_overlay_src) then
+            os.mkdir(mo2_plugins_dir)
+            os.cp(controlmap_overlay_src, controlmap_overlay_dst)
         end
         print("Deployed: %s", target:targetfile())
     end)

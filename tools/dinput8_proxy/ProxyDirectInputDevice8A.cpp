@@ -7,12 +7,6 @@ namespace dualpad::dinput8_proxy
 {
     namespace
     {
-        // Keyboard-native families have diverged at the process/feel layer:
-        // - Jump: one-shot pulse with a minimum down window
-        // - Activate: short pulse, but needs a slightly wider down window
-        // - Sneak: toggle-like, only light release smoothing
-        // - Sprint: held-like, needs a longer release delay to avoid collapsing
-        //   back into a too-narrow pulse.
         constexpr std::uint8_t kJumpPulseReleaseExtraGetDeviceDataCalls = 1;
         constexpr std::uint8_t kActivateReleaseExtraGetDeviceDataCalls = 2;
         constexpr std::uint8_t kSneakReleaseExtraGetDeviceDataCalls = 1;
@@ -40,6 +34,23 @@ namespace dualpad::dinput8_proxy
                 return kJumpPulseReleaseExtraGetDeviceDataCalls;
             default:
                 return 0;
+            }
+        }
+
+        std::string_view DescribeBridgeCommandType(const input::backend::KeyboardBridgeCommandType type)
+        {
+            switch (type) {
+            case input::backend::KeyboardBridgeCommandType::Press:
+                return "Press";
+            case input::backend::KeyboardBridgeCommandType::Release:
+                return "Release";
+            case input::backend::KeyboardBridgeCommandType::Pulse:
+                return "Pulse";
+            case input::backend::KeyboardBridgeCommandType::Reset:
+                return "Reset";
+            case input::backend::KeyboardBridgeCommandType::None:
+            default:
+                return "None";
             }
         }
 
@@ -123,24 +134,24 @@ namespace dualpad::dinput8_proxy
     HRESULT STDMETHODCALLTYPE ProxyDirectInputDevice8A::GetDeviceState(DWORD dataSize, LPVOID data)
     {
         input::backend::KeyboardNativeBridge::GetSingleton().TouchConsumerHeartbeat();
-        const auto bridgeConsumed = ConsumeBridgeCommands();
         const auto result = _realDevice->GetDeviceState(dataSize, data);
         if (result == DI_OK && data != nullptr && dataSize != 0) {
             ApplyBridgeStateToDeviceState(dataSize, data);
         }
+
+        const auto& config = GetProxyConfig();
         const auto* bytes = static_cast<const std::uint8_t*>(data);
         const auto focus = (result == DI_OK && bytes != nullptr && dataSize > kFocusScancode) ?
             bytes[kFocusScancode] :
             0;
-        if (bridgeConsumed != 0 || focus != 0 || ShouldLog(_getDeviceStateLogCount, 16)) {
+        if (focus != 0 || (!config.logOnlyInteresting && ShouldLog(_getDeviceStateLogCount, 16))) {
             Logf(
-                "Device::GetDeviceState guid={} device=0x{:X} result={} dataSize={} focus[0x39]=0x{:02X} bridgeConsumed={}",
+                "Device::GetDeviceState guid={} device=0x{:X} result={} dataSize={} focus[0x39]=0x{:02X}",
                 GuidToString(_deviceGuid),
                 reinterpret_cast<std::uintptr_t>(_realDevice),
                 HResultToString(result),
                 dataSize,
-                focus,
-                bridgeConsumed);
+                focus);
         }
         return result;
     }
@@ -169,12 +180,13 @@ namespace dualpad::dinput8_proxy
             *inOut = returned;
         }
         const auto bridgePendingAfter = GetBridgePendingCount();
+        const auto& config = GetProxyConfig();
 
         const bool shouldLog =
             returned != 0 ||
             bridgeConsumed != 0 ||
             bridgeAppended != 0 ||
-            ShouldLog(_getDeviceDataLogCount, 24);
+            (!config.logOnlyInteresting && ShouldLog(_getDeviceDataLogCount, 24));
         if (shouldLog) {
             Logf(
                 "Device::GetDeviceData guid={} device=0x{:X} result={} cb={} requested={} returned={} flags=0x{:X} bridgeConsumed={} bridgeAppended={} bridgePendingBefore={} bridgePendingAfter={}",
@@ -220,9 +232,9 @@ namespace dualpad::dinput8_proxy
         DIDEVICEOBJECTDATA event{};
         event.dwOfs = scancode;
         event.dwData = pressed ? 0x80u : 0x00u;
-        event.dwTimeStamp = 0;
-        event.dwSequence = 0;
-        event.uAppData = 0;
+        event.dwTimeStamp = ::GetTickCount();
+        event.dwSequence = _bridgeSequence.fetch_add(1);
+        event.uAppData = static_cast<ULONG_PTR>(-1);
         return event;
     }
 
@@ -305,18 +317,19 @@ namespace dualpad::dinput8_proxy
         }
 
         const auto queueBridgeRecord = [this](DWORD ofs, bool pressed) {
-            DIDEVICEOBJECTDATA event{};
-            event.dwOfs = ofs;
-            event.dwData = pressed ? 0x80u : 0x00u;
-            event.dwTimeStamp = 0;
-            event.dwSequence = 0;
-            event.uAppData = 0;
-            QueueBridgePendingEvent(event);
+            QueueBridgePendingEvent(BuildBridgeEvent(static_cast<std::uint8_t>(ofs), pressed));
         };
 
         for (std::size_t i = 0; i < commandCount; ++i) {
             const auto& command = commands[i];
             const auto scancode = static_cast<std::size_t>(command.scancode);
+            if (!GetProxyConfig().logOnlyInteresting) {
+                Logf(
+                    "  bridgeCommand[{}] type={} scancode=0x{:02X}",
+                    i,
+                    DescribeBridgeCommandType(command.type),
+                    command.scancode);
+            }
             switch (command.type) {
             case input::backend::KeyboardBridgeCommandType::Press:
                 if (scancode < _bridgeLatchedDown.size() && !_bridgeLatchedDown[scancode]) {
@@ -399,6 +412,16 @@ namespace dualpad::dinput8_proxy
         std::size_t appended = 0;
         while (_bridgePendingCount != 0 && returned < requested) {
             objectData[returned] = _bridgePendingEvents[0];
+            if (!GetProxyConfig().logOnlyInteresting) {
+                Logf(
+                    "  bridgeAppend[{}] ofs=0x{:X} data=0x{:X} ts={} seq={} app=0x{:X}",
+                    returned,
+                    objectData[returned].dwOfs,
+                    objectData[returned].dwData,
+                    objectData[returned].dwTimeStamp,
+                    objectData[returned].dwSequence,
+                    static_cast<std::uintptr_t>(objectData[returned].uAppData));
+            }
             if (objectData[returned].dwOfs < _bridgeLatchedDown.size() &&
                 objectData[returned].dwData == 0x00u) {
                 _bridgeLatchedDown[objectData[returned].dwOfs] = false;

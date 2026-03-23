@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "input/XInputStateBridge.h"
 
-#include "input/PadProfile.h"
-#include "input/SyntheticPadState.h"
-#include "input/backend/ButtonEventBackend.h"
+#include "input/AuthoritativePollState.h"
+#include "input/backend/NativeButtonCommitBackend.h"
+#include "input/backend/FrameActionPlanDebugLogger.h"
 
 #include <Windows.h>
 
@@ -66,46 +66,20 @@ namespace dualpad::input
 
         auto* state = reinterpret_cast<XINPUT_STATE*>(pState);
         // UpstreamGamepadHook drains pending snapshots immediately before this
-        // bridge runs, so both the compatibility cache and ButtonEvent poll
-        // commit represent the latest-known state for this Poll window rather
-        // than an arbitrary "previous frame" replay.
-        auto frame = SyntheticPadState::GetSingleton().ConsumeFrame();
-        const auto committedButtons = backend::ButtonEventBackend::GetSingleton().CommitPollState();
+        // bridge runs, so the poll commit and unified authoritative state both
+        // represent the latest-known data for this Poll window.
+        (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
+        const auto frame = AuthoritativePollState::GetSingleton().ReadSnapshot();
+        backend::LogAuthoritativePollFrame(frame);
+        state->Gamepad.wButtons = frame.xinputButtons;
 
-        const auto legacyDownMask = frame.downMask & ~committedButtons.managedMask;
-        const auto combinedDownMask = legacyDownMask | committedButtons.semanticDownMask;
-
-        WORD buttons = 0;
-        const auto& bits = GetPadBits(GetActivePadProfile());
-
-        if (combinedDownMask & bits.cross) buttons |= 0x1000;
-        if (combinedDownMask & bits.circle) buttons |= 0x2000;
-        if (combinedDownMask & bits.square) buttons |= 0x4000;
-        if (combinedDownMask & bits.triangle) buttons |= 0x8000;
-
-        if (combinedDownMask & bits.l1) buttons |= 0x0100;
-        if (combinedDownMask & bits.r1) buttons |= 0x0200;
-
-        if (combinedDownMask & bits.l3) buttons |= 0x0040;
-        if (combinedDownMask & bits.r3) buttons |= 0x0080;
-
-        if (combinedDownMask & bits.options) buttons |= 0x0010;
-        if (combinedDownMask & bits.create) buttons |= 0x0020;
-
-        if (combinedDownMask & bits.dpadUp) buttons |= 0x0001;
-        if (combinedDownMask & bits.dpadDown) buttons |= 0x0002;
-        if (combinedDownMask & bits.dpadLeft) buttons |= 0x0004;
-        if (combinedDownMask & bits.dpadRight) buttons |= 0x0008;
-
-        state->Gamepad.wButtons = buttons;
-
-        if (frame.hasAxis) {
-            state->Gamepad.sThumbLX = static_cast<SHORT>(frame.lx * 32767.0f);
-            state->Gamepad.sThumbLY = static_cast<SHORT>(frame.ly * 32767.0f);
-            state->Gamepad.sThumbRX = static_cast<SHORT>(frame.rx * 32767.0f);
-            state->Gamepad.sThumbRY = static_cast<SHORT>(frame.ry * 32767.0f);
-            state->Gamepad.bLeftTrigger = static_cast<BYTE>(frame.l2 * 255.0f);
-            state->Gamepad.bRightTrigger = static_cast<BYTE>(frame.r2 * 255.0f);
+        if (frame.hasAnalog) {
+            state->Gamepad.sThumbLX = static_cast<SHORT>(frame.moveX * 32767.0f);
+            state->Gamepad.sThumbLY = static_cast<SHORT>(frame.moveY * 32767.0f);
+            state->Gamepad.sThumbRX = static_cast<SHORT>(frame.lookX * 32767.0f);
+            state->Gamepad.sThumbRY = static_cast<SHORT>(frame.lookY * 32767.0f);
+            state->Gamepad.bLeftTrigger = static_cast<BYTE>(frame.leftTrigger * 255.0f);
+            state->Gamepad.bRightTrigger = static_cast<BYTE>(frame.rightTrigger * 255.0f);
         }
         else {
             state->Gamepad.sThumbLX = 0;

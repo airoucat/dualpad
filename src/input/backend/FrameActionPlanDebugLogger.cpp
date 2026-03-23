@@ -47,22 +47,43 @@ namespace dualpad::input::backend
         }
     }
 
-    void LogVirtualGamepadState(const VirtualGamepadState& state)
+    void LogAuthoritativePollFrame(const AuthoritativePollFrame& frame)
     {
         if (!input::RuntimeConfig::GetSingleton().LogActionPlan()) {
             return;
         }
 
         logger::info(
-            "[DualPad][ActionPlan] virtualPad down=0x{:08X} pressed=0x{:08X} released=0x{:08X} move=({:.3f},{:.3f}) look=({:.3f},{:.3f}) triggers=({:.3f},{:.3f})",
-            state.downMask,
-            state.pressedMask,
-            state.releasedMask,
-            state.moveX,
-            state.moveY,
-            state.lookX,
-            state.lookY,
-            state.leftTrigger,
-            state.rightTrigger);
+            "[DualPad][AuthoritativePoll] poll={} ctx={} epoch={} srcTs={} down=0x{:08X} pressed=0x{:08X} released=0x{:08X} pulse=0x{:08X} xinputButtons=0x{:04X} xinputPressed=0x{:04X} xinputReleased=0x{:04X} xinputPulse=0x{:04X} unmanagedDown=0x{:08X} unmanagedPressed=0x{:08X} unmanagedReleased=0x{:08X} unmanagedPulse=0x{:08X} committedDown=0x{:08X} committedPressed=0x{:08X} committedReleased=0x{:08X} managed=0x{:08X} hasDigital={} hasAnalog={} overflowed={} coalesced={} move=({:.3f},{:.3f}) look=({:.3f},{:.3f}) triggers=({:.3f},{:.3f})",
+            frame.pollSequence,
+            input::ToString(frame.context),
+            frame.contextEpoch,
+            frame.sourceTimestampUs,
+            frame.downMask,
+            frame.pressedMask,
+            frame.releasedMask,
+            frame.pulseMask,
+            frame.xinputButtons,
+            frame.xinputPressedButtons,
+            frame.xinputReleasedButtons,
+            frame.xinputPulseButtons,
+            frame.unmanagedDownMask,
+            frame.unmanagedPressedMask,
+            frame.unmanagedReleasedMask,
+            frame.unmanagedPulseMask,
+            frame.committedDownMask,
+            frame.committedPressedMask,
+            frame.committedReleasedMask,
+            frame.managedMask,
+            frame.hasDigital,
+            frame.hasAnalog,
+            frame.overflowed,
+            frame.coalesced,
+            frame.moveX,
+            frame.moveY,
+            frame.lookX,
+            frame.lookY,
+            frame.leftTrigger,
+            frame.rightTrigger);
     }
 }

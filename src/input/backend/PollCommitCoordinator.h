@@ -1,7 +1,7 @@
 #pragma once
 
 #include "input/InputContext.h"
-#include "input/backend/INativeDigitalEmitter.h"
+#include "input/backend/IPollCommitEmitter.h"
 #include "input/backend/NativeControlCode.h"
 
 #include <array>
@@ -203,7 +203,7 @@ namespace dualpad::input::backend
             std::uint64_t nowUs,
             bool gameplayGateOpen);
 
-        void Flush(INativeDigitalEmitter& emitter, std::uint64_t nowUs);
+        void Flush(IPollCommitEmitter& emitter, std::uint64_t nowUs);
 
         void DumpState() const;
 

@@ -5,9 +5,8 @@
 #include "input/backend/ActionLifecycleCoordinator.h"
 #include "input/backend/FrameActionPlan.h"
 #include "input/backend/FrameActionPlanner.h"
-#include "input/backend/NativeStateBackend.h"
+#include "input/backend/NativeControlCode.h"
 #include "input/mapping/BindingResolver.h"
-#include "input/injection/CompatibilityInputInjector.h"
 #include "input/injection/PadEventSnapshot.h"
 #include "input/injection/SourceBlockCoordinator.h"
 #include "input/injection/SyntheticStateReducer.h"
@@ -29,7 +28,6 @@ namespace dualpad::input
         PadEventSnapshotProcessor();
 
         BindingResolver _bindingResolver{};
-        CompatibilityInputInjector _compatibilityInjector{};
         ActionDispatcher _actionDispatcher;
         SyntheticStateReducer _stateReducer{};
         backend::ActionLifecycleCoordinator _lifecycleCoordinator{};
@@ -41,10 +39,9 @@ namespace dualpad::input
         void DispatchPlannedActions();
         void ResetFramePlanning();
         void BeginFramePlanning(InputContext context);
-        void FinishFramePlanning();
+        void FinishFramePlanning(const SyntheticPadFrame& frame, InputContext context);
 
         backend::FrameActionPlanner _planner{};
         backend::FrameActionPlan _framePlan{};
-        backend::NativeStateBackend _plannedNativeState{};
     };
 }

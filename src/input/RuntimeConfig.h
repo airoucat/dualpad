@@ -4,25 +4,10 @@
 
 namespace dualpad::input
 {
-    enum class NativeButtonHookMode
-    {
-        DropProbe,
-        AppendProbe,
-        Append,
-        HeadPrepend,
-        Inject
-    };
-
     enum class UpstreamGamepadHookMode
     {
         Disabled = 0,
         PollXInputCall
-    };
-
-    enum class UpstreamKeyboardHookMode
-    {
-        SemanticMid = 0,
-        DiObjDataCall
     };
 
     class RuntimeConfig
@@ -45,15 +30,6 @@ namespace dualpad::input
 
         bool UseUpstreamGamepadHook() const { return _useUpstreamGamepadHook; }
         UpstreamGamepadHookMode GetUpstreamGamepadHookMode() const { return _upstreamGamepadHookMode; }
-        bool UseUpstreamKeyboardHook() const { return _useUpstreamKeyboardHook; }
-        UpstreamKeyboardHookMode GetUpstreamKeyboardHookMode() const { return _upstreamKeyboardHookMode; }
-        bool TestKeyboardEventSourcePatch() const { return _testKeyboardEventSourcePatch; }
-        bool TestKeyboardManagerHeadPatch() const { return _testKeyboardManagerHeadPatch; }
-        bool TestKeyboardAcceptDumpRoute() const { return _testKeyboardAcceptDumpRoute; }
-        bool UseNativeButtonInjector() const { return _useNativeButtonInjector; }
-        bool UseNativeFrameInjector() const { return _useNativeFrameInjector; }
-        NativeButtonHookMode GetNativeButtonHookMode() const { return _nativeButtonHookMode; }
-        bool UseNativeButtonDropProbe() const { return _nativeButtonHookMode == NativeButtonHookMode::DropProbe; }
 
     private:
         RuntimeConfig() = default;
@@ -74,13 +50,5 @@ namespace dualpad::input
 
         bool _useUpstreamGamepadHook{ true };
         UpstreamGamepadHookMode _upstreamGamepadHookMode{ UpstreamGamepadHookMode::PollXInputCall };
-        bool _useUpstreamKeyboardHook{ false };
-        UpstreamKeyboardHookMode _upstreamKeyboardHookMode{ UpstreamKeyboardHookMode::SemanticMid };
-        bool _testKeyboardEventSourcePatch{ false };
-        bool _testKeyboardManagerHeadPatch{ false };
-        bool _testKeyboardAcceptDumpRoute{ false };
-        bool _useNativeButtonInjector{ false };
-        bool _useNativeFrameInjector{ false };
-        NativeButtonHookMode _nativeButtonHookMode{ NativeButtonHookMode::DropProbe };
     };
 }

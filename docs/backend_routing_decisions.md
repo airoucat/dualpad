@@ -1,296 +1,216 @@
 # Backend Routing Decisions
 
-This document records the design decisions that came out of the recent Route B discussion and comparison against Steam Input.
+本文只记录当前仍然有效的 backend ownership / routing 结论，不再保留已经被旧实验推翻的分流设想。
 
-It is intentionally product-oriented:
+## 当前运行时结论
 
-- what the mod should do
-- what we do not want it to do
-- which backend owns which class of action
+当前默认运行时桥接是：
 
-It is not a reverse-engineering notebook.
+- 在 `BSWin32GamepadDevice::Poll` 的内部 `XInputGetState` call-site 上桥接 synthetic state
+- 让 Skyrim 继续用自己的 producer 语义从 current-state 推导原生 gamepad/user event
 
-## Current Runtime Conclusion
+因此当前主线仍然是：
 
-The current Route B bridge is:
+- `virtual gamepad current-state`
+- 不是 direct `ButtonEvent(userEvent)` 拼接
+- 也不是 keyboard-native 主线
 
-- patch the internal `XInputGetState` call inside `BSWin32GamepadDevice::Poll`
-- fill one synthetic `XINPUT_STATE`
-- let Skyrim derive its own native gamepad semantics from that state
+补充：
 
-This means the current bridge is still a virtual gamepad-state path, not direct `ButtonEvent` construction.
+- 当前 `AuthoritativePollState` 的正式口径是“虚拟 XInput 手柄硬件状态”
+- Skyrim 原生 user event 继续由游戏自己的 `producer / handler` 从这份硬件状态推导
 
-## Product Identity
+## 当前 backend ownership
 
-DualPad remains a controller mod from the player's point of view.
+### 1. NativeButtonCommitBackend
 
-Keyboard-native injection is an internal tool backend, not the primary public-facing interaction model.
+当前默认数字主线 backend。
 
-The player should not feel like the mod is "typing on the keyboard" during normal play.
+负责：
 
-## Confirmed Planning Rules
+- 已确认能安全 materialize 为 gamepad current-state 的数字动作
+- `Jump / Activate / Sprint / Sneak / Shout / TogglePOV`
+- `Menu Confirm / Cancel / Up / Down / Left / Right`
+- `Book PreviousPage / NextPage`
 
-The planner stays above the backend split.
+特点：
 
-That means all of these still remain valid:
+- 消费 `FrameActionPlan`
+- 通过 `PollCommitCoordinator` 维护 Poll 可见性
+- 最终写入的是标准手柄按钮位，不直接构造 `BSInputEvent`
 
-- one physical key can map to different actions in different contexts
-- combo bindings remain available
-- tap/hold/combo normalization happens before backend routing
-- backend choice does not remove context freedom
+### 2. Native analog publish
 
-The backend only answers:
+当前默认模拟量主线不是独立 backend 类，而是 `PadEventSnapshotProcessor` 对 `FrameActionPlan` 里的 `NativeState` 动作做统一发布。
 
-- how the final action is emitted
-- which native device semantics should own the lifecycle
+负责：
 
-## Final Backend Ownership Direction
+- Move stick
+- Look stick
+- Trigger analog state
 
-### Gamepad backend
+特点：
 
-The gamepad backend should be kept narrow.
+- 只做模拟量与 native pad-state ownership
+- 不应重新扩张成“所有数字动作的家”
+- 对扳机，正式输出是 `LT/RT` 硬件字节；`Attack / Block` 等原生战斗语义继续由 Skyrim 自己的 `AttackBlockHandler` 推导
 
-For now, treat it as the backend for analog/native pad-state controls only:
+### 3. Unmanaged raw digital publish
 
-- left stick
-- right stick
-- left trigger
-- right trigger
+`CompatibilityFallback` 已退出当前运行时代码里的 backend 枚举与分发路径，现仅作为历史概念保留。
 
-This backend exists to preserve:
+当前实际保留的是 `PadEventSnapshotProcessor` 内部的 unmanaged raw digital publish 步骤。
 
-- movement analog range
-- look analog range
-- trigger analog range
-- native controller deadzone and sampling behavior
+负责：
 
-Do not treat it as the long-term home for most digital actions.
+- 历史兼容路径残留
+- 向统一 `AuthoritativePollState` 补写 unmanaged raw digital state
 
-### Keyboard-native backend
+规则：
 
-The keyboard-native backend is still the intended long-term owner for most
-digital control actions.
+- 不能回流成默认数字主线
+- 当前没有正式公开动作再依赖这条路径
+- 只能作为内部过渡/兜底层存在
+- 当前只根据 `SyntheticPadFrame` 的 raw digital edge 结果补写统一 poll state，不再接受 dispatcher 的旁路 pulse/state 写入
 
-This includes the actions that are easier, more stable, or more product-correct when expressed as native keyboard controls instead of virtual gamepad buttons.
+### 4. Plugin action dispatch
 
-Examples:
+负责插件内部动作：
 
-- sprint
-- activate
-- jump
-- hotkeys
-- menu confirm/cancel if needed
-- menu page actions if routed as keyboard-native controls
-- plugin-facing helper bindings that should behave like keyboard controls
+- Screenshot
+- Multi-screenshot
+- ToggleHUD
 
-But the current implementation is not production-ready yet.
+这些动作当前不是通过 gamepad current-state 主线表达，而是由 `ActionDispatcher -> ActionExecutor` 明确作为 plugin action 处理。
 
-Near-term runtime rule:
+### 5. ModEvent slots
 
-- keep keyboard-native code available for reverse-engineering and future work
-- do not route production gameplay actions through it until Skyrim's internal
-  keyboard semantic contract is fully verified
+当前把 `ModEvent1-24` 视为正式公开逻辑槽位，而不是独立 transport backend。
 
-### Plugin backend
+当前定位：
 
-Keep plugin-local actions separate:
+- 面向我方 MCM 的稳定逻辑名
+- 对外通过固定虚拟键池与其他 mod 的 MCM / hotkey 系统对接
+- 当前只支持 `Pulse`
+- 不和 Skyrim control routing 混用
 
-- screenshot
-- multi-screenshot
-- future plugin utilities
+规则：
 
-### Mod backend
+- `ModEvent1-24 -> 固定虚拟键` 映射必须稳定，不能做用户可配 ABI
+- 玩家可配置的是“哪个手柄输入触发 `ModEventN`”，不是“`ModEventN` 底下具体是哪一个虚拟键”
+- `Hold / Toggle / Repeat / 命名式 Mod action` 留作后续扩展
+- 已补代理检测状态，供未来 MCM 使用：
+  - `HasProxyDllInGameRoot()`
+  - `HasActiveBridgeConsumer()`
+  - `ShouldExposeModEventConfiguration()`
+  - `IsModEventTransportReady()`
 
-Keep mod-facing events separate from both Skyrim controls and plugin-local controls.
+### 6. KeyboardHelperBackend
 
-## Mixed Output Is Acceptable
+正式模块名采用 `KeyboardHelperBackend`。
 
-Yes, mixed device output is acceptable.
+当前代码实现与职责口径已统一为 `KeyboardHelperBackend`。
 
-The intended shape is:
+当前不是 PC 原生控制事件主线。
 
-- gamepad backend emits analog stick/trigger state
-- keyboard-native backend emits digital key controls
+当前定位：
 
-So it is valid for one frame to contain:
+- helper / low-latency simulated keyboard output
+- `VirtualKey.*`
+- `FKey.*`
+- 固定虚拟键池
+- mod/helper key output
 
-- gamepad analog movement/look
-- keyboard-native digital actions
+规则：
 
-This is not a design problem by itself.
+- 不再默认承担 `Jump / Activate / Confirm / Sprint` 这一类 Skyrim 原生动作
+- 不应再次被误当成默认数字主线
+- 当前也是 `ModEvent` 的实际 materialization backend
+- 当前所有 keyboard helper 输出统一走 `dinput8` 代理桥接的 simulated keyboard path
+- `BSWin32KeyboardDevice::Poll` 本地原生 hook 只保留为未来 RE 方向，不再属于当前运行时 routing
+- `Wait / Journal` 已回到 `NativeButtonCommitBackend` 的 current-state 主线
+- `Game.Attack / Game.Block` 旧 compatibility action 路径已撤出正式支持面
+- `Pause / NativeScreenshot / Hotkey3-8` 当前不再走 `KeyboardHelper`，而是作为独立原生 action 身份接到 `NativeButtonCommit -> AuthoritativePollState`；这批动作由 DualPad 在运行时覆盖 gamepad `ControlMap` 到固定 combo ABI，且默认不占用现有手柄键位
+- `OpenInventory / OpenMagic / OpenMap / OpenSkills` 当前已撤出正式支持面；它们所属的 `MenuOpenHandler` 家族在当前 mod 栈下不稳定，不再继续作为 combo-native 默认能力推进
+- 当前 combo-native action 的 materialization 规则是“第一拍直接下完整组合”；此前尝试过 staged prelude，但会破坏 `Pause / NativeScreenshot` 这类首拍型 handler，因此当前不再使用
+- `OpenFavorites` 当前仍撤出正式支持面，不走 `KeyboardHelper`，也不默认回退到 UI message
 
-The real rule is narrower:
+## 当前 routing 原则
 
-- one stateful action lifecycle must have exactly one owning backend
+### Planner 优先
 
-For example:
+先做：
 
-- `Sprint` must not bounce between gamepad and keyboard mid-hold
-- `MenuDown` must not alternate between gamepad repeat and keyboard repeat during one hold
+- context resolve
+- trigger resolve
+- combo/tap/hold 解释
+- ownership 决策
 
-## Text Input Policy
+再做：
 
-Do not build a text-input backend right now.
+- backend 选择
+- poll commit
+- plugin dispatch
 
-The current product goal is control input, not text composition.
+### 一个 stateful lifecycle 只能有一个 owner
 
-This leads to two hard rules:
+例如：
 
-- DualPad should not intentionally produce character input for text-entry UI right now
-- pressing controller buttons while a text-entry field is active must not type visible characters by accident
+- `Sprint` 一次 hold 只能归一个 backend
+- `MenuDown` 一次 repeat 不能在不同 backend 间跳
+- `Sneak` 一次 toggle 不能中途换 owner
 
-Practical consequence:
+### Mixed output 是允许的
 
-- `KeyboardNativeBackend` is for control-style keys, not for text entry
-- if Skyrim is in a text-entry context, keyboard-native character-producing routes should be disabled or suppressed
+同一帧可以合法同时存在：
 
-The mod should prefer "no action" over accidental text injection.
+- analog current-state
+- digital current-state
+- plugin action
+- mod event
 
-## Player Rebinding Policy
+但不能让同一个动作生命周期在 backend 间跳转。
 
-### Game settings changes
+### Hardware-state first
 
-If a route depends on virtual gamepad state, Skyrim's own gamepad binding interpretation can affect the result.
+- 对手柄原生线，插件侧优先 materialize 标准 XInput 硬件位/轴
+- 不再把 `Game.Attack / Game.Block` 这类原生 family 当成插件侧独立 transport 目标
+- 同一原则后续可继续推广到其它具备明确标准手柄硬件身份的原生按钮
+- 这里的“统一”只指统一到硬件状态层：
+  - 数字键、摇杆、扳机在 Skyrim 原生里仍由不同 producer / handler 家族消费
+  - 插件不应把它们强行压成一套自定义 gameplay 语义状态机
 
-If a route depends on keyboard-native controls, Skyrim's keyboard binding interpretation can affect the result.
+### InputModalityTracker
 
-Therefore the backend split should reduce ambiguity:
+- `InputModalityTracker` 只负责输入模式层，不负责动作 routing。
+- 参考 AutoInputSwitch 的做法，允许键盘/鼠标与手柄同时生效，并驱动 `IsUsingGamepad / GamepadControlsCursor / remap-mode` 的平台判断。
+- `KeyboardHelperBackend` 自发的 simulated keyboard 事件必须被 modality tracker 忽略，避免 helper 输出把平台误切到 KBM。
+- 因此 “mixed input coexistence” 和 “keyboard helper transport” 是两层不同职责，不应混为同一问题。
 
-- analog gamepad semantics stay on the gamepad backend
-- most digital actions move to keyboard-native backend
+## 当前项目侧近似映射
 
-This reduces dependence on Skyrim's gamepad controlmap for digital gameplay behavior.
+下面这些当前仍是“项目侧可用近似”，不是 vanilla 名字级一比一映射：
 
-### Dynamic `ControlMap` reads
+- `Console.Execute -> MenuConfirm`
+- `ConsoleHistoryUp -> MenuScrollUp`
+- `ConsoleHistoryDown -> MenuScrollDown`
 
-Dynamic `ControlMap` parsing is acceptable if it is cached.
+保留原因：
 
-Do not do a full `ControlMap` walk every frame.
+- 当前 current-state materialization 可用
+- 功能上正确
+- 但语义文档里必须明确它们不是已证实的原生名字同构
 
-Acceptable strategy:
+## 不再继续的方向
 
-- load once at startup
-- refresh on settings/menu transitions that can change bindings
-- use lookup tables at runtime
+- 不再把 keyboard-native 当默认数字主线扩张
+- 不再回到旧 consumer-side native button splice
+- 不再恢复 `XInputGetState` IAT 输入 fallback
+- 不再把 compatibility digital fallback 当平行数字主线
 
-This should not introduce meaningful latency if implemented that way.
+## 当前仍开放的未来路线
 
-## Why This Direction Was Chosen
+- 对少数顺序敏感 UI 场景，未来可研究 `direct native event`
+- 对更上游的 native-state 边界，继续做逆向验证
+- 对 mod/helper 输出，继续保留 `KeyboardHelperBackend` 作为窄职责 backend
 
-Recent discussion clarified three product facts:
-
-- context freedom is mandatory
-- accidental text entry is unacceptable
-- analog controller feel is still worth preserving
-
-The narrowest architecture that satisfies those constraints is:
-
-- planner decides context/combo/tap/hold first
-- analog actions go to `GamepadNativeBackend`
-- digital control actions go to `KeyboardNativeBackend`
-- plugin actions stay separate
-- mod events stay separate
-
-## Immediate Implementation Guidance
-
-Near-term implementation should assume:
-
-- Route B remains the current bridge for gamepad-state injection
-- that bridge is best suited to analog controls first
-- the first keyboard-native route should be a call-site hook inside `BSWin32KeyboardDevice::Poll`
-- that keyboard route should rebuild `BSWin32KeyboardDevice::curState` from physical state plus DualPad-owned keys inside the same call-site hook
-- keyboard-native work should stay focused on non-text control injection
-
-Do not broaden the gamepad backend again just because Route B is working.
-
-The next expansion target should stay on the dedicated keyboard-native control backend, not more digital button ownership inside the gamepad backend.
-
-## Alternative Route Summary
-
-Recent reverse-engineering results changed the practical near-term split:
-
-- `Route B` remains the only production-ready path for native gameplay control feel
-- `KeyboardNativeBackend` remains useful, but as a bounded research line rather
-  than a shipping dependency
-- if a feature only needs to execute the native function/semantic that a PC
-  event normally triggers, a direct helper/handler route is acceptable
-
-Current route matrix:
-
-- `Route B / NativeStateBackend`
-  - production path
-  - owns analog stick / trigger semantics and any action that truly depends on
-    native controller-state lifecycle
-- `KeyboardNativeBackend`
-  - keep for reverse-engineering and future experiments
-  - do not make new product features depend on it until the current
-    `GetDeviceData` provenance gap is solved
-- `PluginActionBackend`
-  - preferred for screenshot, quicksave, quickload, wait, and similar plugin
-    utility behavior
-- `ModEventBackend`
-  - preferred when DualPad controls both the sender and the receiving mod-side
-    contract
-- future `DirectSemanticBackend`
-  - suitable for actions where we can directly call game helpers or reuse
-    handler/camera semantics instead of fabricating keyboard identity
-
-Routes that are still valid to evaluate but should not be treated as the main
-product plan:
-
-- `SendInput`
-  - lightweight user-mode proof-of-concept only
-  - not trusted as a final answer for Skyrim's keyboard provenance
-- `dinput8.dll` / DirectInput proxy
-  - worthwhile as a more-upstream research step
-  - still has compatibility and maintenance risk
-- virtual HID keyboard
-  - most likely way to obtain true PC-keyboard identity for other mods
-  - significantly higher engineering and deployment cost
-
-Relevant reusable mod patterns:
-
-- `TrueDirectionalMovement` and `BFCO` are useful as examples of
-  helper/handler-driven semantics, not as examples of queue-based synthetic
-  input production
-- `MCO/DMCO` behavior assets are useful as a combat semantic dictionary, not as
-  an input backend implementation
-
-## Keyboard-Native Update
-
-Recent `dinput8` proxy experiments changed the practical implementation point
-for keyboard-native controls:
-
-- old in-plugin SKSE keyboard worker hooks are no longer the preferred formal
-  route
-- the preferred route is now the keyboard `IDirectInputDevice8A::GetDeviceData`
-  return boundary inside the separate `dinput8.dll` proxy
-
-What is already proven:
-
-- remapped native records succeed there
-- deferred synthetic records succeed there
-- pure synthetic `DIDEVICEOBJECTDATA` generated from scratch also succeeds there
-
-Therefore the shipping-oriented keyboard-native plan is now:
-
-- keep `DualPad.dll` as the action planner / producer
-- use a thin bridge into the `dinput8.dll` proxy
-- let the proxy emit keyboard-native `DIDEVICEOBJECTDATA` records for the game
-
-Current unresolved constraint:
-
-- gameplay `Jump` still fails whenever Skyrim is running in gamepad-enabled
-  mode, even for a real physical `Space` key
-- therefore `dinput8`-side keyboard-native emission is proven early enough, but
-  is not yet sufficient to coexist with gameplay under the game's active gamepad
-  family
-
-Fallback policy remains unchanged:
-
-- if the proxy consumer is absent, `KeyboardNativeBackend` may still fall back
-  to the old in-plugin staging path during transition
-
-The final coexistence conclusion is summarized in:
-
-- [keyboard_native_coexistence_summary_zh.md](/c:/Users/xuany/Documents/dualPad/docs/keyboard_native_coexistence_summary_zh.md)

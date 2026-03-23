@@ -11,6 +11,7 @@ namespace dualpad::input::backend
         constexpr std::uint32_t kBridgeVersion = 1;
         constexpr std::size_t kBridgeCapacity = 128;
         constexpr DWORD kBridgeMutexWaitMs = 8;
+        constexpr std::uint64_t kConsumerHeartbeatCacheTtlMs = 50;
 
         std::uint64_t GetMonotonicMs()
         {
@@ -99,15 +100,28 @@ namespace dualpad::input::backend
 
     bool KeyboardNativeBridge::HasConsumerHeartbeat(std::uint64_t maxAgeMs) const
     {
-        if (!EnsureInitialized() || !TryLock(kBridgeMutexWaitMs)) {
+        const auto now = GetMonotonicMs();
+        const auto cachedCheckedAt = _cachedConsumerHeartbeatCheckMs.load(std::memory_order_relaxed);
+        if (cachedCheckedAt != 0 && now >= cachedCheckedAt && (now - cachedCheckedAt) <= kConsumerHeartbeatCacheTtlMs) {
+            return _cachedConsumerHeartbeatActive.load(std::memory_order_relaxed);
+        }
+
+        if (!EnsureInitialized()) {
+            _cachedConsumerHeartbeatActive.store(false, std::memory_order_relaxed);
+            _cachedConsumerHeartbeatCheckMs.store(now, std::memory_order_relaxed);
             return false;
         }
 
-        const auto now = GetMonotonicMs();
+        if (!TryLock(kBridgeMutexWaitMs)) {
+            return _cachedConsumerHeartbeatActive.load(std::memory_order_relaxed);
+        }
+
         const auto heartbeat = _state->consumerHeartbeatMs;
         const auto active = heartbeat != 0 && now >= heartbeat && (now - heartbeat) <= maxAgeMs;
 
         Unlock();
+        _cachedConsumerHeartbeatActive.store(active, std::memory_order_relaxed);
+        _cachedConsumerHeartbeatCheckMs.store(now, std::memory_order_relaxed);
         return active;
     }
 

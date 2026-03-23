@@ -9,15 +9,11 @@
 
 namespace dualpad::input
 {
-    class CompatibilityInputInjector;
-
     enum class ActionDispatchTarget : std::uint8_t
     {
         None = 0,
-        ButtonEvent,
-        KeyboardNative,
-        CompatibilityPulse,
-        CompatibilityState,
+        NativeButtonCommit,
+        KeyboardHelper,
         Plugin
     };
 
@@ -30,13 +26,8 @@ namespace dualpad::input
     class ActionDispatcher
     {
     public:
-        explicit ActionDispatcher(CompatibilityInputInjector& compatibilityInjector);
-
-        void DispatchDirectPadEvent(const PadEvent& event) const;
+        ActionDispatcher() = default;
         ActionDispatchResult DispatchPlannedAction(const backend::PlannedAction& action) const;
-
-    private:
-        CompatibilityInputInjector& _compatibilityInjector;
     };
 
     std::string_view ToString(ActionDispatchTarget target);
