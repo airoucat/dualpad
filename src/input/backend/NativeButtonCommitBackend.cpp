@@ -283,7 +283,6 @@ namespace dualpad::input::backend
             slot.token.active ||
             slot.pending.kind != PendingKind::None ||
             slot.pending.pendingNextPulse ||
-            slot.desiredHeld ||
-            slot.toggledOn;
+            slot.desiredHeld;
     }
 }

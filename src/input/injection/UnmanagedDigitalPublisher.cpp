@@ -2,11 +2,21 @@
 #include "input/injection/UnmanagedDigitalPublisher.h"
 
 #include "input/AuthoritativePollState.h"
+#include "input/RuntimeConfig.h"
 
 namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
+    namespace
+    {
+        bool ShouldLogRawDigital()
+        {
+            const auto& config = RuntimeConfig::GetSingleton();
+            return config.LogMappingEvents() || config.LogNativeInjection();
+        }
+    }
+
     void PublishUnmanagedDigitalState(const SyntheticPadFrame& frame, std::uint32_t handledButtons)
     {
         auto& authoritativeState = AuthoritativePollState::GetSingleton();
@@ -26,9 +36,11 @@ namespace dualpad::input
 
         if (filteredPulse != 0) {
             authoritativeState.PulseUnmanagedButton(filteredPulse);
-            logger::info(
-                "[DualPad][RawDigital] Pulsed unmanaged raw buttons 0x{:08X} for transient press-release",
-                filteredPulse);
+            if (ShouldLogRawDigital()) {
+                logger::info(
+                    "[DualPad][RawDigital] Pulsed unmanaged raw buttons 0x{:08X} for transient press-release",
+                    filteredPulse);
+            }
         }
 
         if (filteredPressed != 0) {

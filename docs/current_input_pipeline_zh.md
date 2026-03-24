@@ -95,6 +95,7 @@ flowchart TB
 - 在当前上下文下解析绑定，生成 `FrameActionPlan`。
 - 为 lifecycle-owned 动作显式决定 `Press / Hold / Repeat / Release / Pulse`。
 - 将不同动作分发到正确 backend，而不是让 backend 自己重判动作合同。
+- `PadEventSnapshotDispatcher` 当前以 bounded drain 方式在主线程消费 snapshot；若 backlog 超过单次 Poll 预算，会把剩余工作收敛为 latest-state coalesced snapshot。
 
 ### 4. 原生手柄状态提交
 
@@ -123,8 +124,8 @@ flowchart TB
 
 职责：
 
-- 在 `BSWin32GamepadDevice::Poll` 的 upstream `XInputGetState` call-site 写入 synthetic XInput state。
-- 只做 transport 侧序列化。
+- 在 `BSWin32GamepadDevice::Poll` 的 upstream `XInputGetState` call-site 先 drain pending snapshot，再 commit native digital state，最后写入 synthetic XInput state。
+- `XInputStateBridge` 只做 transport 侧序列化。
 - `wButtons` 派生由 `XInputButtonSerialization` 在 bridge / debug 侧按需计算。
 
 当前桥接层不再承担 gameplay 语义补做。

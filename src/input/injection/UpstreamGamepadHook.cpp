@@ -7,6 +7,7 @@
 #include <array>
 
 #include "input/XInputStateBridge.h"
+#include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 
 namespace logger = SKSE::log;
@@ -39,6 +40,7 @@ namespace dualpad::input
 
                 UpstreamGamepadHook::GetSingleton().NotePollCallActivity();
                 PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread();
+                (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
                 const auto result = FillSyntheticXInputState(currentState);
 
                 struct XInputGamepadView

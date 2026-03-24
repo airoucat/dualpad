@@ -15,15 +15,18 @@ namespace dualpad::input
 
         void SubmitSnapshot(const PadEventSnapshot& snapshot);
         void SubmitReset();
-        void DrainOnMainThread();
+        std::size_t DrainOnMainThread(std::size_t maxSnapshots = kDefaultDrainBudget);
         void SetFramePumpEnabled(bool enabled);
         bool IsFramePumpEnabled() const;
 
     private:
         static constexpr std::size_t kPendingSnapshotCapacity = 256;
+        static constexpr std::size_t kDefaultDrainBudget = 16;
 
         PadEventSnapshotDispatcher() = default;
         void ScheduleDrainTask();
+        bool HasResetInPendingLocked() const;
+        void CoalescePendingLocked();
 
         std::array<PadEventSnapshot, kPendingSnapshotCapacity> _pending{};
         std::size_t _pendingHead{ 0 };

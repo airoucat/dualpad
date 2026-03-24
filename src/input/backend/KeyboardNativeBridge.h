@@ -61,6 +61,7 @@ namespace dualpad::input::backend
         bool EnqueueCommand(KeyboardBridgeCommandType type, std::uint8_t scancode);
         bool TryLock(DWORD timeoutMs) const;
         void Unlock() const;
+        void ReleaseResources() const;
         std::wstring BuildMappingName() const;
         std::wstring BuildMutexName() const;
 
@@ -68,7 +69,6 @@ namespace dualpad::input::backend
         mutable HANDLE _mutex{ nullptr };
         mutable SharedState* _state{ nullptr };
         mutable DWORD _processId{ 0 };
-        mutable bool _initAttempted{ false };
         mutable bool _initialized{ false };
         mutable std::uint32_t _producerSequence{ 0 };
         mutable std::atomic<std::uint64_t> _cachedConsumerHeartbeatCheckMs{ 0 };

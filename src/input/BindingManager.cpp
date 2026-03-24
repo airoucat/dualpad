@@ -362,7 +362,7 @@ namespace dualpad::input
         addIfMissing(MakeAxisBinding(InputContext::ItemMenu, PadAxisId::RightTrigger, actions::ItemRightEquip));
         addIfMissing(MakeButtonBinding(InputContext::ItemMenu, bits.r3, actions::ItemZoom));
         addIfMissing(MakeButtonBinding(InputContext::ItemMenu, bits.square, actions::ItemXButton));
-        addIfMissing(MakeButtonBinding(InputContext::ItemMenu, bits.r3, actions::ItemYButton));
+        addIfMissing(MakeButtonBinding(InputContext::ItemMenu, bits.triangle, actions::ItemYButton));
         addIfMissing(MakeAxisBinding(InputContext::ItemMenu, PadAxisId::RightStickX, actions::ItemRotate));
         addIfMissing(MakeAxisBinding(InputContext::ItemMenu, PadAxisId::RightStickY, actions::ItemRotate));
 

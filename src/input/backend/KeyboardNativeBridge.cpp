@@ -157,43 +157,43 @@ namespace dualpad::input::backend
             return true;
         }
 
-        if (_initAttempted && _processId == currentProcessId) {
-            return _initialized;
+        if (_processId != 0 && _processId != currentProcessId) {
+            ReleaseResources();
         }
 
-        _initAttempted = true;
         _initialized = false;
         _processId = currentProcessId;
 
-        const auto mappingName = BuildMappingName();
-        const auto mutexName = BuildMutexName();
-
-        _mapping = ::CreateFileMappingW(
-            INVALID_HANDLE_VALUE,
-            nullptr,
-            PAGE_READWRITE,
-            0,
-            static_cast<DWORD>(sizeof(SharedState)),
-            mappingName.c_str());
         if (_mapping == nullptr) {
-            return false;
+            const auto mappingName = BuildMappingName();
+            _mapping = ::CreateFileMappingW(
+                INVALID_HANDLE_VALUE,
+                nullptr,
+                PAGE_READWRITE,
+                0,
+                static_cast<DWORD>(sizeof(SharedState)),
+                mappingName.c_str());
+            if (_mapping == nullptr) {
+                return false;
+            }
         }
 
-        _state = static_cast<SharedState*>(
-            ::MapViewOfFile(_mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedState)));
         if (_state == nullptr) {
-            ::CloseHandle(_mapping);
-            _mapping = nullptr;
-            return false;
+            _state = static_cast<SharedState*>(
+                ::MapViewOfFile(_mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedState)));
+            if (_state == nullptr) {
+                ReleaseResources();
+                return false;
+            }
         }
 
-        _mutex = ::CreateMutexW(nullptr, FALSE, mutexName.c_str());
         if (_mutex == nullptr) {
-            ::UnmapViewOfFile(_state);
-            _state = nullptr;
-            ::CloseHandle(_mapping);
-            _mapping = nullptr;
-            return false;
+            const auto mutexName = BuildMutexName();
+            _mutex = ::CreateMutexW(nullptr, FALSE, mutexName.c_str());
+            if (_mutex == nullptr) {
+                ReleaseResources();
+                return false;
+            }
         }
 
         if (!TryLock(kBridgeMutexWaitMs)) {
@@ -256,6 +256,30 @@ namespace dualpad::input::backend
         if (_mutex != nullptr) {
             ::ReleaseMutex(_mutex);
         }
+    }
+
+    void KeyboardNativeBridge::ReleaseResources() const
+    {
+        if (_state != nullptr) {
+            ::UnmapViewOfFile(_state);
+            _state = nullptr;
+        }
+
+        if (_mapping != nullptr) {
+            ::CloseHandle(_mapping);
+            _mapping = nullptr;
+        }
+
+        if (_mutex != nullptr) {
+            ::CloseHandle(_mutex);
+            _mutex = nullptr;
+        }
+
+        _initialized = false;
+        _processId = 0;
+        _producerSequence = 0;
+        _cachedConsumerHeartbeatActive.store(false, std::memory_order_relaxed);
+        _cachedConsumerHeartbeatCheckMs.store(0, std::memory_order_relaxed);
     }
 
     std::wstring KeyboardNativeBridge::BuildMappingName() const

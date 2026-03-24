@@ -34,8 +34,7 @@ namespace dualpad::input::backend
         WaitingForGate,
         PulseDownVisible,
         HoldDownVisible,
-        ReleaseGap,
-        Cooldown
+        ReleaseGap
     };
 
     enum class PendingKind : std::uint8_t
@@ -45,7 +44,6 @@ namespace dualpad::input::backend
         HoldStart,
         RepeatStart,
         HoldEnd,
-        ToggleFlip,
         ForceCancel
     };
 
@@ -96,8 +94,6 @@ namespace dualpad::input::backend
             return "HoldDownVisible";
         case ExecState::ReleaseGap:
             return "ReleaseGap";
-        case ExecState::Cooldown:
-            return "Cooldown";
         case ExecState::Idle:
         default:
             return "Idle";
@@ -115,8 +111,6 @@ namespace dualpad::input::backend
             return "RepeatStart";
         case PendingKind::HoldEnd:
             return "HoldEnd";
-        case PendingKind::ToggleFlip:
-            return "ToggleFlip";
         case PendingKind::ForceCancel:
             return "ForceCancel";
         case PendingKind::None:
@@ -157,7 +151,6 @@ namespace dualpad::input::backend
         std::uint32_t epoch{ 0 };
         std::uint64_t queuedAtUs{ 0 };
         bool pendingNextPulse{ false };
-        std::uint32_t suppressedPulseCount{ 0 };
     };
 
     struct PollCommitSlot
@@ -175,9 +168,7 @@ namespace dualpad::input::backend
         InFlightToken token{};
         PendingIntent pending{};
         bool desiredHeld{ false };
-        bool toggledOn{ false };
         std::uint64_t lastTransitionUs{ 0 };
-        std::uint64_t nextRepeatAtUs{ 0 };
         std::uint32_t emittedDownCount{ 0 };
         std::uint32_t emittedUpCount{ 0 };
         std::uint32_t coalescedPulseCount{ 0 };

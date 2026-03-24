@@ -232,7 +232,6 @@ namespace dualpad::input::backend
                 slot.pending.pendingNextPulse = true;
                 ++slot.coalescedPulseCount;
             } else {
-                ++slot.pending.suppressedPulseCount;
                 ++slot.droppedPulseCount;
             }
             return;
@@ -249,7 +248,6 @@ namespace dualpad::input::backend
             slot.pending.pendingNextPulse = true;
             ++slot.coalescedPulseCount;
         } else {
-            ++slot.pending.suppressedPulseCount;
             ++slot.droppedPulseCount;
         }
     }
@@ -366,7 +364,6 @@ namespace dualpad::input::backend
 
         case ExecState::ReleaseGap:
         case ExecState::HoldDownVisible:
-        case ExecState::Cooldown:
         default:
             break;
         }
@@ -418,7 +415,6 @@ namespace dualpad::input::backend
 
         case ExecState::PulseDownVisible:
         case ExecState::ReleaseGap:
-        case ExecState::Cooldown:
         default:
             break;
         }
@@ -475,7 +471,6 @@ namespace dualpad::input::backend
 
         case ExecState::PulseDownVisible:
         case ExecState::ReleaseGap:
-        case ExecState::Cooldown:
         default:
             break;
         }
@@ -485,7 +480,6 @@ namespace dualpad::input::backend
     {
         slot.pending = {};
         slot.desiredHeld = false;
-        slot.toggledOn = false;
         ++slot.cancelledCount;
 
         if (slot.token.active && slot.token.downSubmitted && !slot.token.releaseSubmitted) {
@@ -533,14 +527,9 @@ namespace dualpad::input::backend
     void PollCommitCoordinator::StartRepeatTransaction(PollCommitSlot& slot, std::uint64_t nowUs)
     {
         StartHoldTransaction(slot, nowUs);
-        // Stage 2 repeat keeps the first visible edge and then relies on
-        // sustained current-state down so Skyrim's native producer generates
-        // subsequent repeat events. nextRepeatAtUs is retained as future
-        // groundwork for an explicit cadence, but is not actively consumed by
-        // TickRepeatSlot() yet.
-        if (slot.repeatDelayMs != 0) {
-            slot.nextRepeatAtUs = nowUs + static_cast<std::uint64_t>(slot.repeatDelayMs) * 1000ULL;
-        }
+        // Repeat currently relies on sustained current-state down after the
+        // first visible edge so Skyrim's native producer generates subsequent
+        // repeat events.
     }
 
     void PollCommitCoordinator::CompleteRelease(PollCommitSlot& slot, std::uint64_t nowUs)
@@ -592,7 +581,6 @@ namespace dualpad::input::backend
     void PollCommitCoordinator::ClearToken(PollCommitSlot& slot)
     {
         slot.token = {};
-        slot.nextRepeatAtUs = 0;
     }
 
     void PollCommitCoordinator::TransitionState(
@@ -636,7 +624,6 @@ namespace dualpad::input::backend
              slot.pending.kind != PendingKind::None ||
              slot.pending.pendingNextPulse ||
              slot.desiredHeld ||
-             slot.toggledOn ||
              slot.state != ExecState::Idle);
     }
 }

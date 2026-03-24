@@ -1,7 +1,6 @@
 #pragma once
 
 #include "input/InputContext.h"
-#include "input/backend/ActionLifecycleBackend.h"
 #include "input/backend/ActionOutputContract.h"
 
 #include <array>
@@ -14,7 +13,7 @@
 
 namespace dualpad::input::backend
 {
-    class KeyboardHelperBackend final : public IActionLifecycleBackend
+    class KeyboardHelperBackend final
     {
     public:
         static KeyboardHelperBackend& GetSingleton();
@@ -26,16 +25,16 @@ namespace dualpad::input::backend
         bool ShouldExposeModEventConfiguration() const;
         bool IsModEventTransportReady() const;
 
-        void Reset() override;
-        bool IsRouteActive() const override;
-        bool CanHandleAction(std::string_view actionId) const override;
-        bool TriggerAction(std::string_view actionId, ActionOutputContract contract, InputContext context) override;
+        void Reset();
+        bool IsRouteActive() const;
+        bool CanHandleAction(std::string_view actionId) const;
+        bool TriggerAction(std::string_view actionId, ActionOutputContract contract, InputContext context);
         bool SubmitActionState(
             std::string_view actionId,
             ActionOutputContract contract,
             bool pressed,
             float heldSeconds,
-            InputContext context) override;
+            InputContext context);
 
     private:
         struct ActiveKeyboardAction

@@ -18,6 +18,22 @@ namespace dualpad::input
 {
     namespace
     {
+        bool ShouldLogMappingActivity()
+        {
+            return RuntimeConfig::GetSingleton().LogMappingEvents();
+        }
+
+        bool ShouldLogDispatchPlan()
+        {
+            return RuntimeConfig::GetSingleton().LogActionPlan();
+        }
+
+        bool ShouldLogHandledButtons()
+        {
+            const auto& config = RuntimeConfig::GetSingleton();
+            return config.LogMappingEvents() || config.LogNativeInjection();
+        }
+
         bool IsLifecycleAction(const backend::ActionRoutingDecision& decision)
         {
             return decision.ownsLifecycle;
@@ -92,6 +108,11 @@ namespace dualpad::input
 
     void PadEventSnapshotProcessor::ResetState()
     {
+        ResetAllState();
+    }
+
+    void PadEventSnapshotProcessor::ResetAllState()
+    {
         _lastProcessedSequence = 0;
         _stateReducer.Reset();
         AuthoritativePollState::GetSingleton().Reset();
@@ -99,6 +120,17 @@ namespace dualpad::input
         _sourceBlockCoordinator.Reset();
         backend::NativeButtonCommitBackend::GetSingleton().Reset();
         backend::KeyboardHelperBackend::GetSingleton().Reset();
+        ResetFramePlanning();
+    }
+
+    void PadEventSnapshotProcessor::ResyncNativeState()
+    {
+        _lastProcessedSequence = 0;
+        _stateReducer.Reset();
+        AuthoritativePollState::GetSingleton().Reset();
+        _lifecycleCoordinator.Reset();
+        _sourceBlockCoordinator.Reset();
+        backend::NativeButtonCommitBackend::GetSingleton().Reset();
         ResetFramePlanning();
     }
 
@@ -127,10 +159,12 @@ namespace dualpad::input
                     _framePlan);
                 if (released) {
                     handledButtons |= event.code;
-                    logger::info(
-                        "[DualPad][Mapping] Planned lifecycle release source=0x{:08X} context={}",
-                        event.code,
-                        ToString(context));
+                    if (ShouldLogMappingActivity()) {
+                        logger::info(
+                            "[DualPad][Mapping] Planned lifecycle release source=0x{:08X} context={}",
+                            event.code,
+                            ToString(context));
+                    }
                     continue;
                 }
             }
@@ -145,9 +179,11 @@ namespace dualpad::input
                 (resolvedComboMask & event.code) != 0) {
                 _sourceBlockCoordinator.Block(event.code);
                 handledButtons |= event.code;
-                logger::info(
-                    "[DualPad][Mapping] Suppressing ButtonPress source=0x{:08X} because same-frame Combo resolved",
-                    event.code);
+                if (ShouldLogMappingActivity()) {
+                    logger::info(
+                        "[DualPad][Mapping] Suppressing ButtonPress source=0x{:08X} because same-frame Combo resolved",
+                        event.code);
+                }
                 continue;
             }
 
@@ -167,11 +203,13 @@ namespace dualpad::input
                 continue;
             }
 
-            logger::info("[DualPad][Mapping] Planned event {} source=0x{:08X} context={} action={}",
-                ToString(event.type),
-                event.code,
-                ToString(context),
-                resolved->actionId);
+            if (ShouldLogMappingActivity()) {
+                logger::info("[DualPad][Mapping] Planned event {} source=0x{:08X} context={} action={}",
+                    ToString(event.type),
+                    event.code,
+                    ToString(context),
+                    resolved->actionId);
+            }
 
             if (event.type == PadEventType::ButtonPress &&
                 IsSyntheticPadBitCode(event.code)) {
@@ -184,7 +222,7 @@ namespace dualpad::input
             }
         }
 
-        if (handledButtons != 0) {
+        if (handledButtons != 0 && ShouldLogHandledButtons()) {
             logger::info("[DualPad] Blocked buttons from Skyrim: {:08X}", handledButtons);
         }
 
@@ -206,15 +244,17 @@ namespace dualpad::input
                 continue;
             }
 
-            logger::info(
-                "[DualPad][DispatchPlan] action={} backend={} phase={} source=0x{:08X} output=0x{:08X} context={} route={}",
-                action.actionId,
-                backend::ToString(action.backend),
-                backend::ToString(action.phase),
-                action.sourceCode,
-                action.outputCode,
-                ToString(action.context),
-                ToString(dispatchResult.target));
+            if (ShouldLogDispatchPlan()) {
+                logger::info(
+                    "[DualPad][DispatchPlan] action={} backend={} phase={} source=0x{:08X} output=0x{:08X} context={} route={}",
+                    action.actionId,
+                    backend::ToString(action.backend),
+                    backend::ToString(action.phase),
+                    action.sourceCode,
+                    action.outputCode,
+                    ToString(action.context),
+                    ToString(dispatchResult.target));
+            }
         }
     }
 
@@ -249,7 +289,7 @@ namespace dualpad::input
     {
         if (snapshot.type == PadEventSnapshotType::Reset) {
             logger::info("[DualPad][Snapshot] Resetting injected state");
-            ResetState();
+            ResetAllState();
             return;
         }
 
@@ -265,10 +305,10 @@ namespace dualpad::input
         if (_lastProcessedSequence != 0 &&
             snapshot.firstSequence != (_lastProcessedSequence + 1)) {
             logger::warn(
-                "[DualPad][Snapshot] Sequence gap detected: expected {} got {}. Resetting compatibility state.",
+                "[DualPad][Snapshot] Sequence gap detected: expected {} got {}. Resynchronizing native input state.",
                 _lastProcessedSequence + 1,
                 snapshot.firstSequence);
-            ResetState();
+            ResyncNativeState();
         }
 
         const auto context = ContextManager::GetSingleton().GetCurrentContext();

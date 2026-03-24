@@ -26,6 +26,8 @@ namespace dualpad::input
 
     private:
         PadEventSnapshotProcessor();
+        void ResetAllState();
+        void ResyncNativeState();
 
         BindingResolver _bindingResolver{};
         ActionDispatcher _actionDispatcher;

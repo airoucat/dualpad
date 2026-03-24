@@ -61,16 +61,21 @@ namespace dualpad::input
         SubmitSnapshot(snapshot);
     }
 
-    void PadEventSnapshotDispatcher::DrainOnMainThread()
+    std::size_t PadEventSnapshotDispatcher::DrainOnMainThread(std::size_t maxSnapshots)
     {
-        for (;;) {
+        if (maxSnapshots == 0) {
+            return 0;
+        }
+
+        std::size_t processedCount = 0;
+        for (; processedCount < maxSnapshots; ++processedCount) {
             PadEventSnapshot snapshot{};
             std::uint64_t droppedSnapshots = 0;
             {
                 std::scoped_lock lock(_mutex);
                 if (_pendingCount == 0) {
                     _drainTaskQueued.store(false, std::memory_order_release);
-                    return;
+                    return processedCount;
                 }
 
                 droppedSnapshots = _droppedSnapshots;
@@ -91,6 +96,26 @@ namespace dualpad::input
             ContextManager::GetSingleton().UpdateGameplayContext();
             PadEventSnapshotProcessor::GetSingleton().Process(snapshot);
         }
+
+        bool scheduleFollowUpTask = false;
+        {
+            std::scoped_lock lock(_mutex);
+            if (_pendingCount > 1 && !HasResetInPendingLocked()) {
+                CoalescePendingLocked();
+            }
+
+            if (_pendingCount == 0) {
+                _drainTaskQueued.store(false, std::memory_order_release);
+            } else if (!_framePumpEnabled.load(std::memory_order_acquire)) {
+                scheduleFollowUpTask = true;
+            }
+        }
+
+        if (scheduleFollowUpTask) {
+            ScheduleDrainTask();
+        }
+
+        return processedCount;
     }
 
     void PadEventSnapshotDispatcher::SetFramePumpEnabled(bool enabled)
@@ -115,5 +140,53 @@ namespace dualpad::input
         taskInterface->AddTask([]() {
             PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread();
             });
+    }
+
+    bool PadEventSnapshotDispatcher::HasResetInPendingLocked() const
+    {
+        for (std::size_t i = 0; i < _pendingCount; ++i) {
+            const auto index = (_pendingHead + i) % _pending.size();
+            if (_pending[index].type == PadEventSnapshotType::Reset) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void PadEventSnapshotDispatcher::CoalescePendingLocked()
+    {
+        if (_pendingCount <= 1) {
+            return;
+        }
+
+        const auto firstIndex = _pendingHead;
+        const auto lastIndex = (_pendingHead + _pendingCount - 1) % _pending.size();
+
+        auto coalescedSnapshot = _pending[lastIndex];
+        coalescedSnapshot.firstSequence = _pending[firstIndex].firstSequence;
+        coalescedSnapshot.coalesced = true;
+
+        for (std::size_t i = 0; i < _pendingCount; ++i) {
+            const auto index = (_pendingHead + i) % _pending.size();
+            const auto& pendingSnapshot = _pending[index];
+            coalescedSnapshot.overflowed =
+                coalescedSnapshot.overflowed ||
+                pendingSnapshot.overflowed ||
+                pendingSnapshot.events.overflowed ||
+                pendingSnapshot.coalesced;
+        }
+
+        _pendingHead = 0;
+        _pending[0] = coalescedSnapshot;
+        for (std::size_t i = 1; i < _pending.size(); ++i) {
+            _pending[i] = {};
+        }
+        _pendingCount = 1;
+
+        logger::warn(
+            "[DualPad][Snapshot] Coalesced pending snapshots after bounded drain; retaining latest seq={} firstSeq={}",
+            coalescedSnapshot.sequence,
+            coalescedSnapshot.firstSequence);
     }
 }

@@ -43,7 +43,7 @@
 - [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
   - 当前代码仍值得继续观察或精简的点。
 - [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
-  - 外部深度研究意见与当前主线的对齐分析，以及已完成重构的收口记录。
+  - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划。
 
 ## 维护规则
 

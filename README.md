@@ -75,7 +75,7 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 - [docs/current_cleanup_risk_review_zh.md](docs/current_cleanup_risk_review_zh.md)
   - 当前主线代码的冗余点、风险复查点，以及外部 GPT 深度研究提示词
 - [docs/agents5_review_reconciliation_refactor_plan_zh.md](docs/agents5_review_reconciliation_refactor_plan_zh.md)
-  - `agents5.md` 深度研究意见与当前主线的对齐分析，以及下一轮重构计划
+  - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划
 - [src/ARCHITECTURE.md](src/ARCHITECTURE.md)
   - 当前代码模块与主链路总览
 

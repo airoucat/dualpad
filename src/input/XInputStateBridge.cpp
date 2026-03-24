@@ -3,7 +3,6 @@
 
 #include "input/AuthoritativePollState.h"
 #include "input/XInputButtonSerialization.h"
-#include "input/backend/NativeButtonCommitBackend.h"
 #include "input/backend/FrameActionPlanDebugLogger.h"
 
 #include <Windows.h>
@@ -66,10 +65,6 @@ namespace dualpad::input
         }
 
         auto* state = reinterpret_cast<XINPUT_STATE*>(pState);
-        // UpstreamGamepadHook drains pending snapshots immediately before this
-        // bridge runs, so the poll commit and unified authoritative state both
-        // represent the latest-known data for this Poll window.
-        (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
         const auto frame = AuthoritativePollState::GetSingleton().ReadSnapshot();
         backend::LogAuthoritativePollFrame(frame);
         state->Gamepad.wButtons = ToXInputButtons(frame.downMask);

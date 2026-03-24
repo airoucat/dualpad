@@ -69,7 +69,7 @@ namespace dualpad::input::backend
 
             { actions::ItemZoom, NativeControlCode::ItemZoom, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleR3 },
             { actions::ItemXButton, NativeControlCode::ItemXButton, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleSquare },
-            { actions::ItemYButton, NativeControlCode::ItemYButton, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleR3 },
+            { actions::ItemYButton, NativeControlCode::ItemYButton, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleTriangle },
             { actions::InventoryChargeItem, NativeControlCode::InventoryChargeItem, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleR1 },
 
             { actions::BookClose, NativeControlCode::BookClose, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleCircle },
@@ -168,6 +168,19 @@ namespace dualpad::input::backend
         }
 
         return nullptr;
+    }
+
+    std::string_view ToString(NativeControlCode code)
+    {
+        if (code == NativeControlCode::None) {
+            return "None";
+        }
+
+        if (const auto* descriptor = FindNativeActionDescriptor(code)) {
+            return descriptor->actionId;
+        }
+
+        return "UnknownNativeControl";
     }
 
     std::uint32_t ResolveVirtualPadBitMask(std::uint16_t virtualButtonRoles, const PadBits& bits)

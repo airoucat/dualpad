@@ -2,6 +2,7 @@
 #include "input/backend/ActionBackendPolicy.h"
 
 #include "input/Action.h"
+#include "input/backend/ModEventKeyPool.h"
 
 using namespace std::literals;
 
@@ -24,8 +25,7 @@ namespace dualpad::input::backend
 
         constexpr bool IsModEventActionId(std::string_view actionId)
         {
-            return actionId.starts_with("Mod."sv) ||
-                actionId.starts_with("ModEvent"sv);
+            return FindModEventKeySlot(actionId) != nullptr;
         }
     }
 
