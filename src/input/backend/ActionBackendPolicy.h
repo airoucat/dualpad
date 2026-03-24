@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/backend/ActionLifecyclePolicy.h"
+#include "input/backend/NativeActionDescriptor.h"
 #include "input/backend/ActionOutputContract.h"
 #include "input/backend/FrameActionPlan.h"
 #include "input/backend/NativeControlCode.h"

@@ -2,6 +2,7 @@
 #include "input/backend/FrameActionPlanDebugLogger.h"
 
 #include "input/RuntimeConfig.h"
+#include "input/XInputButtonSerialization.h"
 
 #include <SKSE/SKSE.h>
 
@@ -53,6 +54,11 @@ namespace dualpad::input::backend
             return;
         }
 
+        const auto xinputButtons = input::ToXInputButtons(frame.downMask);
+        const auto xinputPressedButtons = input::ToXInputButtons(frame.pressedMask);
+        const auto xinputReleasedButtons = input::ToXInputButtons(frame.releasedMask);
+        const auto xinputPulseButtons = input::ToXInputButtons(frame.pulseMask);
+
         logger::info(
             "[DualPad][AuthoritativePoll] poll={} ctx={} epoch={} srcTs={} down=0x{:08X} pressed=0x{:08X} released=0x{:08X} pulse=0x{:08X} xinputButtons=0x{:04X} xinputPressed=0x{:04X} xinputReleased=0x{:04X} xinputPulse=0x{:04X} unmanagedDown=0x{:08X} unmanagedPressed=0x{:08X} unmanagedReleased=0x{:08X} unmanagedPulse=0x{:08X} committedDown=0x{:08X} committedPressed=0x{:08X} committedReleased=0x{:08X} managed=0x{:08X} hasDigital={} hasAnalog={} overflowed={} coalesced={} move=({:.3f},{:.3f}) look=({:.3f},{:.3f}) triggers=({:.3f},{:.3f})",
             frame.pollSequence,
@@ -63,10 +69,10 @@ namespace dualpad::input::backend
             frame.pressedMask,
             frame.releasedMask,
             frame.pulseMask,
-            frame.xinputButtons,
-            frame.xinputPressedButtons,
-            frame.xinputReleasedButtons,
-            frame.xinputPulseButtons,
+            xinputButtons,
+            xinputPressedButtons,
+            xinputReleasedButtons,
+            xinputPulseButtons,
             frame.unmanagedDownMask,
             frame.unmanagedPressedMask,
             frame.unmanagedReleasedMask,

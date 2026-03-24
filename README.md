@@ -7,8 +7,8 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 - 输入采集：`HidReader -> PadState`
 - 映射快照：`PadEventGenerator -> PadEventSnapshot`
 - 主线程规划：`SyntheticStateReducer -> FrameActionPlan -> ActionLifecycleCoordinator`
-- 状态提交：`NativeButtonCommitBackend + PadEventSnapshotProcessor(native analog/raw digital publish) -> AuthoritativePollState`
-- 最终桥接：`UpstreamGamepadHook -> XInputStateBridge`
+- 状态提交：`NativeButtonCommitBackend + AxisProjection + UnmanagedDigitalPublisher -> AuthoritativePollState`
+- 最终桥接：`UpstreamGamepadHook -> XInputStateBridge -> XInputButtonSerialization`
 
 当前默认运行时不再依赖：
 
@@ -27,8 +27,9 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 - `NativeButtonCommitBackend` 只做 `PlannedAction -> PollCommitRequest` 翻译。
 - `PollCommitCoordinator` 只负责 Poll 可见性 materialization。
 - `PadEventSnapshotProcessor` 直接把规划后的模拟量与 unmanaged raw digital 事实写入 `AuthoritativePollState`。
+- native routing / axis projection / button materialization 当前由统一 `NativeActionDescriptor` 主表驱动。
 - `AuthoritativePollState` 的正式口径是“虚拟 XInput 手柄硬件状态”，不是插件侧游戏动作状态表。
-- `XInputStateBridge` 只负责把统一状态序列化成 `wButtons / bLeftTrigger / bRightTrigger / thumbsticks`，不在 bridge 层补做 gameplay 语义。
+- `XInputStateBridge` 只负责把统一状态序列化成 `wButtons / bLeftTrigger / bRightTrigger / thumbsticks`，不在 bridge 层补做 gameplay 语义；XInput 按钮字由 `XInputButtonSerialization` 在 transport 侧按需计算。
 - `KeyboardHelperBackend` 是正式 helper backend 名称。
 - `KeyboardHelperBackend` 统一负责 `ModEvent / VirtualKey / FKey / 虚拟键池` 的模拟键盘输出。
 - `KeyboardHelperBackend` 当前只走 `dinput8` 代理桥接的 simulated keyboard path，不再走本地原生 keyboard hook。
@@ -57,8 +58,8 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 
 - [docs/DOC_INDEX_zh.md](docs/DOC_INDEX_zh.md)
   - 当前文档总索引与推荐阅读顺序
-- [docs/final_native_state_backend_plan.md](docs/final_native_state_backend_plan.md)
-  - 当前主线、剩余阶段和长期目标
+- [docs/current_input_pipeline_zh.md](docs/current_input_pipeline_zh.md)
+  - 从 `HID -> PadState -> PadEventSnapshot -> AuthoritativePollState -> XInput/Mod` 的当前运行时主链路
 - [docs/backend_routing_decisions.md](docs/backend_routing_decisions.md)
   - 当前 backend ownership 与 routing 规则
 - [docs/mod_event_keyboard_helper_backend_zh.md](docs/mod_event_keyboard_helper_backend_zh.md)
@@ -71,14 +72,10 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
   - 按 controlmap 上下文整理的 gamepad 原生事件母表
 - [docs/controlmap_combo_profile_zh.md](docs/controlmap_combo_profile_zh.md)
   - DualPad 自维护的 keyboard-exclusive native combo profile
-- [docs/current_input_pipeline_zh.md](docs/current_input_pipeline_zh.md)
-  - 从 `HID -> PadState -> PadEventSnapshot -> AuthoritativePollState -> XInput/Mod` 的当前运行时主链路
-- [docs/plan_a_long_term_edge_lifecycle_zh.md](docs/plan_a_long_term_edge_lifecycle_zh.md)
-  - 在 `agents2/agents3` 约束下的长期 edge 生命周期方案
-- [docs/poll_commit_coordinator_stage3_zh.md](docs/poll_commit_coordinator_stage3_zh.md)
-  - `LifecycleTransaction -> PollCommitCoordinator` 第三阶段落地说明
-- [docs/authoritative_poll_state_refactor_plan_zh.md](docs/authoritative_poll_state_refactor_plan_zh.md)
-  - 统一最终输出状态的新方案重构计划
+- [docs/current_cleanup_risk_review_zh.md](docs/current_cleanup_risk_review_zh.md)
+  - 当前主线代码的冗余点、风险复查点，以及外部 GPT 深度研究提示词
+- [docs/agents5_review_reconciliation_refactor_plan_zh.md](docs/agents5_review_reconciliation_refactor_plan_zh.md)
+  - `agents5.md` 深度研究意见与当前主线的对齐分析，以及下一轮重构计划
 - [src/ARCHITECTURE.md](src/ARCHITECTURE.md)
   - 当前代码模块与主链路总览
 

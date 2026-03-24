@@ -14,11 +14,6 @@ namespace dualpad::input
         std::uint32_t releasedMask{ 0 };
         std::uint32_t pulseMask{ 0 };
 
-        std::uint16_t xinputButtons{ 0 };
-        std::uint16_t xinputPressedButtons{ 0 };
-        std::uint16_t xinputReleasedButtons{ 0 };
-        std::uint16_t xinputPulseButtons{ 0 };
-
         std::uint32_t unmanagedDownMask{ 0 };
         std::uint32_t unmanagedPressedMask{ 0 };
         std::uint32_t unmanagedReleasedMask{ 0 };

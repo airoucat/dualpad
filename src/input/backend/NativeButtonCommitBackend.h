@@ -1,6 +1,5 @@
 #pragma once
 
-#include "input/backend/ActionLifecycleBackend.h"
 #include "input/backend/FrameActionPlan.h"
 #include "input/backend/IPollCommitEmitter.h"
 #include "input/backend/NativeControlCode.h"
@@ -22,26 +21,14 @@ namespace dualpad::input::backend
         std::uint64_t pollSequence{ 0 };
     };
 
-    class NativeButtonCommitBackend final :
-        public IActionLifecycleBackend,
-        public IPollCommitEmitter
+    class NativeButtonCommitBackend final : public IPollCommitEmitter
     {
     public:
         static NativeButtonCommitBackend& GetSingleton();
 
-        void Reset() override;
-        bool IsRouteActive() const override;
-        bool CanHandleAction(std::string_view actionId) const override;
-        bool TriggerAction(
-            std::string_view actionId,
-            ActionOutputContract contract,
-            InputContext context) override;
-        bool SubmitActionState(
-            std::string_view actionId,
-            ActionOutputContract contract,
-            bool pressed,
-            float heldSeconds,
-            InputContext context) override;
+        void Reset();
+        bool IsRouteActive() const;
+        bool CanHandleAction(std::string_view actionId) const;
 
         void BeginFrame(
             InputContext context,
@@ -56,12 +43,6 @@ namespace dualpad::input::backend
     private:
         NativeButtonCommitBackend() = default;
 
-        bool SubmitSyntheticActionLocked(
-            std::string_view actionId,
-            ActionOutputContract contract,
-            PlannedActionPhase phase,
-            float heldSeconds,
-            InputContext context);
         static bool TranslatePlannedActionToCommitRequest(
             const PlannedAction& action,
             PollCommitRequest& outRequest);

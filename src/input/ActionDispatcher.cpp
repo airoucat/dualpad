@@ -15,80 +15,51 @@ namespace dualpad::input
 {
     namespace
     {
-        ActionDispatchResult TryDispatchLifecycleBackend(
-            backend::IActionLifecycleBackend& backend,
-            std::string_view actionId,
-            backend::ActionOutputContract contract,
-            InputContext context,
-            ActionDispatchTarget target)
+        ActionDispatchResult DispatchKeyboardHelperAction(
+            const backend::PlannedAction& action)
         {
-            if (!backend.IsRouteActive() ||
-                !backend.CanHandleAction(actionId) ||
-                !backend.TriggerAction(actionId, contract, context)) {
+            auto& keyboardHelper = backend::KeyboardHelperBackend::GetSingleton();
+            if (!keyboardHelper.IsRouteActive() ||
+                !keyboardHelper.CanHandleAction(action.actionId)) {
                 return {};
             }
 
-            return { true, target };
-        }
-
-        ActionDispatchResult TryDispatchLifecycleBackendState(
-            backend::IActionLifecycleBackend& backend,
-            std::string_view actionId,
-            backend::ActionOutputContract contract,
-            bool down,
-            float heldSeconds,
-            InputContext context,
-            ActionDispatchTarget target)
-        {
-            if (!backend.IsRouteActive() ||
-                !backend.CanHandleAction(actionId) ||
-                !backend.SubmitActionState(actionId, contract, down, heldSeconds, context)) {
-                return {};
-            }
-
-            return { true, target };
-        }
-
-        ActionDispatchResult TryDispatchPlannedLifecycleBackend(
-            backend::IActionLifecycleBackend& lifecycleBackend,
-            const backend::PlannedAction& action,
-            ActionDispatchTarget target)
-        {
+            bool handled = false;
             switch (action.phase) {
             case backend::PlannedActionPhase::Pulse:
-                return TryDispatchLifecycleBackend(
-                    lifecycleBackend,
+                handled = keyboardHelper.TriggerAction(
                     action.actionId,
                     action.contract,
-                    action.context,
-                    target);
+                    action.context);
+                break;
 
             case backend::PlannedActionPhase::Press:
             case backend::PlannedActionPhase::Hold:
-                return TryDispatchLifecycleBackendState(
-                    lifecycleBackend,
+                handled = keyboardHelper.SubmitActionState(
                     action.actionId,
                     action.contract,
                     true,
                     action.heldSeconds,
-                    action.context,
-                    target);
+                    action.context);
+                break;
 
             case backend::PlannedActionPhase::Release:
-                return TryDispatchLifecycleBackendState(
-                    lifecycleBackend,
+                handled = keyboardHelper.SubmitActionState(
                     action.actionId,
                     action.contract,
                     false,
                     action.heldSeconds,
-                    action.context,
-                    target);
+                    action.context);
+                break;
 
             case backend::PlannedActionPhase::Value:
             case backend::PlannedActionPhase::None:
             default:
-                return {};
+                handled = false;
+                break;
             }
+
+            return handled ? ActionDispatchResult{ true, ActionDispatchTarget::KeyboardHelper } : ActionDispatchResult{};
         }
 
         std::optional<std::string_view> ResolveModEventKeyPoolAction(std::string_view actionId)
@@ -115,10 +86,7 @@ namespace dualpad::input
             return {};
 
         case backend::PlannedBackend::KeyboardHelper:
-            return TryDispatchPlannedLifecycleBackend(
-                backend::KeyboardHelperBackend::GetSingleton(),
-                action,
-                ActionDispatchTarget::KeyboardHelper);
+            return DispatchKeyboardHelperAction(action);
 
         case backend::PlannedBackend::Plugin:
             if ((action.phase == backend::PlannedActionPhase::Pulse ||
@@ -134,10 +102,7 @@ namespace dualpad::input
                 translatedAction.backend = backend::PlannedBackend::KeyboardHelper;
                 translatedAction.kind = backend::PlannedActionKind::KeyboardKey;
                 translatedAction.actionId = *helperAction;
-                return TryDispatchPlannedLifecycleBackend(
-                    backend::KeyboardHelperBackend::GetSingleton(),
-                    translatedAction,
-                    ActionDispatchTarget::KeyboardHelper);
+                return DispatchKeyboardHelperAction(translatedAction);
             }
 
             logger::warn(

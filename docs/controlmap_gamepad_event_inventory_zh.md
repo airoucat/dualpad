@@ -1,16 +1,13 @@
-# ControlMap Gamepad 事件清单
+﻿# ControlMap Gamepad 事件清单
 
-更新时间：2026-03-22
+更新日期：2026-03-24
 
-## 目的
+本文按 vanilla SSE 1.5.97 `controlmap.txt` 的上下文展开所有 gamepad 列不为 `0xff` 的原生事件。
 
-这份清单直接按 `G:/skyrim_mod/bsa-interface/interface/controls/pc/controlmap.txt` 的上下文分类，
-列出所有 **gamepad 列不为 `0xFF`** 的原生事件。
+唯一原则：
 
-这里的原则只有一条：
-
-- **每个 controlmap 原生事件都保留独立身份**
-- **即使默认映射到同一个 gamepad 按钮，也不能因为“物理位相同”而合并成同一个事件**
+- 每个原生事件都保留独立身份。
+- 即使最终 materialize 到同一个 gamepad 硬件位，也不能因为“默认按键相同”就合并成同一个事件。
 
 例如：
 
@@ -18,9 +15,9 @@
 - `Accept`
 - `Click`
 
-它们都可能 materialize 到 `0x1000`，但仍然是三个不同的原生事件。
+它们都可能最终落在 `0x1000`，但仍然是不同的原生 user event。
 
-## 常见 gamepad 位速记
+## 常用 gamepad 位速记
 
 - `0x0001` = D-pad Up
 - `0x0002` = D-pad Down
@@ -61,6 +58,16 @@
 - `Wait -> 0x0020`
 - `Journal -> 0x0010`
 
+无 gamepad 位但属 PC 独占原生事件：
+
+- `Hotkey3-8`
+- `QuickSave / QuickLoad`
+- `Pause`
+- `Screenshot / Multi-Screenshot`
+- `Console`
+- `CameraPath`
+- `Quick Inventory / Quick Magic / Quick Stats / Quick Map`
+
 ## Menu Mode
 
 - `Accept -> 0x1000`
@@ -81,8 +88,8 @@
 
 ## Item Menus
 
-- `LeftEquip -> !0,Left Attack/Block`
-- `RightEquip -> !0,Right Attack/Block`
+- `LeftEquip -> Left Attack/Block family`
+- `RightEquip -> Right Attack/Block family`
 - `Item Zoom -> 0x0080`
 - `Rotate -> 0x000c`
 - `XButton -> 0x4000`
@@ -90,7 +97,7 @@
 
 ## Inventory
 
-- `ChargeItem -> !0,Shout`
+- `ChargeItem -> Shout family / 0x0200`
 
 ## Favorites Menu
 
@@ -107,10 +114,15 @@
 - `Zoom In -> 0x000a`
 - `Zoom Out -> 0x0009`
 - `Click -> 0x1000`
-- `Cursor -> 0x000b`
 - `PlayerPosition -> 0x8000`
 - `LocalMap -> 0x4000`
 - `Journal -> 0x0004`
+- `Cursor -> 0x000b`
+
+注意：
+
+- `MapLookMode` 与 `LocalMapMoveMode` 在原版 controlmap 的 gamepad 列是 `0xff`。
+- 它们虽然是原生事件，但不是通过标准 gamepad 位直接表达。
 
 ## Stats
 
@@ -156,7 +168,7 @@
 - `WorldZDown -> 0x0100`
 - `LockToZPlane -> 0x4000`
 
-## Debug Map Menu-like Mode
+## Debug Map-like Mode
 
 - `Look -> 0x000c`
 - `Zoom In -> 0x000a`
@@ -170,72 +182,14 @@
 - `DebugMode -> 0x4000`
 - `Cancel -> 0x2000`
 
-## Creations Menu
-
-- `Accept -> 0x1000`
-- `Cancel -> 0x2000`
-- `Up -> 0x0001`
-- `Down -> 0x0002`
-- `Left -> 0x0004`
-- `Right -> 0x0008`
-- `Options -> 0x0010`
-- `Left Stick -> 0x000b`
-- `LoadOrderAndDelete -> 0x8000`
-- `CategorySideBar -> 0x0009`
-- `LikeUnlike -> 0x0200`
-- `SearchEdit -> 0x0100`
-- `Filter -> 0x000a`
-- `PurchaseCredits -> 0x4000`
-
 ## Favor
 
 - `Cancel -> 0x2000`
 
-## 当前代码收口原则
+## 当前项目使用规则
 
-后续 action surface 与默认绑定应按下面的规则继续推进：
-
-- 先按 `controlmap` 上下文抽事件名
-- 再决定哪些事件进入项目 action surface
-- 即使多个事件最终 materialize 到同一个按钮位，也保留独立 action/native code 身份
-- 不再因为“默认按钮一样”就把它们压扁成统一的 `Menu.*` 或其它 generic helper 名
-
-## 当前已经按独立身份抽出的代表项
-
-- `Book.Close / Book.PreviousPage / Book.NextPage`
-- `Map.Click / Map.OpenJournal / Map.PlayerPosition / Map.LocalMap`
-- `Dialogue.PreviousOption / Dialogue.NextOption`
-- `Favorites.PreviousItem / Favorites.NextItem`
-- `Console.Execute / Console.HistoryUp / Console.HistoryDown`
-
-## 当前仍未完全展开的原生事件
-
-下面这些已经在 `controlmap` 中确认有独立 gamepad 事件，但当前项目还没有全部展开成正式 action surface：
-
-- `Ready Weapon`
-- `Tween Menu`
-- `Favorites`
-- `Hotkey1 / Hotkey2`
-- `DownloadAll`
-- `PickPrevious / PickNext`
-- `NextFocus / PreviousFocus`
-- `LeftEquip / RightEquip`
-- `Item Zoom`
-- `Rotate`
-- `XButton / YButton`
-- `ChargeItem`
-- `Zoom In / Zoom Out`
-- `Cursor`
-- `TabSwitch`
-- `CameraZUp / CameraZDown`
-- `WorldZUp / WorldZDown`
-- `LockToZPlane`
-- `RotatePick / RotateLock`
-- `LoadOrderAndDelete`
-- `CategorySideBar`
-- `LikeUnlike`
-- `SearchEdit`
-- `Filter`
-- `PurchaseCredits`
-
-它们后续如果接入，也应该继续按“上下文专属原生事件”建模，而不是并回 generic `Menu.*`。
+- 这份母表描述的是“原生事件身份”，不是“DualPad 当前全部已接入的 action surface”。
+- 当前项目对原生事件的策略是：
+  - 先保留事件身份。
+  - 再决定是否将其接入当前 action 面。
+  - 绝不因为默认是同一个硬件位，就把多个原生事件压成一个通用 `Menu.*` 名字。

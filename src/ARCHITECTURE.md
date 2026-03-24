@@ -16,11 +16,12 @@ HidReader
       -> ActionDispatcher
           -> NativeButtonCommitBackend
               -> PollCommitCoordinator
-      -> native analog publish (inside PadEventSnapshotProcessor)
-      -> unmanaged raw digital publish (inside PadEventSnapshotProcessor)
+      -> AxisProjection
+      -> UnmanagedDigitalPublisher
       -> AuthoritativePollState
   -> UpstreamGamepadHook
       -> XInputStateBridge
+      -> XInputButtonSerialization
       -> Skyrim Poll producer
 ```
 
@@ -103,6 +104,7 @@ HidReader
 
 - `src/input/injection/UpstreamGamepadHook.*`
 - `src/input/XInputStateBridge.*`
+- `src/input/XInputButtonSerialization.*`
 - `src/input/AuthoritativePollState.*`
 
 职责：
@@ -110,6 +112,24 @@ HidReader
 - 汇总 Poll 时刻唯一 authoritative synthetic state
 - 该状态的正式口径是“虚拟 XInput 手柄硬件包”
 - 在 `BSWin32GamepadDevice::Poll` 的 upstream call-site 上序列化最终 `XINPUT_STATE`
+- XInput `wButtons` 的派生计算不再预存于状态层，而由 transport/logger 按需生成
+
+### 5.5 Native routing / projection descriptors
+
+- `src/input/backend/NativeActionDescriptor.*`
+
+职责：
+
+- 用单一 descriptor 主表描述 native action 的：
+  - backend
+  - native control code
+  - digital/axis kind
+  - lifecycle contract
+  - 目标硬件位/轴角色
+- 同时服务：
+  - `ActionBackendPolicy`
+  - `NativeButtonCommitBackend`
+  - `AxisProjection`
 
 ## 仍保留但不是主线的模块
 
@@ -168,9 +188,9 @@ HidReader
 ## 推荐配套文档
 
 - `docs/DOC_INDEX_zh.md`
-- `docs/final_native_state_backend_plan.md`
+- `docs/current_input_pipeline_zh.md`
 - `docs/backend_routing_decisions.md`
 - `docs/unified_action_lifecycle_model_zh.md`
 - `docs/native_pc_event_semantics_zh.md`
-- `docs/poll_commit_coordinator_stage3_zh.md`
+- `docs/controlmap_gamepad_event_inventory_zh.md`
 

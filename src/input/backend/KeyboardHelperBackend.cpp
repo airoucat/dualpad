@@ -41,6 +41,64 @@ namespace dualpad::input::backend
         constexpr std::uint8_t kSyntheticReleasePendingEvents = 1;
         constexpr std::uint8_t kSyntheticPulsePendingEvents = 2;
 
+        struct HelperKeyEntry
+        {
+            std::string_view token;
+            std::uint8_t scancode;
+        };
+
+        constexpr HelperKeyEntry kFunctionKeyPoolEntries[] = {
+            { "F13"sv, 0x64 },
+            { "F14"sv, 0x65 },
+            { "F15"sv, 0x66 }
+        };
+
+        constexpr HelperKeyEntry kVirtualKeyPoolEntries[] = {
+            { "DIK_F13"sv, 0x64 },
+            { "DIK_F14"sv, 0x65 },
+            { "DIK_F15"sv, 0x66 },
+            { "DIK_KANA"sv, 0x70 },
+            { "KANA"sv, 0x70 },
+            { "DIK_ABNT_C1"sv, 0x73 },
+            { "ABNT_C1"sv, 0x73 },
+            { "DIK_CONVERT"sv, 0x79 },
+            { "CONVERT"sv, 0x79 },
+            { "DIK_NOCONVERT"sv, 0x7B },
+            { "NO_CONVERT"sv, 0x7B },
+            { "NOCONVERT"sv, 0x7B },
+            { "DIK_ABNT_C2"sv, 0x7E },
+            { "ABNT_C2"sv, 0x7E },
+            { "NUMPADEQUAL"sv, 0x8D },
+            { "NUMPAD_EQUAL"sv, 0x8D },
+            { "PRINTSRC"sv, 0xB7 },
+            { "PRINT_SRC"sv, 0xB7 },
+            { "L_WINDOWS"sv, 0xDB },
+            { "LWINDOWS"sv, 0xDB },
+            { "R_WINDOWS"sv, 0xDC },
+            { "RWINDOWS"sv, 0xDC },
+            { "APPS"sv, 0xDD },
+            { "POWER"sv, 0xDE },
+            { "SLEEP"sv, 0xDF },
+            { "WAKE"sv, 0xE3 },
+            { "WEBSEARCH"sv, 0xE5 },
+            { "WEB_SEARCH"sv, 0xE5 },
+            { "WEBFAVORITES"sv, 0xE6 },
+            { "WEB_FAVORITES"sv, 0xE6 },
+            { "WEBREFRESH"sv, 0xE7 },
+            { "WEB_REFRESH"sv, 0xE7 },
+            { "WEBSTOP"sv, 0xE8 },
+            { "WEB_STOP"sv, 0xE8 },
+            { "WEBFORWARD"sv, 0xE9 },
+            { "WEB_FORWARD"sv, 0xE9 },
+            { "WEBBACK"sv, 0xEA },
+            { "WEB_BACK"sv, 0xEA },
+            { "MY_COMPUTER"sv, 0xEB },
+            { "MYCOMPUTER"sv, 0xEB },
+            { "MAIL"sv, 0xEC },
+            { "MEDIASELECT"sv, 0xED },
+            { "MEDIA_SELECT"sv, 0xED }
+        };
+
         void MarkSyntheticKeyboardCommand(std::uint8_t scancode, std::uint8_t pendingEvents)
         {
             input::InputModalityTracker::GetSingleton().MarkSyntheticKeyboardScancode(
@@ -97,103 +155,30 @@ namespace dualpad::input::backend
             return normalized;
         }
 
-        std::optional<std::uint8_t> ResolveFunctionKeyPoolScancode(std::string_view token)
+        template <std::size_t N>
+        std::optional<std::uint8_t> FindHelperKeyScancode(
+            std::string_view normalized,
+            const HelperKeyEntry (&entries)[N])
         {
-            const auto normalized = NormalizeHelperKeyToken(token);
-            if (normalized == "F13"sv) {
-                return static_cast<std::uint8_t>(0x64);
-            }
-            if (normalized == "F14"sv) {
-                return static_cast<std::uint8_t>(0x65);
-            }
-            if (normalized == "F15"sv) {
-                return static_cast<std::uint8_t>(0x66);
+            for (const auto& entry : entries) {
+                if (entry.token == normalized) {
+                    return entry.scancode;
+                }
             }
 
             return std::nullopt;
         }
 
+        std::optional<std::uint8_t> ResolveFunctionKeyPoolScancode(std::string_view token)
+        {
+            const auto normalized = NormalizeHelperKeyToken(token);
+            return FindHelperKeyScancode(normalized, kFunctionKeyPoolEntries);
+        }
+
         std::optional<std::uint8_t> ResolveVirtualKeyPoolScancode(std::string_view token)
         {
             const auto normalized = NormalizeHelperKeyToken(token);
-
-            if (normalized == "DIK_F13"sv) {
-                return static_cast<std::uint8_t>(0x64);
-            }
-            if (normalized == "DIK_F14"sv) {
-                return static_cast<std::uint8_t>(0x65);
-            }
-            if (normalized == "DIK_F15"sv) {
-                return static_cast<std::uint8_t>(0x66);
-            }
-            if (normalized == "DIK_KANA"sv || normalized == "KANA"sv) {
-                return static_cast<std::uint8_t>(0x70);
-            }
-            if (normalized == "DIK_ABNT_C1"sv || normalized == "ABNT_C1"sv) {
-                return static_cast<std::uint8_t>(0x73);
-            }
-            if (normalized == "DIK_CONVERT"sv || normalized == "CONVERT"sv) {
-                return static_cast<std::uint8_t>(0x79);
-            }
-            if (normalized == "DIK_NOCONVERT"sv || normalized == "NO_CONVERT"sv || normalized == "NOCONVERT"sv) {
-                return static_cast<std::uint8_t>(0x7B);
-            }
-            if (normalized == "DIK_ABNT_C2"sv || normalized == "ABNT_C2"sv) {
-                return static_cast<std::uint8_t>(0x7E);
-            }
-            if (normalized == "NUMPADEQUAL"sv || normalized == "NUMPAD_EQUAL"sv) {
-                return static_cast<std::uint8_t>(0x8D);
-            }
-            if (normalized == "PRINTSRC"sv || normalized == "PRINT_SRC"sv) {
-                return static_cast<std::uint8_t>(0xB7);
-            }
-            if (normalized == "L_WINDOWS"sv || normalized == "LWINDOWS"sv) {
-                return static_cast<std::uint8_t>(0xDB);
-            }
-            if (normalized == "R_WINDOWS"sv || normalized == "RWINDOWS"sv) {
-                return static_cast<std::uint8_t>(0xDC);
-            }
-            if (normalized == "APPS"sv) {
-                return static_cast<std::uint8_t>(0xDD);
-            }
-            if (normalized == "POWER"sv) {
-                return static_cast<std::uint8_t>(0xDE);
-            }
-            if (normalized == "SLEEP"sv) {
-                return static_cast<std::uint8_t>(0xDF);
-            }
-            if (normalized == "WAKE"sv) {
-                return static_cast<std::uint8_t>(0xE3);
-            }
-            if (normalized == "WEBSEARCH"sv || normalized == "WEB_SEARCH"sv) {
-                return static_cast<std::uint8_t>(0xE5);
-            }
-            if (normalized == "WEBFAVORITES"sv || normalized == "WEB_FAVORITES"sv) {
-                return static_cast<std::uint8_t>(0xE6);
-            }
-            if (normalized == "WEBREFRESH"sv || normalized == "WEB_REFRESH"sv) {
-                return static_cast<std::uint8_t>(0xE7);
-            }
-            if (normalized == "WEBSTOP"sv || normalized == "WEB_STOP"sv) {
-                return static_cast<std::uint8_t>(0xE8);
-            }
-            if (normalized == "WEBFORWARD"sv || normalized == "WEB_FORWARD"sv) {
-                return static_cast<std::uint8_t>(0xE9);
-            }
-            if (normalized == "WEBBACK"sv || normalized == "WEB_BACK"sv) {
-                return static_cast<std::uint8_t>(0xEA);
-            }
-            if (normalized == "MY_COMPUTER"sv || normalized == "MYCOMPUTER"sv) {
-                return static_cast<std::uint8_t>(0xEB);
-            }
-            if (normalized == "MAIL"sv) {
-                return static_cast<std::uint8_t>(0xEC);
-            }
-            if (normalized == "MEDIASELECT"sv || normalized == "MEDIA_SELECT"sv) {
-                return static_cast<std::uint8_t>(0xED);
-            }
-
-            return std::nullopt;
+            return FindHelperKeyScancode(normalized, kVirtualKeyPoolEntries);
         }
 
         std::optional<std::uint8_t> ResolveHelperKeyPoolScancode(std::string_view actionId)

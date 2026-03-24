@@ -2,6 +2,7 @@
 #include "input/XInputStateBridge.h"
 
 #include "input/AuthoritativePollState.h"
+#include "input/XInputButtonSerialization.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/backend/FrameActionPlanDebugLogger.h"
 
@@ -71,7 +72,7 @@ namespace dualpad::input
         (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
         const auto frame = AuthoritativePollState::GetSingleton().ReadSnapshot();
         backend::LogAuthoritativePollFrame(frame);
-        state->Gamepad.wButtons = frame.xinputButtons;
+        state->Gamepad.wButtons = ToXInputButtons(frame.downMask);
 
         if (frame.hasAnalog) {
             state->Gamepad.sThumbLX = static_cast<SHORT>(frame.moveX * 32767.0f);
