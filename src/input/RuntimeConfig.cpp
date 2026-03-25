@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "input/RuntimeConfig.h"
 
+#include "input/IniParseHelpers.h"
+
 #include <SKSE/SKSE.h>
-#include <algorithm>
-#include <cctype>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -14,45 +14,11 @@ namespace dualpad::input
 {
     namespace
     {
-        inline std::string Trim(std::string s)
-        {
-            auto isSpace = [](unsigned char c) {
-                return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-            };
-
-            while (!s.empty() && isSpace(static_cast<unsigned char>(s.front()))) {
-                s.erase(s.begin());
-            }
-            while (!s.empty() && isSpace(static_cast<unsigned char>(s.back()))) {
-                s.pop_back();
-            }
-            return s;
-        }
-
-        inline std::string ToLower(std::string s)
-        {
-            std::transform(s.begin(), s.end(), s.begin(),
-                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return s;
-        }
-
-        inline bool ParseBool(const std::string& value, bool defaultValue = false)
-        {
-            const auto normalized = ToLower(Trim(value));
-            if (normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on") {
-                return true;
-            }
-            if (normalized == "0" || normalized == "false" || normalized == "no" || normalized == "off") {
-                return false;
-            }
-            return defaultValue;
-        }
-
         inline UpstreamGamepadHookMode ParseUpstreamGamepadHookMode(
             const std::string& value,
             UpstreamGamepadHookMode defaultValue)
         {
-            const auto normalized = ToLower(Trim(value));
+            const auto normalized = ini::ToLower(ini::Trim(value));
             if (normalized == "poll-vtable" || normalized == "poll_vtable" || normalized == "vtable") {
                 return UpstreamGamepadHookMode::PollXInputCall;
             }
@@ -131,20 +97,17 @@ namespace dualpad::input
         while (std::getline(ifs, line)) {
             ++lineNo;
 
-            if (lineNo == 1 && line.size() >= 3 &&
-                static_cast<unsigned char>(line[0]) == 0xEF &&
-                static_cast<unsigned char>(line[1]) == 0xBB &&
-                static_cast<unsigned char>(line[2]) == 0xBF) {
-                line.erase(0, 3);
+            if (lineNo == 1) {
+                ini::StripUtf8Bom(line);
             }
 
-            line = Trim(line);
+            line = ini::Trim(line);
             if (line.empty() || line[0] == ';' || line[0] == '#') {
                 continue;
             }
 
             if (line.front() == '[' && line.back() == ']') {
-                section = Trim(line.substr(1, line.size() - 2));
+                section = ini::Trim(line.substr(1, line.size() - 2));
                 continue;
             }
 
@@ -153,8 +116,8 @@ namespace dualpad::input
                 continue;
             }
 
-            auto key = Trim(line.substr(0, eqPos));
-            auto value = Trim(line.substr(eqPos + 1));
+            auto key = ini::Trim(line.substr(0, eqPos));
+            auto value = ini::Trim(line.substr(eqPos + 1));
             if (key.empty()) {
                 continue;
             }
@@ -164,43 +127,50 @@ namespace dualpad::input
 
         const auto parseLogging = [&](const auto& values) {
             if (auto it = values.find("log_input_packets"); it != values.end()) {
-                _logInputPackets = ParseBool(it->second, _logInputPackets);
+                _logInputPackets = ini::ParseBool(it->second, _logInputPackets);
             }
             if (auto it = values.find("log_input_hex"); it != values.end()) {
-                _logInputHex = ParseBool(it->second, _logInputHex);
+                _logInputHex = ini::ParseBool(it->second, _logInputHex);
             }
             if (auto it = values.find("log_input_state"); it != values.end()) {
-                _logInputState = ParseBool(it->second, _logInputState);
+                _logInputState = ini::ParseBool(it->second, _logInputState);
             }
             if (auto it = values.find("log_mapping_events"); it != values.end()) {
-                _logMappingEvents = ParseBool(it->second, _logMappingEvents);
+                _logMappingEvents = ini::ParseBool(it->second, _logMappingEvents);
             }
             if (auto it = values.find("log_synthetic_state"); it != values.end()) {
-                _logSyntheticState = ParseBool(it->second, _logSyntheticState);
+                _logSyntheticState = ini::ParseBool(it->second, _logSyntheticState);
             }
             if (auto it = values.find("log_action_plan"); it != values.end()) {
-                _logActionPlan = ParseBool(it->second, _logActionPlan);
+                _logActionPlan = ini::ParseBool(it->second, _logActionPlan);
             }
             if (auto it = values.find("log_native_injection"); it != values.end()) {
-                _logNativeInjection = ParseBool(it->second, _logNativeInjection);
+                _logNativeInjection = ini::ParseBool(it->second, _logNativeInjection);
             }
             if (auto it = values.find("log_keyboard_injection"); it != values.end()) {
-                _logKeyboardInjection = ParseBool(it->second, _logKeyboardInjection);
+                _logKeyboardInjection = ini::ParseBool(it->second, _logKeyboardInjection);
             }
         };
 
         const auto parseInjection = [&](const auto& values) {
             if (auto it = values.find("use_upstream_gamepad_hook"); it != values.end()) {
-                _useUpstreamGamepadHook = ParseBool(it->second, _useUpstreamGamepadHook);
+                _useUpstreamGamepadHook = ini::ParseBool(it->second, _useUpstreamGamepadHook);
             }
             if (auto it = values.find("upstream_gamepad_hook_mode"); it != values.end()) {
-                const auto normalized = ToLower(Trim(it->second));
+                const auto normalized = ini::ToLower(ini::Trim(it->second));
                 if (normalized == "poll-vtable" || normalized == "poll_vtable" || normalized == "vtable") {
                     logger::warn(
                         "[DualPad][RuntimeConfig] upstream_gamepad_hook_mode='{}' is retired; using poll-xinput-call",
                         it->second);
                 }
                 _upstreamGamepadHookMode = ParseUpstreamGamepadHookMode(it->second, _upstreamGamepadHookMode);
+            }
+        };
+
+        const auto parseFeatures = [&](const auto& values) {
+            if (auto it = values.find("enable_combo_native_hotkeys3_to_8"); it != values.end()) {
+                _enableComboNativeHotkeys3To8 =
+                    ini::ParseBool(it->second, _enableComboNativeHotkeys3To8);
             }
         };
 
@@ -211,13 +181,16 @@ namespace dualpad::input
             if (auto it = sections.find("Injection"); it != sections.end()) {
                 parseInjection(it->second);
             }
+            if (auto it = sections.find("Features"); it != sections.end()) {
+                parseFeatures(it->second);
+            }
         }
         catch (const std::exception& e) {
             logger::warn("[DualPad][RuntimeConfig] Parse error: {}", e.what());
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} features comboHotkeys3to8={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -227,7 +200,8 @@ namespace dualpad::input
             _logNativeInjection,
             _logKeyboardInjection,
             _useUpstreamGamepadHook,
-            ToString(_upstreamGamepadHookMode));
+            ToString(_upstreamGamepadHookMode),
+            _enableComboNativeHotkeys3To8);
         if (_useUpstreamGamepadHook) {
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
@@ -249,5 +223,6 @@ namespace dualpad::input
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
+        _enableComboNativeHotkeys3To8 = false;
     }
 }

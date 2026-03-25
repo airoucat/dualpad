@@ -51,25 +51,25 @@ namespace dualpad::input
             }
         }
 
-        std::uint32_t CollectResolvedComboMask(
+        std::uint32_t CollectResolvedChordMask(
             const PadEventBuffer& events,
             InputContext context,
             const BindingResolver& bindingResolver)
         {
-            std::uint32_t resolvedComboMask = 0;
+            std::uint32_t resolvedChordMask = 0;
             for (std::size_t i = 0; i < events.count; ++i) {
                 const auto& event = events[i];
-                if (event.type != PadEventType::Combo ||
+                if ((event.type != PadEventType::Combo && event.type != PadEventType::Layer) ||
                     !IsSyntheticPadBitCode(event.code)) {
                     continue;
                 }
 
                 if (bindingResolver.Resolve(event, context)) {
-                    resolvedComboMask |= event.code;
+                    resolvedChordMask |= event.code;
                 }
             }
 
-            return resolvedComboMask;
+            return resolvedChordMask;
         }
 
         std::uint32_t CollectObservedButtonPressMask(const PadEventBuffer& events)
@@ -139,7 +139,7 @@ namespace dualpad::input
         InputContext context)
     {
         std::uint32_t handledButtons = _sourceBlockCoordinator.CurrentMask();
-        const auto resolvedComboMask = CollectResolvedComboMask(events, context, _bindingResolver);
+        const auto resolvedChordMask = CollectResolvedChordMask(events, context, _bindingResolver);
         for (std::size_t i = 0; i < events.count; ++i) {
             const auto& event = events[i];
             if (event.type == PadEventType::ButtonRelease &&
@@ -176,12 +176,12 @@ namespace dualpad::input
 
             if (event.type == PadEventType::ButtonPress &&
                 IsSyntheticPadBitCode(event.code) &&
-                (resolvedComboMask & event.code) != 0) {
+                (resolvedChordMask & event.code) != 0) {
                 _sourceBlockCoordinator.Block(event.code);
                 handledButtons |= event.code;
                 if (ShouldLogMappingActivity()) {
                     logger::info(
-                        "[DualPad][Mapping] Suppressing ButtonPress source=0x{:08X} because same-frame Combo resolved",
+                        "[DualPad][Mapping] Suppressing ButtonPress source=0x{:08X} because same-frame Layer/Combo resolved",
                         event.code);
                 }
                 continue;

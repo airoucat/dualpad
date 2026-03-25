@@ -149,7 +149,7 @@ namespace dualpad::input
         const auto windowAddress = pollAddress + kExpectedPollXInputWindowOffset;
         if (!REL::verify_code(windowAddress, kExpectedPollXInputWindow)) {
             logger::error(
-                "[DualPad][UpstreamGamepad] Poll XInput call-site verification failed at poll=0x{:X}; falling back to compatibility route",
+                "[DualPad][UpstreamGamepad] Poll XInput call-site verification failed at poll=0x{:X}; upstream poll hook remains disabled",
                 pollAddress);
             return;
         }
@@ -162,7 +162,7 @@ namespace dualpad::input
 
         if (!_installed) {
             logger::error(
-                "[DualPad][UpstreamGamepad] Failed to patch Poll-internal XInput call at 0x{:X}; falling back to compatibility route",
+                "[DualPad][UpstreamGamepad] Failed to patch Poll-internal XInput call at 0x{:X}; upstream poll hook remains disabled",
                 callAddress);
             return;
         }

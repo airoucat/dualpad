@@ -33,6 +33,12 @@ namespace dualpad::input
             trigger.code = event.code;
             return trigger;
 
+        case PadEventType::Layer:
+            trigger.type = TriggerType::Layer;
+            trigger.code = event.code;
+            FillModifiers(trigger, event.modifierMask);
+            return trigger;
+
         case PadEventType::Combo:
             trigger.type = TriggerType::Combo;
             trigger.code = event.code;

@@ -11,6 +11,7 @@ namespace dualpad::input
 
         bool Apply(const std::filesystem::path& path = {});
         bool Reapply();
+        bool IsApplied() const { return _applySucceeded; }
 
         static std::filesystem::path GetDefaultPath();
 
@@ -18,5 +19,8 @@ namespace dualpad::input
         ControlMapOverlay() = default;
 
         std::filesystem::path _overlayPath;
+        bool _applySucceeded{ false };
+        bool _loggedUnsupportedRuntime{ false };
+        bool _loggedMissingOverlay{ false };
     };
 }

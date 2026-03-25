@@ -2,6 +2,7 @@
 #include "input/backend/ActionBackendPolicy.h"
 
 #include "input/Action.h"
+#include "input/RuntimeConfig.h"
 #include "input/backend/ModEventKeyPool.h"
 
 using namespace std::literals;
@@ -26,6 +27,16 @@ namespace dualpad::input::backend
         constexpr bool IsModEventActionId(std::string_view actionId)
         {
             return FindModEventKeySlot(actionId) != nullptr;
+        }
+
+        constexpr bool IsComboNativeHotkeyActionId(std::string_view actionId)
+        {
+            return actionId == actions::Hotkey3 ||
+                actionId == actions::Hotkey4 ||
+                actionId == actions::Hotkey5 ||
+                actionId == actions::Hotkey6 ||
+                actionId == actions::Hotkey7 ||
+                actionId == actions::Hotkey8;
         }
     }
 
@@ -65,6 +76,18 @@ namespace dualpad::input::backend
         }
 
         if (const auto* descriptor = FindNativeActionDescriptor(actionId)) {
+            if (IsComboNativeHotkeyActionId(actionId) &&
+                !RuntimeConfig::GetSingleton().EnableComboNativeHotkeys3To8()) {
+                return {
+                    .backend = PlannedBackend::None,
+                    .kind = PlannedActionKind::PluginAction,
+                    .contract = ActionOutputContract::None,
+                    .lifecyclePolicy = ActionLifecyclePolicy::None,
+                    .nativeCode = NativeControlCode::None,
+                    .ownsLifecycle = false
+                };
+            }
+
             return {
                 .backend = descriptor->backend,
                 .kind = descriptor->kind,

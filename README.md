@@ -42,10 +42,12 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
   - `JournalMenu` 走 `LT / RT` trigger current-state 翻标签
   - `MapMenu` 走独立的 `Map.Click / Map.OpenJournal / Map.PlayerPosition / Map.LocalMap` 与原生摇杆/扳机硬件位
 - `Pause / NativeScreenshot / Hotkey3-8` 这批 PC 键盘独占原生事件，当前已作为独立 action surface 接入，并由 DualPad 在运行时覆盖 gamepad `ControlMap` 到固定 combo ABI；它们仍不默认占用现有手柄键位。
-- 当前这批 combo-native 事件按“第一拍直接 materialize 完整组合”运行；`Pause / NativeScreenshot` 已实机验证可用，`Hotkey3-8` 仍保留为可绑定候选，等待后续补测。
+- 当前这批 combo-native 事件按“第一拍直接 materialize 完整组合”运行；`Pause / NativeScreenshot` 已实机验证可用。
+- `Hotkey3-8` 代码与 overlay ABI 已接入，但当前默认受 runtime gate 保护，需在 `Data/SKSE/Plugins/DualPadDebug.ini` 里显式开启 `enable_combo_native_hotkeys3_to_8=true` 后再做补测。
 - `OpenInventory / OpenMagic / OpenMap / OpenSkills` 当前已撤出正式支持面；这四个动作所属的 `MenuOpenHandler` 家族在当前 mod 栈下不稳定，不再继续作为 combo-native 默认能力推进。
 - `OpenFavorites` 仍不在这批 `controlmap combo` 正式支持面里。
 - DualPad 当前会在 `kDataLoaded` 后读取 `Data/SKSE/Plugins/DualPadControlMap.txt`，直接调用游戏自己的 `ControlMap` parser/rebuild 链重载这份配置，并故意跳过 `ControlMap_Custom.txt`；玩家或其它 mod 的 remap 不再属于兼容目标。
+- `ControlMapOverlay` 当前已补运行时版本与 overlay 文件存在性护栏；非 SSE 1.5.97 或 overlay 文件缺失时，会明确跳过并记录原因，而不是静默进入不确定状态。
 - 配套 overlay 源文件当前仓库路径是 `config/controlmap_profiles/DualPadNativeCombo/Interface/Controls/PC/controlmap.txt`。
 - `Game.Attack / Game.Block` 这类旧 action-routed compatibility 路径也已退出正式支持面；原生战斗输入应通过虚拟 `LT / RT` current-state 交给 Skyrim 自己的 `AttackBlockHandler` 推导。
 - `ModEvent` 当前不再规划独立 transport backend，而是作为逻辑槽位，经 `KeyboardHelperBackend` materialize 为固定虚拟键。
@@ -60,6 +62,8 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
   - 当前文档总索引与推荐阅读顺序
 - [docs/current_input_pipeline_zh.md](docs/current_input_pipeline_zh.md)
   - 从 `HID -> PadState -> PadEventSnapshot -> AuthoritativePollState -> XInput/Mod` 的当前运行时主链路
+- [docs/mapping_snapshot_atomicity_audit_and_injection_contract_zh.md](docs/mapping_snapshot_atomicity_audit_and_injection_contract_zh.md)
+  - 对照 AGENTS 旧目标，核对映射层原子快照、主线程交付边界，以及注入层当前正式契约
 - [docs/backend_routing_decisions.md](docs/backend_routing_decisions.md)
   - 当前 backend ownership 与 routing 规则
 - [docs/mod_event_keyboard_helper_backend_zh.md](docs/mod_event_keyboard_helper_backend_zh.md)
@@ -74,6 +78,8 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
   - DualPad 自维护的 keyboard-exclusive native combo profile
 - [docs/current_cleanup_risk_review_zh.md](docs/current_cleanup_risk_review_zh.md)
   - 当前主线代码的冗余点、风险复查点，以及外部 GPT 深度研究提示词
+- [docs/agents5_9403e73_customized_refactor_plan_zh.md](docs/agents5_9403e73_customized_refactor_plan_zh.md)
+  - 针对提交 `9403e73` 的定制化后续方案，以及本轮已落实项与剩余观察项
 - [docs/agents5_review_reconciliation_refactor_plan_zh.md](docs/agents5_review_reconciliation_refactor_plan_zh.md)
   - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划
 - [src/ARCHITECTURE.md](src/ARCHITECTURE.md)

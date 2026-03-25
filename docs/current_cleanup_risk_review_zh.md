@@ -37,6 +37,9 @@
 
 - 当前仍保留 `kAllowFallbackWithoutModifiers = true`
 - 这有利于兼容一部分自由组合绑定，但组合键面继续扩大后，仍可能带来“过宽回退命中”风险
+- 本轮已经补上 subset fallback 诊断：
+  - `BindingManager::FindBestBindingForTriggerSubset()` 会统计同等级候选数
+  - `BindingResolver` 在开启 `log_mapping_events` 时会记录精确命中 / subset fallback 命中，以及歧义候选摘要
 
 判断：
 
@@ -53,6 +56,10 @@
 
 - 当前已改成走游戏原生 parser / rebuild。
 - 功能上已经稳定。
+- 本轮已补运行时护栏：
+  - 仅在 SSE 1.5.97 上启用
+  - overlay 文件缺失时明确跳过
+  - 主入口会在 overlay 未生效时打印总览 warning
 
 判断：
 
@@ -69,17 +76,21 @@
 
 - `Pause / NativeScreenshot` 已实机验证。
 - `Hotkey3-8` 仍属于已接入、待补测状态。
+- 本轮已加 runtime gate：
+  - `enable_combo_native_hotkeys3_to_8=false` 时，route 与 `ControlMapOverlay` 会一起禁用 `Hotkey3-8`
+  - 这样即使 overlay 已加载，未补测阶段也不会意外进入正式运行面
 
 判断：
 
 - 这是验证缺口，不是当前架构缺口。
 
-### 4. 映射层组合键仍缺少单独实机验证
+### 4. 映射层严格先后按键仍缺少单独实机验证
 
 相关文件：
 
 - `src/input/mapping/BindingResolver.cpp`
 - `src/input/BindingManager.cpp`
+- `src/input/BindingConfig.cpp`
 
 现状：
 
@@ -88,12 +99,15 @@
   - 单键映射
   - native current-state 输出
   - controlmap combo-native 输出
-- 映射层自己的 `Combo:*` 绑定命中、以及“精确 combo 未命中时 subset fallback 是否符合预期”还没有单独做过成体系实测。
+- 映射层自己的“严格先后按 modifier 再按主键”这条语义，还没有单独做过成体系实测。
+- 当前用户侧推荐写法已切到 `Layer:*`。
+- `Combo:*` 已经重新定义成“近同时双键”，并且只对实际参与 `Combo:*` 的键引入局部 `22ms` 等待窗口。
+- `Button:mods+key` 已从配置层移除，不再作为组合键语法。
 
 判断：
 
 - 这属于验证缺口，不是当前已知 correctness 故障。
-- 在后续继续扩张自由组合绑定前，建议先补一轮专门的映射层 combo 回归。
+- 在后续继续扩张自由组合绑定前，建议先分别补一轮 `Layer:*` 与 `Combo:*` 的专项回归。
 
 ## 当前不建议重新投入的旧方向
 
@@ -110,6 +124,6 @@
 建议顺序：
 
 1. 继续跟踪 `BindingResolver` 的 subset fallback，等组合键面再扩张时决定是否收紧。
-2. 先补一轮映射层 `Combo:*` 绑定专项验证，再决定是否调整 subset fallback。
-3. 在不动行为的前提下，仅继续加强 `ControlMapOverlay` 的日志与诊断。
+2. 先补一轮映射层 `Layer:*` 绑定专项验证，再决定是否调整 subset fallback。
+3. 继续观察 `ControlMapOverlay`，但短期内不再主动重构其核心实现。
 4. 等 `Hotkey3-8` 补测完成后，再决定是否进一步扩张 combo-native 正式支持面。

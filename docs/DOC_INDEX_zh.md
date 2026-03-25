@@ -7,14 +7,16 @@
 1. [../README.md](../README.md)
 2. [../src/ARCHITECTURE.md](../src/ARCHITECTURE.md)
 3. [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
-4. [backend_routing_decisions.md](backend_routing_decisions.md)
-5. [native_pc_event_semantics_zh.md](native_pc_event_semantics_zh.md)
-6. [controlmap_gamepad_event_inventory_zh.md](controlmap_gamepad_event_inventory_zh.md)
-7. [controlmap_combo_profile_zh.md](controlmap_combo_profile_zh.md)
-8. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
-9. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
-10. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
-11. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
+4. [mapping_snapshot_atomicity_audit_and_injection_contract_zh.md](mapping_snapshot_atomicity_audit_and_injection_contract_zh.md)
+5. [backend_routing_decisions.md](backend_routing_decisions.md)
+6. [native_pc_event_semantics_zh.md](native_pc_event_semantics_zh.md)
+7. [controlmap_gamepad_event_inventory_zh.md](controlmap_gamepad_event_inventory_zh.md)
+8. [controlmap_combo_profile_zh.md](controlmap_combo_profile_zh.md)
+9. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
+10. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
+11. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
+12. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
+13. [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
 
 ## 当前主线文档
 
@@ -22,6 +24,8 @@
 
 - [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
   - 当前输入主链路，从 `HidReader` 到 `Skyrim Poll` 的正式运行时流程。
+- [mapping_snapshot_atomicity_audit_and_injection_contract_zh.md](mapping_snapshot_atomicity_audit_and_injection_contract_zh.md)
+  - 对照 AGENTS 旧目标核对映射层 producer-side 原子快照、主线程交付边界和当前注入层契约。
 - [backend_routing_decisions.md](backend_routing_decisions.md)
   - 当前 backend ownership、routing 以及哪些动作不在正式支持面内。
 - [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
@@ -44,6 +48,8 @@
   - 当前代码仍值得继续观察或精简的点。
 - [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
   - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划。
+- [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
+  - 基于提交 `9403e73` 和新版 `agents5.md` 的定制化重构方案，按“立即做 / 先验证 / 暂不做”重新分层。
 
 ## 维护规则
 

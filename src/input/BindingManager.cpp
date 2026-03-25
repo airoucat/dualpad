@@ -55,6 +55,15 @@ namespace dualpad::input
             }
             return mask;
         }
+
+        std::uint64_t MakeCanonicalComboPairKey(std::uint32_t firstButton, std::uint32_t secondButton)
+        {
+            if (firstButton > secondButton) {
+                std::swap(firstButton, secondButton);
+            }
+
+            return (static_cast<std::uint64_t>(firstButton) << 32) | secondButton;
+        }
     }
 
     BindingManager& BindingManager::GetSingleton()
@@ -68,6 +77,7 @@ namespace dualpad::input
         std::scoped_lock lock(_mutex);
 
         _bindings[binding.context][binding.trigger] = binding.actionId;
+        RebuildComboCachesLocked();
 
         logger::trace("[DualPad][BindingMgr] Added binding: context={} trigger={:08X} action={}",
             static_cast<int>(binding.context), binding.trigger.code, binding.actionId);
@@ -83,6 +93,7 @@ namespace dualpad::input
         }
 
         contextBindings.emplace(binding.trigger, binding.actionId);
+        RebuildComboCachesLocked();
         logger::trace("[DualPad][BindingMgr] Added fallback binding: context={} trigger={:08X} action={}",
             static_cast<int>(binding.context), binding.trigger.code, binding.actionId);
     }
@@ -94,6 +105,7 @@ namespace dualpad::input
         auto ctxIt = _bindings.find(context);
         if (ctxIt != _bindings.end()) {
             ctxIt->second.erase(trigger);
+            RebuildComboCachesLocked();
         }
     }
 
@@ -101,6 +113,8 @@ namespace dualpad::input
     {
         std::scoped_lock lock(_mutex);
         _bindings.clear();
+        _comboParticipantMasks.clear();
+        _comboPairsByContext.clear();
     }
 
     void BindingManager::MergeBindings(InputContext sourceContext, InputContext targetContext, bool overwriteExisting)
@@ -120,6 +134,8 @@ namespace dualpad::input
 
             targetBindings[trigger] = actionId;
         }
+
+        RebuildComboCachesLocked();
     }
 
     std::optional<std::string> BindingManager::GetActionForTrigger(
@@ -144,9 +160,17 @@ namespace dualpad::input
     std::optional<Binding> BindingManager::FindBestBindingForTriggerSubset(
         const Trigger& trigger,
         InputContext context,
-        bool allowEmptyModifiers) const
+        bool allowEmptyModifiers,
+        BindingSubsetDiagnostics* diagnostics) const
     {
         std::scoped_lock lock(_mutex);
+
+        if (diagnostics) {
+            diagnostics->requestedModifierMask = ModifiersToMask(trigger.modifiers);
+            diagnostics->requestedModifierCount = trigger.modifiers.size();
+            diagnostics->equivalentBestCount = 0;
+            diagnostics->equivalentBestBindings.clear();
+        }
 
         auto ctxIt = _bindings.find(context);
         if (ctxIt == _bindings.end()) {
@@ -179,19 +203,38 @@ namespace dualpad::input
                 continue;
             }
 
-            if (!bestTrigger ||
-                candidateModifierCount > bestModifierCount ||
-                (candidateModifierCount == bestModifierCount &&
-                    candidateModifierMask > bestModifierMask)) {
+            if (!bestTrigger || candidateModifierCount > bestModifierCount) {
                 bestTrigger = &candidateTrigger;
                 bestActionId = &actionId;
                 bestModifierMask = candidateModifierMask;
                 bestModifierCount = candidateModifierCount;
+                if (diagnostics) {
+                    diagnostics->equivalentBestBindings.clear();
+                    diagnostics->equivalentBestBindings.push_back(
+                        Binding{ candidateTrigger, actionId, context });
+                }
+                continue;
+            }
+
+            if (candidateModifierCount == bestModifierCount) {
+                if (candidateModifierMask > bestModifierMask) {
+                    bestTrigger = &candidateTrigger;
+                    bestActionId = &actionId;
+                    bestModifierMask = candidateModifierMask;
+                }
+                if (diagnostics) {
+                    diagnostics->equivalentBestBindings.push_back(
+                        Binding{ candidateTrigger, actionId, context });
+                }
             }
         }
 
         if (!bestTrigger || !bestActionId) {
             return std::nullopt;
+        }
+
+        if (diagnostics) {
+            diagnostics->equivalentBestCount = diagnostics->equivalentBestBindings.size();
         }
 
         Binding binding{};
@@ -219,6 +262,23 @@ namespace dualpad::input
         }
 
         return std::nullopt;
+    }
+
+    std::uint32_t BindingManager::GetComboParticipantMask(InputContext context) const
+    {
+        std::scoped_lock lock(_mutex);
+        const auto it = _comboParticipantMasks.find(context);
+        return it != _comboParticipantMasks.end() ? it->second : 0u;
+    }
+
+    bool BindingManager::HasConfiguredComboPair(InputContext context, std::uint32_t firstButton, std::uint32_t secondButton) const
+    {
+        std::scoped_lock lock(_mutex);
+        const auto it = _comboPairsByContext.find(context);
+        if (it == _comboPairsByContext.end()) {
+            return false;
+        }
+        return it->second.contains(MakeComboPairKey(firstButton, secondButton));
     }
 
     // Explicit legacy defaults are retired; the standard fallback set below
@@ -426,9 +486,47 @@ namespace dualpad::input
         addIfMissing(MakeButtonBinding(InputContext::Favor, bits.circle, actions::FavorCancel));
 
         if (addedCount != 0) {
+            std::scoped_lock lock(_mutex);
+            RebuildComboCachesLocked();
             logger::info("[DualPad][BindingMgr] Added {} standard fallback bindings", addedCount);
         }
 
         return addedCount;
+    }
+
+    void BindingManager::RebuildComboCachesLocked()
+    {
+        _comboParticipantMasks.clear();
+        _comboPairsByContext.clear();
+
+        for (const auto& [context, bindings] : _bindings) {
+            auto& participantMask = _comboParticipantMasks[context];
+            auto& pairs = _comboPairsByContext[context];
+            for (const auto& [trigger, actionId] : bindings) {
+                (void)actionId;
+                if (trigger.type != TriggerType::Combo) {
+                    continue;
+                }
+
+                if (trigger.modifiers.size() != 1) {
+                    continue;
+                }
+
+                const auto firstButton = trigger.modifiers[0];
+                const auto secondButton = trigger.code;
+                if (!IsSyntheticPadBitCode(firstButton) || !IsSyntheticPadBitCode(secondButton)) {
+                    continue;
+                }
+
+                participantMask |= firstButton;
+                participantMask |= secondButton;
+                pairs.insert(MakeComboPairKey(firstButton, secondButton));
+            }
+        }
+    }
+
+    std::uint64_t BindingManager::MakeComboPairKey(std::uint32_t firstButton, std::uint32_t secondButton)
+    {
+        return MakeCanonicalComboPairKey(firstButton, secondButton);
     }
 }

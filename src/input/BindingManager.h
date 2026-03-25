@@ -5,6 +5,9 @@
 #include <unordered_map>
 #include <optional>
 #include <mutex>
+#include <cstdint>
+#include <unordered_set>
+#include <vector>
 
 namespace dualpad::input
 {
@@ -13,6 +16,14 @@ namespace dualpad::input
         Trigger trigger;
         std::string actionId;
         InputContext context;
+    };
+
+    struct BindingSubsetDiagnostics
+    {
+        std::uint32_t requestedModifierMask{ 0 };
+        std::size_t requestedModifierCount{ 0 };
+        std::size_t equivalentBestCount{ 0 };
+        std::vector<Binding> equivalentBestBindings;
     };
 
     // Stores context-sensitive bindings and serves both config and runtime lookups.
@@ -33,11 +44,14 @@ namespace dualpad::input
         std::optional<Binding> FindBestBindingForTriggerSubset(
             const Trigger& trigger,
             InputContext context,
-            bool allowEmptyModifiers) const;
+            bool allowEmptyModifiers,
+            BindingSubsetDiagnostics* diagnostics = nullptr) const;
 
         std::optional<Trigger> GetTriggerForAction(
             std::string_view actionId,
             InputContext context) const;
+        std::uint32_t GetComboParticipantMask(InputContext context) const;
+        bool HasConfiguredComboPair(InputContext context, std::uint32_t firstButton, std::uint32_t secondButton) const;
 
         // Seeds a fallback set when no external config is present.
         void InitDefaultBindings();
@@ -47,10 +61,15 @@ namespace dualpad::input
         BindingManager() = default;
 
         mutable std::mutex _mutex;
+        std::unordered_map<InputContext, std::uint32_t> _comboParticipantMasks;
+        std::unordered_map<InputContext, std::unordered_set<std::uint64_t>> _comboPairsByContext;
 
         std::unordered_map<
             InputContext,
             std::unordered_map<Trigger, std::string, TriggerHash>
         > _bindings;
+
+        void RebuildComboCachesLocked();
+        static std::uint64_t MakeComboPairKey(std::uint32_t firstButton, std::uint32_t secondButton);
     };
 }

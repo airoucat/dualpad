@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "input/BindingConfig.h"
 #include "input/BindingManager.h"
+#include "input/IniParseHelpers.h"
 #include "input/InputContext.h"
 #include "input/Trigger.h"
 #include "input/mapping/PadEvent.h"
@@ -21,21 +22,6 @@ namespace dualpad::input
 {
     namespace
     {
-        inline std::string Trim(std::string s)
-        {
-            auto isSpace = [](unsigned char c) {
-                return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-                };
-
-            while (!s.empty() && isSpace(static_cast<unsigned char>(s.front()))) {
-                s.erase(s.begin());
-            }
-            while (!s.empty() && isSpace(static_cast<unsigned char>(s.back()))) {
-                s.pop_back();
-            }
-            return s;
-        }
-
         InputContext StringToContext(std::string_view str)
         {
             if (str == "Gameplay") return InputContext::Gameplay;
@@ -175,9 +161,9 @@ namespace dualpad::input
             return hasFace && hasFn;
         }
 
-        bool ParseButtonChord(std::string_view chord, Trigger& outTrigger)
+        bool ParseButtonList(std::string_view chord, std::vector<std::uint32_t>& outCodes)
         {
-            std::vector<std::uint32_t> parsedCodes;
+            outCodes.clear();
             std::size_t tokenStart = 0;
 
             while (tokenStart <= chord.size()) {
@@ -186,7 +172,7 @@ namespace dualpad::input
                     chord.substr(tokenStart) :
                     chord.substr(tokenStart, plusPos - tokenStart);
 
-                const auto token = Trim(std::string(tokenView));
+                const auto token = ini::Trim(std::string(tokenView));
                 if (token.empty()) {
                     return false;
                 }
@@ -196,11 +182,11 @@ namespace dualpad::input
                     return false;
                 }
 
-                if (std::find(parsedCodes.begin(), parsedCodes.end(), code) != parsedCodes.end()) {
+                if (std::find(outCodes.begin(), outCodes.end(), code) != outCodes.end()) {
                     return false;
                 }
 
-                parsedCodes.push_back(code);
+                outCodes.push_back(code);
 
                 if (plusPos == std::string_view::npos) {
                     break;
@@ -209,18 +195,73 @@ namespace dualpad::input
                 tokenStart = plusPos + 1;
             }
 
-            if (parsedCodes.empty()) {
+            if (outCodes.empty()) {
                 return false;
             }
 
-            if (ContainsFnWithFace(parsedCodes)) {
+            if (ContainsFnWithFace(outCodes)) {
                 logger::warn("[DualPad][Config] Rejecting forbidden FN+Face chord");
+                return false;
+            }
+
+            return true;
+        }
+
+        bool ParseButtonChord(std::string_view chord, Trigger& outTrigger)
+        {
+            std::vector<std::uint32_t> parsedCodes;
+            if (!ParseButtonList(chord, parsedCodes)) {
                 return false;
             }
 
             outTrigger.code = parsedCodes.back();
             outTrigger.modifiers.assign(parsedCodes.begin(), parsedCodes.end() - 1);
             (std::sort)(outTrigger.modifiers.begin(), outTrigger.modifiers.end());
+            return true;
+        }
+
+        bool ParseUnorderedCombo(std::string_view chord, Trigger& outTrigger)
+        {
+            std::vector<std::uint32_t> parsedCodes;
+            if (!ParseButtonList(chord, parsedCodes)) {
+                return false;
+            }
+
+            if (parsedCodes.size() != 2) {
+                logger::warn(
+                    "[DualPad][Config] Combo:* requires exactly two digital buttons ({})",
+                    chord);
+                return false;
+            }
+
+            (std::sort)(parsedCodes.begin(), parsedCodes.end());
+            outTrigger.code = parsedCodes[1];
+            outTrigger.modifiers = { parsedCodes[0] };
+            return true;
+        }
+
+        bool ParseSingleButton(std::string_view buttonName, Trigger& outTrigger)
+        {
+            const auto token = ini::Trim(std::string(buttonName));
+            if (token.empty()) {
+                return false;
+            }
+
+            if (token.find('+') != std::string::npos) {
+                logger::warn(
+                    "[DualPad][Config] Button:* no longer accepts modifier chords ({}). "
+                    "Use Layer:* for strict ordered modifier actions.",
+                    token);
+                return false;
+            }
+
+            const auto code = ButtonNameToCode(token);
+            if (code == 0) {
+                return false;
+            }
+
+            outTrigger.code = code;
+            outTrigger.modifiers.clear();
             return true;
         }
 
@@ -257,6 +298,7 @@ namespace dualpad::input
 
             return context;
         }
+
     }
 
     BindingConfig& BindingConfig::GetSingleton()
@@ -303,7 +345,7 @@ namespace dualpad::input
         return ParseIniFile(_configPath);
     }
 
-    // Accepts Gesture:Name, Button:Name, Button:Modifier+Name, Combo:A+B, Hold:Name, Tap:Name, or Axis:Name.
+    // Accepts Gesture:Name, Button:Name, Layer:A+B, Combo:A+B, Hold:Name, Tap:Name, or Axis:Name.
     bool BindingConfig::ParseTrigger(std::string_view triggerStr, Trigger& outTrigger)
     {
 
@@ -321,26 +363,33 @@ namespace dualpad::input
             return outTrigger.code != 0;
         }
 
-        const auto parseButtonLikeTrigger = [&](TriggerType type) {
+        const auto parseChordLikeTrigger = [&](TriggerType type) {
             outTrigger.type = type;
             outTrigger.modifiers.clear();
             return ParseButtonChord(codeStr, outTrigger);
             };
 
         if (typeStr == "Button") {
-            return parseButtonLikeTrigger(TriggerType::Button);
+            outTrigger.type = TriggerType::Button;
+            return ParseSingleButton(codeStr, outTrigger);
+        }
+
+        if (typeStr == "Layer") {
+            return parseChordLikeTrigger(TriggerType::Layer);
         }
 
         if (typeStr == "Combo") {
-            return parseButtonLikeTrigger(TriggerType::Combo);
+            outTrigger.type = TriggerType::Combo;
+            outTrigger.modifiers.clear();
+            return ParseUnorderedCombo(codeStr, outTrigger);
         }
 
         if (typeStr == "Hold") {
-            return parseButtonLikeTrigger(TriggerType::Hold);
+            return parseChordLikeTrigger(TriggerType::Hold);
         }
 
         if (typeStr == "Tap") {
-            return parseButtonLikeTrigger(TriggerType::Tap);
+            return parseChordLikeTrigger(TriggerType::Tap);
         }
 
         if (typeStr == "Axis") {
@@ -436,21 +485,18 @@ namespace dualpad::input
         while (std::getline(ifs, line)) {
             ++lineNo;
 
-            if (lineNo == 1 && line.size() >= 3 &&
-                static_cast<unsigned char>(line[0]) == 0xEF &&
-                static_cast<unsigned char>(line[1]) == 0xBB &&
-                static_cast<unsigned char>(line[2]) == 0xBF) {
-                line.erase(0, 3);
+            if (lineNo == 1) {
+                ini::StripUtf8Bom(line);
             }
 
-            line = Trim(line);
+            line = ini::Trim(line);
 
             if (line.empty() || line[0] == ';' || line[0] == '#') {
                 continue;
             }
 
             if (line.front() == '[' && line.back() == ']') {
-                currentSection = Trim(line.substr(1, line.size() - 2));
+                currentSection = ini::Trim(line.substr(1, line.size() - 2));
                 logger::info("[DualPad][Config] Parsing section: [{}]", currentSection);
                 continue;
             }
@@ -461,8 +507,8 @@ namespace dualpad::input
                 continue;
             }
 
-            auto key = Trim(line.substr(0, eqPos));
-            auto value = Trim(line.substr(eqPos + 1));
+            auto key = ini::Trim(line.substr(0, eqPos));
+            auto value = ini::Trim(line.substr(eqPos + 1));
 
             if (key.empty() || value.empty()) {
                 continue;

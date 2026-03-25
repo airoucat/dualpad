@@ -23,6 +23,7 @@ namespace dualpad::input
         bool sawPulse{ false };
         bool tapTriggered{ false };
         bool holdTriggered{ false };
+        bool layerTriggered{ false };
         bool comboTriggered{ false };
 
         float heldSeconds{ 0.0f };
@@ -66,6 +67,7 @@ namespace dualpad::input
         std::uint32_t pulseMask{ 0 };
         std::uint32_t tapMask{ 0 };
         std::uint32_t holdMask{ 0 };
+        std::uint32_t layerMask{ 0 };
         std::uint32_t comboMask{ 0 };
 
         std::array<SyntheticButtonState, 32> buttons{};

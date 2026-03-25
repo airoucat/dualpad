@@ -77,7 +77,10 @@ namespace
             dualpad::input::RuntimeConfig::GetSingleton().Load();
 
             dualpad::input::BindingConfig::GetSingleton().Load();
-            dualpad::input::ControlMapOverlay::GetSingleton().Apply();
+            if (!dualpad::input::ControlMapOverlay::GetSingleton().Apply()) {
+                logger::warn(
+                    "[DualPad] Runtime gamepad controlmap overlay inactive; combo-native actions may be unavailable");
+            }
 
             dualpad::input::InputFramePump::GetSingleton().Register();
 

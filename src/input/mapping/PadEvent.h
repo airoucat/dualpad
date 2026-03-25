@@ -16,6 +16,7 @@ namespace dualpad::input
         ButtonPress,
         ButtonRelease,
         AxisChange,
+        Layer,
         Combo,
         Hold,
         Tap,
@@ -94,6 +95,7 @@ namespace dualpad::input
         case PadEventType::ButtonPress: return "ButtonPress";
         case PadEventType::ButtonRelease: return "ButtonRelease";
         case PadEventType::AxisChange: return "AxisChange";
+        case PadEventType::Layer: return "Layer";
         case PadEventType::Combo: return "Combo";
         case PadEventType::Hold: return "Hold";
         case PadEventType::Tap: return "Tap";

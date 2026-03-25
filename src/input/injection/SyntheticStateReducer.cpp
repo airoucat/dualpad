@@ -190,6 +190,15 @@ namespace dualpad::input
                 }
                 break;
 
+            case PadEventType::Layer:
+                if (IsSyntheticPadBitCode(event.code)) {
+                    _latest.layerMask |= event.code;
+                    updateButtonFlag(event.code, [](SyntheticButtonState& button) {
+                        button.layerTriggered = true;
+                        });
+                }
+                break;
+
             case PadEventType::Combo:
                 if (IsSyntheticPadBitCode(event.code)) {
                     _latest.comboMask |= event.code;

@@ -78,6 +78,8 @@ flowchart TB
 
 - 事件顺序与单帧 `PadState` 对齐。
 - 通过 `PadEventSnapshotDispatcher` 以整份 snapshot 交给主线程消费。
+- producer 侧已经形成单帧原子 snapshot，但主线程交付仍是异步 drain。
+- 当 backlog 超过单次 Poll 预算时，dispatcher 允许 latest-state coalescing；因此当前不是“绝不异步、绝不 coalesce 的逐原始帧直通”。
 
 ### 3. 主线程 reduction / plan / lifecycle
 

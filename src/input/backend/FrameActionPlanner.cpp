@@ -23,6 +23,7 @@ namespace dualpad::input::backend
         {
             switch (event.type) {
             case PadEventType::ButtonPress:
+            case PadEventType::Layer:
             case PadEventType::Combo:
             case PadEventType::Hold:
             case PadEventType::Tap:
