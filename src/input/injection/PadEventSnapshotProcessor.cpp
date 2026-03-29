@@ -6,7 +6,9 @@
 #include "input/backend/FrameActionPlanDebugLogger.h"
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input/AuthoritativePollState.h"
+#include "input/BindingManager.h"
 #include "input/InputContext.h"
+#include "input/InputModalityTracker.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/AxisProjection.h"
 #include "input/injection/SyntheticStateDebugLogger.h"
@@ -96,6 +98,47 @@ namespace dualpad::input
             }
         }
 
+        void SynthesizeMissingButtonEdges(
+            const SyntheticPadFrame& frame,
+            InputContext context,
+            const PadState& state,
+            PadEventBuffer& events)
+        {
+            const auto observedPressMask = CollectObservedButtonPressMask(events);
+            const auto comboParticipantMask = BindingManager::GetSingleton().GetComboParticipantMask(context);
+
+            const auto missingPressMask =
+                frame.pressedMask &
+                ~observedPressMask &
+                ~comboParticipantMask;
+
+            for (int bitIndex = 0; bitIndex < 32; ++bitIndex) {
+                const auto bit = (1u << bitIndex);
+                if ((missingPressMask & bit) == 0) {
+                    continue;
+                }
+
+                PadEvent synthesized{};
+                synthesized.type = PadEventType::ButtonPress;
+                synthesized.triggerType = TriggerType::Button;
+                synthesized.code = bit;
+                synthesized.timestampUs = frame.sourceTimestampUs != 0 ? frame.sourceTimestampUs : state.timestampUs;
+                synthesized.modifierMask = state.buttons.digitalMask & ~bit;
+                if (events.Push(synthesized)) {
+                    logger::warn(
+                        "[DualPad][Snapshot] Synthesized missing press edge for source=0x{:08X} context={} seq={} firstSeq={}",
+                        bit,
+                        ToString(context),
+                        frame.sequence,
+                        frame.firstSequence);
+                } else {
+                    logger::warn(
+                        "[DualPad][Snapshot] Failed to synthesize missing press edge for source=0x{:08X}; frame event buffer full",
+                        bit);
+                }
+            }
+        }
+
     }
 
     PadEventSnapshotProcessor::PadEventSnapshotProcessor() = default;
@@ -136,7 +179,8 @@ namespace dualpad::input
 
     std::uint32_t PadEventSnapshotProcessor::CollectPlannedActions(
         const PadEventBuffer& events,
-        InputContext context)
+        InputContext context,
+        std::uint32_t contextEpoch)
     {
         std::uint32_t handledButtons = _sourceBlockCoordinator.CurrentMask();
         const auto resolvedChordMask = CollectResolvedChordMask(events, context, _bindingResolver);
@@ -155,7 +199,7 @@ namespace dualpad::input
                     event.code,
                     event.timestampUs,
                     context,
-                    ContextManager::GetSingleton().GetCurrentEpoch(),
+                    contextEpoch,
                     _framePlan);
                 if (released) {
                     handledButtons |= event.code;
@@ -199,7 +243,7 @@ namespace dualpad::input
                 }
             }
 
-            if (!_planner.PlanResolvedEvent(*resolved, event, context, _framePlan)) {
+            if (!_planner.PlanResolvedEvent(*resolved, event, context, contextEpoch, _framePlan)) {
                 continue;
             }
 
@@ -231,9 +275,11 @@ namespace dualpad::input
 
     void PadEventSnapshotProcessor::CollectLifecycleActions(
         const SyntheticPadFrame& frame,
-        InputContext context)
+        InputContext context,
+        std::uint32_t contextEpoch)
     {
-        _sourceBlockCoordinator.ReleaseMask(_lifecycleCoordinator.PlanFrame(frame, context, _framePlan));
+        _sourceBlockCoordinator.ReleaseMask(
+            _lifecycleCoordinator.PlanFrame(frame, context, contextEpoch, _framePlan));
     }
 
     void PadEventSnapshotProcessor::DispatchPlannedActions()
@@ -263,12 +309,12 @@ namespace dualpad::input
         _framePlan.Clear();
     }
 
-    void PadEventSnapshotProcessor::BeginFramePlanning(InputContext context)
+    void PadEventSnapshotProcessor::BeginFramePlanning(InputContext context, std::uint32_t contextEpoch)
     {
         _framePlan.Clear();
         backend::NativeButtonCommitBackend::GetSingleton().BeginFrame(
             context,
-            ContextManager::GetSingleton().GetCurrentEpoch());
+            contextEpoch);
     }
 
     void PadEventSnapshotProcessor::FinishFramePlanning(const SyntheticPadFrame& frame, InputContext context)
@@ -311,29 +357,35 @@ namespace dualpad::input
             ResyncNativeState();
         }
 
-        const auto context = ContextManager::GetSingleton().GetCurrentContext();
+        const auto context = snapshot.context;
+        const auto contextEpoch = snapshot.contextEpoch;
         const auto& syntheticFrame = _stateReducer.Reduce(snapshot, context);
+        InputModalityTracker::GetSingleton().ReportUpstreamPadFrame(syntheticFrame);
         AuthoritativePollState::GetSingleton().PublishFrameMetadata(
             syntheticFrame.sourceTimestampUs,
             syntheticFrame.overflowed,
             syntheticFrame.coalesced);
         LogSyntheticPadFrame(syntheticFrame);
-        BeginFramePlanning(context);
+        BeginFramePlanning(context, contextEpoch);
 
-        auto handledButtons = CollectPlannedActions(snapshot.events, context);
-        if (syntheticFrame.overflowed) {
-            const auto observedPressMask = CollectObservedButtonPressMask(snapshot.events);
+        auto effectiveEvents = snapshot.events;
+        SynthesizeMissingButtonEdges(syntheticFrame, context, snapshot.state, effectiveEvents);
+
+        auto handledButtons = CollectPlannedActions(effectiveEvents, context, contextEpoch);
+        if (syntheticFrame.overflowed || syntheticFrame.coalesced) {
+            const auto observedPressMask = CollectObservedButtonPressMask(effectiveEvents);
             const auto recoveredPressedMask =
                 syntheticFrame.pressedMask & ~observedPressMask & ~handledButtons;
             if (recoveredPressedMask != 0) {
                 BlockSourceMask(_sourceBlockCoordinator, recoveredPressedMask);
                 handledButtons |= recoveredPressedMask;
                 logger::warn(
-                    "[DualPad][Snapshot] Applied overflow source-block compensation for pressed bits 0x{:08X}",
+                    "[DualPad][Snapshot] Applied {} source-block compensation for pressed bits 0x{:08X}",
+                    syntheticFrame.overflowed ? "overflow/coalesced" : "coalesced",
                     recoveredPressedMask);
             }
         }
-        CollectLifecycleActions(syntheticFrame, context);
+        CollectLifecycleActions(syntheticFrame, context, contextEpoch);
         FinishFramePlanning(syntheticFrame, context);
         // Poll-owned digital actions now commit through NativeButtonCommitBackend.
         // Reduced raw edges still publish unmanaged digital facts here so the

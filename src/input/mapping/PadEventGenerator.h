@@ -5,6 +5,7 @@
 #include "input/mapping/LayerEvaluator.h"
 #include "input/mapping/TapHoldEvaluator.h"
 #include "input/mapping/TouchpadMapper.h"
+#include "input/InputContext.h"
 #include "input/state/PadState.h"
 
 namespace dualpad::input
@@ -17,7 +18,11 @@ namespace dualpad::input
         TouchpadMapper& GetTouchpadMapper();
         const TouchpadMapper& GetTouchpadMapper() const;
 
-        void Generate(const PadState& previous, const PadState& current, PadEventBuffer& outEvents);
+        void Generate(
+            const PadState& previous,
+            const PadState& current,
+            InputContext context,
+            PadEventBuffer& outEvents);
 
     private:
         AxisEvaluator _axisEvaluator{};

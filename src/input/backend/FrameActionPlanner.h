@@ -17,6 +17,7 @@ namespace dualpad::input::backend
             const ResolvedBinding& binding,
             const PadEvent& event,
             InputContext context,
+            std::uint32_t contextEpoch,
             FrameActionPlan& outPlan) const;
 
         bool PlanButtonState(
@@ -25,6 +26,7 @@ namespace dualpad::input::backend
             float heldSeconds,
             std::uint32_t sourceCode,
             InputContext context,
+            std::uint32_t contextEpoch,
             FrameActionPlan& outPlan) const;
 
         bool PlanAxisValue(
@@ -33,6 +35,7 @@ namespace dualpad::input::backend
             float valueY,
             std::uint32_t sourceCode,
             InputContext context,
+            std::uint32_t contextEpoch,
             FrameActionPlan& outPlan) const;
     };
 }

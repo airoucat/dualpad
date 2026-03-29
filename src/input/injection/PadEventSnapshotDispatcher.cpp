@@ -8,6 +8,34 @@ namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
+    namespace
+    {
+        bool ShouldPrioritizeInCoalesce(const PadEvent& event)
+        {
+            return event.type != PadEventType::AxisChange;
+        }
+
+        bool MatchesSnapshotContext(const PadEventSnapshot& lhs, const PadEventSnapshot& rhs)
+        {
+            return lhs.context == rhs.context && lhs.contextEpoch == rhs.contextEpoch;
+        }
+
+        void AppendCoalescedEvents(
+            PadEventBuffer& destination,
+            const PadEventSnapshot& source,
+            bool prioritizedPass)
+        {
+            for (std::size_t eventIndex = 0; eventIndex < source.events.count; ++eventIndex) {
+                const auto& event = source.events[eventIndex];
+                if (ShouldPrioritizeInCoalesce(event) != prioritizedPass) {
+                    continue;
+                }
+
+                destination.Push(event);
+            }
+        }
+    }
+
     PadEventSnapshotDispatcher& PadEventSnapshotDispatcher::GetSingleton()
     {
         static PadEventSnapshotDispatcher instance;
@@ -160,22 +188,51 @@ namespace dualpad::input
             return;
         }
 
-        const auto firstIndex = _pendingHead;
         const auto lastIndex = (_pendingHead + _pendingCount - 1) % _pending.size();
 
         auto coalescedSnapshot = _pending[lastIndex];
-        coalescedSnapshot.firstSequence = _pending[firstIndex].firstSequence;
         coalescedSnapshot.coalesced = true;
+        coalescedSnapshot.events.Clear();
+
+        bool capturedFirstSequence = false;
+        bool sawContextMismatch = false;
 
         for (std::size_t i = 0; i < _pendingCount; ++i) {
             const auto index = (_pendingHead + i) % _pending.size();
             const auto& pendingSnapshot = _pending[index];
+            if (!MatchesSnapshotContext(pendingSnapshot, coalescedSnapshot)) {
+                sawContextMismatch = true;
+                continue;
+            }
+
+            if (!capturedFirstSequence) {
+                coalescedSnapshot.firstSequence = pendingSnapshot.firstSequence;
+                capturedFirstSequence = true;
+            }
+
             coalescedSnapshot.overflowed =
                 coalescedSnapshot.overflowed ||
                 pendingSnapshot.overflowed ||
                 pendingSnapshot.events.overflowed ||
                 pendingSnapshot.coalesced;
         }
+
+        for (bool prioritizedPass : { true, false }) {
+            for (std::size_t i = 0; i < _pendingCount; ++i) {
+                const auto index = (_pendingHead + i) % _pending.size();
+                const auto& pendingSnapshot = _pending[index];
+                if (!MatchesSnapshotContext(pendingSnapshot, coalescedSnapshot)) {
+                    continue;
+                }
+
+                AppendCoalescedEvents(coalescedSnapshot.events, pendingSnapshot, prioritizedPass);
+            }
+        }
+
+        coalescedSnapshot.overflowed =
+            coalescedSnapshot.overflowed ||
+            coalescedSnapshot.events.overflowed ||
+            sawContextMismatch;
 
         _pendingHead = 0;
         _pending[0] = coalescedSnapshot;
@@ -185,8 +242,13 @@ namespace dualpad::input
         _pendingCount = 1;
 
         logger::warn(
-            "[DualPad][Snapshot] Coalesced pending snapshots after bounded drain; retaining latest seq={} firstSeq={}",
+            "[DualPad][Snapshot] Coalesced pending snapshots after bounded drain; retaining latest seq={} firstSeq={} context={} epoch={} mismatchedContexts={} mergedEvents={} overflowed={}",
             coalescedSnapshot.sequence,
-            coalescedSnapshot.firstSequence);
+            coalescedSnapshot.firstSequence,
+            ToString(coalescedSnapshot.context),
+            coalescedSnapshot.contextEpoch,
+            sawContextMismatch,
+            coalescedSnapshot.events.count,
+            coalescedSnapshot.overflowed);
     }
 }

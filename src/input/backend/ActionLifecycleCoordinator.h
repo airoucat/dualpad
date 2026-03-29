@@ -36,6 +36,7 @@ namespace dualpad::input::backend
         [[nodiscard]] std::uint32_t PlanFrame(
             const SyntheticPadFrame& frame,
             InputContext context,
+            std::uint32_t contextEpoch,
             FrameActionPlan& outPlan);
 
     private:

@@ -36,11 +36,17 @@ namespace dualpad::input
         SourceBlockCoordinator _sourceBlockCoordinator{};
         std::uint64_t _lastProcessedSequence{ 0 };
 
-        std::uint32_t CollectPlannedActions(const PadEventBuffer& events, InputContext context);
-        void CollectLifecycleActions(const SyntheticPadFrame& frame, InputContext context);
+        std::uint32_t CollectPlannedActions(
+            const PadEventBuffer& events,
+            InputContext context,
+            std::uint32_t contextEpoch);
+        void CollectLifecycleActions(
+            const SyntheticPadFrame& frame,
+            InputContext context,
+            std::uint32_t contextEpoch);
         void DispatchPlannedActions();
         void ResetFramePlanning();
-        void BeginFramePlanning(InputContext context);
+        void BeginFramePlanning(InputContext context, std::uint32_t contextEpoch);
         void FinishFramePlanning(const SyntheticPadFrame& frame, InputContext context);
 
         backend::FrameActionPlanner _planner{};

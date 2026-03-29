@@ -144,11 +144,11 @@ namespace dualpad::input::backend
     std::uint32_t ActionLifecycleCoordinator::PlanFrame(
         const SyntheticPadFrame& frame,
         InputContext context,
+        std::uint32_t contextEpoch,
         FrameActionPlan& outPlan)
     {
         std::uint32_t releasedSourceMask = 0;
         LifecycleTransactionBuffer transactions{};
-        const auto contextEpoch = ContextManager::GetSingleton().GetCurrentEpoch();
 
         for (std::size_t bitIndex = 0; bitIndex < _activeActions.size(); ++bitIndex) {
             auto& activeAction = _activeActions[bitIndex];

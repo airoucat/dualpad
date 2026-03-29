@@ -111,10 +111,13 @@ namespace dualpad::input
         outEvents.Push(event);
     }
 
-    void ComboEvaluator::Evaluate(const PadState& previous, const PadState& current, PadEventBuffer& outEvents)
+    void ComboEvaluator::Evaluate(
+        const PadState& previous,
+        const PadState& current,
+        InputContext context,
+        PadEventBuffer& outEvents)
     {
         const auto& bindingManager = BindingManager::GetSingleton();
-        const auto context = ContextManager::GetSingleton().GetCurrentContext();
         const auto comboParticipantMask = bindingManager.GetComboParticipantMask(context);
 
         const auto previousMask = previous.buttons.digitalMask;

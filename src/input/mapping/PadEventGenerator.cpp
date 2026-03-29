@@ -24,11 +24,15 @@ namespace dualpad::input
         return _touchpadMapper;
     }
 
-    void PadEventGenerator::Generate(const PadState& previous, const PadState& current, PadEventBuffer& outEvents)
+    void PadEventGenerator::Generate(
+        const PadState& previous,
+        const PadState& current,
+        InputContext context,
+        PadEventBuffer& outEvents)
     {
         outEvents.Clear();
 
-        _comboEvaluator.Evaluate(previous, current, outEvents);
+        _comboEvaluator.Evaluate(previous, current, context, outEvents);
         _axisEvaluator.Evaluate(previous, current, outEvents);
         _tapHoldEvaluator.Evaluate(previous, current, outEvents);
         _layerEvaluator.Evaluate(previous, current, outEvents);

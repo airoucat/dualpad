@@ -104,7 +104,7 @@ namespace dualpad::input::backend
             return policy == NativeDigitalPolicyKind::RepeatOwner ? kDefaultRepeatIntervalMs : 0;
         }
 
-        void ApplyDigitalMetadata(PlannedAction& action)
+        void ApplyDigitalMetadata(PlannedAction& action, std::uint32_t contextEpoch)
         {
             action.digitalPolicy = ResolveDigitalPolicy(
                 action.actionId,
@@ -115,7 +115,7 @@ namespace dualpad::input::backend
             action.minDownMs = ResolveMinDownMs(action.actionId, action.digitalPolicy);
             action.repeatDelayMs = ResolveRepeatDelayMs(action.digitalPolicy);
             action.repeatIntervalMs = ResolveRepeatIntervalMs(action.digitalPolicy);
-            action.contextEpoch = ContextManager::GetSingleton().GetCurrentEpoch();
+            action.contextEpoch = contextEpoch;
         }
     }
 
@@ -123,6 +123,7 @@ namespace dualpad::input::backend
         const ResolvedBinding& binding,
         const PadEvent& event,
         InputContext context,
+        std::uint32_t contextEpoch,
         FrameActionPlan& outPlan) const
     {
         const auto decision = ActionBackendPolicy::Decide(binding.actionId);
@@ -142,7 +143,7 @@ namespace dualpad::input::backend
         action.modifierMask = event.modifierMask;
         action.timestampUs = event.timestampUs;
         action.valueX = event.value;
-        ApplyDigitalMetadata(action);
+        ApplyDigitalMetadata(action, contextEpoch);
 
         if (action.phase == PlannedActionPhase::None) {
             return false;
@@ -157,6 +158,7 @@ namespace dualpad::input::backend
         float heldSeconds,
         std::uint32_t sourceCode,
         InputContext context,
+        std::uint32_t contextEpoch,
         FrameActionPlan& outPlan) const
     {
         const auto decision = ActionBackendPolicy::Decide(actionId);
@@ -174,7 +176,7 @@ namespace dualpad::input::backend
         action.sourceCode = sourceCode;
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.heldSeconds = heldSeconds;
-        ApplyDigitalMetadata(action);
+        ApplyDigitalMetadata(action, contextEpoch);
         return outPlan.Push(action);
     }
 
@@ -184,6 +186,7 @@ namespace dualpad::input::backend
         float valueY,
         std::uint32_t sourceCode,
         InputContext context,
+        std::uint32_t contextEpoch,
         FrameActionPlan& outPlan) const
     {
         const auto decision = ActionBackendPolicy::Decide(actionId);
@@ -202,7 +205,7 @@ namespace dualpad::input::backend
         action.outputCode = static_cast<std::uint32_t>(decision.nativeCode);
         action.valueX = valueX;
         action.valueY = valueY;
-        ApplyDigitalMetadata(action);
+        ApplyDigitalMetadata(action, contextEpoch);
         return outPlan.Push(action);
     }
 }

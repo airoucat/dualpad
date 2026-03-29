@@ -5,6 +5,7 @@
 #include "input/hid/DualSenseDevice.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/PadEventSnapshot.h"
+#include "input/InputContext.h"
 #include "input/mapping/PadEvent.h"
 #include "input/mapping/PadEventGenerator.h"
 #include "input/protocol/DualSenseProtocol.h"
@@ -84,14 +85,20 @@ namespace
             dualpad::input::NormalizePadState(currentState);
             dualpad::input::LogStateSummary(currentState);
 
+            const auto& contextManager = dualpad::input::ContextManager::GetSingleton();
+            const auto snapshotContext = contextManager.GetCurrentContext();
+            const auto snapshotContextEpoch = contextManager.GetCurrentEpoch();
+
             dualpad::input::PadEventBuffer events{};
-            eventGenerator.Generate(previousState, currentState, events);
+            eventGenerator.Generate(previousState, currentState, snapshotContext, events);
 
             dualpad::input::PadEventSnapshot snapshot{};
             snapshot.type = dualpad::input::PadEventSnapshotType::Input;
             snapshot.firstSequence = currentState.sequence;
             snapshot.sequence = currentState.sequence;
             snapshot.sourceTimestampUs = currentState.timestampUs;
+            snapshot.context = snapshotContext;
+            snapshot.contextEpoch = snapshotContextEpoch;
             snapshot.state = currentState;
             snapshot.events = events;
             snapshot.overflowed = events.overflowed;
