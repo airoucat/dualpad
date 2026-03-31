@@ -26,5 +26,6 @@ namespace dualpad::input
         PadEventBuffer events{};
         bool overflowed{ false };
         bool coalesced{ false };
+        bool crossContextMismatch{ false };
     };
 }

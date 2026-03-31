@@ -29,6 +29,9 @@ namespace dualpad::input::backend
         void Reset();
         bool IsRouteActive() const;
         bool CanHandleAction(std::string_view actionId) const;
+        bool IsActionDown(std::string_view actionId) const;
+        bool HasHeldContributor(std::string_view actionId, HeldContributor contributor) const;
+        HeldEmitterSource GetHeldEmitter(std::string_view actionId) const;
 
         void BeginFrame(
             InputContext context,
@@ -36,11 +39,41 @@ namespace dualpad::input::backend
             std::uint64_t nowUs = 0);
 
         bool ApplyPlannedAction(const PlannedAction& action);
+        void ForceCancelGateAwareGameplayTransientActions();
         [[nodiscard]] CommittedButtonState CommitPollState();
 
         EmitResult Emit(const EmitRequest& request) override;
 
     private:
+        struct SprintProbeSnapshot
+        {
+            bool valid{ false };
+            bool kbmHeld{ false };
+            bool gamepadContributor{ false };
+            bool keyboardMouseContributor{ false };
+            bool effectiveHeld{ false };
+            bool actionDown{ false };
+            bool managed{ false };
+            bool gameplayOwnerGamepad{ false };
+            ExecState state{ ExecState::Idle };
+            HeldEmitterSource activeEmitter{ HeldEmitterSource::None };
+            InputContext context{ InputContext::Gameplay };
+            std::uint32_t contextEpoch{ 0 };
+        };
+
+        struct SneakProbeSnapshot
+        {
+            bool valid{ false };
+            bool actionDown{ false };
+            bool managed{ false };
+            bool gateAware{ false };
+            ExecState state{ ExecState::Idle };
+            PollCommitMode mode{ PollCommitMode::None };
+            InputContext context{ InputContext::Gameplay };
+            std::uint32_t contextEpoch{ 0 };
+            std::uint64_t pollSequence{ 0 };
+        };
+
         NativeButtonCommitBackend() = default;
 
         static bool TranslatePlannedActionToCommitRequest(
@@ -53,12 +86,15 @@ namespace dualpad::input::backend
         static bool IsGameplayGateOpen(InputContext context);
         static bool SlotIsDown(const PollCommitSlot& slot);
         static bool SlotIsManaged(const PollCommitSlot& slot);
+        void SyncExternalHeldContributors(InputContext context, std::uint32_t contextEpoch);
 
         PollCommitCoordinator _pollCommit{};
         InputContext _frameContext{ InputContext::Gameplay };
         std::uint32_t _frameContextEpoch{ 0 };
         std::uint64_t _pollSequence{ 0 };
         std::uint32_t _lastCommittedButtonDownMask{ 0 };
+        SprintProbeSnapshot _lastSprintProbeSnapshot{};
+        SneakProbeSnapshot _lastSneakProbeSnapshot{};
         mutable std::mutex _lock;
     };
 }

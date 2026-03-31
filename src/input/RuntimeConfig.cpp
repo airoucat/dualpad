@@ -172,6 +172,10 @@ namespace dualpad::input
                 _enableComboNativeHotkeys3To8 =
                     ini::ParseBool(it->second, _enableComboNativeHotkeys3To8);
             }
+            if (auto it = values.find("enable_gameplay_ownership"); it != values.end()) {
+                _enableGameplayOwnership =
+                    ini::ParseBool(it->second, _enableGameplayOwnership);
+            }
         };
 
         try {
@@ -190,7 +194,7 @@ namespace dualpad::input
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} features comboHotkeys3to8={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} features comboHotkeys3to8={} gameplayOwnership={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -201,7 +205,8 @@ namespace dualpad::input
             _logKeyboardInjection,
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
-            _enableComboNativeHotkeys3To8);
+            _enableComboNativeHotkeys3To8,
+            _enableGameplayOwnership);
         if (_useUpstreamGamepadHook) {
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
@@ -224,5 +229,6 @@ namespace dualpad::input
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
         _enableComboNativeHotkeys3To8 = false;
+        _enableGameplayOwnership = true;
     }
 }

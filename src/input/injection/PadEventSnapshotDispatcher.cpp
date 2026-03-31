@@ -65,6 +65,7 @@ namespace dualpad::input
                 auto queuedSnapshot = snapshot;
                 queuedSnapshot.firstSequence = snapshot.sequence;
                 queuedSnapshot.coalesced = false;
+                queuedSnapshot.crossContextMismatch = false;
                 queuedSnapshot.overflowed = snapshot.overflowed || snapshot.events.overflowed;
 
                 const auto tail = (_pendingHead + _pendingCount) % _pending.size();
@@ -192,6 +193,7 @@ namespace dualpad::input
 
         auto coalescedSnapshot = _pending[lastIndex];
         coalescedSnapshot.coalesced = true;
+        coalescedSnapshot.crossContextMismatch = false;
         coalescedSnapshot.events.Clear();
 
         bool capturedFirstSequence = false;
@@ -233,6 +235,7 @@ namespace dualpad::input
             coalescedSnapshot.overflowed ||
             coalescedSnapshot.events.overflowed ||
             sawContextMismatch;
+        coalescedSnapshot.crossContextMismatch = sawContextMismatch;
 
         _pendingHead = 0;
         _pending[0] = coalescedSnapshot;

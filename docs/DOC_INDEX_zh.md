@@ -12,11 +12,16 @@
 6. [native_pc_event_semantics_zh.md](native_pc_event_semantics_zh.md)
 7. [controlmap_gamepad_event_inventory_zh.md](controlmap_gamepad_event_inventory_zh.md)
 8. [controlmap_combo_profile_zh.md](controlmap_combo_profile_zh.md)
-9. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
-10. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
-11. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
-12. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
-13. [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
+9. [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
+10. [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
+11. [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)
+12. [gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
+13. [sprint_native_source_mediation_plan_zh.md](sprint_native_source_mediation_plan_zh.md)
+14. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
+15. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
+16. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
+17. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
+18. [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
 
 ## 当前主线文档
 
@@ -39,6 +44,19 @@
   - 按 vanilla `controlmap` 上下文展开的 gamepad 原生事件清单。
 - [controlmap_combo_profile_zh.md](controlmap_combo_profile_zh.md)
   - DualPad 运行时覆盖到 `ControlMap` 的 combo-native profile。
+
+### 动态图标
+
+- [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
+  - 新的动态图标总方案：SVG 做真源，映射层做语义真相源，按 Widget / HTML `<img>` / ButtonArt 兼容层三段落地。
+- [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
+  - 结合项目现状与 IDA 反编译结果，对“键鼠/手柄抢输入”做统一的 UI 输入所有权仲裁方案。
+- [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)
+  - 结合当前注入链和 IDA 里 `BSWin32GamepadDevice::Poll / _root.SetPlatform` 的实际路径，说明为什么 UI owner 不能直接管 gameplay，并给出 gameplay owner 的落点与实施顺序。
+- [gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
+  - 单独收 `Sprint` 持续态数字动作 handoff 与 gameplay 光标/平台表现交接问题，明确它们为什么不该继续用 `DigitalOwner` 或阈值补丁硬修。
+- [sprint_native_source_mediation_plan_zh.md](sprint_native_source_mediation_plan_zh.md)
+  - 基于最新 `SprintProbe` 日志、当前 poll/backend 实现和游戏侧 `SprintHandler` 语义，说明为什么 `Sprint` 需要升级成 `SingleEmitterHold + native keyboard mediation`，而不是继续依赖 held OR 或 coarse owner。
 
 ### Mod 与清理
 

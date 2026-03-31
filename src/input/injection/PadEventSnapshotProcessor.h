@@ -40,6 +40,13 @@ namespace dualpad::input
             const PadEventBuffer& events,
             InputContext context,
             std::uint32_t contextEpoch);
+        std::uint32_t RecoverMissingPressStateAfterResync(
+            const SyntheticPadFrame& frame,
+            InputContext context,
+            std::uint32_t contextEpoch,
+            bool crossContextMismatch,
+            const PadState& state,
+            PadEventBuffer& events);
         void CollectLifecycleActions(
             const SyntheticPadFrame& frame,
             InputContext context,
@@ -51,5 +58,9 @@ namespace dualpad::input
 
         backend::FrameActionPlanner _planner{};
         backend::FrameActionPlan _framePlan{};
+        bool _hasLastStableFrame{ false };
+        InputContext _lastStableContext{ InputContext::Gameplay };
+        std::uint32_t _lastStableContextEpoch{ 0 };
+        std::uint32_t _lastStableDownMask{ 0 };
     };
 }

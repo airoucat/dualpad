@@ -76,6 +76,16 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
   - 按 controlmap 上下文整理的 gamepad 原生事件母表
 - [docs/controlmap_combo_profile_zh.md](docs/controlmap_combo_profile_zh.md)
   - DualPad 自维护的 keyboard-exclusive native combo profile
+- [docs/dynamic_glyph_svg_system_plan_zh.md](docs/dynamic_glyph_svg_system_plan_zh.md)
+  - 重新收口的动态图标方案：以 SVG 为真源，兼容异形键、不同尺寸和组合键，长期以 Widget/sprite 为主、HTML `<img>` 为 fallback
+- [docs/ui_input_ownership_arbitration_plan_zh.md](docs/ui_input_ownership_arbitration_plan_zh.md)
+  - 结合当前 `InputModalityTracker` 与 IDA 反编译结果整理的 UI 输入所有权仲裁方案，用来解决键鼠/手柄抢平台与抢图标问题
+- [docs/gameplay_input_ownership_investigation_and_plan_zh.md](docs/gameplay_input_ownership_investigation_and_plan_zh.md)
+  - 基于当前注入链和 IDA 里的 `BSWin32GamepadDevice::Poll / _root.SetPlatform` 真实路径，整理 gameplay 输入所有权应该放在哪一层、为什么不能直接复用 UI owner 状态机
+- [docs/gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](docs/gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
+  - 基于当前代码与 IDA 反编译结果，单独整理 `Sprint` 持续态数字动作为何不该继续走 `DigitalOwner`，以及 gameplay 光标/平台表现交接为何需要独立 handoff 方案
+- [docs/sprint_native_source_mediation_plan_zh.md](docs/sprint_native_source_mediation_plan_zh.md)
+  - 基于最新 `SprintProbe` 日志与当前 poll/backend 实现，单独整理为什么 `Sprint` 还需要 `SingleEmitterHold + native keyboard mediation`，并给出后续实施顺序
 - [docs/current_cleanup_risk_review_zh.md](docs/current_cleanup_risk_review_zh.md)
   - 当前主线代码的冗余点、风险复查点，以及外部 GPT 深度研究提示词
 - [docs/agents5_9403e73_customized_refactor_plan_zh.md](docs/agents5_9403e73_customized_refactor_plan_zh.md)

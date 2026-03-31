@@ -15,6 +15,7 @@
 #include "input/InputModalityTracker.h"
 
 #include "input/RuntimeConfig.h"
+#include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/backend/KeyboardHelperBackend.h"
 
 #include "input/injection/UpstreamGamepadHook.h"
@@ -77,6 +78,7 @@ namespace
             dualpad::input::RuntimeConfig::GetSingleton().Load();
 
             dualpad::input::BindingConfig::GetSingleton().Load();
+            dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton().RegisterInitialMenus();
             if (!dualpad::input::ControlMapOverlay::GetSingleton().Apply()) {
                 logger::warn(
                     "[DualPad] Runtime gamepad controlmap overlay inactive; combo-native actions may be unavailable");

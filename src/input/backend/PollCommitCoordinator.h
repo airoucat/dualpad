@@ -13,6 +13,7 @@ namespace dualpad::input::backend
     {
         None = 0,
         Pulse,
+        Toggle,
         Hold,
         Repeat
     };
@@ -21,11 +22,26 @@ namespace dualpad::input::backend
     {
         None = 0,
         Pulse,
+        ToggleFire,
         HoldSet,
         HoldClear,
         RepeatSet,
         RepeatClear,
         ForceCancel
+    };
+
+    enum class HeldContributor : std::uint8_t
+    {
+        None = 0,
+        Gamepad = 1u << 0,
+        KeyboardMouse = 1u << 1
+    };
+
+    enum class HeldEmitterSource : std::uint8_t
+    {
+        None = 0,
+        Gamepad,
+        KeyboardMouse
     };
 
     enum class ExecState : std::uint8_t
@@ -41,6 +57,7 @@ namespace dualpad::input::backend
     {
         None = 0,
         Pulse,
+        Toggle,
         HoldStart,
         RepeatStart,
         HoldEnd,
@@ -52,6 +69,8 @@ namespace dualpad::input::backend
         switch (mode) {
         case PollCommitMode::Pulse:
             return "Pulse";
+        case PollCommitMode::Toggle:
+            return "Toggle";
         case PollCommitMode::Hold:
             return "Hold";
         case PollCommitMode::Repeat:
@@ -67,6 +86,8 @@ namespace dualpad::input::backend
         switch (kind) {
         case PollCommitRequestKind::Pulse:
             return "Pulse";
+        case PollCommitRequestKind::ToggleFire:
+            return "ToggleFire";
         case PollCommitRequestKind::HoldSet:
             return "HoldSet";
         case PollCommitRequestKind::HoldClear:
@@ -78,6 +99,32 @@ namespace dualpad::input::backend
         case PollCommitRequestKind::ForceCancel:
             return "ForceCancel";
         case PollCommitRequestKind::None:
+        default:
+            return "None";
+        }
+    }
+
+    inline constexpr std::string_view ToString(HeldContributor contributor)
+    {
+        switch (contributor) {
+        case HeldContributor::Gamepad:
+            return "Gamepad";
+        case HeldContributor::KeyboardMouse:
+            return "KeyboardMouse";
+        case HeldContributor::None:
+        default:
+            return "None";
+        }
+    }
+
+    inline constexpr std::string_view ToString(HeldEmitterSource source)
+    {
+        switch (source) {
+        case HeldEmitterSource::Gamepad:
+            return "Gamepad";
+        case HeldEmitterSource::KeyboardMouse:
+            return "KeyboardMouse";
+        case HeldEmitterSource::None:
         default:
             return "None";
         }
@@ -105,6 +152,8 @@ namespace dualpad::input::backend
         switch (kind) {
         case PendingKind::Pulse:
             return "Pulse";
+        case PendingKind::Toggle:
+            return "Toggle";
         case PendingKind::HoldStart:
             return "HoldStart";
         case PendingKind::RepeatStart:
@@ -126,6 +175,7 @@ namespace dualpad::input::backend
         NativeControlCode outputCode{ NativeControlCode::None };
         PollCommitMode mode{ PollCommitMode::None };
         PollCommitRequestKind kind{ PollCommitRequestKind::None };
+        HeldContributor contributor{ HeldContributor::None };
         bool gateAware{ false };
         std::uint32_t epoch{ 0 };
         std::uint64_t timestampUs{ 0 };
@@ -167,7 +217,9 @@ namespace dualpad::input::backend
         std::uint32_t repeatIntervalMs{ 0 };
         InFlightToken token{};
         PendingIntent pending{};
-        bool desiredHeld{ false };
+        std::uint8_t heldContributorMask{ 0 };
+        HeldEmitterSource activeHeldEmitter{ HeldEmitterSource::None };
+        bool pendingGamepadHandoff{ false };
         std::uint64_t lastTransitionUs{ 0 };
         std::uint32_t emittedDownCount{ 0 };
         std::uint32_t emittedUpCount{ 0 };
@@ -195,6 +247,11 @@ namespace dualpad::input::backend
             bool gameplayGateOpen);
 
         void Flush(IPollCommitEmitter& emitter, std::uint64_t nowUs);
+        void ForceCancelGateAwareTransientSlots();
+        void SyncHeldContributor(
+            RE::BSFixedString actionId,
+            HeldContributor contributor,
+            bool held);
 
         void DumpState() const;
 
@@ -212,6 +269,7 @@ namespace dualpad::input::backend
         PollCommitSlot* FindSlot(RE::BSFixedString actionId);
 
         void QueuePulse(PollCommitSlot& slot, const PollCommitRequest& request);
+        void QueueToggle(PollCommitSlot& slot, const PollCommitRequest& request);
         void QueueHoldSet(PollCommitSlot& slot, const PollCommitRequest& request);
         void QueueHoldClear(PollCommitSlot& slot);
         void QueueRepeatSet(PollCommitSlot& slot, const PollCommitRequest& request);
@@ -220,11 +278,15 @@ namespace dualpad::input::backend
 
         void TickSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen);
         void TickPulseSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen);
+        void TickToggleSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen);
         void TickHoldSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen);
         void TickRepeatSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen);
 
         void InvalidateStaleState(PollCommitSlot& slot);
         bool CanStartNewTransaction(const PollCommitSlot& slot) const;
+        bool IsSingleEmitterHoldAction(RE::BSFixedString actionId) const;
+        HeldEmitterSource ResolveHeldEmitter(const PollCommitSlot& slot) const;
+        bool HasSyntheticHoldDemand(const PollCommitSlot& slot) const;
 
         void StartPulseTransaction(PollCommitSlot& slot, std::uint64_t nowUs);
         void StartHoldTransaction(PollCommitSlot& slot, std::uint64_t nowUs);
@@ -234,5 +296,8 @@ namespace dualpad::input::backend
         void TransitionState(PollCommitSlot& slot, ExecState newState, std::uint64_t nowUs);
         bool ShouldOpenGateForSlot(const PollCommitSlot& slot, bool gameplayGateOpen) const;
         bool HasManagedState(const PollCommitSlot& slot) const;
+        bool HasHeldContributors(const PollCommitSlot& slot) const;
+        bool HasHeldContributor(const PollCommitSlot& slot, HeldContributor contributor) const;
+        void SetHeldContributor(PollCommitSlot& slot, HeldContributor contributor, bool held);
     };
 }
