@@ -21,15 +21,12 @@ namespace dualpad::input
 
         void Install();
         void Register();
+        void OnAuthoritativeMenuOpen(InputContext context, std::uint32_t epoch);
 
         bool IsInstalled() const;
         bool IsUsingGamepad() const;
         bool IsGameplayUsingGamepad() const;
-        bool IsGameplayMouseLookActive() const;
-        bool IsGameplayKeyboardMoveActive() const;
-        bool IsGameplayKeyboardMouseCombatActive() const;
-        bool IsGameplayKeyboardMouseDigitalActive() const;
-        bool IsGameplayKeyboardMouseSprintActive() const;
+        bool IsGameplayMenuEntrySeedGamepad() const;
         void MarkSyntheticKeyboardScancode(
             std::uint8_t scancode,
             std::uint8_t pendingEvents = 1,
@@ -123,19 +120,21 @@ namespace dualpad::input
         void HandleGamepadEvent(const RE::InputEvent& event, InputContext context, const OwnerPolicy& policy);
         void HandleGameplayOnlyEvent(const RE::InputEvent& event, InputContext context);
         bool ConsumeSyntheticKeyboardEvent(std::uint32_t scancode);
+        bool ResolveIsUsingGamepad() const;
+        void ApplyGameplayMenuInheritance(InputContext context, std::string_view reason);
+        void SyncGameplayPresentationFromCoordinator(
+            InputContext context,
+            std::uint32_t epoch,
+            std::string_view reason);
+        void SetEngineGameplayPresentationLatch(
+            PresentationOwner owner,
+            InputContext context,
+            std::uint32_t epoch,
+            std::string_view reason) const;
         bool IsSyntheticKeyboardWindowActive() const;
         bool IsGamepadLeaseActive() const;
         bool IsMenuContextActive() const;
         bool IsMenuContextActive(InputContext context) const;
-        void ResetGameplayChannelFacts();
-        void UpdateGameplayChannelFacts(const RE::ButtonEvent& event);
-        bool IsMappedGameplayKeyboardMoveKey(std::uint32_t idCode) const;
-        bool IsMappedGameplayKeyboardCombatKey(std::uint32_t idCode) const;
-        bool IsMappedGameplayMouseCombatButton(std::uint32_t idCode) const;
-        bool IsMappedGameplayKeyboardDigitalKey(std::uint32_t idCode) const;
-        bool IsMappedGameplayMouseDigitalButton(std::uint32_t idCode) const;
-        bool IsMappedGameplayKeyboardSprintKey(std::uint32_t idCode) const;
-        bool IsMappedGameplayMouseSprintButton(std::uint32_t idCode) const;
         void RefreshGamepadLease(std::uint64_t windowMs = 1500);
         void PromoteToGamepad(InputContext context, const OwnerPolicy& policy, std::string_view reason);
         void PromoteToKeyboardMouse(InputContext context, std::string_view reason, PointerIntent pointerIntent);
@@ -145,6 +144,7 @@ namespace dualpad::input
         void SetNavigationOwner(NavigationOwner owner);
         void SetCursorOwner(CursorOwner owner, InputContext context, std::string_view reason);
         void SetGameplayOwner(GameplayOwner owner, InputContext context, std::string_view reason);
+        void SetGameplayMenuEntrySeed(PresentationOwner owner, InputContext context, std::string_view reason);
         void SetPointerIntent(PointerIntent intent);
         void ResetMouseMoveAccumulator();
         void AccumulateMouseMove(const RE::MouseMoveEvent& event, std::uint64_t nowMs);
@@ -171,18 +171,14 @@ namespace dualpad::input
         std::atomic<NavigationOwner> _navigationOwner{ NavigationOwner::None };
         std::atomic<CursorOwner> _cursorOwner{ CursorOwner::KeyboardMouse };
         std::atomic<GameplayOwner> _gameplayOwner{ GameplayOwner::KeyboardMouse };
+        std::atomic<PresentationOwner> _gameplayMenuEntrySeed{ PresentationOwner::KeyboardMouse };
+        mutable std::atomic<PresentationOwner> _engineGameplayPresentationLatch{ PresentationOwner::KeyboardMouse };
         std::atomic<PointerIntent> _pointerIntent{ PointerIntent::None };
         std::atomic_bool _refreshQueued{ false };
         std::atomic<InputContext> _observedContext{ InputContext::Gameplay };
         std::atomic<std::uint32_t> _observedContextEpoch{ 0 };
         mutable std::atomic<std::uint64_t> _syntheticKeyboardWindowExpiresAtMs{ 0 };
         mutable std::atomic<std::uint64_t> _gamepadLeaseExpiresAtMs{ 0 };
-        std::atomic<std::uint32_t> _gameplayKeyboardMoveDownMask{ 0 };
-        std::atomic<std::uint32_t> _gameplayKeyboardCombatDownMask{ 0 };
-        std::atomic<std::uint32_t> _gameplayMouseCombatDownMask{ 0 };
-        std::atomic<std::uint32_t> _gameplayKeyboardDigitalDownMask{ 0 };
-        std::atomic<std::uint32_t> _gameplayMouseDigitalDownMask{ 0 };
-        std::atomic<std::uint64_t> _lastGameplayMouseLookAtMs{ 0 };
         std::mutex _suppressionMutex;
         mutable std::mutex _mouseMoveMutex;
         std::array<SuppressedScancodeState, 256> _suppressedKeyboardScancodes{};

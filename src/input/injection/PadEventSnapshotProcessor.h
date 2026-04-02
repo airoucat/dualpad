@@ -25,9 +25,24 @@ namespace dualpad::input
         void ResetState();
 
     private:
+        struct RecoveryBaseline
+        {
+            bool valid{ false };
+            InputContext context{ InputContext::Gameplay };
+            std::uint32_t contextEpoch{ 0 };
+            std::uint32_t downMask{ 0 };
+            std::uint64_t sequence{ 0 };
+        };
+
         PadEventSnapshotProcessor();
         void ResetAllState();
         void ResyncNativeState();
+        void ResetRecoveryBaseline();
+        void CommitCleanRecoveryBaseline(
+            const SyntheticPadFrame& frame,
+            InputContext context,
+            std::uint32_t contextEpoch,
+            std::uint64_t sequence);
 
         BindingResolver _bindingResolver{};
         ActionDispatcher _actionDispatcher;
@@ -45,6 +60,7 @@ namespace dualpad::input
             InputContext context,
             std::uint32_t contextEpoch,
             bool crossContextMismatch,
+            bool hardResync,
             const PadState& state,
             PadEventBuffer& events);
         void CollectLifecycleActions(
@@ -58,9 +74,6 @@ namespace dualpad::input
 
         backend::FrameActionPlanner _planner{};
         backend::FrameActionPlan _framePlan{};
-        bool _hasLastStableFrame{ false };
-        InputContext _lastStableContext{ InputContext::Gameplay };
-        std::uint32_t _lastStableContextEpoch{ 0 };
-        std::uint32_t _lastStableDownMask{ 0 };
+        RecoveryBaseline _cleanRecoveryBaseline{};
     };
 }

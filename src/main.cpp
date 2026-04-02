@@ -108,7 +108,19 @@ namespace
 
             }
 
-            dualpad::input::StartHidReader();
+            bool deferHidReaderStart = false;
+            if (dualpad::input::RuntimeConfig::GetSingleton().UseUpstreamGamepadHook()) {
+                auto& upstreamHook = dualpad::input::UpstreamGamepadHook::GetSingleton();
+                if (upstreamHook.IsRouteActive()) {
+                    deferHidReaderStart = true;
+                    logger::info(
+                        "[DualPad] Deferring HID reader start until first upstream poll or input-pump activity");
+                }
+            }
+
+            if (!deferHidReaderStart) {
+                dualpad::input::StartHidReader();
+            }
 
             auto& hapticsSystem = dualpad::haptics::HapticsSystem::GetSingleton();
 

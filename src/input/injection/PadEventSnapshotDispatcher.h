@@ -22,10 +22,14 @@ namespace dualpad::input
     private:
         static constexpr std::size_t kPendingSnapshotCapacity = 256;
         static constexpr std::size_t kDefaultDrainBudget = 16;
+        static constexpr std::size_t kTaskDrainBudget = 64;
+        static constexpr std::size_t kUpstreamTaskFallbackHighWatermark = 128;
+        static constexpr std::uint64_t kUpstreamTaskFallbackPollStaleMs = 250;
 
         PadEventSnapshotDispatcher() = default;
         void ScheduleDrainTask();
         bool HasResetInPendingLocked() const;
+        bool HasCrossContextPendingLocked() const;
         void CoalescePendingLocked();
 
         std::array<PadEventSnapshot, kPendingSnapshotCapacity> _pending{};

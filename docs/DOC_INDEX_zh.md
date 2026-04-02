@@ -22,6 +22,10 @@
 16. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
 17. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
 18. [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
+19. [gameplay_ui_owner_code_ida_refactor_plan_zh.md](gameplay_ui_owner_code_ida_refactor_plan_zh.md)
+20. [phase2_gameplay_presentation_owner_minimal_plan_zh.md](phase2_gameplay_presentation_owner_minimal_plan_zh.md)
+21. [phase1_phase4_code_review_findings_zh.md](phase1_phase4_code_review_findings_zh.md)
+22. [phase1_phase4_elegance_followups_zh.md](phase1_phase4_elegance_followups_zh.md)
 
 ## 当前主线文档
 
@@ -68,6 +72,14 @@
   - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划。
 - [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
   - 基于提交 `9403e73` 和新版 `agents5.md` 的定制化重构方案，按“立即做 / 先验证 / 暂不做”重新分层。
+- [gameplay_ui_owner_code_ida_refactor_plan_zh.md](gameplay_ui_owner_code_ida_refactor_plan_zh.md)
+  - 结合 `agents.md` 观点、当前代码与 IDA 关键路径，对 UI owner / gameplay owner / provenance-aware recovery 的下一阶段开发计划做收口。
+- [phase2_gameplay_presentation_owner_minimal_plan_zh.md](phase2_gameplay_presentation_owner_minimal_plan_zh.md)
+  - 针对 Phase 2 单独拆出的最小实施方案，重点收 `gameplay presentation` 真相源、menu-entry seed/latch、回滚点与测试矩阵。
+- [phase1_phase4_code_review_findings_zh.md](phase1_phase4_code_review_findings_zh.md)
+  - 对照 `gameplay_ui_owner_code_ida_refactor_plan_zh.md` 回看当前 Phase 1-4 实现后的代码审阅结论，重点记录 Phase 2/4 的结构偏差与后续处理顺序。
+- [phase1_phase4_elegance_followups_zh.md](phase1_phase4_elegance_followups_zh.md)
+  - 对当前已修正的 Phase 1-4 再做一轮“优雅性/可维护性”补充审阅，记录剩余结构债与推荐清理顺序。
 
 ## 维护规则
 

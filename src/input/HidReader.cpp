@@ -117,6 +117,11 @@ namespace
 
 namespace dualpad::input
 {
+    bool IsHidReaderRunning()
+    {
+        return g_running.load(std::memory_order_acquire);
+    }
+
     void StartHidReader()
     {
         if (g_running.exchange(true, std::memory_order_acq_rel)) {

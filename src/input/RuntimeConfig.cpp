@@ -165,6 +165,10 @@ namespace dualpad::input
                 }
                 _upstreamGamepadHookMode = ParseUpstreamGamepadHookMode(it->second, _upstreamGamepadHookMode);
             }
+            if (auto it = values.find("enable_force_cross_context_recovery_probe"); it != values.end()) {
+                _enableForceCrossContextRecoveryProbe =
+                    ini::ParseBool(it->second, _enableForceCrossContextRecoveryProbe);
+            }
         };
 
         const auto parseFeatures = [&](const auto& values) {
@@ -194,7 +198,7 @@ namespace dualpad::input
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} features comboHotkeys3to8={} gameplayOwnership={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={} gameplayOwnership={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -205,12 +209,17 @@ namespace dualpad::input
             _logKeyboardInjection,
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
+            _enableForceCrossContextRecoveryProbe,
             _enableComboNativeHotkeys3To8,
             _enableGameplayOwnership);
         if (_useUpstreamGamepadHook) {
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
                 ToString(_upstreamGamepadHookMode));
+        }
+        if (_enableForceCrossContextRecoveryProbe) {
+            logger::warn(
+                "[DualPad][RuntimeConfig] enable_force_cross_context_recovery_probe is active; cross-context pending snapshots will be force-coalesced for Phase 4 validation");
         }
         return true;
     }
@@ -228,6 +237,7 @@ namespace dualpad::input
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
+        _enableForceCrossContextRecoveryProbe = false;
         _enableComboNativeHotkeys3To8 = false;
         _enableGameplayOwnership = true;
     }

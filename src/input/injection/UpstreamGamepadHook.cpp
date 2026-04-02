@@ -6,6 +6,8 @@
 
 #include <array>
 
+#include "input/HidReader.h"
+#include "input/InputModalityTracker.h"
 #include "input/XInputStateBridge.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
@@ -20,6 +22,7 @@ namespace dualpad::input
         constexpr std::uintptr_t kExpectedPollRva = 0xC1AB40;
         constexpr std::ptrdiff_t kExpectedPollXInputCallOffset = 0x5D;
         constexpr std::ptrdiff_t kExpectedPollXInputWindowOffset = 0x3E;
+        constexpr std::size_t kUpstreamDrainBudget = 64;
         constexpr std::array<std::uint8_t, 38> kExpectedPollXInputWindow = {
             0x8B, 0x89, 0xC8, 0x00, 0x00, 0x00, 0x83, 0xF9,
             0xFF, 0x0F, 0x84, 0x1F, 0x02, 0x00, 0x00, 0x80,
@@ -38,8 +41,13 @@ namespace dualpad::input
                     return CallOriginal(userIndex, currentState);
                 }
 
+                if (!IsHidReaderRunning()) {
+                    StartHidReader();
+                    logger::info("[DualPad][UpstreamGamepad] Deferred HID reader start released via first poll activity");
+                }
+
                 UpstreamGamepadHook::GetSingleton().NotePollCallActivity();
-                PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread();
+                PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kUpstreamDrainBudget);
                 (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
                 const auto result = FillSyntheticXInputState(currentState);
 

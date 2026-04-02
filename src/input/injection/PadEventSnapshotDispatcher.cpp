@@ -2,7 +2,9 @@
 #include "input/injection/PadEventSnapshotDispatcher.h"
 
 #include "input/InputContext.h"
+#include "input/RuntimeConfig.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
+#include "input/injection/UpstreamGamepadHook.h"
 
 namespace logger = SKSE::log;
 
@@ -34,6 +36,28 @@ namespace dualpad::input
                 destination.Push(event);
             }
         }
+
+        bool ShouldForceTaskFallback(
+            bool framePumpEnabled,
+            std::size_t pendingCount,
+            std::size_t highWatermark,
+            std::uint64_t stalePollWindowMs)
+        {
+            if (!framePumpEnabled) {
+                return true;
+            }
+
+            if (pendingCount < highWatermark) {
+                return false;
+            }
+
+            auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
+            if (!upstreamHook.IsRouteActive()) {
+                return false;
+            }
+
+            return !upstreamHook.HasRecentPollCallActivity(stalePollWindowMs);
+        }
     }
 
     PadEventSnapshotDispatcher& PadEventSnapshotDispatcher::GetSingleton()
@@ -44,7 +68,11 @@ namespace dualpad::input
 
     void PadEventSnapshotDispatcher::SubmitSnapshot(const PadEventSnapshot& snapshot)
     {
-        bool shouldSchedule = false;
+        bool shouldScheduleTask = false;
+        bool scheduledByHighWaterFallback = false;
+        bool forcedCrossContextProbe = false;
+        std::size_t pendingCountAfterQueue = 0;
+        bool framePumpEnabled = false;
         {
             std::scoped_lock lock(_mutex);
 
@@ -73,13 +101,44 @@ namespace dualpad::input
                 ++_pendingCount;
             }
 
-            if (!_drainTaskQueued.exchange(true, std::memory_order_acq_rel)) {
-                shouldSchedule = true;
+            if (RuntimeConfig::GetSingleton().EnableForceCrossContextRecoveryProbe() &&
+                _pendingCount > 1 &&
+                !HasResetInPendingLocked() &&
+                HasCrossContextPendingLocked()) {
+                CoalescePendingLocked();
+                forcedCrossContextProbe = true;
+            }
+
+            pendingCountAfterQueue = _pendingCount;
+            framePumpEnabled = _framePumpEnabled.load(std::memory_order_acquire);
+            const bool forceTaskFallback = ShouldForceTaskFallback(
+                framePumpEnabled,
+                pendingCountAfterQueue,
+                kUpstreamTaskFallbackHighWatermark,
+                kUpstreamTaskFallbackPollStaleMs);
+            scheduledByHighWaterFallback = forceTaskFallback && framePumpEnabled;
+            if (forceTaskFallback &&
+                !_drainTaskQueued.exchange(true, std::memory_order_acq_rel)) {
+                shouldScheduleTask = true;
             }
         }
 
-        if (shouldSchedule && !_framePumpEnabled.load(std::memory_order_acquire)) {
+        if (shouldScheduleTask) {
             ScheduleDrainTask();
+            if (scheduledByHighWaterFallback) {
+                logger::warn(
+                    "[DualPad][Snapshot] Scheduled high-water fallback drain task pending={} threshold={} stalePollWindowMs={}",
+                    pendingCountAfterQueue,
+                    kUpstreamTaskFallbackHighWatermark,
+                    kUpstreamTaskFallbackPollStaleMs);
+            }
+        }
+
+        if (forcedCrossContextProbe) {
+            logger::warn(
+                "[DualPad][Snapshot] Forced cross-context recovery probe pending={} routeFramePumpEnabled={}",
+                pendingCountAfterQueue,
+                framePumpEnabled);
         }
     }
 
@@ -127,21 +186,48 @@ namespace dualpad::input
         }
 
         bool scheduleFollowUpTask = false;
+        bool scheduledByHighWaterFallback = false;
+        std::size_t pendingAfterDrain = 0;
         {
             std::scoped_lock lock(_mutex);
             if (_pendingCount > 1 && !HasResetInPendingLocked()) {
                 CoalescePendingLocked();
             }
 
+            pendingAfterDrain = _pendingCount;
             if (_pendingCount == 0) {
                 _drainTaskQueued.store(false, std::memory_order_release);
-            } else if (!_framePumpEnabled.load(std::memory_order_acquire)) {
+            } else {
+                const auto framePumpEnabled = _framePumpEnabled.load(std::memory_order_acquire);
+                const bool forceTaskFallback = ShouldForceTaskFallback(
+                    framePumpEnabled,
+                    _pendingCount,
+                    kUpstreamTaskFallbackHighWatermark,
+                    kUpstreamTaskFallbackPollStaleMs);
+                scheduledByHighWaterFallback = forceTaskFallback && framePumpEnabled;
+                if (forceTaskFallback) {
+                    if (!_drainTaskQueued.exchange(true, std::memory_order_acq_rel)) {
+                        scheduleFollowUpTask = true;
+                    }
+                }
+            }
+
+            if (!scheduleFollowUpTask &&
+                _pendingCount != 0 &&
+                !_framePumpEnabled.load(std::memory_order_acquire)) {
                 scheduleFollowUpTask = true;
             }
         }
 
         if (scheduleFollowUpTask) {
             ScheduleDrainTask();
+            if (scheduledByHighWaterFallback) {
+                logger::warn(
+                    "[DualPad][Snapshot] Queued high-water follow-up drain task pending={} threshold={} stalePollWindowMs={}",
+                    pendingAfterDrain,
+                    kUpstreamTaskFallbackHighWatermark,
+                    kUpstreamTaskFallbackPollStaleMs);
+            }
         }
 
         return processedCount;
@@ -167,7 +253,7 @@ namespace dualpad::input
         }
 
         taskInterface->AddTask([]() {
-            PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread();
+            PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kTaskDrainBudget);
             });
     }
 
@@ -176,6 +262,39 @@ namespace dualpad::input
         for (std::size_t i = 0; i < _pendingCount; ++i) {
             const auto index = (_pendingHead + i) % _pending.size();
             if (_pending[index].type == PadEventSnapshotType::Reset) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool PadEventSnapshotDispatcher::HasCrossContextPendingLocked() const
+    {
+        if (_pendingCount <= 1) {
+            return false;
+        }
+
+        bool haveBaseline = false;
+        InputContext baselineContext = InputContext::Gameplay;
+        std::uint32_t baselineEpoch = 0;
+
+        for (std::size_t i = 0; i < _pendingCount; ++i) {
+            const auto index = (_pendingHead + i) % _pending.size();
+            const auto& snapshot = _pending[index];
+            if (snapshot.type == PadEventSnapshotType::Reset) {
+                continue;
+            }
+
+            if (!haveBaseline) {
+                baselineContext = snapshot.context;
+                baselineEpoch = snapshot.contextEpoch;
+                haveBaseline = true;
+                continue;
+            }
+
+            if (snapshot.context != baselineContext ||
+                snapshot.contextEpoch != baselineEpoch) {
                 return true;
             }
         }
@@ -231,10 +350,13 @@ namespace dualpad::input
             }
         }
 
+        // Cross-context mismatch is a degraded-delivery signal, but it should
+        // not automatically escalate into "hard overflow". Processor already
+        // receives `crossContextMismatch` separately and can route it to the
+        // CrossContextBoundary recovery path.
         coalescedSnapshot.overflowed =
             coalescedSnapshot.overflowed ||
-            coalescedSnapshot.events.overflowed ||
-            sawContextMismatch;
+            coalescedSnapshot.events.overflowed;
         coalescedSnapshot.crossContextMismatch = sawContextMismatch;
 
         _pendingHead = 0;

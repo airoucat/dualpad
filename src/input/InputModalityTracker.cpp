@@ -2,6 +2,8 @@
 #include "input/InputModalityTracker.h"
 
 #include "input/Action.h"
+#include "input/GameplayKbmFactTracker.h"
+#include "input/PadProfile.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/GameplayOwnershipCoordinator.h"
@@ -36,32 +38,6 @@ namespace dualpad::input
         constexpr std::ptrdiff_t kMenuControlsRemapModeOffset = 0x82;
         constexpr float kThumbstickPromotionThreshold = 0.25f;
         constexpr std::uint64_t kMouseMoveAccumulatorResetMs = 250;
-        constexpr std::uint64_t kGameplayMouseLookActiveMs = 200;
-
-        enum GameplayMoveSemanticBit : std::uint32_t
-        {
-            kMoveForwardBit = 1u << 0,
-            kMoveBackBit = 1u << 1,
-            kMoveStrafeLeftBit = 1u << 2,
-            kMoveStrafeRightBit = 1u << 3
-        };
-
-        enum GameplayCombatSemanticBit : std::uint32_t
-        {
-            kCombatLeftBit = 1u << 0,
-            kCombatRightBit = 1u << 1
-        };
-
-        enum GameplayDigitalSemanticBit : std::uint32_t
-        {
-            kDigitalJumpBit = 1u << 0,
-            kDigitalActivateBit = 1u << 1,
-            kDigitalSprintBit = 1u << 2
-        };
-
-        constexpr std::uint32_t kDigitalOwnerRelevantMask =
-            kDigitalJumpBit |
-            kDigitalActivateBit;
 
         std::uint64_t GetMonotonicMs()
         {
@@ -114,7 +90,10 @@ namespace dualpad::input
         {
             switch (event.GetEventType()) {
             case RE::INPUT_EVENT_TYPE::kButton:
-                return event.AsButtonEvent() != nullptr;
+                if (const auto* buttonEvent = event.AsButtonEvent()) {
+                    return buttonEvent->IsDown();
+                }
+                return false;
 
             case RE::INPUT_EVENT_TYPE::kThumbstick:
                 if (const auto* thumbstickEvent = event.AsThumbstickEvent()) {
@@ -131,30 +110,47 @@ namespace dualpad::input
                     }
 
                     if (thumbstickId == RE::ThumbstickEvent::InputType::kLeftThumbstick) {
-                        // Left stick belongs to MoveOwner, not gameplay presentation.
-                        // Letting it promote the coarse gameplay owner reintroduces
-                        // presentation/mouselook coupling and causes camera glitches.
+                        // Left stick belongs to MoveOwner. Do not let it churn the
+                        // coarse gameplay owner; it can still influence the
+                        // engine-facing presentation latch separately.
                         return false;
                     }
                 }
                 return false;
 
             default:
-                return true;
+                return false;
             }
         }
 
-        std::uint32_t GetGameplayMappedKey(std::string_view eventId, RE::INPUT_DEVICE device)
+        bool ShouldUpdateGameplayPresentationFromGamepadEvent(const RE::InputEvent& event)
         {
-            const auto* controlMap = RE::ControlMap::GetSingleton();
-            if (!controlMap) {
-                return RE::ControlMap::kInvalid;
-            }
+            switch (event.GetEventType()) {
+            case RE::INPUT_EVENT_TYPE::kButton:
+                if (const auto* buttonEvent = event.AsButtonEvent()) {
+                    return buttonEvent->IsDown();
+                }
+                return false;
 
-            return controlMap->GetMappedKey(
-                eventId,
-                device,
-                RE::ControlMap::InputContextID::kGameplay);
+            case RE::INPUT_EVENT_TYPE::kThumbstick:
+                if (const auto* thumbstickEvent = event.AsThumbstickEvent()) {
+                    const bool meaningful =
+                        std::fabs(thumbstickEvent->xValue) >= kThumbstickPromotionThreshold ||
+                        std::fabs(thumbstickEvent->yValue) >= kThumbstickPromotionThreshold;
+                    if (!meaningful) {
+                        return false;
+                    }
+
+                    const auto thumbstickId =
+                        static_cast<RE::ThumbstickEvent::InputType>(thumbstickEvent->idCode);
+                    return thumbstickId == RE::ThumbstickEvent::InputType::kLeftThumbstick ||
+                        thumbstickId == RE::ThumbstickEvent::InputType::kRightThumbstick;
+                }
+                return false;
+
+            default:
+                return false;
+            }
         }
 
         bool IsSyntheticGamepadSprintActive()
@@ -203,6 +199,8 @@ namespace dualpad::input
                 GameplayOwner::Gamepad :
                 GameplayOwner::KeyboardMouse,
                 std::memory_order_relaxed);
+            _gameplayMenuEntrySeed.store(initialPresentationOwner, std::memory_order_relaxed);
+            _engineGameplayPresentationLatch.store(initialPresentationOwner, std::memory_order_relaxed);
 
             ReconcileContextState();
             Register();
@@ -239,6 +237,8 @@ namespace dualpad::input
                 GameplayOwner::Gamepad :
                 GameplayOwner::KeyboardMouse,
                 std::memory_order_relaxed);
+            _gameplayMenuEntrySeed.store(initialPresentationOwner, std::memory_order_relaxed);
+            _engineGameplayPresentationLatch.store(initialPresentationOwner, std::memory_order_relaxed);
         }
 
         ReconcileContextState();
@@ -254,9 +254,24 @@ namespace dualpad::input
 
     bool InputModalityTracker::IsUsingGamepad() const
     {
-        const auto context = _observedContext.load(std::memory_order_relaxed);
+        return ResolveIsUsingGamepad();
+    }
+
+    bool InputModalityTracker::ResolveIsUsingGamepad() const
+    {
+        auto& contextManager = ContextManager::GetSingleton();
+        const auto authoritativeContext = contextManager.GetCurrentContext();
+        const auto authoritativeEpoch = contextManager.GetCurrentEpoch();
+        const auto observedContext = _observedContext.load(std::memory_order_relaxed);
+        const auto observedEpoch = _observedContextEpoch.load(std::memory_order_relaxed);
+        const bool contextReconciled =
+            authoritativeContext == observedContext &&
+            authoritativeEpoch == observedEpoch;
+        const auto context = contextReconciled ? observedContext : authoritativeContext;
+
         if (IsGameplayDomainContext(context)) {
-            if (!RuntimeConfig::GetSingleton().EnableGameplayOwnership()) {
+            const auto& config = RuntimeConfig::GetSingleton();
+            if (!config.EnableGameplayOwnership()) {
                 if (IsSyntheticGamepadSprintActive()) {
                     return true;
                 }
@@ -264,21 +279,40 @@ namespace dualpad::input
                 return _gameplayOwner.load(std::memory_order_relaxed) == GameplayOwner::Gamepad;
             }
 
-            const auto publishedLookOwner =
-                GameplayOwnershipCoordinator::GetSingleton().GetPublishedLookOwner();
-            if (IsGameplayMouseLookActive() &&
-                publishedLookOwner == GameplayOwnershipCoordinator::ChannelOwner::KeyboardMouse) {
-                return false;
-            }
-
             if (IsSyntheticGamepadSprintActive()) {
                 return true;
             }
 
-            return _gameplayOwner.load(std::memory_order_relaxed) == GameplayOwner::Gamepad;
+            return _engineGameplayPresentationLatch.load(std::memory_order_relaxed) ==
+                PresentationOwner::Gamepad;
         }
 
         return GetEffectivePresentationOwner(context) == PresentationOwner::Gamepad;
+    }
+
+    void InputModalityTracker::SetEngineGameplayPresentationLatch(
+        PresentationOwner owner,
+        InputContext context,
+        std::uint32_t epoch,
+        std::string_view reason) const
+    {
+        if (!IsGameplayDomainContext(context)) {
+            return;
+        }
+
+        const auto previous =
+            _engineGameplayPresentationLatch.exchange(owner, std::memory_order_relaxed);
+        if (previous == owner) {
+            return;
+        }
+
+        logger::info(
+            "[DualPad][InputOwner] EngineGameplayPresentationLatch {} -> {} via {} (ctx={}, epoch={})",
+            ToString(previous),
+            ToString(owner),
+            reason,
+            dualpad::input::ToString(context),
+            epoch);
     }
 
     bool InputModalityTracker::IsGameplayUsingGamepad() const
@@ -286,38 +320,89 @@ namespace dualpad::input
         return _gameplayOwner.load(std::memory_order_relaxed) == GameplayOwner::Gamepad;
     }
 
-    bool InputModalityTracker::IsGameplayMouseLookActive() const
+    bool InputModalityTracker::IsGameplayMenuEntrySeedGamepad() const
     {
-        const auto lastAtMs = _lastGameplayMouseLookAtMs.load(std::memory_order_relaxed);
-        if (lastAtMs == 0) {
-            return false;
+        return _gameplayMenuEntrySeed.load(std::memory_order_relaxed) == PresentationOwner::Gamepad;
+    }
+
+    void InputModalityTracker::ApplyGameplayMenuInheritance(InputContext context, std::string_view reason)
+    {
+        const auto inheritedPresentationSeed =
+            _gameplayMenuEntrySeed.load(std::memory_order_relaxed);
+        const auto inheritedPresentationOwner =
+            inheritedPresentationSeed == PresentationOwner::Gamepad ?
+            PresentationOwner::Gamepad :
+            PresentationOwner::KeyboardMouse;
+
+        SetPresentationOwner(inheritedPresentationOwner, context, reason);
+        SetNavigationOwner(
+            inheritedPresentationSeed == PresentationOwner::Gamepad ?
+            NavigationOwner::Gamepad :
+            NavigationOwner::KeyboardMouse);
+        SetCursorOwner(
+            inheritedPresentationSeed == PresentationOwner::Gamepad ?
+            CursorOwner::Gamepad :
+            CursorOwner::KeyboardMouse,
+            context,
+            reason);
+        GameplayKbmFactTracker::GetSingleton().Reset();
+    }
+
+    void InputModalityTracker::SyncGameplayPresentationFromCoordinator(
+        InputContext context,
+        std::uint32_t epoch,
+        std::string_view reason)
+    {
+        if (!IsGameplayDomainContext(context)) {
+            return;
         }
 
-        const auto nowMs = GetMonotonicMs();
-        return nowMs >= lastAtMs && (nowMs - lastAtMs) <= kGameplayMouseLookActiveMs;
+        const auto state =
+            GameplayOwnershipCoordinator::GetSingleton().GetPublishedGameplayPresentationState();
+        const auto menuEntryOwner =
+            state.menuEntryOwner == GameplayOwnershipCoordinator::ChannelOwner::Gamepad ?
+            PresentationOwner::Gamepad :
+            PresentationOwner::KeyboardMouse;
+        const auto engineOwner =
+            state.engineOwner == GameplayOwnershipCoordinator::ChannelOwner::Gamepad ?
+            PresentationOwner::Gamepad :
+            PresentationOwner::KeyboardMouse;
+
+        SetGameplayMenuEntrySeed(menuEntryOwner, context, reason);
+        SetEngineGameplayPresentationLatch(engineOwner, context, epoch, reason);
     }
 
-    bool InputModalityTracker::IsGameplayKeyboardMoveActive() const
+    void InputModalityTracker::OnAuthoritativeMenuOpen(InputContext context, std::uint32_t epoch)
     {
-        return _gameplayKeyboardMoveDownMask.load(std::memory_order_relaxed) != 0;
-    }
+        if (!IsMenuOwnedContext(context)) {
+            return;
+        }
 
-    bool InputModalityTracker::IsGameplayKeyboardMouseCombatActive() const
-    {
-        return _gameplayKeyboardCombatDownMask.load(std::memory_order_relaxed) != 0 ||
-            _gameplayMouseCombatDownMask.load(std::memory_order_relaxed) != 0;
-    }
+        const auto previousContext = _observedContext.load(std::memory_order_relaxed);
+        const auto previousEpoch = _observedContextEpoch.load(std::memory_order_relaxed);
+        if (previousContext == context && previousEpoch == epoch) {
+            return;
+        }
 
-    bool InputModalityTracker::IsGameplayKeyboardMouseDigitalActive() const
-    {
-        return (_gameplayKeyboardDigitalDownMask.load(std::memory_order_relaxed) & kDigitalOwnerRelevantMask) != 0 ||
-            (_gameplayMouseDigitalDownMask.load(std::memory_order_relaxed) & kDigitalOwnerRelevantMask) != 0;
-    }
+        const auto previousWasGameplay = IsGameplayDomainContext(previousContext);
 
-    bool InputModalityTracker::IsGameplayKeyboardMouseSprintActive() const
-    {
-        return (_gameplayKeyboardDigitalDownMask.load(std::memory_order_relaxed) & kDigitalSprintBit) != 0 ||
-            (_gameplayMouseDigitalDownMask.load(std::memory_order_relaxed) & kDigitalSprintBit) != 0;
+        _observedContext.store(context, std::memory_order_relaxed);
+        _observedContextEpoch.store(epoch, std::memory_order_relaxed);
+        ResetMouseMoveAccumulator();
+        SetPointerIntent(PointerIntent::None);
+
+        if (previousWasGameplay) {
+            ApplyGameplayMenuInheritance(context, "authoritative-enter-menu");
+        }
+
+        logger::info(
+            "[DualPad][InputOwner] Authoritative menu-open sync {} -> {} (presentation={}, navigation={}, cursor={}, gameplay={})",
+            dualpad::input::ToString(previousContext),
+            dualpad::input::ToString(context),
+            ToString(_presentationOwner.load(std::memory_order_relaxed)),
+            ToString(_navigationOwner.load(std::memory_order_relaxed)),
+            ToString(_cursorOwner.load(std::memory_order_relaxed)),
+            ToString(_gameplayOwner.load(std::memory_order_relaxed)));
     }
 
     void InputModalityTracker::MarkSyntheticKeyboardScancode(
@@ -444,27 +529,14 @@ namespace dualpad::input
                 GameplayOwner::KeyboardMouse,
                 context,
                 "exit-menu");
-            ResetGameplayChannelFacts();
+            auto& gameplayOwnership = GameplayOwnershipCoordinator::GetSingleton();
+            gameplayOwnership.RefreshPublishedGameplayPresentation(context);
+            SyncGameplayPresentationFromCoordinator(context, epoch, "exit-menu");
+            GameplayKbmFactTracker::GetSingleton().Reset();
         }
 
         if (previousWasGameplay && !currentIsGameplay) {
-            const auto inheritedGameplayOwner = _gameplayOwner.load(std::memory_order_relaxed);
-            const auto inheritedPresentationOwner =
-                inheritedGameplayOwner == GameplayOwner::Gamepad ?
-                PresentationOwner::Gamepad :
-                PresentationOwner::KeyboardMouse;
-            SetPresentationOwner(inheritedPresentationOwner, context, "enter-menu");
-            SetNavigationOwner(
-                inheritedGameplayOwner == GameplayOwner::Gamepad ?
-                NavigationOwner::Gamepad :
-                NavigationOwner::KeyboardMouse);
-            SetCursorOwner(
-                inheritedGameplayOwner == GameplayOwner::Gamepad ?
-                CursorOwner::Gamepad :
-                CursorOwner::KeyboardMouse,
-                context,
-                "enter-menu");
-            ResetGameplayChannelFacts();
+            ApplyGameplayMenuInheritance(context, "enter-menu");
         }
 
         if (IsMenuContextActive(context)) {
@@ -500,15 +572,58 @@ namespace dualpad::input
 
     void InputModalityTracker::HandleKeyboardEvent(const RE::InputEvent& event, InputContext context, const OwnerPolicy&)
     {
+        bool shouldPromote = true;
+        const bool menuContext = IsMenuContextActive(context);
         if (event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
             const auto* buttonEvent = event.AsButtonEvent();
-            if (buttonEvent && ConsumeSyntheticKeyboardEvent(buttonEvent->GetIDCode())) {
-                return;
+            if (buttonEvent) {
+                const auto keyCode = buttonEvent->GetIDCode();
+                const bool consumedSynthetic = ConsumeSyntheticKeyboardEvent(keyCode);
+                if (menuContext) {
+                    logger::info(
+                        "[DualPad][MenuProbe] keyboard-event ctx={} code={} pressed={} down={} held={} up={} syntheticConsumed={}",
+                        dualpad::input::ToString(context),
+                        keyCode,
+                        buttonEvent->IsPressed(),
+                        buttonEvent->IsDown(),
+                        buttonEvent->IsHeld(),
+                        buttonEvent->IsUp(),
+                        consumedSynthetic);
+                }
+                if (consumedSynthetic) {
+                    return;
+                }
+
+                shouldPromote = buttonEvent->IsDown();
             }
         }
 
-        if (IsSyntheticKeyboardWindowActive()) {
+        const bool syntheticWindowActive = IsSyntheticKeyboardWindowActive();
+        if (menuContext && event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar) {
+            logger::info(
+                "[DualPad][MenuProbe] keyboard-event ctx={} type=Char syntheticWindowActive={}",
+                dualpad::input::ToString(context),
+                syntheticWindowActive);
+        }
+
+        if (syntheticWindowActive) {
+            if (menuContext) {
+                logger::info(
+                    "[DualPad][MenuProbe] keyboard-event ctx={} suppressedBySyntheticWindow=true",
+                    dualpad::input::ToString(context));
+            }
             return;
+        }
+
+        if (!shouldPromote) {
+            return;
+        }
+
+        if (menuContext) {
+            logger::info(
+                "[DualPad][MenuProbe] keyboard-event ctx={} promotingToKeyboardMouse=true type={}",
+                dualpad::input::ToString(context),
+                event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "Char" : "Button");
         }
 
         PromoteToKeyboardMouse(context, event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard", PointerIntent::None);
@@ -516,10 +631,30 @@ namespace dualpad::input
 
     void InputModalityTracker::HandleMouseEvent(const RE::InputEvent& event, InputContext context, const OwnerPolicy& policy)
     {
+        bool shouldPromote = true;
+        if (IsMenuContextActive(context) && event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
+            if (const auto* buttonEvent = event.AsButtonEvent()) {
+                shouldPromote = buttonEvent->IsDown();
+                logger::info(
+                    "[DualPad][MenuProbe] mouse-event ctx={} code={} pressed={} down={} held={} up={} promotingToKeyboardMouse={}",
+                    dualpad::input::ToString(context),
+                    buttonEvent->GetIDCode(),
+                    buttonEvent->IsPressed(),
+                    buttonEvent->IsDown(),
+                    buttonEvent->IsHeld(),
+                    buttonEvent->IsUp(),
+                    shouldPromote);
+            }
+        }
+
         if (event.GetEventType() == RE::INPUT_EVENT_TYPE::kMouseMove) {
             if (const auto* mouseMoveEvent = event.AsMouseMoveEvent()) {
                 HandleMouseMoveEvent(*mouseMoveEvent, context, policy);
             }
+            return;
+        }
+
+        if (!shouldPromote) {
             return;
         }
 
@@ -569,7 +704,49 @@ namespace dualpad::input
 
     void InputModalityTracker::HandleGamepadEvent(const RE::InputEvent& event, InputContext context, const OwnerPolicy& policy)
     {
-        if (!IsMeaningfulGamepadEvent(event)) {
+        const bool meaningful = IsMeaningfulGamepadEvent(event);
+        bool shouldPromote = meaningful;
+        if (IsMenuContextActive(context)) {
+            switch (event.GetEventType()) {
+            case RE::INPUT_EVENT_TYPE::kButton:
+                if (const auto* buttonEvent = event.AsButtonEvent()) {
+                    shouldPromote = buttonEvent->IsDown();
+                    logger::info(
+                        "[DualPad][MenuProbe] gamepad-event ctx={} type=Button code={} pressed={} down={} held={} up={} meaningful={} promotingToGamepad={}",
+                        dualpad::input::ToString(context),
+                        buttonEvent->GetIDCode(),
+                        buttonEvent->IsPressed(),
+                        buttonEvent->IsDown(),
+                        buttonEvent->IsHeld(),
+                        buttonEvent->IsUp(),
+                        meaningful,
+                        shouldPromote);
+                }
+                break;
+            case RE::INPUT_EVENT_TYPE::kThumbstick:
+                if (const auto* thumbstickEvent = event.AsThumbstickEvent()) {
+                    logger::info(
+                        "[DualPad][MenuProbe] gamepad-event ctx={} type=Thumbstick id={} x={:.3f} y={:.3f} meaningful={} promotingToGamepad={}",
+                        dualpad::input::ToString(context),
+                        thumbstickEvent->idCode,
+                        thumbstickEvent->xValue,
+                        thumbstickEvent->yValue,
+                        meaningful,
+                        meaningful);
+                }
+                break;
+            default:
+                logger::info(
+                    "[DualPad][MenuProbe] gamepad-event ctx={} type={} meaningful={} promotingToGamepad={}",
+                    dualpad::input::ToString(context),
+                    static_cast<int>(event.GetEventType()),
+                    meaningful,
+                    meaningful);
+                break;
+            }
+        }
+
+        if (!shouldPromote) {
             return;
         }
 
@@ -583,6 +760,9 @@ namespace dualpad::input
 
     void InputModalityTracker::HandleGameplayOnlyEvent(const RE::InputEvent& event, InputContext context)
     {
+        auto& gameplayOwnership = GameplayOwnershipCoordinator::GetSingleton();
+        const auto epoch = ContextManager::GetSingleton().GetCurrentEpoch();
+
         switch (event.GetDevice()) {
         case RE::INPUT_DEVICE::kKeyboard:
             if (event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
@@ -591,14 +771,28 @@ namespace dualpad::input
                     return;
                 }
                 if (buttonEvent) {
-                    UpdateGameplayChannelFacts(*buttonEvent);
-                    if (IsMappedGameplayKeyboardSprintKey(buttonEvent->GetIDCode())) {
+                    auto& factTracker = GameplayKbmFactTracker::GetSingleton();
+                    factTracker.ObserveButtonEvent(*buttonEvent);
+                    if (factTracker.IsSprintMappedButton(*buttonEvent)) {
                         // Sprint is a sustained digital action with its own
-                        // contributor aggregation. Let it update held facts,
-                        // but do not let it churn the coarse gameplay owner.
+                        // contributor aggregation. Let it update held facts.
+                        // A real key-down still counts as an explicit KBM
+                        // presentation hint, but should not churn gameplay owner.
+                        if (!IsSyntheticKeyboardWindowActive() && buttonEvent->IsDown()) {
+                            gameplayOwnership.RecordGameplayPresentationHint(
+                                context,
+                                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
+                                "keyboard-sprint");
+                            SyncGameplayPresentationFromCoordinator(context, epoch, "keyboard-sprint");
+                        }
+                        return;
+                    }
+                    if (!buttonEvent->IsDown()) {
                         return;
                     }
                 }
+            } else if (event.GetEventType() != RE::INPUT_EVENT_TYPE::kChar) {
+                return;
             }
 
             if (IsSyntheticKeyboardWindowActive()) {
@@ -609,6 +803,14 @@ namespace dualpad::input
                 GameplayOwner::KeyboardMouse,
                 context,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard");
+            gameplayOwnership.RecordGameplayPresentationHint(
+                context,
+                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
+                event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard");
+            SyncGameplayPresentationFromCoordinator(
+                context,
+                epoch,
+                event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard");
             return;
 
         case RE::INPUT_DEVICE::kMouse:
@@ -617,17 +819,37 @@ namespace dualpad::input
                 if (!mouseMoveEvent || (mouseMoveEvent->mouseInputX == 0 && mouseMoveEvent->mouseInputY == 0)) {
                     return;
                 }
-                _lastGameplayMouseLookAtMs.store(GetMonotonicMs(), std::memory_order_relaxed);
+                GameplayKbmFactTracker::GetSingleton().MarkMouseLookActivity();
                 SetGameplayOwner(GameplayOwner::KeyboardMouse, context, "mouse-move");
+                gameplayOwnership.RecordGameplayPresentationHint(
+                    context,
+                    GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseLookOnly,
+                    "mouse-move");
+                SyncGameplayPresentationFromCoordinator(context, epoch, "mouse-move");
                 return;
             }
 
             if (event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
                 if (const auto* buttonEvent = event.AsButtonEvent()) {
-                    UpdateGameplayChannelFacts(*buttonEvent);
-                    if (IsMappedGameplayMouseSprintButton(buttonEvent->GetIDCode())) {
-                        // Same as keyboard sprint: keep sustained held facts,
-                        // but do not use Sprint to flip coarse gameplay owner.
+                    auto& factTracker = GameplayKbmFactTracker::GetSingleton();
+                    factTracker.ObserveButtonEvent(*buttonEvent);
+                    if (factTracker.IsSprintMappedButton(*buttonEvent)) {
+                        // Same as keyboard sprint: keep sustained held facts.
+                        // A real mouse button-down still counts as an explicit
+                        // KBM presentation hint, but should not churn gameplay owner.
+                        if (buttonEvent->IsDown()) {
+                            gameplayOwnership.RecordGameplayPresentationHint(
+                                context,
+                                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
+                                "mouse-sprint-button");
+                            SyncGameplayPresentationFromCoordinator(
+                                context,
+                                epoch,
+                                "mouse-sprint-button");
+                        }
+                        return;
+                    }
+                    if (!buttonEvent->IsDown()) {
                         return;
                     }
                 }
@@ -637,17 +859,57 @@ namespace dualpad::input
                 GameplayOwner::KeyboardMouse,
                 context,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel");
+            gameplayOwnership.RecordGameplayPresentationHint(
+                context,
+                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
+                event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel");
+            SyncGameplayPresentationFromCoordinator(
+                context,
+                epoch,
+                event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel");
             return;
 
         case RE::INPUT_DEVICE::kGamepad:
-            if (!ShouldPromoteGameplayOwnerFromGamepadEvent(event)) {
-                return;
-            }
+            {
+                const bool shouldPromoteGameplayOwner =
+                    ShouldPromoteGameplayOwnerFromGamepadEvent(event);
+                const bool shouldUpdateGameplayPresentation =
+                    ShouldUpdateGameplayPresentationFromGamepadEvent(event);
+                if (!shouldPromoteGameplayOwner && !shouldUpdateGameplayPresentation) {
+                    return;
+                }
 
-            SetGameplayOwner(
-                GameplayOwner::Gamepad,
-                context,
-                event.GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick ? "gamepad-thumbstick-owner" : "gamepad");
+                std::string_view ownerReason = "gamepad";
+                std::string_view presentationReason = "gamepad";
+                if (event.GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick) {
+                    if (const auto* thumbstickEvent = event.AsThumbstickEvent()) {
+                        const auto thumbstickId =
+                            static_cast<RE::ThumbstickEvent::InputType>(thumbstickEvent->idCode);
+                        if (thumbstickId == RE::ThumbstickEvent::InputType::kLeftThumbstick) {
+                            presentationReason = "gamepad-left-thumbstick-presentation";
+                        } else {
+                            ownerReason = "gamepad-right-thumbstick-owner";
+                            presentationReason = "gamepad-right-thumbstick-presentation";
+                        }
+                    }
+                }
+
+                if (shouldPromoteGameplayOwner) {
+                    SetGameplayOwner(
+                        GameplayOwner::Gamepad,
+                        context,
+                        ownerReason);
+                }
+                if (shouldUpdateGameplayPresentation) {
+                    gameplayOwnership.RecordGameplayPresentationHint(
+                        context,
+                        shouldPromoteGameplayOwner ?
+                        GameplayOwnershipCoordinator::PresentationHint::GamepadExplicit :
+                        GameplayOwnershipCoordinator::PresentationHint::GamepadMoveOnly,
+                        presentationReason);
+                    SyncGameplayPresentationFromCoordinator(context, epoch, presentationReason);
+                }
+            }
             return;
 
         default:
@@ -718,199 +980,6 @@ namespace dualpad::input
     bool InputModalityTracker::IsMenuContextActive(InputContext context) const
     {
         return IsMenuOwnedContext(context);
-    }
-
-    void InputModalityTracker::ResetGameplayChannelFacts()
-    {
-        _gameplayKeyboardMoveDownMask.store(0, std::memory_order_relaxed);
-        _gameplayKeyboardCombatDownMask.store(0, std::memory_order_relaxed);
-        _gameplayMouseCombatDownMask.store(0, std::memory_order_relaxed);
-        _gameplayKeyboardDigitalDownMask.store(0, std::memory_order_relaxed);
-        _gameplayMouseDigitalDownMask.store(0, std::memory_order_relaxed);
-        _lastGameplayMouseLookAtMs.store(0, std::memory_order_relaxed);
-    }
-
-    void InputModalityTracker::UpdateGameplayChannelFacts(const RE::ButtonEvent& event)
-    {
-        const auto idCode = event.GetIDCode();
-        const bool down = event.IsPressed();
-
-        if (event.GetDevice() == RE::INPUT_DEVICE::kKeyboard) {
-            auto moveMask = _gameplayKeyboardMoveDownMask.load(std::memory_order_relaxed);
-            if (IsMappedGameplayKeyboardMoveKey(idCode)) {
-                const auto* userEvents = RE::UserEvents::GetSingleton();
-                if (userEvents) {
-                    if (idCode == GetGameplayMappedKey(userEvents->forward, RE::INPUT_DEVICE::kKeyboard)) {
-                        moveMask = down ? (moveMask | kMoveForwardBit) : (moveMask & ~kMoveForwardBit);
-                    }
-                    if (idCode == GetGameplayMappedKey(userEvents->back, RE::INPUT_DEVICE::kKeyboard)) {
-                        moveMask = down ? (moveMask | kMoveBackBit) : (moveMask & ~kMoveBackBit);
-                    }
-                    if (idCode == GetGameplayMappedKey(userEvents->strafeLeft, RE::INPUT_DEVICE::kKeyboard)) {
-                        moveMask = down ? (moveMask | kMoveStrafeLeftBit) : (moveMask & ~kMoveStrafeLeftBit);
-                    }
-                    if (idCode == GetGameplayMappedKey(userEvents->strafeRight, RE::INPUT_DEVICE::kKeyboard)) {
-                        moveMask = down ? (moveMask | kMoveStrafeRightBit) : (moveMask & ~kMoveStrafeRightBit);
-                    }
-                    _gameplayKeyboardMoveDownMask.store(moveMask, std::memory_order_relaxed);
-                }
-            }
-
-            auto combatMask = _gameplayKeyboardCombatDownMask.load(std::memory_order_relaxed);
-            if (IsMappedGameplayKeyboardCombatKey(idCode)) {
-                const auto* userEvents = RE::UserEvents::GetSingleton();
-                if (userEvents) {
-                    if (idCode == GetGameplayMappedKey(userEvents->leftAttack, RE::INPUT_DEVICE::kKeyboard)) {
-                        combatMask = down ? (combatMask | kCombatLeftBit) : (combatMask & ~kCombatLeftBit);
-                    }
-                    if (idCode == GetGameplayMappedKey(userEvents->rightAttack, RE::INPUT_DEVICE::kKeyboard)) {
-                        combatMask = down ? (combatMask | kCombatRightBit) : (combatMask & ~kCombatRightBit);
-                    }
-                    _gameplayKeyboardCombatDownMask.store(combatMask, std::memory_order_relaxed);
-                }
-            }
-
-            auto digitalMask = _gameplayKeyboardDigitalDownMask.load(std::memory_order_relaxed);
-            if (IsMappedGameplayKeyboardDigitalKey(idCode)) {
-                const auto* userEvents = RE::UserEvents::GetSingleton();
-                if (userEvents) {
-                    if (idCode == GetGameplayMappedKey(userEvents->jump, RE::INPUT_DEVICE::kKeyboard)) {
-                        digitalMask = down ? (digitalMask | kDigitalJumpBit) : (digitalMask & ~kDigitalJumpBit);
-                    }
-                    if (idCode == GetGameplayMappedKey(userEvents->activate, RE::INPUT_DEVICE::kKeyboard)) {
-                        digitalMask = down ? (digitalMask | kDigitalActivateBit) : (digitalMask & ~kDigitalActivateBit);
-                    }
-                    if (idCode == GetGameplayMappedKey(userEvents->sprint, RE::INPUT_DEVICE::kKeyboard)) {
-                        const auto previousDigitalMask = digitalMask;
-                        digitalMask = down ? (digitalMask | kDigitalSprintBit) : (digitalMask & ~kDigitalSprintBit);
-                        if ((previousDigitalMask ^ digitalMask) & kDigitalSprintBit) {
-                            logger::info(
-                                "[DualPad][SprintProbe] KB sprint fact -> {} (keyboard)",
-                                down);
-                        }
-                    }
-                    _gameplayKeyboardDigitalDownMask.store(digitalMask, std::memory_order_relaxed);
-                }
-            }
-            return;
-        }
-
-        if (event.GetDevice() == RE::INPUT_DEVICE::kMouse) {
-            const auto* userEvents = RE::UserEvents::GetSingleton();
-            if (!userEvents) {
-                return;
-            }
-
-            if (IsMappedGameplayMouseCombatButton(idCode)) {
-                auto combatMask = _gameplayMouseCombatDownMask.load(std::memory_order_relaxed);
-                if (idCode == GetGameplayMappedKey(userEvents->leftAttack, RE::INPUT_DEVICE::kMouse)) {
-                    combatMask = down ? (combatMask | kCombatLeftBit) : (combatMask & ~kCombatLeftBit);
-                }
-                if (idCode == GetGameplayMappedKey(userEvents->rightAttack, RE::INPUT_DEVICE::kMouse)) {
-                    combatMask = down ? (combatMask | kCombatRightBit) : (combatMask & ~kCombatRightBit);
-                }
-                _gameplayMouseCombatDownMask.store(combatMask, std::memory_order_relaxed);
-            }
-
-            if (IsMappedGameplayMouseDigitalButton(idCode)) {
-                auto digitalMask = _gameplayMouseDigitalDownMask.load(std::memory_order_relaxed);
-                if (idCode == GetGameplayMappedKey(userEvents->jump, RE::INPUT_DEVICE::kMouse)) {
-                    digitalMask = down ? (digitalMask | kDigitalJumpBit) : (digitalMask & ~kDigitalJumpBit);
-                }
-                if (idCode == GetGameplayMappedKey(userEvents->activate, RE::INPUT_DEVICE::kMouse)) {
-                    digitalMask = down ? (digitalMask | kDigitalActivateBit) : (digitalMask & ~kDigitalActivateBit);
-                }
-                if (idCode == GetGameplayMappedKey(userEvents->sprint, RE::INPUT_DEVICE::kMouse)) {
-                    const auto previousDigitalMask = digitalMask;
-                    digitalMask = down ? (digitalMask | kDigitalSprintBit) : (digitalMask & ~kDigitalSprintBit);
-                    if ((previousDigitalMask ^ digitalMask) & kDigitalSprintBit) {
-                        logger::info(
-                            "[DualPad][SprintProbe] KB sprint fact -> {} (mouse)",
-                            down);
-                    }
-                }
-                _gameplayMouseDigitalDownMask.store(digitalMask, std::memory_order_relaxed);
-            }
-        }
-    }
-
-    bool InputModalityTracker::IsMappedGameplayKeyboardMoveKey(std::uint32_t idCode) const
-    {
-        const auto* userEvents = RE::UserEvents::GetSingleton();
-        if (!userEvents) {
-            return false;
-        }
-
-        return idCode == GetGameplayMappedKey(userEvents->forward, RE::INPUT_DEVICE::kKeyboard) ||
-            idCode == GetGameplayMappedKey(userEvents->back, RE::INPUT_DEVICE::kKeyboard) ||
-            idCode == GetGameplayMappedKey(userEvents->strafeLeft, RE::INPUT_DEVICE::kKeyboard) ||
-            idCode == GetGameplayMappedKey(userEvents->strafeRight, RE::INPUT_DEVICE::kKeyboard);
-    }
-
-    bool InputModalityTracker::IsMappedGameplayKeyboardCombatKey(std::uint32_t idCode) const
-    {
-        const auto* userEvents = RE::UserEvents::GetSingleton();
-        if (!userEvents) {
-            return false;
-        }
-
-        return idCode == GetGameplayMappedKey(userEvents->leftAttack, RE::INPUT_DEVICE::kKeyboard) ||
-            idCode == GetGameplayMappedKey(userEvents->rightAttack, RE::INPUT_DEVICE::kKeyboard);
-    }
-
-    bool InputModalityTracker::IsMappedGameplayMouseCombatButton(std::uint32_t idCode) const
-    {
-        const auto* userEvents = RE::UserEvents::GetSingleton();
-        if (!userEvents) {
-            return false;
-        }
-
-        return idCode == GetGameplayMappedKey(userEvents->leftAttack, RE::INPUT_DEVICE::kMouse) ||
-            idCode == GetGameplayMappedKey(userEvents->rightAttack, RE::INPUT_DEVICE::kMouse);
-    }
-
-    bool InputModalityTracker::IsMappedGameplayKeyboardDigitalKey(std::uint32_t idCode) const
-    {
-        const auto* userEvents = RE::UserEvents::GetSingleton();
-        if (!userEvents) {
-            return false;
-        }
-
-        return idCode == GetGameplayMappedKey(userEvents->jump, RE::INPUT_DEVICE::kKeyboard) ||
-            idCode == GetGameplayMappedKey(userEvents->activate, RE::INPUT_DEVICE::kKeyboard) ||
-            idCode == GetGameplayMappedKey(userEvents->sprint, RE::INPUT_DEVICE::kKeyboard);
-    }
-
-    bool InputModalityTracker::IsMappedGameplayMouseDigitalButton(std::uint32_t idCode) const
-    {
-        const auto* userEvents = RE::UserEvents::GetSingleton();
-        if (!userEvents) {
-            return false;
-        }
-
-        return idCode == GetGameplayMappedKey(userEvents->jump, RE::INPUT_DEVICE::kMouse) ||
-            idCode == GetGameplayMappedKey(userEvents->activate, RE::INPUT_DEVICE::kMouse) ||
-            idCode == GetGameplayMappedKey(userEvents->sprint, RE::INPUT_DEVICE::kMouse);
-    }
-
-    bool InputModalityTracker::IsMappedGameplayKeyboardSprintKey(std::uint32_t idCode) const
-    {
-        const auto* userEvents = RE::UserEvents::GetSingleton();
-        if (!userEvents) {
-            return false;
-        }
-
-        return idCode == GetGameplayMappedKey(userEvents->sprint, RE::INPUT_DEVICE::kKeyboard);
-    }
-
-    bool InputModalityTracker::IsMappedGameplayMouseSprintButton(std::uint32_t idCode) const
-    {
-        const auto* userEvents = RE::UserEvents::GetSingleton();
-        if (!userEvents) {
-            return false;
-        }
-
-        return idCode == GetGameplayMappedKey(userEvents->sprint, RE::INPUT_DEVICE::kMouse);
     }
 
     void InputModalityTracker::RefreshGamepadLease(std::uint64_t windowMs)
@@ -996,6 +1065,13 @@ namespace dualpad::input
             reason,
             dualpad::input::ToString(context),
             ToString(_presentationOwner.load(std::memory_order_relaxed)));
+
+        // Some menus keep pointer/gamepad affordances cached more aggressively
+        // than the cursor hook alone. Refresh on real cursor-owner flips so
+        // mouse-entered menus can hand control back to gamepad without reopen.
+        if (IsMenuContextActive(context)) {
+            RefreshMenus();
+        }
     }
 
     void InputModalityTracker::SetPointerIntent(PointerIntent intent)
@@ -1012,6 +1088,24 @@ namespace dualpad::input
 
         logger::info(
             "[DualPad][InputOwner] Gameplay {} -> {} via {} (ctx={})",
+            ToString(previous),
+            ToString(owner),
+            reason,
+            dualpad::input::ToString(context));
+    }
+
+    void InputModalityTracker::SetGameplayMenuEntrySeed(
+        PresentationOwner owner,
+        InputContext context,
+        std::string_view reason)
+    {
+        const auto previous = _gameplayMenuEntrySeed.exchange(owner, std::memory_order_relaxed);
+        if (previous == owner) {
+            return;
+        }
+
+        logger::info(
+            "[DualPad][InputOwner] GameplayMenuEntrySeed {} -> {} via {} (ctx={})",
             ToString(previous),
             ToString(owner),
             reason,
@@ -1239,7 +1333,8 @@ namespace dualpad::input
             *reinterpret_cast<const bool*>(reinterpret_cast<const std::uint8_t*>(menuControls) + kMenuControlsRemapModeOffset);
 
         if (playerRemapMode || menuRemapMode) {
-            return GetSingleton().IsUsingGamepad();
+            auto& tracker = GetSingleton();
+            return tracker.ResolveIsUsingGamepad();
         }
 
         return true;

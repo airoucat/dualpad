@@ -4,12 +4,24 @@
 #include "input/protocol/DualSenseCommonFields.h"
 #include "input/protocol/DualSenseButtons.h"
 #include "input/protocol/DualSenseReportIds.h"
+#include "input/RuntimeConfig.h"
 #include "input/state/PadStateDebugger.h"
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
     namespace
     {
+        constexpr std::uint32_t kInterestingMenuBits =
+            protocol::buttons::kCross |
+            protocol::buttons::kCircle |
+            protocol::buttons::kTriangle |
+            protocol::buttons::kDpadUp |
+            protocol::buttons::kDpadDown |
+            protocol::buttons::kDpadLeft |
+            protocol::buttons::kDpadRight;
+
         enum class TouchDataLayout
         {
             None,
@@ -77,6 +89,39 @@ namespace dualpad::input
 
             return TouchDataLayout::None;
         }
+
+        void MaybeLogRawButtons(
+            const RawInputPacket& packet,
+            std::uint8_t buttons0,
+            std::uint8_t buttons1,
+            std::uint8_t buttons2,
+            std::uint8_t buttons3,
+            std::uint32_t digitalMask)
+        {
+            if (!RuntimeConfig::GetSingleton().LogMappingEvents()) {
+                return;
+            }
+
+            const auto dpadNibble = static_cast<std::uint8_t>(buttons0 & 0x0F);
+            const bool interesting =
+                (digitalMask & kInterestingMenuBits) != 0 ||
+                dpadNibble != 0x08;
+            if (!interesting) {
+                return;
+            }
+
+            logger::debug(
+                "[DualPad][MenuProbe] raw-buttons transport={} report=0x{:02X} seq={} buttons0=0x{:02X} buttons1=0x{:02X} buttons2=0x{:02X} buttons3=0x{:02X} dpadNibble=0x{:X} mask=0x{:08X}",
+                ToString(packet.transport),
+                packet.reportId,
+                packet.sequence,
+                buttons0,
+                buttons1,
+                buttons2,
+                buttons3,
+                dpadNibble,
+                digitalMask);
+        }
     }
 
     bool ParseDualSenseUsbInputPacket(const RawInputPacket& packet, PadState& outState)
@@ -105,12 +150,16 @@ namespace dualpad::input
         state.leftTrigger.raw = packet.data[raw::kLeftTrigger];
         state.rightTrigger.raw = packet.data[raw::kRightTrigger];
 
+        const auto buttons0 = packet.data[raw::kButtons0];
+        const auto buttons1 = packet.data[raw::kButtons1];
+        const auto buttons2 = packet.data[raw::kButtons2];
         const std::uint8_t buttons3 = packet.size > raw::kButtons3 ? packet.data[raw::kButtons3] : 0;
         state.buttons = protocol::common::BuildPadButtons(
-            packet.data[raw::kButtons0],
-            packet.data[raw::kButtons1],
-            packet.data[raw::kButtons2],
+            buttons0,
+            buttons1,
+            buttons2,
             buttons3);
+        MaybeLogRawButtons(packet, buttons0, buttons1, buttons2, buttons3, state.buttons.digitalMask);
 
         if (packet.size > (raw::kAccelZ + 1)) {
             state.imu.gyroX = protocol::common::ReadI16LE(packet.data + raw::kGyroX);

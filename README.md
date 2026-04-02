@@ -10,6 +10,16 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 - 状态提交：`NativeButtonCommitBackend + AxisProjection + UnmanagedDigitalPublisher -> AuthoritativePollState`
 - 最终桥接：`UpstreamGamepadHook -> XInputStateBridge -> XInputButtonSerialization`
 
+对当前仅支持的 `Skyrim SE 1.5.97` 而言，`UpstreamGamepadHook` 已被视为正式主路线。运行时里的
+`use_upstream_gamepad_hook=false` 目前只作为开发/排障期的回退闸门保留，不再代表长期并列的正式实现。
+
+`Gameplay presentation owner` 的 Phase 2 也已正式并入主路线：
+- gameplay `IsUsingGamepad()`
+- `IsGamepadDeviceEnabledHook()` 的 remap/menu enable 路径
+- `Gameplay -> Menu` 初始继承
+
+现在都固定走已验证通过的实现，不再通过 `DualPadDebug.ini` 暴露 Phase 2 回退开关。
+
 当前默认运行时不再依赖：
 
 - `XInputGetState` IAT 输入 fallback
@@ -92,11 +102,18 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
   - 针对提交 `9403e73` 的定制化后续方案，以及本轮已落实项与剩余观察项
 - [docs/agents5_review_reconciliation_refactor_plan_zh.md](docs/agents5_review_reconciliation_refactor_plan_zh.md)
   - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划
+- [docs/gameplay_ui_owner_code_ida_refactor_plan_zh.md](docs/gameplay_ui_owner_code_ida_refactor_plan_zh.md)
+  - 结合 `agents.md`、当前代码与 IDA 关键路径整理的开发计划，重点是 UI owner / gameplay owner / provenance-aware recovery 的下一阶段收口顺序
+- [docs/phase2_gameplay_presentation_owner_minimal_plan_zh.md](docs/phase2_gameplay_presentation_owner_minimal_plan_zh.md)
+  - Phase 2 的最小实施方案：为什么上次会失败、这次该如何拆成小步，以及 menu startup / gameplay HUD 的验证口径
 - [src/ARCHITECTURE.md](src/ARCHITECTURE.md)
   - 当前代码模块与主链路总览
 
 ## 已知后续点
 
+- `JournalMenu` / 某些 menu 内部确认状态在 `KeyboardMouse -> Gamepad` handoff 后，第一下面键经常只表现为“抢回手柄平台”，不会按预期直接执行 `Confirm/Cancel`。
+  - 当前已排除 backlog、`held/up` 抢平台、简单 replay/pulse 前移、以及 `JournalMenu` 的临时 KBM 语义桥接实验。
+  - 后续应把主菜单内部确认状态（`StartMenu` SWF 内部状态）和 `JournalMenu`/通用菜单链分开调查，不再混成同一个问题推进。
 - `Menu.Scroll* -> Menu.Confirm` 这类跨按钮微小时序，当前仍是 future work。
 - 少数顺序敏感 UI 场景，未来可能需要 `direct native event`，但当前不作为主线。
 - 游戏侧 `transition/readiness` 机制仍只记录为后续逆向点，不在当前窗口继续硬推。

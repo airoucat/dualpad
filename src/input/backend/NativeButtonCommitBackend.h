@@ -38,6 +38,7 @@ namespace dualpad::input::backend
             std::uint32_t contextEpoch,
             std::uint64_t nowUs = 0);
 
+        void SetGameplayDigitalGatePlan(bool suppressNewTransientActions);
         bool ApplyPlannedAction(const PlannedAction& action);
         void ForceCancelGateAwareGameplayTransientActions();
         [[nodiscard]] CommittedButtonState CommitPollState();
@@ -95,6 +96,7 @@ namespace dualpad::input::backend
         std::uint32_t _lastCommittedButtonDownMask{ 0 };
         SprintProbeSnapshot _lastSprintProbeSnapshot{};
         SneakProbeSnapshot _lastSneakProbeSnapshot{};
+        bool _suppressGameplayDigitalTransientActions{ false };
         mutable std::mutex _lock;
     };
 }

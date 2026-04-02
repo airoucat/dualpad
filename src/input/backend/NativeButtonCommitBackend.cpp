@@ -3,6 +3,7 @@
 
 #include "input/Action.h"
 #include "input/AuthoritativePollState.h"
+#include "input/GameplayKbmFactTracker.h"
 #include "input/InputContext.h"
 #include "input/InputModalityTracker.h"
 #include "input/PadProfile.h"
@@ -67,6 +68,7 @@ namespace dualpad::input::backend
         _lastCommittedButtonDownMask = 0;
         _lastSprintProbeSnapshot = {};
         _lastSneakProbeSnapshot = {};
+        _suppressGameplayDigitalTransientActions = false;
     }
 
     bool NativeButtonCommitBackend::IsRouteActive() const
@@ -139,8 +141,15 @@ namespace dualpad::input::backend
         std::scoped_lock lock(_lock);
         _frameContext = context;
         _frameContextEpoch = contextEpoch;
+        _suppressGameplayDigitalTransientActions = false;
         _pollCommit.BeginFrame(context, contextEpoch, nowUs != 0 ? nowUs : NowUs());
         SyncExternalHeldContributors(context, contextEpoch);
+    }
+
+    void NativeButtonCommitBackend::SetGameplayDigitalGatePlan(bool suppressNewTransientActions)
+    {
+        std::scoped_lock lock(_lock);
+        _suppressGameplayDigitalTransientActions = suppressNewTransientActions;
     }
 
     bool NativeButtonCommitBackend::ApplyPlannedAction(const PlannedAction& action)
@@ -148,11 +157,10 @@ namespace dualpad::input::backend
         std::scoped_lock lock(_lock);
         if (RuntimeConfig::GetSingleton().EnableGameplayOwnership() &&
             IsGameplayDigitalSuppressionCandidate(action) &&
-            dualpad::input::GameplayOwnershipCoordinator::GetSingleton().GetPublishedDigitalOwner() ==
-                dualpad::input::GameplayOwnershipCoordinator::ChannelOwner::KeyboardMouse) {
+            _suppressGameplayDigitalTransientActions) {
             if (ShouldLogPollCommit()) {
                 logger::info(
-                    "[DualPad][NativeButtonCommit] Suppressed gameplay digital action={} phase={} via DigitalOwner=KeyboardMouse",
+                    "[DualPad][NativeButtonCommit] Suppressed gameplay digital action={} phase={} via frame digital gate plan",
                     action.actionId.c_str(),
                     ToString(action.phase));
             }
@@ -208,7 +216,7 @@ namespace dualpad::input::backend
         sprintSnapshot.valid = true;
         sprintSnapshot.kbmHeld =
             context == InputContext::Gameplay &&
-            InputModalityTracker::GetSingleton().IsGameplayKeyboardMouseSprintActive();
+            GameplayKbmFactTracker::GetSingleton().GetFacts().IsKeyboardMouseSprintActive();
         sprintSnapshot.gameplayOwnerGamepad =
             InputModalityTracker::GetSingleton().IsGameplayUsingGamepad();
         sprintSnapshot.context = context;

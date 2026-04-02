@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "input/ContextEventSink.h"
 #include "input/InputContext.h"
+#include "input/InputModalityTracker.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 
 namespace logger = SKSE::log;
@@ -69,6 +70,9 @@ namespace dualpad::input
 
         if (event->opening) {
             contextMgr.OnMenuOpen(event->menuName.c_str());
+            InputModalityTracker::GetSingleton().OnAuthoritativeMenuOpen(
+                contextMgr.GetCurrentContext(),
+                contextMgr.GetCurrentEpoch());
             glyph::ScaleformGlyphBridge::GetSingleton().OnMenuOpened(event->menuName.c_str());
         }
         else {
