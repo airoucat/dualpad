@@ -7,7 +7,7 @@
 当前主菜单走的是：
 
 - `ScaleformGlyphBridge`
-- `DualPad_GetActionGlyphToken`
+- `DualPad_GetActionGlyphToken` / `getActionGlyph()`
 - **单个 ButtonArt token 兼容链**
 
 也就是说，主菜单现在还不是：
@@ -24,10 +24,16 @@
 
 当前流程是：
 
-1. 主菜单 SWF 通过 GameDelegate 调用 `DualPad_GetActionGlyphToken(actionId, contextName)`
-2. `ScaleformGlyphBridge::ResolveActionToken(...)` 先向 `BindingManager` 查询当前 action 在对应 `InputContext` 下的 trigger
-3. `ScaleformGlyphBridge::TriggerToButtonArtToken(...)` 把 trigger 映射成 **一个** ButtonArt token
-4. SWF 继续按原生 `ButtonArt / MappedButton` 思路显示图标
+当前 SWF 侧有两种入口形式，但最终都会落到同一个结果：
+
+1. 直接 `gfx.io.GameDelegate.call("DualPad_GetActionGlyphToken", ...)`
+2. 通过 `getActionGlyph(...)` 取回结果对象，再读取其中的 `buttonArtToken`
+
+对应 C++ 侧流程仍然是：
+
+1. `ScaleformGlyphBridge::ResolveActionToken(...)` 先向 `BindingManager` 查询当前 action 在对应 `InputContext` 下的 trigger
+2. `ScaleformGlyphBridge::TriggerToButtonArtToken(...)` 把 trigger 映射成 **一个** ButtonArt token
+3. SWF 继续按原生 `ButtonArt / MappedButton` 思路显示图标
 
 因此，当前主菜单图标替换的本质是：
 
