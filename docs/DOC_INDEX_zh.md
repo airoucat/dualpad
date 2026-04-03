@@ -12,20 +12,21 @@
 6. [native_pc_event_semantics_zh.md](native_pc_event_semantics_zh.md)
 7. [controlmap_gamepad_event_inventory_zh.md](controlmap_gamepad_event_inventory_zh.md)
 8. [controlmap_combo_profile_zh.md](controlmap_combo_profile_zh.md)
-9. [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
-10. [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
-11. [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)
-12. [gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
-13. [sprint_native_source_mediation_plan_zh.md](sprint_native_source_mediation_plan_zh.md)
-14. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
-15. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
-16. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
-17. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
-18. [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
-19. [gameplay_ui_owner_code_ida_refactor_plan_zh.md](gameplay_ui_owner_code_ida_refactor_plan_zh.md)
-20. [phase2_gameplay_presentation_owner_minimal_plan_zh.md](phase2_gameplay_presentation_owner_minimal_plan_zh.md)
-21. [phase1_phase4_code_review_findings_zh.md](phase1_phase4_code_review_findings_zh.md)
-22. [phase1_phase4_elegance_followups_zh.md](phase1_phase4_elegance_followups_zh.md)
+9. [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
+10. [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
+11. [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
+12. [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)
+13. [gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
+14. [sprint_native_source_mediation_plan_zh.md](sprint_native_source_mediation_plan_zh.md)
+15. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
+16. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
+17. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
+18. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
+19. [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
+20. [gameplay_ui_owner_code_ida_refactor_plan_zh.md](gameplay_ui_owner_code_ida_refactor_plan_zh.md)
+21. [phase2_gameplay_presentation_owner_minimal_plan_zh.md](phase2_gameplay_presentation_owner_minimal_plan_zh.md)
+22. [phase1_phase4_code_review_findings_zh.md](phase1_phase4_code_review_findings_zh.md)
+23. [phase1_phase4_elegance_followups_zh.md](phase1_phase4_elegance_followups_zh.md)
 
 ## 当前主线文档
 
@@ -51,8 +52,10 @@
 
 ### 动态图标
 
+- [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
+  - 当前主菜单已经落地的动态图标实现状态：仍走 `ScaleformGlyphBridge + DualPad_GetActionGlyphToken + 单个 ButtonArt token` 兼容链。
 - [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
-  - 新的动态图标总方案：SVG 做真源，映射层做语义真相源，按 Widget / HTML `<img>` / ButtonArt 兼容层三段落地。
+  - 动态图标的长期统一方案：SVG 做真源，映射层做语义真相源，按 Widget / HTML `<img>` / ButtonArt 兼容层三段落地；这不是当前主菜单已经落地的实现。
 - [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
   - 结合项目现状与 IDA 反编译结果，对“键鼠/手柄抢输入”做统一的 UI 输入所有权仲裁方案。
 - [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)

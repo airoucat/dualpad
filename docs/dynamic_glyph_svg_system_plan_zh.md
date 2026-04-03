@@ -1,5 +1,37 @@
 # 动态图标统一 SVG 系统方案
 
+## 状态说明（2026-04-03）
+
+这份文档描述的是 **长期 SVG / Widget 统一方案**，不是当前主菜单已经落地的运行时实现。
+
+当前主菜单实际走的是：
+
+- `ScaleformGlyphBridge`
+- `DualPad_GetActionGlyphToken`
+- 单个 `ButtonArt token` 兼容链
+
+也就是说，`startmenu` 目前 **还没有** 迁到：
+
+- `DualPadGlyphWidget`
+- 运行时 SVG 渲染
+- 组合键 `parts[]` 拼装
+
+因此，本文中所有关于：
+
+- `startmenu` 更适合 Widget / sprite
+- `DualPadGlyphWidget`
+- 统一 SVG 真源
+- 组合键运行时拼装
+
+的内容，都应理解为：
+
+- **未来主线规划**
+- 而不是当前已完成状态
+
+当前主菜单现状请先看：
+
+- [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
+
 这份方案是对之前 `SWF` 分页 patch 尝试的重新收口。新的目标不是“继续为每个页面找一条临时替换链”，而是先定义一套**统一的动态图标系统**，再让各个页面按自己的能力去消费它。
 
 核心前提：
