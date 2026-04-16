@@ -17,11 +17,11 @@
 
 当前运行时链路里，和这个问题直接相关的是：
 
-- [InputModalityTracker.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/InputModalityTracker.cpp)
-- [InputModalityTracker.h](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/InputModalityTracker.h)
-- [ContextEventSink.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/ContextEventSink.cpp)
-- [ScaleformGlyphBridge.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/glyph/ScaleformGlyphBridge.cpp)
-- [KeyboardHelperBackend.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/KeyboardHelperBackend.cpp)
+- [InputModalityTracker.cpp](../src/input/InputModalityTracker.cpp)
+- [InputModalityTracker.h](../src/input/InputModalityTracker.h)
+- [ContextEventSink.cpp](../src/input/ContextEventSink.cpp)
+- [ScaleformGlyphBridge.cpp](../src/input/glyph/ScaleformGlyphBridge.cpp)
+- [KeyboardHelperBackend.cpp](../src/input/backend/KeyboardHelperBackend.cpp)
 
 当前 `InputModalityTracker` 做的事本质上是：
 
@@ -322,7 +322,7 @@ UI 表现切换会被游戏内普通输入污染。
 
 继续用：
 
-- [ContextEventSink.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/ContextEventSink.cpp)
+- [ContextEventSink.cpp](../src/input/ContextEventSink.cpp)
 
 职责：
 
@@ -355,7 +355,7 @@ UI 表现切换会被游戏内普通输入污染。
 
 继续保留：
 
-- [KeyboardHelperBackend.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/KeyboardHelperBackend.cpp)
+- [KeyboardHelperBackend.cpp](../src/input/backend/KeyboardHelperBackend.cpp)
 
 但它的角色仍然只是：
 

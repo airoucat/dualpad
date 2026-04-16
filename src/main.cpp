@@ -14,6 +14,7 @@
 #include "input/InputFramePump.h"
 #include "input/InputModalityTracker.h"
 
+#include "input/MenuContextPolicy.h"
 #include "input/RuntimeConfig.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/backend/KeyboardHelperBackend.h"
@@ -73,9 +74,9 @@ namespace
             logger::info("[DualPad] Initializing systems");
             LogReverseProbeAddresses();
 
-            dualpad::input::ContextEventSink::GetSingleton().Register();
-
             dualpad::input::RuntimeConfig::GetSingleton().Load();
+            dualpad::input::MenuContextPolicy::GetSingleton().Load();
+            dualpad::input::ContextEventSink::GetSingleton().Register();
 
             dualpad::input::BindingConfig::GetSingleton().Load();
             dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton().RegisterInitialMenus();

@@ -147,6 +147,31 @@ flowchart TB
 
 这条线不承担 Skyrim PC 原生事件主线。
 
+## 菜单上下文与表现层侧支
+
+这条输入主链之外，当前还有两条和菜单表现直接相关的侧支：
+
+- `ContextEventSink -> ContextManager -> InputModalityTracker`
+- `ContextEventSink -> ScaleformGlyphBridge`
+
+其中：
+
+- `MenuContextPolicy + InputContextNames + DualPadMenuPolicy.ini`
+  - 负责未知菜单是否抢上下文，以及应该映射到哪个 `InputContext`
+- `ScaleformGlyphBridge`
+  - 负责把 `action/context` 解析成当前 SWF 可消费的 glyph token / descriptor
+
+这两条侧支不会改写主链的手柄硬件 materialization，但会影响：
+
+- 当前菜单逻辑上下文
+- UI 平台表现
+- 主菜单等页面的动态图标查询结果
+
+对应文档：
+
+- [menu_context_policy_current_status_zh.md](menu_context_policy_current_status_zh.md)
+- [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
+
 ## 当前正式原则
 
 - `FrameActionPlan` 是运行时合同，不是影子日志。

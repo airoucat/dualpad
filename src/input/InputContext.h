@@ -3,6 +3,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace dualpad::input
@@ -161,11 +162,10 @@ namespace dualpad::input
         std::uint32_t _contextEpoch{ 1 };
         std::vector<InputContext> _contextStack;
         std::vector<MenuContextEntry> _menuStack;
+        std::unordered_map<std::string, std::size_t> _passthroughMenuCounts;
         mutable std::mutex _mutex;
 
-        InputContext MenuNameToContext(std::string_view menuName) const;
         InputContext DetectGameplayContext() const;
         void RefreshCurrentContextLocked();
-        bool ShouldTrackMenu(std::string_view menuName) const;
     };
 }

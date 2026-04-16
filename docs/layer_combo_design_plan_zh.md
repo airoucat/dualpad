@@ -1,12 +1,12 @@
-# Layer / Combo 设计方案
+﻿# Layer / Combo 设计方案
 
 更新日期：2026-03-25
 
 本文基于：
 
-- [agents5.md](/C:/Users/xuany/Documents/dualPad/agents5.md) 中关于怪物猎人系列双键输入、输入缓冲与优先级机制的研究结论
-- 当前正式输入主线 [current_input_pipeline_zh.md](/C:/Users/xuany/Documents/dualPad/docs/current_input_pipeline_zh.md)
-- 当前 cleanup / 风险复盘 [current_cleanup_risk_review_zh.md](/C:/Users/xuany/Documents/dualPad/docs/current_cleanup_risk_review_zh.md)
+- [agents5.md](../agents5.md) 中关于怪物猎人系列双键输入、输入缓冲与优先级机制的研究结论
+- 当前正式输入主线 [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
+- 当前 cleanup / 风险复盘 [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
 
 目标不是照搬怪猎的动作语义，而是借鉴其“双键判定手感”来改造 DualPad 的映射层。
 

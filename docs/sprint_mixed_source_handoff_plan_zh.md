@@ -1,4 +1,4 @@
-# Sprint 混合来源接管问题调查与计划
+﻿# Sprint 混合来源接管问题调查与计划
 
 ## 结论先说
 
@@ -99,9 +99,9 @@ IDA 里 `0x140C1AB40` 的 `BSWin32GamepadDevice::Poll` 明确做了这些事：
 
 CommonLib 头文件已经给出了一个很关键的事实：
 
-- `/C:/Users/xuany/.codex/worktrees/237f/dualPad/lib/commonlibsse-ng/include/RE/S/SprintHandler.h`
+- `../lib/commonlibsse-ng/include/RE/S/SprintHandler.h`
   - `RE::SprintHandler : public RE::HeldStateHandler`
-- `/C:/Users/xuany/.codex/worktrees/237f/dualPad/lib/commonlibsse-ng/include/RE/H/HeldStateHandler.h`
+- `../lib/commonlibsse-ng/include/RE/H/HeldStateHandler.h`
   - `heldStateActive`
   - `triggerReleaseEvent`
 
@@ -238,8 +238,8 @@ engine-facing emitter:
 
 当前做法里，`Sprint` 的 held contributor 已经进了：
 
-- `/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/PollCommitCoordinator.cpp`
-- `/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/NativeButtonCommitBackend.cpp`
+- `../src/input/backend/PollCommitCoordinator.cpp`
+- `../src/input/backend/NativeButtonCommitBackend.cpp`
 
 但接下来不能只是在这里继续叠更多 OR 特判。
 

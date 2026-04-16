@@ -59,6 +59,8 @@ target("DualPad")
         end
         local debug_ini_src = path.join(os.projectdir(), "config", "DualPadDebug.ini")
         local debug_ini_dst = path.join(mo2_plugins_dir, "DualPadDebug.ini")
+        local menu_policy_ini_src = path.join(os.projectdir(), "config", "DualPadMenuPolicy.ini")
+        local menu_policy_ini_dst = path.join(mo2_plugins_dir, "DualPadMenuPolicy.ini")
         local controlmap_overlay_src = path.join(
             os.projectdir(),
             "config",
@@ -73,12 +75,29 @@ target("DualPad")
             os.mkdir(mo2_plugins_dir)
             os.cp(debug_ini_src, debug_ini_dst)
         end
+        if os.isfile(menu_policy_ini_src) and not os.isfile(menu_policy_ini_dst) then
+            os.mkdir(mo2_plugins_dir)
+            os.cp(menu_policy_ini_src, menu_policy_ini_dst)
+        end
         if os.isfile(controlmap_overlay_src) then
             os.mkdir(mo2_plugins_dir)
             os.cp(controlmap_overlay_src, controlmap_overlay_dst)
         end
         print("Deployed: %s", target:targetfile())
     end)
+
+target("DualPadMenuContextPolicyTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files(
+        "tests/MenuContextPolicyTests.cpp",
+        "src/input/InputContextNames.cpp",
+        "src/input/MenuContextPolicy.cpp")
+    add_headerfiles("tests/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
 
 target("DualPadDInput8Proxy")
     set_kind("shared")

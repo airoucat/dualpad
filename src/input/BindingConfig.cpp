@@ -3,6 +3,7 @@
 #include "input/BindingManager.h"
 #include "input/IniParseHelpers.h"
 #include "input/InputContext.h"
+#include "input/InputContextNames.h"
 #include "input/Trigger.h"
 #include "input/mapping/PadEvent.h"
 #include "input/mapping/TouchpadMapper.h"
@@ -22,67 +23,6 @@ namespace dualpad::input
 {
     namespace
     {
-        InputContext StringToContext(std::string_view str)
-        {
-            if (str == "Gameplay") return InputContext::Gameplay;
-            if (str == "Menu") return InputContext::Menu;
-            if (str == "InventoryMenu") return InputContext::InventoryMenu;
-            if (str == "MagicMenu") return InputContext::MagicMenu;
-            if (str == "MapMenu") return InputContext::MapMenu;
-            if (str == "Map Menu") return InputContext::MapMenu;
-            if (str == "JournalMenu") return InputContext::JournalMenu;
-            if (str == "Journal Menu") return InputContext::JournalMenu;
-            if (str == "DialogueMenu") return InputContext::DialogueMenu;
-            if (str == "Dialogue Menu") return InputContext::DialogueMenu;
-            if (str == "FavoritesMenu") return InputContext::FavoritesMenu;
-            if (str == "Favorites Menu") return InputContext::FavoritesMenu;
-            if (str == "TweenMenu") return InputContext::TweenMenu;
-            if (str == "Tween Menu") return InputContext::TweenMenu;
-            if (str == "ContainerMenu") return InputContext::ContainerMenu;
-            if (str == "Container Menu") return InputContext::ContainerMenu;
-            if (str == "BarterMenu") return InputContext::BarterMenu;
-            if (str == "Barter Menu") return InputContext::BarterMenu;
-            if (str == "TrainingMenu" || str == "Training Menu") return InputContext::TrainingMenu;
-            if (str == "LevelUpMenu" || str == "LevelUp Menu") return InputContext::LevelUpMenu;
-            if (str == "RaceSexMenu" || str == "RaceSex Menu") return InputContext::RaceSexMenu;
-            if (str == "StatsMenu" || str == "Stats Menu") return InputContext::StatsMenu;
-            // Project-reserved alias for modded UI. Vanilla SE 1.5.97 skill/perk
-            // flow normally stays inside StatsMenu.
-            if (str == "SkillMenu" || str == "Skill Menu") return InputContext::SkillMenu;
-            if (str == "BookMenu" || str == "Book Menu") return InputContext::BookMenu;
-            if (str == "MessageBoxMenu" || str == "MessageBox Menu") return InputContext::MessageBoxMenu;
-            if (str == "QuantityMenu" || str == "Quantity Menu") return InputContext::QuantityMenu;
-            if (str == "GiftMenu" || str == "Gift Menu") return InputContext::GiftMenu;
-            if (str == "Lockpicking") return InputContext::Lockpicking;
-            if (str == "LockpickingMenu" || str == "Lockpicking Menu") return InputContext::Lockpicking;
-            if (str == "Combat") return InputContext::Combat;
-            if (str == "Sneaking") return InputContext::Sneaking;
-            if (str == "Riding") return InputContext::Riding;
-            if (str == "Werewolf") return InputContext::Werewolf;
-            if (str == "VampireLord") return InputContext::VampireLord;
-            if (str == "Console") return InputContext::Console;
-            if (str == "Console Native UI Menu") return InputContext::Console;
-            if (str == "Book") return InputContext::Book;
-            if (str == "CreationsMenu" || str == "Creations Menu") return InputContext::CreationsMenu;
-            if (str == "CreationClubMenu" || str == "Creation Club Menu") return InputContext::CreationsMenu;
-            if (str == "Mod Manager Menu") return InputContext::CreationsMenu;
-            if (str == "ItemMenu" || str == "Item Menu") return InputContext::ItemMenu;
-            if (str == "DebugText" || str == "Debug Text Menu") return InputContext::DebugText;
-            if (str == "MapMenuContext") return InputContext::MapMenuContext;
-            if (str == "Stats") return InputContext::Stats;
-            if (str == "Cursor" || str == "Cursor Menu" || str == "CursorMenu") return InputContext::Cursor;
-            if (str == "DebugOverlay") return InputContext::DebugOverlay;
-            if (str == "TFCMode") return InputContext::TFCMode;
-            if (str == "DebugMapMenu") return InputContext::DebugMapMenu;
-            if (str == "Favor") return InputContext::Favor;
-            if (str == "Death") return InputContext::Death;
-            if (str == "Bleedout") return InputContext::Bleedout;
-            if (str == "Ragdoll") return InputContext::Ragdoll;
-            if (str == "KillMove") return InputContext::KillMove;
-
-            return InputContext::Unknown;
-        }
-
         std::uint32_t GestureNameToCode(std::string_view name)
         {
             using namespace mapping_codes;
@@ -291,12 +231,7 @@ namespace dualpad::input
 
         std::optional<InputContext> ResolveContextName(std::string_view str)
         {
-            const auto context = StringToContext(str);
-            if (context == InputContext::Unknown) {
-                return std::nullopt;
-            }
-
-            return context;
+            return ParseInputContextName(str);
         }
 
     }
@@ -442,8 +377,8 @@ namespace dualpad::input
 
     bool BindingConfig::ParseBinding(std::string_view contextStr, std::string_view key, std::string_view value)
     {
-        auto context = StringToContext(contextStr);
-        if (context == InputContext::Unknown) {
+        const auto context = ParseInputContextName(contextStr);
+        if (!context) {
             logger::warn("[DualPad][Config] Unknown context: {}", contextStr);
             return false;
         }
@@ -457,7 +392,7 @@ namespace dualpad::input
         Binding binding;
         binding.trigger = trigger;
         binding.actionId = std::string(value);
-        binding.context = context;
+        binding.context = *context;
 
         BindingManager::GetSingleton().AddBinding(binding);
 

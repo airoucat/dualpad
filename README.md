@@ -69,45 +69,27 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 ## 文档入口
 
 - [docs/DOC_INDEX_zh.md](docs/DOC_INDEX_zh.md)
-  - 当前文档总索引与推荐阅读顺序
+  - 当前文档总索引；已经按“当前事实 / 进行中设计 / 历史资料”重新分层
 - [docs/current_input_pipeline_zh.md](docs/current_input_pipeline_zh.md)
-  - 从 `HID -> PadState -> PadEventSnapshot -> AuthoritativePollState -> XInput/Mod` 的当前运行时主链路
-- [docs/mapping_snapshot_atomicity_audit_and_injection_contract_zh.md](docs/mapping_snapshot_atomicity_audit_and_injection_contract_zh.md)
-  - 对照 AGENTS 旧目标，核对映射层原子快照、主线程交付边界，以及注入层当前正式契约
+  - 从 `HID -> PadState -> PadEventSnapshot -> AuthoritativePollState -> XInput/Mod` 的当前运行时主链路，以及菜单/表现层侧支
+- [docs/menu_context_policy_current_status_zh.md](docs/menu_context_policy_current_status_zh.md)
+  - `MenuContextPolicy + InputContextNames + DualPadMenuPolicy.ini` 的当前实现状态
 - [docs/backend_routing_decisions.md](docs/backend_routing_decisions.md)
   - 当前 backend ownership 与 routing 规则
-- [docs/mod_event_keyboard_helper_backend_zh.md](docs/mod_event_keyboard_helper_backend_zh.md)
-  - `ModEvent` 固定槽位、虚拟键池 ABI、`KeyboardHelperBackend` 开发约定
 - [docs/unified_action_lifecycle_model_zh.md](docs/unified_action_lifecycle_model_zh.md)
   - 统一动作生命周期模型
-- [docs/native_pc_event_semantics_zh.md](docs/native_pc_event_semantics_zh.md)
-  - 已追到的 Skyrim 原生 PC / gamepad user event 语义
-- [docs/controlmap_gamepad_event_inventory_zh.md](docs/controlmap_gamepad_event_inventory_zh.md)
-  - 按 controlmap 上下文整理的 gamepad 原生事件母表
-- [docs/controlmap_combo_profile_zh.md](docs/controlmap_combo_profile_zh.md)
-  - DualPad 自维护的 keyboard-exclusive native combo profile
+- [docs/main_menu_glyph_current_status_zh.md](docs/main_menu_glyph_current_status_zh.md)
+  - 当前主菜单动态图标的真实落地状态，以及当前仓库对 `FavoritesMenu` 的边界
 - [docs/dynamic_glyph_svg_system_plan_zh.md](docs/dynamic_glyph_svg_system_plan_zh.md)
-  - 重新收口的动态图标方案：以 SVG 为真源，兼容异形键、不同尺寸和组合键，长期以 Widget/sprite 为主、HTML `<img>` 为 fallback
-- [docs/ui_input_ownership_arbitration_plan_zh.md](docs/ui_input_ownership_arbitration_plan_zh.md)
-  - 结合当前 `InputModalityTracker` 与 IDA 反编译结果整理的 UI 输入所有权仲裁方案，用来解决键鼠/手柄抢平台与抢图标问题
-- [docs/gameplay_input_ownership_investigation_and_plan_zh.md](docs/gameplay_input_ownership_investigation_and_plan_zh.md)
-  - 基于当前注入链和 IDA 里的 `BSWin32GamepadDevice::Poll / _root.SetPlatform` 真实路径，整理 gameplay 输入所有权应该放在哪一层、为什么不能直接复用 UI owner 状态机
-- [docs/gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](docs/gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
-  - 基于当前代码与 IDA 反编译结果，单独整理 `Sprint` 持续态数字动作为何不该继续走 `DigitalOwner`，以及 gameplay 光标/平台表现交接为何需要独立 handoff 方案
-- [docs/sprint_native_source_mediation_plan_zh.md](docs/sprint_native_source_mediation_plan_zh.md)
-  - 基于最新 `SprintProbe` 日志与当前 poll/backend 实现，单独整理为什么 `Sprint` 还需要 `SingleEmitterHold + native keyboard mediation`，并给出后续实施顺序
+  - 动态图标的长期统一方案；不是当前主菜单已经落地的实现
+- [docs/mod_event_keyboard_helper_backend_zh.md](docs/mod_event_keyboard_helper_backend_zh.md)
+  - `ModEvent` 固定槽位、虚拟键池 ABI、`KeyboardHelperBackend` 开发约定
 - [docs/current_cleanup_risk_review_zh.md](docs/current_cleanup_risk_review_zh.md)
   - 当前主线代码的冗余点、风险复查点，以及外部 GPT 深度研究提示词
-- [docs/agents5_9403e73_customized_refactor_plan_zh.md](docs/agents5_9403e73_customized_refactor_plan_zh.md)
-  - 针对提交 `9403e73` 的定制化后续方案，以及本轮已落实项与剩余观察项
-- [docs/agents5_review_reconciliation_refactor_plan_zh.md](docs/agents5_review_reconciliation_refactor_plan_zh.md)
-  - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划
-- [docs/gameplay_ui_owner_code_ida_refactor_plan_zh.md](docs/gameplay_ui_owner_code_ida_refactor_plan_zh.md)
-  - 结合 `agents.md`、当前代码与 IDA 关键路径整理的开发计划，重点是 UI owner / gameplay owner / provenance-aware recovery 的下一阶段收口顺序
-- [docs/phase2_gameplay_presentation_owner_minimal_plan_zh.md](docs/phase2_gameplay_presentation_owner_minimal_plan_zh.md)
-  - Phase 2 的最小实施方案：为什么上次会失败、这次该如何拆成小步，以及 menu startup / gameplay HUD 的验证口径
 - [src/ARCHITECTURE.md](src/ARCHITECTURE.md)
   - 当前代码模块与主链路总览
+
+更早的方案、审查、验证矩阵和研究材料不再直接堆在这里，统一放到 [docs/DOC_INDEX_zh.md](docs/DOC_INDEX_zh.md) 的对应分组里查阅。
 
 ## 已知后续点
 

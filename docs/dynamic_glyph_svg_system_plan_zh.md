@@ -32,6 +32,35 @@
 
 - [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
 
+## 当前仓库边界（2026-04-17）
+
+这份长期方案在当前仓库里的真实落点仍然很有限：
+
+- 已存在并可继续开发的运行时桥是 [`ScaleformGlyphBridge`](../src/input/glyph/ScaleformGlyphBridge.cpp)
+- 已落地的页面只有 [`Interface/startmenu.swf`](../Interface/startmenu.swf)
+- `FavoritesMenu` 目前仍处于“借用现有 action surface 做动态图标验证”的状态
+
+当前仓库里**没有**：
+
+- `Interface/favoritesmenu.swf`
+- `FavoritesMenu.as`
+- 之前的 `FavoritesMenu` SWF patch 工作区
+- `Favorites.GroupConfirm` 这一类页面专属动作
+- 页面级 glyph / execution broker
+
+因此，本文里所有提到：
+
+- `FavoritesMenu` 的正式页面级改造
+- 组合键 widget 消费
+- 页面内专属 broker
+
+的内容，都应理解成：
+
+- 长期目标
+- 不是当前仓库已经具备的开发起点
+
+如果后面要重新进入 `FavoritesMenu`，第一步应是恢复 SWF 页面源码和补丁工作区，再重新做 artifact inventory，而不是直接从页面 bug 修复开始。
+
 这份方案是对之前 `SWF` 分页 patch 尝试的重新收口。新的目标不是“继续为每个页面找一条临时替换链”，而是先定义一套**统一的动态图标系统**，再让各个页面按自己的能力去消费它。
 
 核心前提：

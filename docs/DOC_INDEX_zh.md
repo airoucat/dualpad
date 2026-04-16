@@ -1,91 +1,99 @@
 ﻿# 文档索引
 
-这份索引只保留当前仍作为主线参考的文档。已经完成的阶段计划、旧实验复盘、被当前主线吸收的 review 汇总都已移除。
+这份索引把文档拆成三类：
 
-## 推荐阅读顺序
+- **当前事实文档**：直接描述仓库里已经存在并正在运行的代码
+- **进行中设计文档**：仍有价值，但属于方案、调查或后续计划
+- **历史资料**：保留给考古、复盘和验证，不再当成首读主线
+
+## 推荐首读
 
 1. [../README.md](../README.md)
 2. [../src/ARCHITECTURE.md](../src/ARCHITECTURE.md)
 3. [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
-4. [mapping_snapshot_atomicity_audit_and_injection_contract_zh.md](mapping_snapshot_atomicity_audit_and_injection_contract_zh.md)
+4. [menu_context_policy_current_status_zh.md](menu_context_policy_current_status_zh.md)
 5. [backend_routing_decisions.md](backend_routing_decisions.md)
-6. [native_pc_event_semantics_zh.md](native_pc_event_semantics_zh.md)
-7. [controlmap_gamepad_event_inventory_zh.md](controlmap_gamepad_event_inventory_zh.md)
-8. [controlmap_combo_profile_zh.md](controlmap_combo_profile_zh.md)
-9. [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
-10. [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
-11. [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
-12. [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)
-13. [gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
-14. [sprint_native_source_mediation_plan_zh.md](sprint_native_source_mediation_plan_zh.md)
-15. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
-16. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
-17. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
-18. [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
-19. [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
-20. [gameplay_ui_owner_code_ida_refactor_plan_zh.md](gameplay_ui_owner_code_ida_refactor_plan_zh.md)
-21. [phase2_gameplay_presentation_owner_minimal_plan_zh.md](phase2_gameplay_presentation_owner_minimal_plan_zh.md)
-22. [phase1_phase4_code_review_findings_zh.md](phase1_phase4_code_review_findings_zh.md)
-23. [phase1_phase4_elegance_followups_zh.md](phase1_phase4_elegance_followups_zh.md)
+6. [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
+7. [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
+8. [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
+9. [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
 
-## 当前主线文档
+## 当前事实文档
 
-### 架构与运行时
+### 运行时主链
 
 - [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
-  - 当前输入主链路，从 `HidReader` 到 `Skyrim Poll` 的正式运行时流程。
+  - 当前输入主链，以及菜单上下文 / 表现层侧支放在哪。
 - [mapping_snapshot_atomicity_audit_and_injection_contract_zh.md](mapping_snapshot_atomicity_audit_and_injection_contract_zh.md)
-  - 对照 AGENTS 旧目标核对映射层 producer-side 原子快照、主线程交付边界和当前注入层契约。
+  - 映射层快照、主线程交付边界和注入层当前契约。
 - [backend_routing_decisions.md](backend_routing_decisions.md)
-  - 当前 backend ownership、routing 以及哪些动作不在正式支持面内。
+  - 当前 backend ownership 与正式支持面。
 - [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
-  - 当前统一动作生命周期合同，以及 planner / backend 的职责边界。
+  - planner、lifecycle 和 backend 的职责边界。
+
+### 菜单上下文与表现层
+
+- [menu_context_policy_current_status_zh.md](menu_context_policy_current_status_zh.md)
+  - `MenuContextPolicy + InputContextNames + DualPadMenuPolicy.ini` 的当前实现状态。
+- [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
+  - 当前主菜单动态图标的真实落地状态和仓库边界。
 
 ### 原生语义与 controlmap
 
 - [native_pc_event_semantics_zh.md](native_pc_event_semantics_zh.md)
-  - 目前已确认的原生 producer / handler 家族与设计结论。
+  - 当前仍依赖的原生 producer / handler 语义。
 - [controlmap_gamepad_event_inventory_zh.md](controlmap_gamepad_event_inventory_zh.md)
-  - 按 vanilla `controlmap` 上下文展开的 gamepad 原生事件清单。
+  - 按 `controlmap` 上下文整理的 gamepad 原生事件母表。
 - [controlmap_combo_profile_zh.md](controlmap_combo_profile_zh.md)
-  - DualPad 运行时覆盖到 `ControlMap` 的 combo-native profile。
+  - DualPad 当前使用的 combo-native overlay profile。
 
-### 动态图标
-
-- [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
-  - 当前主菜单已经落地的动态图标实现状态：仍走 `ScaleformGlyphBridge + DualPad_GetActionGlyphToken + 单个 ButtonArt token` 兼容链。
-- [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
-  - 动态图标的长期统一方案：SVG 做真源，映射层做语义真相源，按 Widget / HTML `<img>` / ButtonArt 兼容层三段落地；这不是当前主菜单已经落地的实现。
-- [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
-  - 结合项目现状与 IDA 反编译结果，对“键鼠/手柄抢输入”做统一的 UI 输入所有权仲裁方案。
-- [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)
-  - 结合当前注入链和 IDA 里 `BSWin32GamepadDevice::Poll / _root.SetPlatform` 的实际路径，说明为什么 UI owner 不能直接管 gameplay，并给出 gameplay owner 的落点与实施顺序。
-- [gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
-  - 单独收 `Sprint` 持续态数字动作 handoff 与 gameplay 光标/平台表现交接问题，明确它们为什么不该继续用 `DigitalOwner` 或阈值补丁硬修。
-- [sprint_native_source_mediation_plan_zh.md](sprint_native_source_mediation_plan_zh.md)
-  - 基于最新 `SprintProbe` 日志、当前 poll/backend 实现和游戏侧 `SprintHandler` 语义，说明为什么 `Sprint` 需要升级成 `SingleEmitterHold + native keyboard mediation`，而不是继续依赖 held OR 或 coarse owner。
-
-### Mod 与清理
+### Mod 与维护
 
 - [mod_event_keyboard_helper_backend_zh.md](mod_event_keyboard_helper_backend_zh.md)
-  - `ModEvent1-24` 的固定槽位 ABI、键池以及 `KeyboardHelperBackend` 口径。
+  - `ModEvent1-24` 的 ABI、虚拟键池和 helper backend 约定。
 - [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
-  - 当前代码仍值得继续观察或精简的点。
-- [agents5_review_reconciliation_refactor_plan_zh.md](agents5_review_reconciliation_refactor_plan_zh.md)
-  - 最新一轮 `agents5.md` 深度研究建议与当前主线的对齐分析，以及下一轮重构计划。
-- [agents5_9403e73_customized_refactor_plan_zh.md](agents5_9403e73_customized_refactor_plan_zh.md)
-  - 基于提交 `9403e73` 和新版 `agents5.md` 的定制化重构方案，按“立即做 / 先验证 / 暂不做”重新分层。
-- [gameplay_ui_owner_code_ida_refactor_plan_zh.md](gameplay_ui_owner_code_ida_refactor_plan_zh.md)
-  - 结合 `agents.md` 观点、当前代码与 IDA 关键路径，对 UI owner / gameplay owner / provenance-aware recovery 的下一阶段开发计划做收口。
-- [phase2_gameplay_presentation_owner_minimal_plan_zh.md](phase2_gameplay_presentation_owner_minimal_plan_zh.md)
-  - 针对 Phase 2 单独拆出的最小实施方案，重点收 `gameplay presentation` 真相源、menu-entry seed/latch、回滚点与测试矩阵。
-- [phase1_phase4_code_review_findings_zh.md](phase1_phase4_code_review_findings_zh.md)
-  - 对照 `gameplay_ui_owner_code_ida_refactor_plan_zh.md` 回看当前 Phase 1-4 实现后的代码审阅结论，重点记录 Phase 2/4 的结构偏差与后续处理顺序。
-- [phase1_phase4_elegance_followups_zh.md](phase1_phase4_elegance_followups_zh.md)
-  - 对当前已修正的 Phase 1-4 再做一轮“优雅性/可维护性”补充审阅，记录剩余结构债与推荐清理顺序。
+  - 当前主线的剩余风险和后续观察点。
+
+## 进行中设计与专项方案
+
+- [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
+  - 动态图标长期统一方案；不是当前仓库已经落地的实现。
+- [ui_input_ownership_arbitration_plan_zh.md](ui_input_ownership_arbitration_plan_zh.md)
+  - UI 输入所有权仲裁方案。
+- [gameplay_input_ownership_investigation_and_plan_zh.md](gameplay_input_ownership_investigation_and_plan_zh.md)
+  - gameplay 输入所有权的分层调查与实施顺序。
+- [gameplay_sustained_digital_and_cursor_handoff_plan_zh.md](gameplay_sustained_digital_and_cursor_handoff_plan_zh.md)
+  - `Sprint` 和 gameplay cursor/platform handoff 的专项方案。
+- [sprint_native_source_mediation_plan_zh.md](sprint_native_source_mediation_plan_zh.md)
+  - `Sprint` 的 `SingleEmitterHold + native keyboard mediation` 方案。
+
+## 验证、计划与专项审查
+
+- [plans/menu_context_runtime_policy_plan_zh.md](plans/menu_context_runtime_policy_plan_zh.md)
+  - 菜单策略功能的实施计划记录；当前实现请优先看 `menu_context_policy_current_status_zh.md`。
+- [verification/menu_context_runtime_policy_matrix_zh.md](verification/menu_context_runtime_policy_matrix_zh.md)
+  - 菜单策略的验证矩阵。
+- [reviews/README_zh.md](reviews/README_zh.md)
+  - 审查资料目录入口。
+- [reviews/2026-04-09-device-capture-protocol-review_zh.md](reviews/2026-04-09-device-capture-protocol-review_zh.md)
+- [reviews/2026-04-09-state-shaping-event-generation-review_zh.md](reviews/2026-04-09-state-shaping-event-generation-review_zh.md)
+- [reviews/2026-04-10-binding-action-semantics-review_zh.md](reviews/2026-04-10-binding-action-semantics-review_zh.md)
+- [reviews/2026-04-10-owner-arbitration-gameplay-injection-review_zh.md](reviews/2026-04-10-owner-arbitration-gameplay-injection-review_zh.md)
+
+## 历史资料
+
+这些文档保留给复盘、考古或重新提炼结论时使用，默认不作为当前主线说明：
+
+- `agents5_*`
+- `gameplay_ui_owner_code_ida_refactor_plan_zh.md`
+- `phase*`
+- `brainstorms/`
+- `ideation/`
+- `research/`
+- 其它未进入上面两类的临时笔记或阶段计划
 
 ## 维护规则
 
-- 当前文档应优先描述“正在运行的正式主线”，不要继续把旧实验路线和现行方案混写。
-- 新的阶段性研究如果只是临时草案，优先放到单独临时文件或外部记录，不要直接混入这份索引。
-- 如果以后再次产生大量历史文档，建议单独建 `archive/`，避免根目录再堆积一批失效说明。
+- 当前事实文档必须优先描述“仓库里现在真实存在什么”，不要默认继承旧工作区或上一轮 handoff。
+- 设计文档要明确写清“已实现”与“计划中”的边界，避免把方案文档写成现状说明。
+- 历史资料可以保留，但不应继续混入推荐首读顺序。

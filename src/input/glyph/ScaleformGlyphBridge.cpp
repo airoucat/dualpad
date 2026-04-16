@@ -3,6 +3,7 @@
 #include "input/glyph/ScaleformGlyphBridge.h"
 
 #include "input/BindingManager.h"
+#include "input/InputContextNames.h"
 #include "input/mapping/PadEvent.h"
 
 #include <RE/F/FxDelegateArgs.h>
@@ -66,6 +67,7 @@ namespace dualpad::input::glyph
                 return std::nullopt;
             }
         }
+
     }
 
     ScaleformGlyphBridge& ScaleformGlyphBridge::GetSingleton()
@@ -103,6 +105,7 @@ namespace dualpad::input::glyph
         }
 
         processor->Process("DualPad_GetActionGlyphToken", HandleGetActionGlyphToken);
+        processor->Process("DualPad_GetActionGlyph", HandleGetActionGlyph);
     }
 
     void ScaleformGlyphBridge::HandleGetActionGlyphToken(const RE::FxDelegateArgs& args)
@@ -110,19 +113,20 @@ namespace dualpad::input::glyph
         RE::FxResponseArgs<1> response;
         response.Add(RE::GFxValue(""));
 
+        const char* actionId = nullptr;
+        const char* contextName = nullptr;
         if (args.GetArgCount() < 2 || !args[0].IsString() || !args[1].IsString()) {
             args.Respond(response);
             return;
         }
-
-        const auto* actionId = args[0].GetString();
-        const auto* contextName = args[1].GetString();
+        actionId = args[0].GetString();
+        contextName = args[1].GetString();
         if (!actionId || !contextName) {
             args.Respond(response);
             return;
         }
 
-        const auto context = ParseContextName(contextName).value_or(InputContext::Menu);
+        const auto context = ParseInputContextName(contextName).value_or(InputContext::Menu);
         const auto token = ResolveActionToken(actionId, context);
         if (token) {
             response = RE::FxResponseArgs<1>();
@@ -141,6 +145,71 @@ namespace dualpad::input::glyph
         }
 
         args.Respond(response);
+    }
+
+    void ScaleformGlyphBridge::HandleGetActionGlyph(const RE::FxDelegateArgs& args)
+    {
+        RE::GFxValue emptyResult;
+        emptyResult.SetNull();
+
+        const char* actionId = nullptr;
+        const char* contextName = nullptr;
+        if (args.GetArgCount() < 2 || !args[0].IsString() || !args[1].IsString()) {
+            args.Respond(emptyResult);
+            return;
+        }
+        actionId = args[0].GetString();
+        contextName = args[1].GetString();
+        if (!actionId || !contextName) {
+            args.Respond(emptyResult);
+            return;
+        }
+        const auto context = ParseInputContextName(contextName).value_or(InputContext::Menu);
+
+        auto* movie = args.GetMovie();
+        if (!movie) {
+            logger::info(
+                "[DualPad][GlyphBridge] GameDelegate descriptor action={} context={} result=<null movie>",
+                actionId,
+                contextName);
+            args.Respond(emptyResult);
+            return;
+        }
+
+        RE::GFxValue descriptor;
+        movie->CreateObject(&descriptor);
+
+        RE::GFxValue okValue(false);
+        RE::GFxValue tokenValue("");
+        RE::GFxValue semanticIdValue(actionId);
+        RE::GFxValue contextValue(contextName);
+
+        const auto token = ResolveActionToken(actionId, context);
+        if (token) {
+            okValue = RE::GFxValue(true);
+            tokenValue = RE::GFxValue(token->c_str());
+        }
+
+        descriptor.SetMember("ok", okValue);
+        descriptor.SetMember("buttonArtToken", tokenValue);
+        descriptor.SetMember("semanticId", semanticIdValue);
+        descriptor.SetMember("contextName", contextValue);
+
+        if (token) {
+            logger::info(
+                "[DualPad][GlyphBridge] GameDelegate descriptor action={} context={} ok=true buttonArtToken={}",
+                actionId,
+                contextName,
+                *token);
+        }
+        else {
+            logger::info(
+                "[DualPad][GlyphBridge] GameDelegate descriptor action={} context={} ok=false buttonArtToken=<none>",
+                actionId,
+                contextName);
+        }
+
+        args.Respond(descriptor);
     }
 
     bool ScaleformGlyphBridge::AttachToMenu(std::string_view menuName)
@@ -168,45 +237,6 @@ namespace dualpad::input::glyph
 
         logger::info("[DualPad][GlyphBridge] Registered GameDelegate glyph handler for {}", menuName);
         return true;
-    }
-
-    std::optional<InputContext> ScaleformGlyphBridge::ParseContextName(std::string_view contextName)
-    {
-        if (contextName == "Menu" || contextName == RE::MainMenu::MENU_NAME) {
-            return InputContext::Menu;
-        }
-        if (contextName == "MapMenu" || contextName == "Map Menu") {
-            return InputContext::MapMenu;
-        }
-        if (contextName == "JournalMenu" || contextName == "Journal Menu") {
-            return InputContext::JournalMenu;
-        }
-        if (contextName == "DialogueMenu" || contextName == "Dialogue Menu") {
-            return InputContext::DialogueMenu;
-        }
-        if (contextName == "FavoritesMenu" || contextName == "Favorites Menu") {
-            return InputContext::FavoritesMenu;
-        }
-        if (contextName == "BookMenu" || contextName == "Book Menu") {
-            return InputContext::BookMenu;
-        }
-        if (contextName == "MessageBoxMenu" || contextName == "MessageBox Menu") {
-            return InputContext::MessageBoxMenu;
-        }
-        if (contextName == "QuantityMenu" || contextName == "Quantity Menu") {
-            return InputContext::QuantityMenu;
-        }
-        if (contextName == "ContainerMenu" || contextName == "Container Menu") {
-            return InputContext::ContainerMenu;
-        }
-        if (contextName == "BarterMenu" || contextName == "Barter Menu") {
-            return InputContext::BarterMenu;
-        }
-        if (contextName == "Gameplay") {
-            return InputContext::Gameplay;
-        }
-
-        return std::nullopt;
     }
 
     std::optional<std::string> ScaleformGlyphBridge::ResolveActionToken(std::string_view actionId, InputContext context)

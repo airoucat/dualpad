@@ -8,6 +8,7 @@
 
 - `ScaleformGlyphBridge`
 - `DualPad_GetActionGlyphToken`
+- `DualPad_GetActionGlyph`
 - **单个 ButtonArt token 兼容链**
 
 也就是说，主菜单现在还不是：
@@ -24,10 +25,15 @@
 
 当前流程是：
 
-1. 主菜单 SWF 通过 GameDelegate 调用 `DualPad_GetActionGlyphToken(actionId, contextName)`
+1. 主菜单 SWF 通过 GameDelegate 调用 `DualPad_GetActionGlyphToken(actionId, contextName)`，或者调用 `DualPad_GetActionGlyph(actionId, contextName)`
 2. `ScaleformGlyphBridge::ResolveActionToken(...)` 先向 `BindingManager` 查询当前 action 在对应 `InputContext` 下的 trigger
 3. `ScaleformGlyphBridge::TriggerToButtonArtToken(...)` 把 trigger 映射成 **一个** ButtonArt token
-4. SWF 继续按原生 `ButtonArt / MappedButton` 思路显示图标
+4. `DualPad_GetActionGlyph` 当前只是在 token 外面包一层最小 descriptor：
+   - `ok`
+   - `buttonArtToken`
+   - `semanticId`
+   - `contextName`
+5. 主菜单 SWF 目前仍然按原生 `ButtonArt / MappedButton` 思路显示图标
 
 因此，当前主菜单图标替换的本质是：
 
@@ -50,6 +56,32 @@
 - `RightTrigger`
 
 做了 `LT / RT` token 映射。
+
+## 当前仓库边界
+
+当前仓库里真正已经落地、可直接继续开发的动态图标资产只有：
+
+- [`src/input/glyph/ScaleformGlyphBridge.cpp`](../src/input/glyph/ScaleformGlyphBridge.cpp)
+- [`config/DualPadBindings.ini`](../config/DualPadBindings.ini)
+- [`Interface/startmenu.swf`](../Interface/startmenu.swf)
+
+当前**不在仓库**里的内容包括：
+
+- `Interface/favoritesmenu.swf`
+- `FavoritesMenu.as`
+- `MappedButton.as`
+- `ButtonPanel.as`
+- 之前那套 `FavoritesMenu` 专项 SWF patch 工作区
+
+另外，当前 [`config/DualPadBindings.ini`](../config/DualPadBindings.ini) 里的 `[FavoritesMenu]` 额外按键只是：
+
+- 临时动态图标验证映射
+
+它的作用是确认页面底栏提示是否跟着映射层走，不代表仓库里已经存在：
+
+- `Favorites.GroupConfirm`
+- 页面级 glyph broker
+- 页面级 execution broker
 
 ## 当前还不支持的内容
 
@@ -100,3 +132,9 @@
 - `GlyphDescriptor`
 - Widget / image 渲染
 - `ButtonArt` 只保留为兼容层
+
+如果后面重新回到 `FavoritesMenu` 页面级改造，第一步也不应该直接修页面逻辑，而应先恢复：
+
+- 对应 SWF 页面源码
+- 对应 patch 工作区
+- 当前页面 artifact inventory

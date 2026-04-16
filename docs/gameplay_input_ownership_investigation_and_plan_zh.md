@@ -35,13 +35,13 @@ HidReader
 
 直接相关代码：
 
-- [HidReader.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/HidReader.cpp)
-- [PadEventSnapshotDispatcher.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/PadEventSnapshotDispatcher.cpp)
-- [PadEventSnapshotProcessor.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/PadEventSnapshotProcessor.cpp)
-- [SyntheticStateReducer.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/SyntheticStateReducer.cpp)
-- [AuthoritativePollState.h](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/AuthoritativePollState.h)
-- [NativeButtonCommitBackend.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/NativeButtonCommitBackend.cpp)
-- [InputFramePump.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/InputFramePump.cpp)
+- [HidReader.cpp](../src/input/HidReader.cpp)
+- [PadEventSnapshotDispatcher.cpp](../src/input/injection/PadEventSnapshotDispatcher.cpp)
+- [PadEventSnapshotProcessor.cpp](../src/input/injection/PadEventSnapshotProcessor.cpp)
+- [SyntheticStateReducer.cpp](../src/input/injection/SyntheticStateReducer.cpp)
+- [AuthoritativePollState.h](../src/input/AuthoritativePollState.h)
+- [NativeButtonCommitBackend.cpp](../src/input/backend/NativeButtonCommitBackend.cpp)
+- [InputFramePump.cpp](../src/input/InputFramePump.cpp)
 
 而 `InputModalityTracker` 当前控制的是：
 
@@ -52,8 +52,8 @@ HidReader
 
 相关代码：
 
-- [InputModalityTracker.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/InputModalityTracker.cpp)
-- [InputModalityTracker.h](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/InputModalityTracker.h)
+- [InputModalityTracker.cpp](../src/input/InputModalityTracker.cpp)
+- [InputModalityTracker.h](../src/input/InputModalityTracker.h)
 
 这说明当前项目里其实已经天然存在两条不同层级的链：
 
@@ -203,7 +203,7 @@ gameplay 里真正冲突的是：
 
 当前最好的落点是：
 
-- [PadEventSnapshotProcessor.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/PadEventSnapshotProcessor.cpp)
+- [PadEventSnapshotProcessor.cpp](../src/input/injection/PadEventSnapshotProcessor.cpp)
 
 因为这里刚好同时拥有：
 
@@ -412,11 +412,11 @@ gameplay 里真正冲突的是：
 
 等本轮 gameplay ownership 主计划落完后，这里应替换成 provenance-aware 的合成规则：
 
-1. 在 [PadEventSnapshot.h](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/PadEventSnapshot.h) 里补充 coalesce 来源元数据
+1. 在 [PadEventSnapshot.h](../src/input/injection/PadEventSnapshot.h) 里补充 coalesce 来源元数据
    - 例如 `crossContextCoalesced`
    - 或 `firstContext / firstContextEpoch`
-2. 在 [PadEventSnapshotDispatcher.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/PadEventSnapshotDispatcher.cpp) 的 `CoalescePendingLocked()` 中保留这些 provenance 信息
-3. 在 [PadEventSnapshotProcessor.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/PadEventSnapshotProcessor.cpp) 中把“缺失 press 合成”改成：
+2. 在 [PadEventSnapshotDispatcher.cpp](../src/input/injection/PadEventSnapshotDispatcher.cpp) 的 `CoalescePendingLocked()` 中保留这些 provenance 信息
+3. 在 [PadEventSnapshotProcessor.cpp](../src/input/injection/PadEventSnapshotProcessor.cpp) 中把“缺失 press 合成”改成：
    - 仅允许在**同上下文连续 snapshot** 中发生
    - 对跨上下文 coalesce 的 snapshot 禁止补边
 
@@ -432,22 +432,22 @@ gameplay 里真正冲突的是：
 本轮已落地的 gameplay ownership 范围如下：
 
 - `LookOwner`
-  - 在 [GameplayOwnershipCoordinator.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/GameplayOwnershipCoordinator.cpp) 中按 `mouse look` 与 `right-stick look` 做通道级 owner 仲裁
+  - 在 [GameplayOwnershipCoordinator.cpp](../src/input/injection/GameplayOwnershipCoordinator.cpp) 中按 `mouse look` 与 `right-stick look` 做通道级 owner 仲裁
   - 最终在 `PublishAnalogState(...)` 之前只对 `lookX / lookY` 做 gating
 - `MoveOwner`
-  - 依据 [InputModalityTracker.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/InputModalityTracker.cpp) 中按 controlmap 读取到的 `Forward / Back / Strafe Left / Strafe Right` 键盘事实
+  - 依据 [InputModalityTracker.cpp](../src/input/InputModalityTracker.cpp) 中按 controlmap 读取到的 `Forward / Back / Strafe Left / Strafe Right` 键盘事实
   - 在 `GameplayOwnershipCoordinator` 中只对 `moveX / moveY` 做 gating
 - `CombatOwner`
   - 依据键盘/鼠标战斗键事实
   - 当前只对 synthetic trigger 轴做 gating
 - `DigitalOwner`（Phase A）
   - 当前只覆盖现有 `gateAware` gameplay digital family
-  - 也就是 [FrameActionPlanner.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/FrameActionPlanner.cpp) 和 [ActionLifecycleCoordinator.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/ActionLifecycleCoordinator.cpp) 里已经标成 `gateAware` 的动作
+  - 也就是 [FrameActionPlanner.cpp](../src/input/backend/FrameActionPlanner.cpp) 和 [ActionLifecycleCoordinator.cpp](../src/input/backend/ActionLifecycleCoordinator.cpp) 里已经标成 `gateAware` 的动作
   - 目前实际范围是：`Game.Jump / Game.Activate / Game.Sprint`
   - `InputModalityTracker` 会记录这些动作对应的 KBM down 事实
-  - [GameplayOwnershipCoordinator.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/injection/GameplayOwnershipCoordinator.cpp) 会发布 `DigitalOwner`
-  - [NativeButtonCommitBackend.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/NativeButtonCommitBackend.cpp) 会在 `DigitalOwner = KeyboardMouse` 时抑制新的 synthetic gameplay digital 提交
-  - 当 `DigitalOwner` 从 `Gamepad` 切到 `KeyboardMouse` 时，会通过 [PollCommitCoordinator.cpp](/C:/Users/xuany/.codex/worktrees/237f/dualPad/src/input/backend/PollCommitCoordinator.cpp) 对现有 `gateAware` gameplay slot 做 `ForceCancel`
+  - [GameplayOwnershipCoordinator.cpp](../src/input/injection/GameplayOwnershipCoordinator.cpp) 会发布 `DigitalOwner`
+  - [NativeButtonCommitBackend.cpp](../src/input/backend/NativeButtonCommitBackend.cpp) 会在 `DigitalOwner = KeyboardMouse` 时抑制新的 synthetic gameplay digital 提交
+  - 当 `DigitalOwner` 从 `Gamepad` 切到 `KeyboardMouse` 时，会通过 [PollCommitCoordinator.cpp](../src/input/backend/PollCommitCoordinator.cpp) 对现有 `gateAware` gameplay slot 做 `ForceCancel`
 
 当前明确还未完成的部分：
 
