@@ -68,6 +68,10 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 
 ## 文档入口
 
+- [docs/authoritative-baseline/README.md](docs/authoritative-baseline/README.md)
+  - 当前 workflow current truth 入口；先看默认阅读顺序、工作包和 builder memory
+- [docs/harness/dualpad-builder.md](docs/harness/dualpad-builder.md)
+  - `harness + ce + graphify` 在本仓库的默认执行协议
 - [docs/DOC_INDEX_zh.md](docs/DOC_INDEX_zh.md)
   - 当前文档总索引；已经按“当前事实 / 进行中设计 / 历史资料”重新分层
 - [docs/current_input_pipeline_zh.md](docs/current_input_pipeline_zh.md)

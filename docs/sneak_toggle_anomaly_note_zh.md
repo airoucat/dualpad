@@ -7,7 +7,7 @@
 
 ## Current Classification In Code
 
-- [`C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\NativeActionDescriptor.cpp`](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\NativeActionDescriptor.cpp)
+- [`src/input/backend/NativeActionDescriptor.cpp`](../src/input/backend/NativeActionDescriptor.cpp)
 - `Game.Sneak -> ActionOutputContract::Toggle`
 - `Game.Sneak -> ActionLifecyclePolicy::ToggleOwner`
 

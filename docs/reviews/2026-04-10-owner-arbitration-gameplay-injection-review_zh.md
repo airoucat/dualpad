@@ -17,7 +17,7 @@
 - `src/input/InputContext.*`
 - `docs/current_input_pipeline_zh.md`
 - `docs/phase2_gameplay_presentation_owner_minimal_plan_zh.md`
-- `docs/phase1_phase4_code_review_findings_zh.md`
+历史背景材料（仅用于考古，不作为当前收口依据）：`docs/phase1_phase4_code_review_findings_zh.md`
 
 ## 前提假设
 

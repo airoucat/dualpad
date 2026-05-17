@@ -58,6 +58,55 @@ namespace dualpad::input
 
             return !upstreamHook.HasRecentPollCallActivity(stalePollWindowMs);
         }
+
+        DrainTelemetryContext BuildDrainTelemetryContext(DrainReason reason, std::uint64_t stalePollWindowMs)
+        {
+            auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
+            const auto lastPollAgeMs = upstreamHook.GetLastPollCallAgeMs();
+            return DrainTelemetryContext{
+                .reason = reason,
+                .routeState = ResolveUpstreamRouteState(
+                    upstreamHook.IsRouteActive(),
+                    lastPollAgeMs,
+                    stalePollWindowMs),
+                .lastPollAgeMs = lastPollAgeMs,
+                .hookInstalled = upstreamHook.IsInstalled()
+            };
+        }
+
+        std::string FormatLastPollAgeMs(const DrainTelemetryContext& telemetryContext)
+        {
+            return telemetryContext.lastPollAgeMs ? std::to_string(*telemetryContext.lastPollAgeMs) : "none";
+        }
+
+        void LogDrainTelemetry(
+            const DrainTelemetryContext& telemetryContext,
+            std::size_t budget,
+            std::size_t drained,
+            std::size_t pendingBefore,
+            std::size_t pendingAfter)
+        {
+            if (!RuntimeConfig::GetSingleton().LogRouteHealth()) {
+                return;
+            }
+
+            if (telemetryContext.reason == DrainReason::UpstreamPoll &&
+                drained == 0 &&
+                pendingBefore == 0) {
+                return;
+            }
+
+            logger::info(
+                "[DualPad][RouteHealth] drain reason={} routeState={} lastPollAgeMs={} hookInstalled={} budget={} drained={} pendingBefore={} pendingAfter={}",
+                ToString(telemetryContext.reason),
+                ToString(telemetryContext.routeState),
+                FormatLastPollAgeMs(telemetryContext),
+                telemetryContext.hookInstalled,
+                budget,
+                drained,
+                pendingBefore,
+                pendingAfter);
+        }
     }
 
     PadEventSnapshotDispatcher& PadEventSnapshotDispatcher::GetSingleton()
@@ -126,11 +175,17 @@ namespace dualpad::input
         if (shouldScheduleTask) {
             ScheduleDrainTask();
             if (scheduledByHighWaterFallback) {
+                const auto telemetry = BuildDrainTelemetryContext(
+                    DrainReason::TaskFallbackHighWater,
+                    kUpstreamTaskFallbackPollStaleMs);
                 logger::warn(
-                    "[DualPad][Snapshot] Scheduled high-water fallback drain task pending={} threshold={} stalePollWindowMs={}",
+                    "[DualPad][Snapshot] Scheduled high-water fallback drain task pending={} threshold={} stalePollWindowMs={} routeState={} lastPollAgeMs={} hookInstalled={}",
                     pendingCountAfterQueue,
                     kUpstreamTaskFallbackHighWatermark,
-                    kUpstreamTaskFallbackPollStaleMs);
+                    kUpstreamTaskFallbackPollStaleMs,
+                    ToString(telemetry.routeState),
+                    FormatLastPollAgeMs(telemetry),
+                    telemetry.hookInstalled);
             }
         }
 
@@ -149,13 +204,16 @@ namespace dualpad::input
         SubmitSnapshot(snapshot);
     }
 
-    std::size_t PadEventSnapshotDispatcher::DrainOnMainThread(std::size_t maxSnapshots)
+    std::size_t PadEventSnapshotDispatcher::DrainOnMainThread(
+        std::size_t maxSnapshots,
+        const DrainTelemetryContext* telemetryContext)
     {
         if (maxSnapshots == 0) {
             return 0;
         }
 
         std::size_t processedCount = 0;
+        std::size_t pendingBefore = 0;
         for (; processedCount < maxSnapshots; ++processedCount) {
             PadEventSnapshot snapshot{};
             std::uint64_t droppedSnapshots = 0;
@@ -163,7 +221,14 @@ namespace dualpad::input
                 std::scoped_lock lock(_mutex);
                 if (_pendingCount == 0) {
                     _drainTaskQueued.store(false, std::memory_order_release);
+                    if (telemetryContext) {
+                        LogDrainTelemetry(*telemetryContext, maxSnapshots, processedCount, pendingBefore, 0);
+                    }
                     return processedCount;
+                }
+
+                if (processedCount == 0) {
+                    pendingBefore = _pendingCount;
                 }
 
                 droppedSnapshots = _droppedSnapshots;
@@ -222,12 +287,22 @@ namespace dualpad::input
         if (scheduleFollowUpTask) {
             ScheduleDrainTask();
             if (scheduledByHighWaterFallback) {
+                const auto telemetry = BuildDrainTelemetryContext(
+                    DrainReason::TaskFallbackHighWater,
+                    kUpstreamTaskFallbackPollStaleMs);
                 logger::warn(
-                    "[DualPad][Snapshot] Queued high-water follow-up drain task pending={} threshold={} stalePollWindowMs={}",
+                    "[DualPad][Snapshot] Queued high-water follow-up drain task pending={} threshold={} stalePollWindowMs={} routeState={} lastPollAgeMs={} hookInstalled={}",
                     pendingAfterDrain,
                     kUpstreamTaskFallbackHighWatermark,
-                    kUpstreamTaskFallbackPollStaleMs);
+                    kUpstreamTaskFallbackPollStaleMs,
+                    ToString(telemetry.routeState),
+                    FormatLastPollAgeMs(telemetry),
+                    telemetry.hookInstalled);
             }
+        }
+
+        if (telemetryContext) {
+            LogDrainTelemetry(*telemetryContext, maxSnapshots, processedCount, pendingBefore, pendingAfterDrain);
         }
 
         return processedCount;
@@ -253,7 +328,11 @@ namespace dualpad::input
         }
 
         taskInterface->AddTask([]() {
-            PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kTaskDrainBudget);
+            auto& dispatcher = PadEventSnapshotDispatcher::GetSingleton();
+            const auto telemetry = BuildDrainTelemetryContext(
+                dispatcher.IsFramePumpEnabled() ? DrainReason::TaskFallbackHighWater : DrainReason::FramePumpDisabled,
+                kUpstreamTaskFallbackPollStaleMs);
+            dispatcher.DrainOnMainThread(kTaskDrainBudget, &telemetry);
             });
     }
 

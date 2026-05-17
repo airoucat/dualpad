@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/injection/PadEventSnapshot.h"
+#include "input/injection/RouteHealthContract.h"
 
 #include <array>
 #include <atomic>
@@ -15,7 +16,10 @@ namespace dualpad::input
 
         void SubmitSnapshot(const PadEventSnapshot& snapshot);
         void SubmitReset();
-        std::size_t DrainOnMainThread(std::size_t maxSnapshots = kDefaultDrainBudget);
+        static constexpr std::size_t DefaultDrainBudget() { return kDefaultDrainBudget; }
+        std::size_t DrainOnMainThread(
+            std::size_t maxSnapshots = kDefaultDrainBudget,
+            const DrainTelemetryContext* telemetryContext = nullptr);
         void SetFramePumpEnabled(bool enabled);
         bool IsFramePumpEnabled() const;
 

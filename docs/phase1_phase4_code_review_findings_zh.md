@@ -1,5 +1,9 @@
 # Phase 1-4 代码审阅结论
 
+> 注意：本文属于 docs/DOC_INDEX_zh.md 里的历史资料，只保留为当时审阅快照与问题考古。
+> 它不得单独用作当前 Phase 状态、当前 handoff 是否收口、或当前 builder 状态判断依据。
+> 如与 docs/authoritative-baseline/、.dualpad-builder/ 或更新的专项 review 结论冲突，以后者为准。
+
 这份文档用于记录一次“按 [gameplay_ui_owner_code_ida_refactor_plan_zh.md](gameplay_ui_owner_code_ida_refactor_plan_zh.md) 回看当前实现”的代码审阅结论。
 
 目标不是重写计划，而是回答三个问题：

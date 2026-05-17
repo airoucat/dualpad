@@ -22,7 +22,7 @@
 运行时部署文件：
 
 - `Data/SKSE/Plugins/DualPadControlMap.txt`
-- 开发环境当前路径：`G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPadControlMap.txt`
+- 开发环境当前路径：见 `AGENTS.win.md` / `AGENTS.mac.md` 的本机部署说明；共享文档不固定机器私有绝对路径
 
 ## 运行时策略
 

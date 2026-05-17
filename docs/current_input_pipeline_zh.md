@@ -1,4 +1,4 @@
-﻿# 当前输入主链路
+# 当前输入主链路
 
 本文只描述当前代码中的正式运行时链路，不再展开已经退役的 `keyboard-native`、旧 `native button splice` 或 compatibility fallback 主线。
 
@@ -131,6 +131,21 @@ flowchart TB
 - `wButtons` 派生由 `XInputButtonSerialization` 在 bridge / debug 侧按需计算。
 
 当前桥接层不再承担 gameplay 语义补做。
+
+当前偏差说明：
+
+- use_upstream_gamepad_hook=false 仍作为开发/排障期 rollback gate 保留，不是当前推荐主线。
+- InputFramePump 在 upstream poll activity stale 时仍会做一次 assist drain；这属于当前过渡兼容行为，不等于正式单点 drain seam 已完全收口。
+- 因此，当前 repo reality 已经有推荐主线，但还没有达到除主线外零额外执行分叉的最终收口状态。
+
+当前 route-health 合同：
+
+- `route_state` 当前只允许 `active_fresh`、`active_stale`、`disabled`。
+- `active_fresh`：official upstream route active，且 `last_poll_age_ms <= 250`；当前对应的正式 `drain_reason` 是 `upstream_poll`。
+- `active_stale`：official upstream route active，但 poll activity 已超过 250ms 或尚未观察到 recent poll；当前兼容下仍允许 `frame_pump_assist_stale`，high-water task fallback 也必须带着当次实际 `route_state` 记录。
+- `disabled`：official upstream route inactive；当前 fallback drain 仍允许存在，但必须显式记为 `frame_pump_disabled`，不能再混成“普通 manual drain”。
+- `drain_reason` 当前冻结为：`upstream_poll`、`frame_pump_assist_stale`、`task_fallback_high_water`、`frame_pump_disabled`。
+- 若 `DualPadDebug.ini` 里开启 `log_route_health=true`，route-health 诊断日志至少要输出：`route_state`、`drain_reason`、`last_poll_age_ms`、`hook_installed`、`budget`、`drained`、`pending_before`、`pending_after`。
 
 ### 6. Keyboard helper / Mod 事件线
 

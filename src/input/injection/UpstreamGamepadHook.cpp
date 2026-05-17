@@ -11,6 +11,7 @@
 #include "input/XInputStateBridge.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
+#include "input/injection/RouteHealthContract.h"
 
 namespace logger = SKSE::log;
 
@@ -46,8 +47,15 @@ namespace dualpad::input
                     logger::info("[DualPad][UpstreamGamepad] Deferred HID reader start released via first poll activity");
                 }
 
-                UpstreamGamepadHook::GetSingleton().NotePollCallActivity();
-                PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kUpstreamDrainBudget);
+                auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
+                upstreamHook.NotePollCallActivity();
+                const DrainTelemetryContext telemetry{
+                    .reason = DrainReason::UpstreamPoll,
+                    .routeState = UpstreamRouteState::ActiveFresh,
+                    .lastPollAgeMs = std::uint64_t{ 0 },
+                    .hookInstalled = upstreamHook.IsInstalled()
+                };
+                PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kUpstreamDrainBudget, &telemetry);
                 (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
                 const auto result = FillSyntheticXInputState(currentState);
 
@@ -200,14 +208,24 @@ namespace dualpad::input
         _lastPollCallTickMs.store(GetTickCount64(), std::memory_order_relaxed);
     }
 
-    bool UpstreamGamepadHook::HasRecentPollCallActivity(std::uint64_t maxAgeMs) const
+    std::optional<std::uint64_t> UpstreamGamepadHook::GetLastPollCallAgeMs() const
     {
         const auto lastTick = _lastPollCallTickMs.load(std::memory_order_relaxed);
         if (lastTick == 0) {
-            return false;
+            return std::nullopt;
         }
 
         const auto now = GetTickCount64();
-        return now >= lastTick && (now - lastTick) <= maxAgeMs;
+        if (now < lastTick) {
+            return std::nullopt;
+        }
+
+        return now - lastTick;
+    }
+
+    bool UpstreamGamepadHook::HasRecentPollCallActivity(std::uint64_t maxAgeMs) const
+    {
+        const auto lastPollAgeMs = GetLastPollCallAgeMs();
+        return lastPollAgeMs && *lastPollAgeMs <= maxAgeMs;
     }
 }

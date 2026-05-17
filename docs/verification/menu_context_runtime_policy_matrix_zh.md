@@ -21,7 +21,7 @@
      - `log_unknown_menu_probe = true`
      - `log_unknown_menu_decision = true`
 3. 主要观察日志：
-   - `C:/Users/xuany/Documents/My Games/Skyrim Special Edition/SKSE/DualPad.log`
+   - 本机日志路径只写在 `AGENTS.win.md` 或 `AGENTS.mac.md`，共享文档不再硬编码绝对路径
 
 ## 场景矩阵
 

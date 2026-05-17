@@ -33,9 +33,9 @@
 
 从当前代码和日志看，下面这条链路已经能把 synthetic gamepad sprint 保持住：
 
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\PollCommitCoordinator.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\PollCommitCoordinator.cpp)
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\NativeButtonCommitBackend.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\NativeButtonCommitBackend.cpp)
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\UpstreamGamepadHook.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\UpstreamGamepadHook.cpp)
+- [`src/input/backend/PollCommitCoordinator.cpp`](../src/input/backend/PollCommitCoordinator.cpp)
+- [`src/input/backend/NativeButtonCommitBackend.cpp`](../src/input/backend/NativeButtonCommitBackend.cpp)
+- [`src/input/injection/UpstreamGamepadHook.cpp`](../src/input/injection/UpstreamGamepadHook.cpp)
 
 日志里在混合输入场景下仍能看到：
 
@@ -53,11 +53,11 @@
 
 我们现在记录了键盘/鼠标上的 sprint 事实：
 
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\InputModalityTracker.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\InputModalityTracker.cpp)
+- [`src/input/InputModalityTracker.cpp`](../src/input/InputModalityTracker.cpp)
 
 也把这些事实同步进了 `Sprint` slot contributor：
 
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\NativeButtonCommitBackend.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\NativeButtonCommitBackend.cpp)
+- [`src/input/backend/NativeButtonCommitBackend.cpp`](../src/input/backend/NativeButtonCommitBackend.cpp)
 
 但这层同步并不会阻止：
 
@@ -65,11 +65,11 @@
 
 当前代码里也没有现成机制能做到“只拦住 Sprint 的原生键盘事件”：
 
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\SourceBlockCoordinator.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\SourceBlockCoordinator.cpp)
+- [`src/input/injection/SourceBlockCoordinator.cpp`](../src/input/injection/SourceBlockCoordinator.cpp)
   - 只阻止我们自己的 pad snapshot / synthetic source
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\KeyboardHelperBackend.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\KeyboardHelperBackend.cpp)
+- [`src/input/backend/KeyboardHelperBackend.cpp`](../src/input/backend/KeyboardHelperBackend.cpp)
   - 目前只面向 helper key pool，不面向 gameplay 原生键位
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\SeInputEventQueueAccess.h](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\SeInputEventQueueAccess.h)
+- [`src/input/injection/SeInputEventQueueAccess.h`](../src/input/injection/SeInputEventQueueAccess.h)
   - 说明我们有潜在的 queue-level 入口，但还没落实现
 
 ---
@@ -93,8 +93,8 @@
 
 CommonLib 头文件已经表明：
 
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\lib\commonlibsse-ng\include\RE\S\SprintHandler.h](C:\Users\xuany\.codex\worktrees\237f\dualPad\lib\commonlibsse-ng\include\RE\S\SprintHandler.h)
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\lib\commonlibsse-ng\include\RE\H\HeldStateHandler.h](C:\Users\xuany\.codex\worktrees\237f\dualPad\lib\commonlibsse-ng\include\RE\H\HeldStateHandler.h)
+- [`lib/commonlibsse-ng/include/RE/S/SprintHandler.h`](../lib/commonlibsse-ng/include/RE/S/SprintHandler.h)
+- [`lib/commonlibsse-ng/include/RE/H/HeldStateHandler.h`](../lib/commonlibsse-ng/include/RE/H/HeldStateHandler.h)
 
 也就是说，对游戏来说：
 
@@ -223,7 +223,7 @@ SingleEmitterHold 是：
 
 落点：
 
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\SeInputEventQueueAccess.h](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\injection\SeInputEventQueueAccess.h)
+- [`src/input/injection/SeInputEventQueueAccess.h`](../src/input/injection/SeInputEventQueueAccess.h)
 
 方向：
 
@@ -244,8 +244,8 @@ SingleEmitterHold 是：
 
 落点：
 
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\KeyboardHelperBackend.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\KeyboardHelperBackend.cpp)
-- [C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\KeyboardNativeBridge.cpp](C:\Users\xuany\.codex\worktrees\237f\dualPad\src\input\backend\KeyboardNativeBridge.cpp)
+- [`src/input/backend/KeyboardHelperBackend.cpp`](../src/input/backend/KeyboardHelperBackend.cpp)
+- [`src/input/backend/KeyboardNativeBridge.cpp`](../src/input/backend/KeyboardNativeBridge.cpp)
 
 方向：
 

@@ -5,7 +5,6 @@
 #include "input/GameplayKbmFactTracker.h"
 #include "input/PadProfile.h"
 #include "input/backend/NativeButtonCommitBackend.h"
-#include "input/RuntimeConfig.h"
 #include "input/injection/GameplayOwnershipCoordinator.h"
 
 #include <algorithm>
@@ -270,15 +269,6 @@ namespace dualpad::input
         const auto context = contextReconciled ? observedContext : authoritativeContext;
 
         if (IsGameplayDomainContext(context)) {
-            const auto& config = RuntimeConfig::GetSingleton();
-            if (!config.EnableGameplayOwnership()) {
-                if (IsSyntheticGamepadSprintActive()) {
-                    return true;
-                }
-
-                return _gameplayOwner.load(std::memory_order_relaxed) == GameplayOwner::Gamepad;
-            }
-
             if (IsSyntheticGamepadSprintActive()) {
                 return true;
             }
@@ -289,7 +279,6 @@ namespace dualpad::input
 
         return GetEffectivePresentationOwner(context) == PresentationOwner::Gamepad;
     }
-
     void InputModalityTracker::SetEngineGameplayPresentationLatch(
         PresentationOwner owner,
         InputContext context,

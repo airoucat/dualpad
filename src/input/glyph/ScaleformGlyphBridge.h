@@ -1,7 +1,5 @@
 #pragma once
 
-#include "input/InputContext.h"
-#include "input/Trigger.h"
 
 #include <RE/F/FxDelegateHandler.h>
 
@@ -30,8 +28,6 @@ namespace dualpad::input::glyph
         static void HandleGetActionGlyph(const RE::FxDelegateArgs& args);
 
         bool AttachToMenu(std::string_view menuName);
-        static std::optional<std::string> ResolveActionToken(std::string_view actionId, InputContext context);
-        static std::optional<std::string> TriggerToButtonArtToken(const Trigger& trigger);
 
         std::mutex _mutex;
         std::unordered_set<std::uintptr_t> _registeredDelegates;

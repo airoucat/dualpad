@@ -1,0 +1,197 @@
+{
+  "project": "DualPad Authoritative Baseline",
+  "status": "active",
+  "current_sprint": "S-DP1a",
+  "updated_at": "2026-04-20T10:20:00+08:00",
+  "sprints": [
+    {
+      "id": "S-WF0",
+      "unit_id": "WF0",
+      "title": "Bootstrap harness + ce + graphify default workflow",
+      "goal": "把仓库入口、harness 文档、记忆层和 graphify 本地自动化收口成默认工作流。",
+      "depends_on": [],
+      "requirements": [
+        "WF0"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "AGENTS.md、docs/harness/dualpad-builder.md 和 .dualpad-builder/ 已落地",
+        "graphify setup 可在 repo root 一次完成 hooks、.codex/hooks.json 和首轮 graph build",
+        "默认 close-out 命令已经固定到 workflow 文档和入口规则里"
+      ],
+      "verification": [
+        "python3 scripts/dev/setup_graphify_local.py",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout",
+        "python3 -m graphify query \"show the main flow\""
+      ]
+    },
+    {
+      "id": "S-DP1",
+      "unit_id": "DP1",
+      "title": "Runtime input pipeline truth alignment",
+      "goal": "把当前正式输入主链、owner 边界和 AuthoritativePollState 口径继续收口到同一套 truth。",
+      "depends_on": [
+        "S-WF0"
+      ],
+      "requirements": [
+        "B1"
+      ],
+      "status": "in_progress",
+      "exit_criteria": [
+        "README、ARCHITECTURE、baseline 与当前事实文档对正式主链的描述一致",
+        "涉及输入主链的 slice 有清晰的代码入口、验证入口和 close-out 口径",
+        "builder memory 能诚实反映当前 input pipeline 的推进状态"
+      ],
+      "verification": [
+        "xmake build DualPad",
+        "当前 slice 指定的 focused test / targeted runtime validation",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-DP1a",
+      "unit_id": "DP1a",
+      "title": "Route-health contract freeze",
+      "goal": "先冻结当前输入兼容态的 route_state / drain_reason / last_poll_age_ms / hook_installed 合同与验证面，不提前删掉 rollback gate 或 stale assist drain。",
+      "depends_on": [
+        "S-DP1"
+      ],
+      "requirements": [
+        "B1"
+      ],
+      "status": "active",
+      "exit_criteria": [
+        "route_state 继续固定为 active_fresh / active_stale / disabled",
+        "drain_reason、last_poll_age_ms 与 hook_installed 的当前兼容态合同在 current truth、Phase 0 与 builder memory 之间一致",
+        "本 slice 的 Do Not Do Yet 已写死：不删除 rollback gate / stale assist drain，不发明新的 route hierarchy"
+      ],
+      "verification": [
+        "docs/current_input_pipeline_zh.md 与 docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md 的合同文本一致",
+        "builder memory 明确把 DP1a 登记为当前 gate，并把 hook_installed 纳入当前冻结字段",
+        "xmake build DualPadRouteHealthContractTests",
+        "xmake run DualPadRouteHealthContractTests",
+        "xmake build DualPad",
+        "若本轮改动涉及代码文件，执行 python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-DP2",
+      "unit_id": "DP2",
+      "title": "Menu context policy and ownership follow-up",
+      "goal": "把菜单上下文策略、Gameplay/Menu ownership 和剩余 handoff 异常按当前 truth 分开推进。",
+      "depends_on": [
+        "S-DP1"
+      ],
+      "requirements": [
+        "B2"
+      ],
+      "status": "in_progress",
+      "exit_criteria": [
+        "MenuContextPolicy 与 InputContextNames 的当前 truth 能直接路由到代码和验证入口",
+        "Gameplay/Menu ownership 的已知异常不会再和动态 glyph 或历史 fallback 混成同一问题",
+        "验证矩阵和 builder memory 状态同步"
+      ],
+      "verification": [
+        "xmake build DualPadMenuContextPolicyTests",
+        "xmake run DualPadMenuContextPolicyTests",
+        "当前 slice 声明的手工验证或 targeted regression"
+      ]
+    },
+    {
+      "id": "S-DP3",
+      "unit_id": "DP3",
+      "title": "Native routing and controlmap overlay follow-up",
+      "goal": "继续把 native routing、controlmap combo overlay 和 ModEvent helper backend 的正式支持面说清楚并做最小充分验证。",
+      "depends_on": [
+        "S-DP2"
+      ],
+      "requirements": [
+        "B3"
+      ],
+      "status": "in_progress",
+      "exit_criteria": [
+        "overlay、helper backend 和 runtime gate 的当前 truth 不再互相冲突",
+        "相关 slice 有清晰的验证入口和本机验证要求",
+        "builder memory 能记录剩余 gate 和风险"
+      ],
+      "verification": [
+        "xmake build DualPad",
+        "当前 slice 指定的 combo/controlmap/helper focused validation",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-DP4",
+      "unit_id": "DP4",
+      "title": "Dynamic glyph current surface handoff",
+      "goal": "围绕 repo 当前真实拥有的 glyph bridge 和页面 surface 推进动态 glyph，不再把缺失的 FavoritesMenu workspace 包装成现状。",
+      "depends_on": [
+        "S-DP1"
+      ],
+      "requirements": [
+        "B4"
+      ],
+      "status": "in_progress",
+      "exit_criteria": [
+        "主菜单 glyph 当前 truth 和页面边界在 AGENTS、baseline、当前事实文档之间一致",
+        "任何新的 glyph slice 都能先判断是否只触及 repo-owned surface",
+        "涉及 FavoritesMenu 的任务会先恢复 workspace，再继续实现或修复"
+      ],
+      "verification": [
+        "xmake build DualPad",
+        "当前 glyph slice 指定的 focused validation",
+        "必要时记录本机 SWF / Skyrim 手工验证结果"
+      ]
+    },
+    {
+      "id": "S-DP4a",
+      "unit_id": "DP4a",
+      "title": "Glyph compat diagnostics freeze",
+      "goal": "先把 glyph compat 链中的 status / fallback / ambiguity 收成内部诊断面，保持旧 SWF / delegate 返回 shape 不变，不提前跳到 PromptService。",
+      "depends_on": [
+        "S-DP1a"
+      ],
+      "requirements": [
+        "B4"
+      ],
+      "status": "in_progress",
+      "exit_criteria": [
+        "status / fallback / ambiguity 的当前归宿被正式写成内部诊断面，而不是旧 UI 对外 contract",
+        "旧 DualPad_GetActionGlyphToken 继续返回单个 token string；旧 DualPad_GetActionGlyph descriptor 继续保持 ok / buttonArtToken / semanticId / contextName",
+        "任何旧返回对象字段扩展都被明确延后到 Phase 6 prompt contract"
+      ],
+      "verification": [
+        "docs/main_menu_glyph_current_status_zh.md、work-packages README 与 builder memory 对旧外层 shape 的描述一致：token API 返回单个 token string；descriptor API 保持 ok / buttonArtToken / semanticId / contextName",
+        "xmake build DualPadGlyphResolutionCompatTests",
+        "xmake run DualPadGlyphResolutionCompatTests",
+        "xmake build DualPad",
+        "若本轮改到 ScaleformGlyphBridge 或 SWF surface，补记录本机 SWF / Skyrim 手工验证结果",
+        "若本轮改动涉及代码文件，执行 python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout",
+        "计划文本没有把 PromptService / PromptDescriptor / PromptProjection 误写成当前下一步"
+      ]
+    },
+    {
+      "id": "S-DP5",
+      "unit_id": "DP5",
+      "title": "Validation, cleanup, and workflow honesty",
+      "goal": "把验证、cleanup 风险、handoff 和 workflow honesty 收成一条可复述的 close-out 链。",
+      "depends_on": [
+        "S-WF0"
+      ],
+      "requirements": [
+        "B5",
+        "B6",
+        "B7"
+      ],
+      "status": "planned",
+      "exit_criteria": [
+        "验证入口、cleanup 风险和 handoff 规则形成统一 close-out 口径",
+        "builder memory、shared docs 和 graphify close-out 能保持同步",
+        "passes 不再早于真实验证"
+      ],
+      "verification": [
+        "待当前 package / slice 确认"
+      ]
+    }
+  ]
+}

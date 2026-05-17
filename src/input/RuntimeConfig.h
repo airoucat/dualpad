@@ -27,12 +27,12 @@ namespace dualpad::input
         bool LogActionPlan() const { return _logActionPlan; }
         bool LogNativeInjection() const { return _logNativeInjection; }
         bool LogKeyboardInjection() const { return _logKeyboardInjection; }
+        bool LogRouteHealth() const { return _logRouteHealth; }
 
         bool UseUpstreamGamepadHook() const { return _useUpstreamGamepadHook; }
         UpstreamGamepadHookMode GetUpstreamGamepadHookMode() const { return _upstreamGamepadHookMode; }
         bool EnableForceCrossContextRecoveryProbe() const { return _enableForceCrossContextRecoveryProbe; }
         bool EnableComboNativeHotkeys3To8() const { return _enableComboNativeHotkeys3To8; }
-        bool EnableGameplayOwnership() const { return _enableGameplayOwnership; }
 
     private:
         RuntimeConfig() = default;
@@ -50,11 +50,11 @@ namespace dualpad::input
         bool _logActionPlan{ false };
         bool _logNativeInjection{ false };
         bool _logKeyboardInjection{ false };
+        bool _logRouteHealth{ false };
 
         bool _useUpstreamGamepadHook{ true };
         UpstreamGamepadHookMode _upstreamGamepadHookMode{ UpstreamGamepadHookMode::PollXInputCall };
         bool _enableForceCrossContextRecoveryProbe{ false };
         bool _enableComboNativeHotkeys3To8{ false };
-        bool _enableGameplayOwnership{ true };
     };
 }

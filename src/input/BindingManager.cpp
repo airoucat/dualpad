@@ -264,6 +264,28 @@ namespace dualpad::input
         return std::nullopt;
     }
 
+    std::size_t BindingManager::CountTriggersForAction(
+        std::string_view actionId,
+        InputContext context) const
+    {
+        std::scoped_lock lock(_mutex);
+
+        auto ctxIt = _bindings.find(context);
+        if (ctxIt == _bindings.end()) {
+            return 0;
+        }
+
+        std::size_t candidateCount = 0;
+        for (const auto& [trigger, action] : ctxIt->second) {
+            (void)trigger;
+            if (action == actionId) {
+                ++candidateCount;
+            }
+        }
+
+        return candidateCount;
+    }
+
     std::uint32_t BindingManager::GetComboParticipantMask(InputContext context) const
     {
         std::scoped_lock lock(_mutex);

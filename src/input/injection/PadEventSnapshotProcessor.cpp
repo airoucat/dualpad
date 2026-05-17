@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
 
 #include "input/Action.h"
@@ -542,21 +542,6 @@ namespace dualpad::input
 
     void PadEventSnapshotProcessor::FinishFramePlanning(const SyntheticPadFrame& frame, InputContext context)
     {
-        const auto& runtimeConfig = RuntimeConfig::GetSingleton();
-        if (!runtimeConfig.EnableGameplayOwnership()) {
-            DispatchPlannedActions();
-            const auto analog = CollectBoundAnalogState(frame, context);
-            AuthoritativePollState::GetSingleton().PublishAnalogState(
-                analog.moveX,
-                analog.moveY,
-                analog.lookX,
-                analog.lookY,
-                analog.leftTrigger,
-                analog.rightTrigger);
-            backend::LogFrameActionPlan(_framePlan);
-            return;
-        }
-
         auto& gameplayOwnership = GameplayOwnershipCoordinator::GetSingleton();
         auto& nativeButtonCommit = backend::NativeButtonCommitBackend::GetSingleton();
         const auto digitalGatePlan = gameplayOwnership.UpdateDigitalOwnership(context, _framePlan);
@@ -581,7 +566,6 @@ namespace dualpad::input
             ownedAnalog.analog.rightTrigger);
         backend::LogFrameActionPlan(_framePlan);
     }
-
     void PadEventSnapshotProcessor::Process(const PadEventSnapshot& snapshot)
     {
         if (snapshot.type == PadEventSnapshotType::Reset) {

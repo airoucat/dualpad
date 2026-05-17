@@ -99,6 +99,32 @@ target("DualPadMenuContextPolicyTests")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
+target("DualPadRouteHealthContractTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files(
+        "tests/RouteHealthContractTests.cpp",
+        "src/input/injection/RouteHealthContract.cpp")
+    add_headerfiles("tests/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadGlyphResolutionCompatTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files(
+        "tests/GlyphResolutionCompatTests.cpp",
+        "src/input/BindingManager.cpp",
+        "src/input/InputContextNames.cpp",
+        "src/input/glyph/GlyphResolutionCompat.cpp")
+    add_headerfiles("tests/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
 target("DualPadDInput8Proxy")
     set_kind("shared")
     set_basename("dinput8")

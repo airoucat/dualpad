@@ -50,6 +50,9 @@ namespace dualpad::input
         std::optional<Trigger> GetTriggerForAction(
             std::string_view actionId,
             InputContext context) const;
+        std::size_t CountTriggersForAction(
+            std::string_view actionId,
+            InputContext context) const;
         std::uint32_t GetComboParticipantMask(InputContext context) const;
         bool HasConfiguredComboPair(InputContext context, std::uint32_t firstButton, std::uint32_t secondButton) const;
 

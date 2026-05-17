@@ -155,8 +155,7 @@ namespace dualpad::input::backend
     bool NativeButtonCommitBackend::ApplyPlannedAction(const PlannedAction& action)
     {
         std::scoped_lock lock(_lock);
-        if (RuntimeConfig::GetSingleton().EnableGameplayOwnership() &&
-            IsGameplayDigitalSuppressionCandidate(action) &&
+        if (IsGameplayDigitalSuppressionCandidate(action) &&
             _suppressGameplayDigitalTransientActions) {
             if (ShouldLogPollCommit()) {
                 logger::info(

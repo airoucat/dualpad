@@ -150,6 +150,9 @@ namespace dualpad::input
             if (auto it = values.find("log_keyboard_injection"); it != values.end()) {
                 _logKeyboardInjection = ini::ParseBool(it->second, _logKeyboardInjection);
             }
+            if (auto it = values.find("log_route_health"); it != values.end()) {
+                _logRouteHealth = ini::ParseBool(it->second, _logRouteHealth);
+            }
         };
 
         const auto parseInjection = [&](const auto& values) {
@@ -177,11 +180,10 @@ namespace dualpad::input
                     ini::ParseBool(it->second, _enableComboNativeHotkeys3To8);
             }
             if (auto it = values.find("enable_gameplay_ownership"); it != values.end()) {
-                _enableGameplayOwnership =
-                    ini::ParseBool(it->second, _enableGameplayOwnership);
+                logger::warn(
+                    "[DualPad][RuntimeConfig] enable_gameplay_ownership is retired and ignored; gameplay ownership now always uses the mainline path");
             }
         };
-
         try {
             if (auto it = sections.find("Logging"); it != sections.end()) {
                 parseLogging(it->second);
@@ -198,7 +200,7 @@ namespace dualpad::input
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={} gameplayOwnership={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} routeHealth={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -207,11 +209,11 @@ namespace dualpad::input
             _logActionPlan,
             _logNativeInjection,
             _logKeyboardInjection,
+            _logRouteHealth,
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
             _enableForceCrossContextRecoveryProbe,
-            _enableComboNativeHotkeys3To8,
-            _enableGameplayOwnership);
+            _enableComboNativeHotkeys3To8);
         if (_useUpstreamGamepadHook) {
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
@@ -234,11 +236,11 @@ namespace dualpad::input
         _logActionPlan = false;
         _logNativeInjection = false;
         _logKeyboardInjection = false;
+        _logRouteHealth = false;
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
         _enableForceCrossContextRecoveryProbe = false;
         _enableComboNativeHotkeys3To8 = false;
-        _enableGameplayOwnership = true;
     }
 }

@@ -40,6 +40,13 @@
 - **动态 action -> trigger 解析**
 - **但最终仍落到原生单 token 图标显示**
 
+当前偏差说明：
+
+- 这条链当前仍依赖 BindingManager::GetTriggerForAction(...) 的 action -> trigger 反查。
+- 对一对多绑定而言，这不是稳定语义 authority，只是当前兼容链的过渡实现。
+- 当前兼容层已经开始把 `status / fallbackKind / fallbackReason / candidateCount / reverseLookupAmbiguous` 暴露成内部诊断结果，但外部 SWF contract 仍保持旧 shape：`DualPad_GetActionGlyphToken` 返回单个 token string，`DualPad_GetActionGlyph` descriptor 继续保持 `ok / buttonArtToken / semanticId / contextName`。
+- 在更正式的 glyph / prompt projection 落地前，不应继续围绕这条 reverse lookup 扩展新的合同。
+
 ## 当前已经支持的图标类型
 
 基于 [ScaleformGlyphBridge.cpp](../src/input/glyph/ScaleformGlyphBridge.cpp) 现状，当前兼容链已经可以稳定表达：

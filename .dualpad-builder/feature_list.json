@@ -1,0 +1,148 @@
+{
+  "project": "DualPad Authoritative Baseline",
+  "source_docs": [
+    "docs/authoritative-baseline/README.md",
+    "docs/authoritative-baseline/2026-04-18-dualpad-authoritative-baseline.md",
+    "README.md",
+    "src/ARCHITECTURE.md"
+  ],
+  "updated_at": "2026-04-20T10:20:00+08:00",
+  "features": [
+    {
+      "id": "WF0",
+      "title": "Harness + CE + Graphify workflow bootstrap",
+      "requirements": [
+        "WF0"
+      ],
+      "depends_on": [],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "AGENTS.md 明确采用 harness + ce + graphify 默认工作流",
+        "docs/harness/dualpad-builder.md 与 .dualpad-builder/ 记忆层已落地",
+        "repo-local graphify 自动化已配置并完成初始化"
+      ]
+    },
+    {
+      "id": "DP1",
+      "title": "Runtime input pipeline truth",
+      "requirements": [
+        "B1"
+      ],
+      "depends_on": [
+        "WF0"
+      ],
+      "status": "in_progress",
+      "passes": false,
+      "acceptance": [
+        "当前正式输入主链在 README、ARCHITECTURE 和 baseline 文档里保持一致",
+        "Action lifecycle、poll commit、XInput bridge 的 owner 边界有统一口径",
+        "builder memory 能诚实指向该主线的当前 slice 和验证入口"
+      ]
+    },
+    {
+      "id": "DP1a",
+      "title": "Route-health contract freeze",
+      "requirements": [
+        "B1"
+      ],
+      "depends_on": [
+        "WF0"
+      ],
+      "status": "active",
+      "passes": false,
+      "acceptance": [
+        "顶层 route_state 继续固定为 active_fresh / active_stale / disabled",
+        "drain_reason、last_poll_age_ms、hook_installed 被收口为 secondary diagnostics，而不是新的主状态体系",
+        "本 slice 只冻结当前兼容态合同与验证面，不删除 rollback gate / stale assist drain，也不引入新的 owner 抽象"
+      ]
+    },
+    {
+      "id": "DP2",
+      "title": "Menu context policy and gameplay/menu ownership",
+      "requirements": [
+        "B2"
+      ],
+      "depends_on": [
+        "DP1"
+      ],
+      "status": "in_progress",
+      "passes": false,
+      "acceptance": [
+        "MenuContextPolicy、InputContextNames 与 menu runtime truth 有统一入口",
+        "Gameplay/Menu ownership 的当前实现和已知 handoff 异常被分开记录",
+        "相关验证矩阵和 builder memory 状态保持一致"
+      ]
+    },
+    {
+      "id": "DP3",
+      "title": "Native routing, controlmap combo overlay, and mod-event helper",
+      "requirements": [
+        "B3"
+      ],
+      "depends_on": [
+        "DP2"
+      ],
+      "status": "in_progress",
+      "passes": false,
+      "acceptance": [
+        "Native routing、controlmap overlay 和 ModEvent helper backend 的正式支持面有统一口径",
+        "runtime gate、overlay 路径和 helper backend 约束在文档与代码 reality 之间不冲突",
+        "相关 slice 的验证结果能写回 builder memory"
+      ]
+    },
+    {
+      "id": "DP4",
+      "title": "Dynamic glyph and menu presentation surfaces",
+      "requirements": [
+        "B4"
+      ],
+      "depends_on": [
+        "DP1"
+      ],
+      "status": "in_progress",
+      "passes": false,
+      "acceptance": [
+        "主菜单和共享 glyph bridge 的当前 truth 被明确收口",
+        "repo 当前不拥有的 FavoritesMenu workspace 不再被误写成已存在实现",
+        "页面级 glyph 工作的验证入口、边界和当前焦点能被 builder memory 追踪"
+      ]
+    },
+    {
+      "id": "DP4a",
+      "title": "Glyph compat diagnostics freeze",
+      "requirements": [
+        "B4"
+      ],
+      "depends_on": [
+        "DP1a"
+      ],
+      "status": "in_progress",
+      "passes": false,
+      "acceptance": [
+        "status / fallback / ambiguity 只先进入内部诊断面、日志、trace 与 targeted tests",
+        "旧 DualPad_GetActionGlyphToken 继续返回单个 token string；旧 DualPad_GetActionGlyph descriptor 继续保持 ok / buttonArtToken / semanticId / contextName",
+        "任何旧返回对象字段扩展都延后到 Phase 6 的 prompt contract 明确之后再决定"
+      ]
+    },
+    {
+      "id": "DP5",
+      "title": "Validation, cleanup, and workflow honesty",
+      "requirements": [
+        "B5",
+        "B6",
+        "B7"
+      ],
+      "depends_on": [
+        "WF0"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "验证入口、cleanup 风险和 handoff 规则形成可复述的 close-out 链",
+        "builder memory、shared docs 和 graphify close-out 规则不再脱节",
+        "passes 只在真实验证完成后更新"
+      ]
+    }
+  ]
+}

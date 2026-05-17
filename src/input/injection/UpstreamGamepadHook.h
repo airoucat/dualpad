@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <optional>
 
 #include "input/RuntimeConfig.h"
 
@@ -16,6 +17,7 @@ namespace dualpad::input
         bool IsInstalled() const;
         bool IsRouteActive() const;
         void NotePollCallActivity();
+        std::optional<std::uint64_t> GetLastPollCallAgeMs() const;
         bool HasRecentPollCallActivity(std::uint64_t maxAgeMs = 250) const;
 
     private:
