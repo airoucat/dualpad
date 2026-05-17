@@ -87,6 +87,8 @@
 - 计划或 progress 明确声明的本机 Skyrim / MO2 手工验证
 - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
 
+默认 `xmake build DualPad` 与 `xmake build DualPadDInput8Proxy` 只产出 repo-local artifact，不写入本机 Skyrim / MO2 目录。本机部署必须显式启用 `dualpad_deploy=true` 并提供本机路径；这些路径只写入 `AGENTS.win.md` / `AGENTS.mac.md` 或本机配置，不进入共享 current truth。
+
 当前 builder-promoted focused prove-out 不再只写成 `focused validation`：
 
 - `DP1a` 固定到 `DualPadRouteHealthContractTests`

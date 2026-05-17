@@ -15,8 +15,43 @@ add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
 add_requires("hidapi")
-local mo2_plugins_dir = "G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins"
-local skyrim_game_dir = "G:/g/SkyrimSE"
+
+option("dualpad_deploy")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Copy built artifacts to a local Skyrim/MO2 install after build.")
+option_end()
+
+option("dualpad_mo2_plugins_dir")
+    set_default(os.getenv("DUALPAD_MO2_PLUGINS_DIR") or "")
+    set_showmenu(true)
+    set_description("SKSE Plugins directory used when --dualpad_deploy=true.")
+option_end()
+
+option("dualpad_skyrim_game_dir")
+    set_default(os.getenv("DUALPAD_SKYRIM_GAME_DIR") or "")
+    set_showmenu(true)
+    set_description("Skyrim game directory used when --dualpad_deploy=true.")
+option_end()
+
+local dualpad_deploy = get_config("dualpad_deploy")
+local mo2_plugins_dir = get_config("dualpad_mo2_plugins_dir") or ""
+local skyrim_game_dir = get_config("dualpad_skyrim_game_dir") or ""
+
+local function has_path(value)
+    return value and value ~= ""
+end
+
+local function artifact_dir(name)
+    return path.join(os.projectdir(), "build", "bin", name)
+end
+
+local function configured_target_dir(deploy_dir, fallback_name)
+    if dualpad_deploy and has_path(deploy_dir) then
+        return deploy_dir
+    end
+    return artifact_dir(fallback_name)
+end
 
 target("DualPad")
     add_deps("commonlibsse-ng")
@@ -35,7 +70,7 @@ target("DualPad")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
-    set_targetdir(mo2_plugins_dir)
+    set_targetdir(configured_target_dir(mo2_plugins_dir, "DualPad"))
 
     if is_mode("debug", "releasedbg") then
         set_symbols("debug")
@@ -43,6 +78,17 @@ target("DualPad")
     end
 
     after_build(function (target)
+        if not dualpad_deploy then
+            print("Built: %s", target:targetfile())
+            return
+        end
+
+        if not has_path(mo2_plugins_dir) then
+            print("warning: skip DualPad deploy: dualpad_mo2_plugins_dir or DUALPAD_MO2_PLUGINS_DIR is not set")
+            print("Built: %s", target:targetfile())
+            return
+        end
+
         local pdb = target:symbolfile()
         if pdb and os.isfile(pdb) then
             os.mkdir(mo2_plugins_dir)
@@ -141,7 +187,7 @@ target("DualPadDInput8Proxy")
     add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX", "DIRECTINPUT_VERSION=0x0800")
     add_syslinks("ole32", "user32", "dxguid")
 
-    set_targetdir(skyrim_game_dir)
+    set_targetdir(configured_target_dir(skyrim_game_dir, "DualPadDInput8Proxy"))
 
     if is_mode("debug", "releasedbg") then
         set_symbols("debug")
@@ -149,6 +195,17 @@ target("DualPadDInput8Proxy")
     end
 
     after_build(function (target)
+        if not dualpad_deploy then
+            print("Built dinput8 proxy: %s", target:targetfile())
+            return
+        end
+
+        if not has_path(skyrim_game_dir) then
+            print("warning: skip dinput8 proxy deploy: dualpad_skyrim_game_dir or DUALPAD_SKYRIM_GAME_DIR is not set")
+            print("Built dinput8 proxy: %s", target:targetfile())
+            return
+        end
+
         local pdb = target:symbolfile()
         if pdb and os.isfile(pdb) then
             try {

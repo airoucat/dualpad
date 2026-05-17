@@ -33,7 +33,7 @@
 10. `docs/DOC_INDEX_zh.md`
 11. 再按任务类型跳到对应当前事实文档
 
-## 当前工作路（2026-04-20）
+## 当前工作路（2026-05-17）
 
 - 当前活跃 Sprint：
   - `S-DP1a`
@@ -56,6 +56,11 @@
      - `Phase 4`
      - `Phase 5`
      - `Phase 6`
+     - `Phase 7`
+     - `Phase 8`
+     - `Phase 8A`
+     - `Phase 8B`
+     - 这些 phase 已作为 planned backlog 登记到 `.dualpad-builder/`，但只有对应 Sprint 从 `planned` 晋升后才是当前执行 authority。
   5. 需要做验证、风险复查或 handoff 时，再回到 `DP5` 路线：
      - `docs/current_cleanup_risk_review_zh.md`
      - `docs/reviews/README_zh.md`
@@ -70,6 +75,7 @@
 - `DP3`：进行中
 - `DP4`：进行中
 - `DP4a`：进行中（当前 worktree 已启动，但不是活跃 Sprint）
+- `PH0` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
 - `DP5`：计划中
 
 ## 主题路由

@@ -15,6 +15,7 @@
 - `DP3`：`in_progress`
 - `DP4`：`in_progress`
 - `DP4a`：`in_progress`
+- `PH0` - `PH8B`：`planned`
 - `DP5`：`planned`
 - 当前活跃 Sprint：`S-DP1a`
 
@@ -50,7 +51,7 @@
   - 当前 DP4 仍是 repo-owned main-menu glyph compatibility surface，不是最终 glyph / prompt authority。
   - `status / fallback / ambiguity` 先只进入内部诊断面。旧 `DualPad_GetActionGlyphToken` 继续返回单个 token string；旧 `DualPad_GetActionGlyph` descriptor 继续保持 `ok / buttonArtToken / semanticId / contextName`。
   - 任何旧返回对象字段扩展，都必须等 `Phase 6` 定义完新 prompt contract 后再决定，不能默认旧 SWF 安全兼容。
-4. 只有 `DP1a -> DP4a` 完成后，才允许继续下游计划包；顺序必须与 `Phase 6` 文本的前置依赖保持一致：
+4. 只有 `DP1a -> DP4a` 完成后，才允许继续下游计划包；顺序必须与 `.dualpad-builder/sprint_plan.json` 里登记的 planned backlog 保持一致：
    - `Phase 0` Replay Barrier
    - `Phase 1` ContextCatalog / ActionManifest groundwork
    - `Phase 2` Menu instance truth
@@ -58,7 +59,12 @@
    - `Phase 4` Action graph / interaction engine
    - `Phase 5` Gameplay projection
    - `Phase 6` PromptProjection / PromptService cutover
+   - `Phase 7` Ingress / resync
+   - `Phase 8` cutover entry gate
+   - `Phase 8A` runtime closeout
+   - `Phase 8B` governance closeout
    - 不得把 `Phase 6` 直接排在 `Phase 1` 后面
+   - 不得把 planned backlog 误写成 active / completed；每个 phase 真正开工前仍要把对应 Sprint 晋升并写入 `.dualpad-builder/progress.md`
 5. 做 close-out、验证或 handoff 时，再收回 `DP5`：
    - `docs/current_cleanup_risk_review_zh.md`
    - `docs/reviews/README_zh.md`
@@ -182,5 +188,4 @@
 - 再从该工作包反查要读的 current truth 文档和代码入口
 - 新的 slice、验证和 close-out 记录都同步写回 `.dualpad-builder/`
 - 如果外部计划包尚未 promotion into `.dualpad-builder/`，实现与验证不得把它直接当成当前执行主线
-
 

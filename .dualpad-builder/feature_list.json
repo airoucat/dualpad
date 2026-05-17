@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-04-20T10:20:00+08:00",
+  "updated_at": "2026-05-17T21:03:29+08:00",
   "features": [
     {
       "id": "WF0",
@@ -123,6 +123,204 @@
         "status / fallback / ambiguity 只先进入内部诊断面、日志、trace 与 targeted tests",
         "旧 DualPad_GetActionGlyphToken 继续返回单个 token string；旧 DualPad_GetActionGlyph descriptor 继续保持 ok / buttonArtToken / semanticId / contextName",
         "任何旧返回对象字段扩展都延后到 Phase 6 的 prompt contract 明确之后再决定"
+      ]
+    },
+    {
+      "id": "PH0",
+      "title": "Phase 0 replay barrier",
+      "requirements": [
+        "B1",
+        "B4",
+        "B5"
+      ],
+      "depends_on": [
+        "DP4a"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "replay / diff / golden trace barrier 以 repo-owned mandatory scenarios 落地",
+        "FavoritesMenu 条件场景不会在 workspace 未恢复时成为退出条件",
+        "Phase 0 target、trace schema、diff runner 和 progress close-out 可追踪"
+      ]
+    },
+    {
+      "id": "PH1",
+      "title": "Phase 1 catalog and manifest compiler",
+      "requirements": [
+        "B1",
+        "B3",
+        "B4"
+      ],
+      "depends_on": [
+        "PH0"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "ContextCatalog、ActionManifest、LegacyIniImporter 和 ManifestValidator 有固定代码落点",
+        "manifest publication 与后续 boundary marker handoff 不再留到实现阶段决定",
+        "manifest compiler prove-out target 可执行并写回 builder memory"
+      ]
+    },
+    {
+      "id": "PH2",
+      "title": "Phase 2 menu instance truth",
+      "requirements": [
+        "B2"
+      ],
+      "depends_on": [
+        "PH1"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "UiMenuObserver、MenuInstanceRegistry、ContextResolver 和 ActionSetResolver 的 owner 边界落地",
+        "contextRevision、menuStackRevision 和 presentationPolicyId 有 shadow compare gate",
+        "legacy context adapter 不再承担 menu instance truth"
+      ]
+    },
+    {
+      "id": "PH3",
+      "title": "Phase 3 presentation split",
+      "requirements": [
+        "B2",
+        "B5"
+      ],
+      "depends_on": [
+        "PH2"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "SourceEvidenceCollector、PresentationProjection 和 SkyrimCompatibilitySurface 分层落地",
+        "DeviceFamilyChanged marker 与 SourceEvidence 配对合同进入已发布 seam",
+        "presentation rollback 和 shadow parity 有固定验证入口"
+      ]
+    },
+    {
+      "id": "PH4",
+      "title": "Phase 4 action graph and interaction engine",
+      "requirements": [
+        "B1",
+        "B3",
+        "B4"
+      ],
+      "depends_on": [
+        "PH3"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "ControlPath、BindingModifier、InteractionSpec、DisplayBinding 与 CompiledActionGraph 合同落地",
+        "compiled graph publication owner 与 runtime swap 入口已冻结",
+        "Action Graph prove-out 覆盖 layer/combo/fail-closed 场景"
+      ]
+    },
+    {
+      "id": "PH5",
+      "title": "Phase 5 gameplay projection",
+      "requirements": [
+        "B1",
+        "B2"
+      ],
+      "depends_on": [
+        "PH4"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "GameplayProjectionFrame、RecoveryPlan 和 GameplayPresentationPublisher 落地",
+        "HardReset / SoftResync / clean baseline 的执行顺序可测试",
+        "legacy coordinator feedback loop 不再是 gameplay projection authority"
+      ]
+    },
+    {
+      "id": "PH6",
+      "title": "Phase 6 prompt projection",
+      "requirements": [
+        "B4"
+      ],
+      "depends_on": [
+        "PH5"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "PromptProjection / PromptService 取代 glyph reverse lookup authority",
+        "旧 SWF API 兼容策略与 repo-owned smoke gate 已冻结",
+        "DP4a compat tests 不会在 Phase 6 后继续钉死旧 fallback 语义"
+      ]
+    },
+    {
+      "id": "PH7",
+      "title": "Phase 7 ingress and resync",
+      "requirements": [
+        "B1",
+        "B5"
+      ],
+      "depends_on": [
+        "PH6"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "manifestEpoch 与 deviceFamilyRevision 的 authoritative 来源固定为 ingress marker payload",
+        "boundary key、transition frame、HardReset / SoftResync 规则无第二 authority",
+        "Ingress recovery prove-out 覆盖 marker mismatch、queue overflow 和 manifest reload"
+      ]
+    },
+    {
+      "id": "PH8",
+      "title": "Phase 8 cutover entry gate",
+      "requirements": [
+        "B5",
+        "B6"
+      ],
+      "depends_on": [
+        "PH7"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "Phase 8 只作为 closeout 入口，不重新设计 runtime 合同",
+        "09a runtime closeout 与 09b governance closeout 的职责边界清晰",
+        "canonical prove-out targets 的归属不再在 09b 首次补建"
+      ]
+    },
+    {
+      "id": "PH8a",
+      "title": "Phase 8A runtime closeout",
+      "requirements": [
+        "B5"
+      ],
+      "depends_on": [
+        "PH8"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "runtime public surface swap、legacy deletion 和 shim shrink 完成",
+        "6 类 canonical runtime prove-out targets 已存在并通过",
+        "replay root 仍固定为 tests/replay/golden/"
+      ]
+    },
+    {
+      "id": "PH8b",
+      "title": "Phase 8B governance closeout",
+      "requirements": [
+        "B6",
+        "B7"
+      ],
+      "depends_on": [
+        "PH8a"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "docgen provenance、reviewed docs 去重和默认 CI 接线完成",
+        "generated facts 与 reviewed narrative 不再争夺 authority",
+        "builder memory、baseline、CI 和 graphify close-out 口径一致"
       ]
     },
     {

@@ -286,7 +286,8 @@
      - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
 
 7. **golden trace 范围在本 slice 一次性定死，不把“先录哪些”留到 work 阶段。**
-   - Phase 0 必录 11 个 scenario 目录：
+   - Phase 0 默认必录 10 个 repo-owned scenario 目录，另保留 1 个 `FavoritesMenu` 条件场景。
+   - `FavoritesMenu` 条件场景不得在缺少页面源码 / SWF patch workspace / artifact inventory 时作为 Phase 0 退出条件；如果本轮决定启用它，必须先恢复对应 workspace，并在 `.dualpad-builder/progress.md` 记录可复述的 artifact 来源与验证边界。
 
    | scenario 目录 | 采集方式 | 必须覆盖的 surface |
    | --- | --- | --- |
@@ -295,7 +296,7 @@
    | `03_main_menu_glyph` | live capture | glyph / presentation |
    | `04_journal_confirm_cancel` | live capture | glyph / poll / presentation |
    | `05_map_cursor_zoom_open_journal` | live capture | glyph / presentation / poll |
-   | `06_favorites_page_lr_accept_cancel` | live capture | glyph / presentation / poll |
+   | `06_favorites_page_lr_accept_cancel` | conditional live capture；仅在恢复 `FavoritesMenu` workspace 后启用 | poll / presentation；glyph 只在页面源码与 patch workspace 已恢复时要求 |
    | `07_book_page_lr` | live capture | glyph / presentation |
    | `08_console_creations_lockpicking` | live capture，可拆 3 条 session 后合并 | poll / presentation / glyph(if any) |
    | `09_combo_native_pause_screenshot_hotkeys` | live capture + `DualPadDInput8Proxy` | keyboard bridge / poll |
@@ -407,7 +408,8 @@
 - `src/input_v2/telemetry/` 下的 recorder、schema、harness 文件全部落地，并且 `kTraceSchemaVersion = 1` 已固定。
 - `scripts/dev/dualpad_trace_diff.py` 可单场景、可 batch 运行。
 - `xmake.lua` 里已有 `DualPadReplayHarness` 和 `DualPadReplayHarnessTests` 两个独立 target。
-- `tests/replay/golden/phase0/` 下 11 个 scenario 目录全部存在，且 bundle 文件齐全；允许某些 CSV 只有表头，但不允许缺文件。
+- `tests/replay/golden/phase0/` 下 10 个 repo-owned mandatory scenario 目录全部存在，且 bundle 文件齐全；允许某些 CSV 只有表头，但不允许缺文件。
+- 若启用 `06_favorites_page_lr_accept_cancel`，对应 workspace / artifact inventory / capture surface 已先写入 `.dualpad-builder/progress.md`，且该场景 bundle 文件齐全；未恢复 workspace 时不得把 Favorites glyph capture 当作 Phase 0 breach 或退出条件。
 - replay candidate 对 golden 的 diff 为 0；若有差异，必须先解释再改 golden，不能静默覆盖。
 - recorder 在 `enable_trace_recording = false` 时不改变现有运行时行为；这必须通过至少一次关闭开关的 live smoke 验证确认。
 - `.dualpad-builder/progress.md` 已记录开始、完成和验证命令结果。

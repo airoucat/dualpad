@@ -401,3 +401,28 @@
   - `rg -n "DualPadRouteHealthContractTests|DualPadGlyphResolutionCompatTests|dualpad_rearchitecture_plan_zh|brainstorms/|ideation/|phase1_phase4_code_review_findings_zh|gameplay_input_ownership_investigation_and_plan_zh" ...`
     - 结果：`DualPadRouteHealthContractTests` / `DualPadGlyphResolutionCompatTests` 已出现在 `sprint_plan.json`、`dualpad-builder.md`、`work-packages/README.md` 的 fixed prove-out 位置。
     - 结果：剩余 `dualpad_rearchitecture_plan_zh.md`、review、brainstorm、ideation、调查稿引用只保留在显式“如需背景材料 / 历史背景”说明中，不再挂在当前执行输入或 prove-out 入口下。
+
+
+## 2026-05-17 21:03:29 CST
+
+- 本轮根据外部 GPT Pro 实现前设计审查的 No-Go 结论修复 4 类 blocking issue。
+- 审查结论中确认成立并已处理的点：
+  - `Phase 0-09b` 不能只停留在 `docs/plans/dualpad_rearchitecture/` 设计包里；本轮已把 `PH0` - `PH8B` 作为 planned backlog 登记进 `.dualpad-builder/feature_list.json` 与 `.dualpad-builder/sprint_plan.json`，但没有把它们误标成 active / completed。
+  - `Phase 0` 的 `06_favorites_page_lr_accept_cancel` 不再作为默认 mandatory repo-owned glyph capture；它现在是条件场景，只有恢复 `FavoritesMenu` workspace、页面源码和 artifact inventory 后才进入退出条件。
+  - `Phase 7` 的 `manifestEpoch / deviceFamilyRevision` boundary authority 已归一到正文：二者唯一 authoritative 来源都是 ingress marker payload；`SourceEvidence` 只做配对、镜像和一致性校验，不再作为独立 boundary source。
+  - `xmake.lua` 不再默认写入本机 `G:` 路径；默认 build 输出到 repo-local `build/bin/...`，只有显式设置 `dualpad_deploy=true` 与本机路径时才部署到 Skyrim / MO2。
+- 本轮同步更新：
+  - `.dualpad-builder/feature_list.json`
+  - `.dualpad-builder/sprint_plan.json`
+  - `docs/authoritative-baseline/README.md`
+  - `docs/authoritative-baseline/work-packages/README.md`
+  - `docs/harness/dualpad-builder.md`
+  - `docs/plans/dualpad_rearchitecture/README_zh.md`
+  - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
+  - `docs/plans/dualpad_rearchitecture/08_slice_phase7_ingress_and_resync_zh.md`
+  - `AGENTS.win.md`
+  - `xmake.lua`
+- 本轮刻意未做：
+  - 没有把 `PH0` - `PH8B` 晋升为当前 active Sprint；当前 active 仍是 `S-DP1a`。
+  - 没有恢复 `FavoritesMenu` workspace；因此 Favorites glyph capture 仍不是 Phase 0 默认退出条件。
+  - 没有声称 Phase 0-09b 已实现或验证通过。

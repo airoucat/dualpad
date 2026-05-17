@@ -2,7 +2,7 @@
 
 本目录用于收口 `dualpad_rearchitecture_plan_zh.md` 的拆分计划包。
 
-它当前是设计输入与评审材料，不是默认 workflow current truth，也不是可以越过 `.dualpad-builder/` 直接执行的主线 authority。
+它当前是设计输入与评审材料；各 slice 已作为 planned backlog 登记进 `.dualpad-builder/`，但不是默认 active Sprint，也不能越过 `.dualpad-builder/` 的状态机直接执行。
 
 目标不是保留一份“大方向正确”的蓝图，而是把它拆成一组可以逐 slice 评审、逐 slice 校对依赖、逐 slice 准备后续 builder promotion 的计划说明。
 
@@ -37,7 +37,7 @@
 
 ## 固定执行顺序
 
-仅在某个 slice 已同步进入 `.dualpad-builder/feature_list.json`、`.dualpad-builder/sprint_plan.json` 或明确被提升为当前 Sprint 之后，下面的顺序才会转化为默认执行顺序；在 promotion 发生前，它只表示本计划包内部的阅读与依赖顺序。
+这些 slice 已同步进入 `.dualpad-builder/feature_list.json` 与 `.dualpad-builder/sprint_plan.json` 的 planned backlog；下面的顺序因此是后续 promotion 的唯一允许顺序，但只有某个 slice 被明确提升为当前 Sprint 之后，才会转化为 active 执行指令。
 
 1. `01_slice_phase0_freeze_and_replay_barrier_zh.md`
 2. `02_slice_phase1_catalog_and_manifest_compiler_zh.md`
@@ -54,7 +54,7 @@
 ## 切片原则
 
 - 每个 slice 都必须能单独指导规划、评审和 promotion 准备，不依赖 `work` 阶段临场决定核心方案。
-- 任何 slice 只有在同步进 `.dualpad-builder/` 当前状态机后，才可升格为当前执行 authority；在此之前，下游实现、验证和 handoff 仍以 baseline 入口与 `.dualpad-builder/` 为准。
+- 任何 slice 只有在 `.dualpad-builder/` 中从 `planned` 晋升为当前 Sprint 后，才可升格为当前执行 authority；在此之前，下游实现、验证和 handoff 仍以 baseline 入口与 `.dualpad-builder/` 当前 active Sprint 为准。
 - `Phase 8` 从本轮起固定二拆：
   - `09a` 只负责 runtime closeout
   - `09b` 只负责 governance / docgen / CI closeout
@@ -72,7 +72,7 @@
 ## 阅读方式
 
 - 先读本文件确认本计划包的切片顺序与 authority 边界。
-- 若要判断“当前能不能执行”，先回到 `docs/authoritative-baseline/README.md` 和 `.dualpad-builder/` 确认是否已经 promotion。
+- 若要判断“当前能不能执行”，先回到 `docs/authoritative-baseline/README.md` 和 `.dualpad-builder/` 确认对应 Sprint 是否已经从 planned promotion 为 active。
 - 只有在需要历史背景、追踪旧口径或比对拆分前差异时，再回看 `dualpad_rearchitecture_plan_zh.md`。
 - 若 `dualpad_rearchitecture_plan_zh.md` 与本 README 或任一 slice 冻结合同冲突，以本 README 与拆分后的 slice 文档为准。
 - `Phase 8` 先读 `09_slice_phase8_cutover_cleanup_and_ci_zh.md`，再依次阅读 `09a`、`09b`；未 promotion 前，这仍是计划包内部顺序，不自动构成当前 Sprint 指令。

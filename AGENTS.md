@@ -32,6 +32,8 @@
   - `Interface/startmenu.swf`
 - `FavoritesMenu` 的专项 SWF patch workspace、页面源码和页面级 broker 当前不在 repo 内；
   如果任务重新落到该页面，第一步是恢复工作区，而不是直接修页面逻辑。
+- `docs/plans/dualpad_rearchitecture/` 的 `Phase 0` - `Phase 8B` 已登记为 `.dualpad-builder/` planned backlog；
+  这些 slice 不是当前 active Sprint，开工前仍必须按 builder memory 从 `planned` 晋升并记录 progress。
 
 ## 新对话的默认阅读顺序
 
