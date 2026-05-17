@@ -631,3 +631,29 @@
     - 本轮 PH0 bootstrap proof honesty 修正已通过要求的本地验证。
     - `PH0` 不得标记为 `completed` / `passes=true`，直到 behavioral dispatcher / processor replay proof 真正实现并验证通过。
     - `PH1` 保持 `planned` / not started。
+
+## 2026-05-18 00:13:09 CST
+
+- `PH0` status drift doc fix：
+  - 按 review verdict 修正 `docs/authoritative-baseline/work-packages/README.md` 的局部自相矛盾：
+    - `DP1a` 小节状态恢复为 `已完成`。
+    - `PH0` 小节状态改为 `active；已落地 schema / harness bootstrap，behavioral replay barrier 未完全证明`。
+    - `PH0` prove-out 段补充：当前 `materialize-fixture` diff 只证明 schema / diff plumbing 与 fixture materialization，不是 dispatcher / processor runtime replay proof。
+  - 同步微调 `docs/authoritative-baseline/README.md` 中触发状态 drift grep 的措辞，避免出现可误读的 `PH0 ... 已完成`。
+  - 边界确认：
+    - 未启动 `PH1`。
+    - 未实现 `ContextCatalog` 或 `ActionManifest`。
+    - 未改变 `PromptService` / `PromptProjection`。
+    - 未改变旧 SWF 返回 shape。
+- 验证结果：
+  - `git diff --check`
+    - 结果：exit 0；stdout 仅包含 Windows 换行提示：
+      - `warning: in the working copy of '.dualpad-builder/progress.md', LF will be replaced by CRLF the next time Git touches it`
+      - `warning: in the working copy of 'docs/authoritative-baseline/README.md', LF will be replaced by CRLF the next time Git touches it`
+      - `warning: in the working copy of 'docs/authoritative-baseline/work-packages/README.md', LF will be replaced by CRLF the next time Git touches it`
+  - `Get-Content .dualpad-builder/feature_list.json | ConvertFrom-Json | Out-Null; Write-Output "feature_list json parse ok"`
+    - 结果：exit 0；输出 `feature_list json parse ok`。
+  - `Get-Content .dualpad-builder/sprint_plan.json | ConvertFrom-Json | Out-Null; Write-Output "sprint_plan json parse ok"`
+    - 结果：exit 0；输出 `sprint_plan json parse ok`。
+  - `rg "PH0.*已完成|PH0.*completed|passes=true" docs/authoritative-baseline/work-packages/README.md docs/authoritative-baseline/README.md .dualpad-builder/feature_list.json .dualpad-builder/sprint_plan.json`
+    - 结果：exit 1；无输出。该命令用来确认没有命中 forbidden status drift，因此 exit 1/no matches 是预期结果。

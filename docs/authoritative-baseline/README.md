@@ -36,7 +36,7 @@
 ## 当前工作路（2026-05-17）
 
 - 当前活跃 Sprint：
-  - `S-PH0` 仍为 active；`PH0` schema / harness bootstrap 已完成，但 behavioral replay barrier 尚未完全证明。`PH1` 仍为 planned / not started。
+  - `S-PH0` 仍为 active；schema / harness bootstrap 已落地，但 behavioral replay barrier 尚未完全证明。`PH1` 仍为 planned / not started。
 - 当前直接焦点：
   - `DP1a Route-health contract freeze` 与 `DP4a Glyph compat diagnostics freeze` 已完成；`PH0 Phase 0 replay barrier` 当前只可声明 bootstrap 完成，不能把 materialize-fixture 输出当作 dispatcher / processor runtime replay proof；不要启动 `PH1`。
 - 当前推荐推进顺序：
@@ -78,7 +78,7 @@
 - `DP3`：进行中
 - `DP4`：进行中
 - `DP4a`：已完成
-- `PH0`：active；schema / harness bootstrap 已完成，behavioral replay barrier 未完全证明
+- `PH0`：active；已落地 schema / harness bootstrap，behavioral replay barrier 未完全证明
 - `PH1` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
 - `DP5`：计划中
 

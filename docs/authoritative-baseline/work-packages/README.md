@@ -15,7 +15,7 @@
 - `DP3`：`in_progress`
 - `DP4`：`in_progress`
 - `DP4a`：`completed`
-- `PH0`：`active`（schema / harness bootstrap 已完成；behavioral replay barrier 未完全证明）
+- `PH0`：`active`（已落地 schema / harness bootstrap；behavioral replay barrier 未完全证明）
 - `PH1` - `PH8B`：`planned`
 - `DP5`：`planned`
 - 当前活跃 Sprint：`S-PH0`；`S-PH1` 仍 planned / not started
@@ -92,7 +92,7 @@
 - 目标：
   - 在不改变当前 owner 语义的前提下，冻结 `route_state / drain_reason / last_poll_age_ms` 的当前兼容态合同与验证面
 - 状态：
-  - active；schema / harness bootstrap 已完成，behavioral replay barrier 未完全证明
+  - 已完成
 - 首读：
   - `docs/current_input_pipeline_zh.md`
   - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
@@ -178,7 +178,7 @@
 - 目标：
   - 建立 repo-owned replay / diff / golden trace barrier，并把 `FavoritesMenu` 条件场景从默认退出条件中拆出。
 - 状态：
-  - 已完成
+  - active；已落地 schema / harness bootstrap，behavioral replay barrier 未完全证明
 - 首读：
   - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
   - `docs/plans/dualpad_rearchitecture/phase0_scenarios.json`
@@ -196,6 +196,7 @@
   - `xmake build DualPadReplayHarnessTests`
   - `xmake run DualPadReplayHarnessTests`
   - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+  - 当前 `materialize-fixture` diff 只证明 schema / diff plumbing 与 fixture materialization，不是 dispatcher / processor runtime replay proof。
 
 ## `DP5` Validation, cleanup, and workflow honesty
 
