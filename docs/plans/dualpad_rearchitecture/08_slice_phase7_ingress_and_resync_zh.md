@@ -711,9 +711,9 @@ xmake run DualPadIngressTests
      2. enqueue `ManifestEpochChangedPayload{ newEpoch }`。
      3. 只有 marker 已成功入队，runtime 才允许让下一份 `Stable` frame 消费新 graph。
    - assembler 消费顺序固定为：
-     1. flush 边界前最后一份 `Stable` frame`
+     1. flush 边界前最后一份 `Stable` frame
      2. 发 `TransitionReason::ManifestEpochChanged`
-     3. 再开始边界后的第一份 `Stable` frame`
+     3. 再开始边界后的第一份 `Stable` frame
 2. `DeviceFamilyChanged`
    - producer 固定为 `DeviceFamilyIngressPublisher -> SourceEvidenceCollector` 这条已发布链。
    - enqueue 顺序固定为：
@@ -723,7 +723,7 @@ xmake run DualPadIngressTests
    - assembler 消费顺序固定为：
      1. 先消费 marker
      2. 立刻结束旧 boundary 的 merge window
-     3. 只有拿到配对的 `SourceEvidence` snapshot 后，才允许发新 boundary 的第一份 `Stable` frame`
+     3. 只有拿到配对的 `SourceEvidence` snapshot 后，才允许发新 boundary 的第一份 `Stable` frame
 3. fail-closed 行为固定为：
    - 如果 `SourceEvidence` snapshot revision 已变，但前面没有匹配的 `DeviceFamilyChanged` marker，assembler 不得从 snapshot 直接切 boundary；必须拒绝该 snapshot 进入新的 `Stable` frame，置位 `FactHealth.boundaryMarkerMismatch = true`，并走 `ExplicitReset -> HardReset`。
    - 如果 `DeviceFamilyChanged` marker 已到，但后续第一份 `SourceEvidence` snapshot revision 不匹配，assembler 不得“就近取值”；必须置位 `FactHealth.pendingBoundaryMarkerPair = true` 与 `boundaryMarkerMismatch = true`，并走 `ExplicitReset -> HardReset`。
@@ -765,8 +765,8 @@ xmake run DualPadIngressTests
 4. 交接给 Phase 8 的合同
    - `manifestEpoch` 与 `deviceFamilyRevision` 的 authoritative 来源已经冻结为 marker payload，Phase 8 只能删旧路径，不能改回 snapshot/source-driven boundary。
    - `ManifestEpochChanged -> HardResetOutputs -> clean baseline republish` 已固定，Phase 8 只能做清理和 CI 覆盖，不能改恢复级别。
-2. recovery 的唯一 ingress 来源已经固定为 transition frame；Phase 8 不允许再新增“legacy resync flag”。
-3. native/helper 同步 reset 的语义已经固定；Phase 8 只能做清理和 CI 覆盖，不能改执行顺序。
-4. boundary key 的 4 个字段已经冻结；Phase 8 只能删旧路径，不能重写边界定义。
-5. `LegacyIngressParityPath` 只允许作为 Phase 7 的临时 fallback / parity 路径存在；Phase 8 必须删除它，而不是继续把它当长期缓冲区。
-6. 旧 dispatcher / processor 只剩 adapter 角色；Phase 8 应删除其残余 authority，而不是继续给它们补功能。
+   - recovery 的唯一 ingress 来源已经固定为 transition frame；Phase 8 不允许再新增“legacy resync flag”。
+   - native/helper 同步 reset 的语义已经固定；Phase 8 只能做清理和 CI 覆盖，不能改执行顺序。
+   - boundary key 的 4 个字段已经冻结；Phase 8 只能删旧路径，不能重写边界定义。
+   - `LegacyIngressParityPath` 只允许作为 Phase 7 的临时 fallback / parity 路径存在；Phase 8 必须删除它，而不是继续把它当长期缓冲区。
+   - 旧 dispatcher / processor 只剩 adapter 角色；Phase 8 应删除其残余 authority，而不是继续给它们补功能。

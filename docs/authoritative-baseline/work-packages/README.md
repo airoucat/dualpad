@@ -10,16 +10,16 @@
 
 - `WF0`：`completed`
 - `DP1`：`in_progress`
-- `DP1a`：`active`
+- `DP1a`：`completed`
 - `DP2`：`in_progress`
 - `DP3`：`in_progress`
 - `DP4`：`in_progress`
-- `DP4a`：`in_progress`
+- `DP4a`：`active`
 - `PH0` - `PH8B`：`planned`
 - `DP5`：`planned`
-- 当前活跃 Sprint：`S-DP1a`
+- 当前活跃 Sprint：`S-DP4a`
 
-## 当前工作路（`S-DP1a`）
+## 当前工作路（`S-DP4a`）
 
 如果只是继续当前主线，而不是重新梳理整个仓库，默认按下面顺序走：
 
@@ -30,7 +30,7 @@
    - `.dualpad-builder/feature_list.json`
    - `.dualpad-builder/sprint_plan.json`
    - `.dualpad-builder/progress.md`
-2. 先执行 `DP1a Route-health contract freeze`：
+2. `DP1a Route-health contract freeze` 已完成；如需复核，入口仍是：
    - `docs/current_input_pipeline_zh.md`
    - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
    - `src/input/InputFramePump.cpp`
@@ -40,7 +40,7 @@
   - 顶层合同继续只认 `route_state = active_fresh | active_stale | disabled`。
   - `drain_reason`、`last_poll_age_ms`、`hook_installed` 继续作为 secondary diagnostics。
   - 本 slice 不删除 `use_upstream_gamepad_hook=false`，不删除 stale assist drain，也不引入新的 owner 抽象。
-3. `DP1a` 完成后，再进入 `DP4a Glyph compat diagnostics freeze`：
+3. 当前进入 `DP4a Glyph compat diagnostics freeze`：
    - `docs/main_menu_glyph_current_status_zh.md`
    - `docs/plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md`
    - `docs/plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md`
@@ -88,7 +88,7 @@
 - 目标：
   - 在不改变当前 owner 语义的前提下，冻结 `route_state / drain_reason / last_poll_age_ms` 的当前兼容态合同与验证面
 - 状态：
-  - 当前活跃 Sprint
+  - 已完成
 - 首读：
   - `docs/current_input_pipeline_zh.md`
   - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
@@ -152,7 +152,7 @@
 - 目标：
   - 在不改变旧 SWF 外部返回 shape 的前提下，冻结 glyph compat 诊断边界与最小验证面
 - 状态：
-  - 进行中（已在 current worktree / current docs 启动，但当前活跃 Sprint 仍是 `DP1a`）
+  - 当前活跃 Sprint
 - 首读：
   - `docs/main_menu_glyph_current_status_zh.md`
   - `docs/plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md`
@@ -188,4 +188,3 @@
 - 再从该工作包反查要读的 current truth 文档和代码入口
 - 新的 slice、验证和 close-out 记录都同步写回 `.dualpad-builder/`
 - 如果外部计划包尚未 promotion into `.dualpad-builder/`，实现与验证不得把它直接当成当前执行主线
-

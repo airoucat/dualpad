@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-17T21:03:29+08:00",
+  "updated_at": "2026-05-17T21:36:22+08:00",
   "features": [
     {
       "id": "WF0",
@@ -49,8 +49,8 @@
       "depends_on": [
         "WF0"
       ],
-      "status": "active",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "顶层 route_state 继续固定为 active_fresh / active_stale / disabled",
         "drain_reason、last_poll_age_ms、hook_installed 被收口为 secondary diagnostics，而不是新的主状态体系",
@@ -117,7 +117,7 @@
       "depends_on": [
         "DP1a"
       ],
-      "status": "in_progress",
+      "status": "active",
       "passes": false,
       "acceptance": [
         "status / fallback / ambiguity 只先进入内部诊断面、日志、trace 与 targeted tests",
@@ -140,7 +140,7 @@
       "passes": false,
       "acceptance": [
         "replay / diff / golden trace barrier 以 repo-owned mandatory scenarios 落地",
-        "FavoritesMenu 条件场景不会在 workspace 未恢复时成为退出条件",
+        "phase0_scenarios.json 以 mandatory=false / conditional_live 标记 FavoritesMenu 条件场景，workspace 未恢复时不会成为退出条件",
         "Phase 0 target、trace schema、diff runner 和 progress close-out 可追踪"
       ]
     },
@@ -159,7 +159,7 @@
       "passes": false,
       "acceptance": [
         "ContextCatalog、ActionManifest、LegacyIniImporter 和 ManifestValidator 有固定代码落点",
-        "manifest publication 与后续 boundary marker handoff 不再留到实现阶段决定",
+        "AtomicConfigReloader::Promote() 与 ActionManifestPublisher::PublishPromotedBundle(...) 的 manifest marker handoff 不再留到实现阶段决定",
         "manifest compiler prove-out target 可执行并写回 builder memory"
       ]
     },
@@ -194,7 +194,7 @@
       "passes": false,
       "acceptance": [
         "SourceEvidenceCollector、PresentationProjection 和 SkyrimCompatibilitySurface 分层落地",
-        "DeviceFamilyChanged marker 与 SourceEvidence 配对合同进入已发布 seam",
+        "DeviceFamilyChanged marker 与 SourceEvidence 配对合同进入已发布 seam，且 revision 一致性有 exit gate",
         "presentation rollback 和 shadow parity 有固定验证入口"
       ]
     },
@@ -213,7 +213,7 @@
       "passes": false,
       "acceptance": [
         "ControlPath、BindingModifier、InteractionSpec、DisplayBinding 与 CompiledActionGraph 合同落地",
-        "compiled graph publication owner 与 runtime swap 入口已冻结",
+        "CompiledActionGraphPublisher::Publish(...) 作为 compiled graph publication owner 与 runtime swap 入口已冻结",
         "Action Graph prove-out 覆盖 layer/combo/fail-closed 场景"
       ]
     },
@@ -231,7 +231,7 @@
       "passes": false,
       "acceptance": [
         "GameplayProjectionFrame、RecoveryPlan 和 GameplayPresentationPublisher 落地",
-        "HardReset / SoftResync / clean baseline 的执行顺序可测试",
+        "HardReset / SoftResync / clean baseline 的 native、helper、presentation 同步顺序有 targeted tests",
         "legacy coordinator feedback loop 不再是 gameplay projection authority"
       ]
     },
@@ -248,7 +248,7 @@
       "passes": false,
       "acceptance": [
         "PromptProjection / PromptService 取代 glyph reverse lookup authority",
-        "旧 SWF API 兼容策略与 repo-owned smoke gate 已冻结",
+        "旧 SWF API 兼容策略与 repo-owned startmenu.swf smoke gate 已冻结",
         "DP4a compat tests 不会在 Phase 6 后继续钉死旧 fallback 语义"
       ]
     },

@@ -137,6 +137,7 @@
 - `tests/ReplayHarnessTests.cpp`
 - `tests/replay/golden/`
 - `scripts/dev/dualpad_trace_diff.py`
+- `docs/plans/dualpad_rearchitecture/phase0_scenarios.json`
 
 ### 本 slice 需要维护的文档入口
 
@@ -287,6 +288,7 @@
 
 7. **golden trace 范围在本 slice 一次性定死，不把“先录哪些”留到 work 阶段。**
    - Phase 0 默认必录 10 个 repo-owned scenario 目录，另保留 1 个 `FavoritesMenu` 条件场景。
+   - 机器可读清单固定为 `docs/plans/dualpad_rearchitecture/phase0_scenarios.json`；`mandatory=false` 的场景不得被 runner、CI 或人工 checklist 当作默认退出条件。
    - `FavoritesMenu` 条件场景不得在缺少页面源码 / SWF patch workspace / artifact inventory 时作为 Phase 0 退出条件；如果本轮决定启用它，必须先恢复对应 workspace，并在 `.dualpad-builder/progress.md` 记录可复述的 artifact 来源与验证边界。
 
    | scenario 目录 | 采集方式 | 必须覆盖的 surface |

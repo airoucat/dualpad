@@ -367,6 +367,14 @@ atomic swap 现在就定为“内存 bundle 指针切换”，不是磁盘 renam
 - `CompiledContextCatalog`、`CompiledActionManifest`、`legacyBindingProjection` 必须共享同一 `manifestEpoch`
 - 后续 slice 只能消费这个 epoch，不能各自再引入第二个 config revision
 
+manifest marker handoff 也在本 slice 冻结，避免 Phase 7 再反推 producer：
+
+- `AtomicConfigReloader::Promote()` 只负责 scratch compile 成功后的 active bundle 指针切换、`manifestEpoch` 递增和 last-known-good 持久化；它不直接向 ingress 层发 marker。
+- `ActionManifestPublisher` 固定为 `ManifestEpochChanged` 的唯一 producer owner，代码落点为 `src/input_v2/config/ActionManifestPublisher.*`。
+- `AtomicConfigReloader::Promote()` 成功后必须同步调用 `ActionManifestPublisher::PublishPromotedBundle(const CompiledConfigBundle&, std::uint64_t manifestEpoch)`；该调用必须发生在 legacy facade 刷新之前。
+- Phase 1 期间如果 ingress hub 尚未落地，`ActionManifestPublisher` 仍要以测试可观察的方式记录最新 promoted epoch；Phase 7 接入时只能把该 publisher 接到 `IngressHub::PushEvent(ManifestEpochChangedPayload{ manifestEpoch })`，不得另造第二个 marker producer。
+- runtime 只有在 `ActionManifestPublisher` 确认新 epoch 已发布后，才允许让下一份 runtime frame 消费新 `CompiledActionGraph`。
+
 ### 8. 兼容层策略固定
 
 Phase 1 不是把旧组件删掉，而是把它们降格为 compatibility facade。具体冻结如下：
@@ -578,6 +586,7 @@ validator 不允许只吐 warning；上面这些都必须 hard fail。
 - 磁盘 `last-known-good` 写入是 promote 成功后的附带动作
 - 序列化失败只影响持久化，不允许回滚已经成功的 active bundle
 - `legacyBindingProjection.manifestEpoch` 必须跟 promote 后的 bundle epoch 一致
+- promote 成功后立即调用 `ActionManifestPublisher::PublishPromotedBundle(...)`；legacy facade 同步必须在该 publisher 调用之后执行，避免旧 facade 先暴露新图而 ingress marker 尚未发布。
 
 启动顺序固定改成：
 

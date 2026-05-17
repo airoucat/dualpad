@@ -36,15 +36,15 @@
 ## 当前工作路（2026-05-17）
 
 - 当前活跃 Sprint：
-  - `S-DP1a`
+  - `S-DP4a`
 - 当前直接焦点：
-  - 先冻结 `DP1a Route-health contract freeze`，不要在 `DP4` glyph 线或后续 phase 上越过当前 gate
+  - `DP1a Route-health contract freeze` 已完成；当前进入 `DP4a Glyph compat diagnostics freeze`，不要越过当前 gate 直接进入 Phase 0 或后续 phase
 - 当前推荐推进顺序：
   1. 先看本目录入口、`work-packages/README.md`、`docs/harness/dualpad-builder.md` 和 `.dualpad-builder/` 记忆层，确认当前 Sprint、边界和 close-out 口径
-  2. 先进入 `DP1a`：
+  2. `DP1a` 已完成；如需复核，入口仍是：
      - `docs/current_input_pipeline_zh.md`
      - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
-  3. 只有 `DP1a` 完成后，才进入 `DP4a`：
+  3. 当前进入 `DP4a`：
      - `docs/main_menu_glyph_current_status_zh.md`
      - `docs/plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md`
      - `docs/plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md`
@@ -70,17 +70,17 @@
 
 - `WF0`：已完成
 - `DP1`：进行中
-- `DP1a`：当前活跃 Sprint
+- `DP1a`：已完成
 - `DP2`：进行中
 - `DP3`：进行中
 - `DP4`：进行中
-- `DP4a`：进行中（当前 worktree 已启动，但不是活跃 Sprint）
+- `DP4a`：当前活跃 Sprint
 - `PH0` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
 - `DP5`：计划中
 
 ## 主题路由
 
-主题路由只用于理解某个主题的 current reality，不替代上面的当前工作路 gate；若当前任务是继续推进实现，仍先按 `S-DP1a -> DP4a` 顺序进入。
+主题路由只用于理解某个主题的 current reality，不替代上面的当前工作路 gate；若当前任务是继续推进实现，当前先按 `S-DP4a` 进入。
 
 - 输入主链 / runtime contract：
   - `docs/current_input_pipeline_zh.md`

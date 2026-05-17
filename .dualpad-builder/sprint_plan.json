@@ -1,8 +1,8 @@
 {
   "project": "DualPad Authoritative Baseline",
   "status": "active",
-  "current_sprint": "S-DP1a",
-  "updated_at": "2026-05-17T21:03:29+08:00",
+  "current_sprint": "S-DP4a",
+  "updated_at": "2026-05-17T21:36:22+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -59,7 +59,7 @@
       "requirements": [
         "B1"
       ],
-      "status": "active",
+      "status": "completed",
       "exit_criteria": [
         "route_state 继续固定为 active_fresh / active_stale / disabled",
         "drain_reason、last_poll_age_ms 与 hook_installed 的当前兼容态合同在 current truth、Phase 0 与 builder memory 之间一致",
@@ -154,7 +154,7 @@
       "requirements": [
         "B4"
       ],
-      "status": "in_progress",
+      "status": "active",
       "exit_criteria": [
         "status / fallback / ambiguity 的当前归宿被正式写成内部诊断面，而不是旧 UI 对外 contract",
         "旧 DualPad_GetActionGlyphToken 继续返回单个 token string；旧 DualPad_GetActionGlyph descriptor 继续保持 ok / buttonArtToken / semanticId / contextName",
@@ -186,7 +186,7 @@
       "status": "planned",
       "exit_criteria": [
         "trace schema、recorder、replay harness、diff runner 和 Phase 0 mandatory scenarios 落地",
-        "10 个 repo-owned mandatory scenario bundle 齐全，FavoritesMenu 仅在 workspace 恢复后作为条件场景",
+        "10 个 repo-owned mandatory scenario bundle 齐全，phase0_scenarios.json 把 FavoritesMenu 标成 mandatory=false / conditional_live",
         ".dualpad-builder/progress.md 记录 Phase 0 start / done / blocked 与验证结果"
       ],
       "verification": [
@@ -214,7 +214,7 @@
       "status": "planned",
       "exit_criteria": [
         "catalog 与 manifest schema 有固定字段、版本和 validation 规则",
-        "manifest publication owner 与 ManifestEpochChanged marker producer 在文档和代码中一致",
+        "AtomicConfigReloader::Promote() 只负责 active bundle / epoch / LKG；ActionManifestPublisher::PublishPromotedBundle(...) 是唯一 ManifestEpochChanged producer seam",
         "legacy ini import 不再由 runtime path 临场解释"
       ],
       "verification": [
@@ -263,6 +263,7 @@
       "status": "planned",
       "exit_criteria": [
         "SourceEvidenceCollector 发布 DeviceFamilyChanged marker 与配对 SourceEvidence snapshot",
+        "DeviceFamilyChangedPayload.newRevision 与紧随其后的 SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision 有 targeted test 覆盖",
         "PresentationProjection 与 SkyrimCompatibilitySurface 分层清楚，rollback 边界固定",
         "gameplay -> menu 首帧平台、menu reclaim 与 remap mode 有 shadow parity 或手工验证记录"
       ],
@@ -289,7 +290,7 @@
       "status": "planned",
       "exit_criteria": [
         "ControlPath、BindingModifier、InteractionSpec、DisplayBinding、CompiledActionGraph 合同落地",
-        "compiled graph publication owner 与 hot-swap 入口已明确，Phase 7 不再另造 publish 点",
+        "CompiledActionGraphPublisher::Publish(...) 是 compiled graph publication 与 hot-swap 的唯一入口，Phase 7 不再另造 publish 点",
         "layer / combo / fail-closed / display binding 场景有 targeted tests"
       ],
       "verification": [
@@ -314,7 +315,7 @@
       "status": "planned",
       "exit_criteria": [
         "GameplayProjectionFrame 与 RecoveryPlan 的结构和执行顺序冻结",
-        "HardReset / SoftResync / clean baseline 的 native、helper、presentation 输出同步验证",
+        "HardReset / SoftResync / clean baseline 的 native、helper、presentation 输出同步验证写成 targeted tests，不只依赖 replay diff",
         "legacy coordinator feedback loop 不再是 gameplay projection authority"
       ],
       "verification": [
@@ -338,14 +339,14 @@
       "status": "planned",
       "exit_criteria": [
         "PromptSnapshotRecord、PromptScope、PromptService 和 fail-closed 矩阵落地",
-        "旧 DualPad_GetActionGlyphToken / DualPad_GetActionGlyph 的兼容策略与 repo-owned SWF smoke gate 已验证",
+        "旧 DualPad_GetActionGlyphToken / DualPad_GetActionGlyph 的兼容策略与 repo-owned startmenu.swf smoke gate 已验证",
         "DP4a compat tests 不再阻止 Phase 6 fail-closed prompt contract"
       ],
       "verification": [
         "xmake build DualPadPromptSnapshotTests",
         "xmake run DualPadPromptSnapshotTests",
         "xmake build DualPad",
-        "必要时记录 repo-owned startmenu.swf smoke 结果",
+        "记录 repo-owned Interface/startmenu.swf smoke 结果",
         "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
       ]
     },

@@ -426,3 +426,44 @@
   - 没有把 `PH0` - `PH8B` 晋升为当前 active Sprint；当前 active 仍是 `S-DP1a`。
   - 没有恢复 `FavoritesMenu` workspace；因此 Favorites glyph capture 仍不是 Phase 0 默认退出条件。
   - 没有声称 Phase 0-09b 已实现或验证通过。
+
+
+## 2026-05-17 21:36:22 CST
+
+- 本轮根据外部 GPT Pro 复审的 `Conditional Go` 结论做低风险补强，并执行 `DP1a` close-out。
+- 本轮补强：
+  - 新增 `docs/plans/dualpad_rearchitecture/phase0_scenarios.json`，用 `mandatory=false` / `conditional_live` 机器可读地标记 `FavoritesMenu` 条件场景。
+  - `Phase 1` 明确 `AtomicConfigReloader::Promote()` 只负责 active bundle / epoch / LKG；`ActionManifestPublisher::PublishPromotedBundle(...)` 是唯一 `ManifestEpochChanged` producer seam。
+  - `Phase 3` exit gate 明确 `DeviceFamilyChangedPayload` 与紧随其后的 `SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision` 必须一致。
+  - `Phase 4` 明确 `CompiledActionGraphPublisher::Publish(...)` 是 compiled graph publication / hot-swap 的唯一入口。
+  - `Phase 6` 把 repo-owned `Interface/startmenu.swf` smoke 固定为退出验证项，不再写成“必要时”。
+  - `Phase 7` 清理最终合同汇总里的 Markdown / 编号残留，不改语义。
+- `DP1a` close-out 状态变更：
+  - `.dualpad-builder/feature_list.json`：`DP1a` -> `completed` / `passes=true`；`DP4a` -> `active`
+  - `.dualpad-builder/sprint_plan.json`：`current_sprint` -> `S-DP4a`；`S-DP1a` -> `completed`；`S-DP4a` -> `active`
+  - `docs/authoritative-baseline/README.md` 与 `docs/authoritative-baseline/work-packages/README.md` 已同步当前活跃 Sprint。
+- 本轮已执行验证：
+  - `git diff --check`
+    - 结果：无 diff whitespace 错误；仅有 Windows CRLF 工作区提示。
+  - `Get-Content .dualpad-builder/sprint_plan.json | ConvertFrom-Json | Out-Null`
+    - 结果：解析成功。
+  - `Get-Content .dualpad-builder/feature_list.json | ConvertFrom-Json | Out-Null`
+    - 结果：解析成功。
+  - `Get-Content docs/plans/dualpad_rearchitecture/phase0_scenarios.json | ConvertFrom-Json | Out-Null`
+    - 结果：解析成功。
+  - `xmake build -j 1 DualPadRouteHealthContractTests`
+    - 结果：build ok。
+  - `xmake run DualPadRouteHealthContractTests`
+    - 结果：exit 0。
+  - `xmake build -j 1 DualPad`
+    - 结果：build ok；默认输出为 repo-local `build/bin/DualPad/DualPad.dll`。
+  - `xmake build -j 1 DualPadGlyphResolutionCompatTests`
+    - 结果：build ok。
+  - `xmake run DualPadGlyphResolutionCompatTests`
+    - 结果：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+    - 结果：graphify rebuild 成功，生成 1005 nodes / 1856 edges / 102 communities。
+- 本轮刻意未做：
+  - 没有把 `DP4a` 标成 completed；它只是当前 active Sprint。
+  - 没有晋升 `PH0`；Phase 0 仍是 planned backlog。
+  - 没有做真正 clean clone 验证；只验证了当前 checkout 的默认 xmake repo-local 输出。

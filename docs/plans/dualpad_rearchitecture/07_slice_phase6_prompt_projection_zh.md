@@ -676,6 +676,10 @@ xmake build DualPad
   - `DualPad_GetActionGlyph` 失败时 `ok=false` 且 `buttonArtToken=""`
   - `DualPad_GetActionGlyph` 会附带 `failureReason`
   - rich API 返回完整 candidate 列表
+- repo-owned `Interface/startmenu.swf` smoke
+  - 旧 `DualPad_GetActionGlyphToken` 仍能被现有 SWF 调用并消费单 token string
+  - 旧 `DualPad_GetActionGlyph` 仍能被现有 SWF 调用并消费兼容 descriptor
+  - 旧 SWF 不依赖新增 rich prompt 字段，也不会因为失败态字段扩展破坏现有显示路径
 
 ### replay / shadow compare
 
@@ -772,6 +776,7 @@ xmake build DualPad
   - `ParseInputContextName(...).value_or(InputContext::Menu)`
 - invalid context 已经 fail-closed，不再自动落到 generic `Menu` 或当前 published scope。
 - `DualPadInputV2Tests` 通过。
+- repo-owned `Interface/startmenu.swf` smoke 已执行并记录，证明旧 SWF 仍能消费旧 delegate shape。
 - shadow compare 已执行、通过 `Shadow Compare Exit Gate`，并对 intentional difference 有文档化解释。
 - 如发生 cutover 回退，回退边界符合 `Rollback Boundary / Emergency Revert`，且未把 mixed runtime 留在主路径。
 

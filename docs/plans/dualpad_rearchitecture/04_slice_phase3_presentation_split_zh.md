@@ -790,6 +790,8 @@ xmake run DualPadMenuContextPolicyTests
 9. shadow parity 在主验证矩阵里无未解释 diff。
 10. `deviceFamilyRevision` 已由 `PublishedDeviceFamilyEvidence` 正式发布，且没有任何 consumer
     通过 `PublishedPresentationState.family` 逆推它。
+    - `DeviceFamilyChangedPayload{ family, newRevision }` 已由 `DeviceFamilyIngressPublisher -> SourceEvidenceCollector` 发布。
+    - 紧随 marker 的 `SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision` 必须与 marker payload 完全一致；不一致必须作为 Phase 3 exit gate 失败处理。
 11. `PublishedGameplayPresentation` 已成为 `PresentationProjection` 的唯一 gameplay 输入面。
 12. 若本 slice 仍暂时保留 `Phase2ResolvedContextFeedAdapter`，它已经逐字段转发
     `uiContext / contextRevision / actionSetStack / presentationPolicyId / topMenuInstanceId / identityQuality / menuStackRevision`，

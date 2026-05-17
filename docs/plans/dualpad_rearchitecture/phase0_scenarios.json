@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "phase": "PH0",
+  "scenarios": [
+    {
+      "id": "01_gameplay_walk_attack_block_sprint",
+      "capture": "live",
+      "mandatory": true,
+      "surfaces": ["poll", "presentation", "keyboard_empty"]
+    },
+    {
+      "id": "02_gameplay_menu_roundtrip",
+      "capture": "live",
+      "mandatory": true,
+      "surfaces": ["dispatcher", "poll", "presentation"]
+    },
+    {
+      "id": "03_main_menu_glyph",
+      "capture": "live",
+      "mandatory": true,
+      "surfaces": ["glyph", "presentation"]
+    },
+    {
+      "id": "04_journal_confirm_cancel",
+      "capture": "live",
+      "mandatory": true,
+      "surfaces": ["glyph", "poll", "presentation"]
+    },
+    {
+      "id": "05_map_cursor_zoom_open_journal",
+      "capture": "live",
+      "mandatory": true,
+      "surfaces": ["glyph", "presentation", "poll"]
+    },
+    {
+      "id": "06_favorites_page_lr_accept_cancel",
+      "capture": "conditional_live",
+      "mandatory": false,
+      "requires_workspace": "FavoritesMenu",
+      "surfaces": ["poll", "presentation"],
+      "conditional_surfaces": ["glyph"]
+    },
+    {
+      "id": "07_book_page_lr",
+      "capture": "live",
+      "mandatory": true,
+      "surfaces": ["glyph", "presentation"]
+    },
+    {
+      "id": "08_console_creations_lockpicking",
+      "capture": "live_merge_sessions",
+      "mandatory": true,
+      "surfaces": ["poll", "presentation"],
+      "conditional_surfaces": ["glyph"]
+    },
+    {
+      "id": "09_combo_native_pause_screenshot_hotkeys",
+      "capture": "live_with_dinput8_proxy",
+      "mandatory": true,
+      "surfaces": ["keyboard_bridge", "poll"]
+    },
+    {
+      "id": "10_backlog_gap_overflow",
+      "capture": "synthetic_fixture",
+      "mandatory": true,
+      "surfaces": ["dispatcher", "processed_snapshot", "poll"]
+    },
+    {
+      "id": "11_config_reload_success_failure",
+      "capture": "synthetic_fixture_temp_ini",
+      "mandatory": true,
+      "surfaces": ["replay_parser", "runtime_config_surface"]
+    }
+  ]
+}
