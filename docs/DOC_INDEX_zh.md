@@ -19,7 +19,7 @@
 
 ## 按当前工作路阅读
 
-### 当前活跃 Sprint：无；已关闭到 `S-PH0`
+### 当前活跃 Sprint：`S-PH0`
 
 1. 先确认入口和约束：
    - [authoritative-baseline/README.md](authoritative-baseline/README.md)
@@ -37,7 +37,7 @@
    - [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
    - [plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md](plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md)
    - [plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md](plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md)
-4. `PH0` 已完成；当前 replay barrier 入口是：
+4. `PH0` 当前只完成 schema / harness bootstrap；behavioral replay barrier 未完全证明，当前入口是：
    - [plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md](plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md)
    - [plans/dualpad_rearchitecture/phase0_scenarios.json](plans/dualpad_rearchitecture/phase0_scenarios.json)
    - [../src/input_v2/telemetry/TraceSchema.h](../src/input_v2/telemetry/TraceSchema.h)

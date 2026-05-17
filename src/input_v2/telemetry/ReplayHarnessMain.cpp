@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -14,14 +15,18 @@ namespace
         std::filesystem::path output;
         std::filesystem::path batch;
         std::filesystem::path outputRoot;
-        dualpad::input_v2::telemetry::ReplayMode mode{ dualpad::input_v2::telemetry::ReplayMode::Dispatcher };
+        dualpad::input_v2::telemetry::ReplayMode mode{ dualpad::input_v2::telemetry::ReplayMode::ValidateSchema };
     };
 
     void PrintUsage()
     {
         std::cerr
             << "Usage:\n"
+            << "  DualPadReplayHarness --scenario <dir> --mode validate-schema\n"
+            << "  DualPadReplayHarness --scenario <dir> --mode materialize-fixture --output <dir>\n"
             << "  DualPadReplayHarness --scenario <dir> --mode dispatcher|processor --output <dir>\n"
+            << "  DualPadReplayHarness --batch <phase0-root> --mode validate-schema\n"
+            << "  DualPadReplayHarness --batch <phase0-root> --mode materialize-fixture --output-root <dir>\n"
             << "  DualPadReplayHarness --batch <phase0-root> --mode dispatcher|processor --output-root <dir>\n";
     }
 
@@ -51,21 +56,34 @@ namespace
         }
         return args;
     }
+
+    bool RequiresOutput(dualpad::input_v2::telemetry::ReplayMode mode)
+    {
+        return mode != dualpad::input_v2::telemetry::ReplayMode::ValidateSchema;
+    }
 }
 
 int main(int argc, char** argv)
 {
-    const auto args = ParseArgs(argc, argv);
+    Args args{};
+    try {
+        args = ParseArgs(argc, argv);
+    } catch (const std::invalid_argument& e) {
+        std::cerr << e.what() << '\n';
+        PrintUsage();
+        return 2;
+    }
+
     dualpad::input_v2::telemetry::ReplayResult result{};
 
     if (!args.batch.empty()) {
-        if (args.outputRoot.empty()) {
+        if (RequiresOutput(args.mode) && args.outputRoot.empty()) {
             PrintUsage();
             return 2;
         }
         result = dualpad::input_v2::telemetry::ReplayBatch(args.batch, args.mode, args.outputRoot);
     } else {
-        if (args.scenario.empty() || args.output.empty()) {
+        if (args.scenario.empty() || (RequiresOutput(args.mode) && args.output.empty())) {
             PrintUsage();
             return 2;
         }

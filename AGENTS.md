@@ -32,8 +32,8 @@
   - `Interface/startmenu.swf`
 - `FavoritesMenu` 的专项 SWF patch workspace、页面源码和页面级 broker 当前不在 repo 内；
   如果任务重新落到该页面，第一步是恢复工作区，而不是直接修页面逻辑。
-- `DP1a`、`DP4a` 与 `PH0` 已完成；`PH1` - `PH8B` 仍是 `.dualpad-builder/` planned backlog；
-  这些后续 slice 不是当前 active Sprint，开工前仍必须按 builder memory 从 `planned` 晋升并记录 progress。
+- `DP1a` 与 `DP4a` 已完成；`PH0` 当前只完成 schema / harness bootstrap，behavioral replay barrier 尚未完全证明。
+- `PH0` 仍是当前 active Sprint；`PH1` - `PH8B` 仍是 `.dualpad-builder/` planned backlog，开工前必须按 builder memory 从 `planned` 晋升并记录 progress。
 
 ## 新对话的默认阅读顺序
 
@@ -112,7 +112,7 @@
   先读 `docs/menu_context_policy_current_status_zh.md`、`docs/gameplay_input_ownership_investigation_and_plan_zh.md`、`docs/gameplay_sustained_digital_and_cursor_handoff_plan_zh.md`。
 
 - “我要改动态 glyph”
-  先读 `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md` 和当前 `.dualpad-builder/sprint_plan.json`，确认当前 gate；`DP1a`、`DP4a` 与 `PH0` 已完成，后续 glyph / prompt 工作仍必须先晋升对应 Sprint。`docs/dynamic_glyph_svg_system_plan_zh.md` 只用于长期 SVG / Widget 方案，不替代当前 compat surface 合同。
+  先读 `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md` 和当前 `.dualpad-builder/sprint_plan.json`，确认当前 gate；`DP1a` 与 `DP4a` 已完成，`PH0` 仍 active 且只完成 schema / harness bootstrap，后续 glyph / prompt 工作仍必须先晋升对应 Sprint。`docs/dynamic_glyph_svg_system_plan_zh.md` 只用于长期 SVG / Widget 方案，不替代当前 compat surface 合同。
 
 - “按默认工作流继续”
   先读 `docs/harness/dualpad-builder.md`、`.dualpad-builder/spec.md`、`.dualpad-builder/feature_list.json`、`.dualpad-builder/sprint_plan.json` 和 `.dualpad-builder/progress.md`，然后按 `Planner -> ce:plan`、`Generator -> ce:work`、`Evaluator -> ce:review` 推进当前 slice。

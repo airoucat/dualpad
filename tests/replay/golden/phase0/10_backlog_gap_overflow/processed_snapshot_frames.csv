@@ -1,1 +1,2 @@
 sequence,first_sequence,source_timestamp_us,context,context_epoch,overflowed,coalesced,cross_context_mismatch,digital_mask,left_stick_x,left_stick_y,right_stick_x,right_stick_y,left_trigger,right_trigger
+101,100,100016,Gameplay,1,true,true,false,2,0.25,0,0,0,0,0

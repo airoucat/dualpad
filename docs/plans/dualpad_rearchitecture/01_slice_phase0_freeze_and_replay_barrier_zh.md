@@ -13,13 +13,15 @@
 
 ## 实现状态（2026-05-17）
 
-- `PH0` 已完成并写回 `.dualpad-builder/feature_list.json` / `.dualpad-builder/sprint_plan.json`。
-- 当前落地入口：
+- `PH0` 已完成 schema / harness bootstrap，但 behavioral replay barrier 尚未完全证明；`.dualpad-builder/feature_list.json` 中 `PH0` 已回退为 `active` / `passes=false`，`.dualpad-builder/sprint_plan.json` 中 `S-PH0` 保持 active。
+- 当前已落地的 bootstrap 入口：
   - `src/input_v2/telemetry/`
   - `tests/replay/golden/phase0/`
   - `scripts/dev/dualpad_trace_diff.py`
   - `DualPadReplayHarness`
   - `DualPadReplayHarnessTests`
+- `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`，用途是生成 diff 工具可消费的 actual bundle；它不是 dispatcher / processor runtime replay proof。
+- `dispatcher` / `processor` 模式在真正驱动 `PadEventSnapshotDispatcher` / `PadEventSnapshotProcessor` 并产出 candidate bundle 前，不得作为通过的 behavioral replay barrier。
 - `06_favorites_page_lr_accept_cancel` 仍只在 `phase0_scenarios.json` 中标记为 `mandatory=false` / `conditional_live`；仓库未恢复 `FavoritesMenu` workspace、页面源码或 artifact inventory，因此它不是默认退出条件。
 
 ## 当前 repo reality 缺口与 breach 边界
@@ -247,7 +249,7 @@
    - 这一阶段保留当前 fallback 行为；invalid `contextName` 仍按现状录成 `Menu` fallback 结果。
 
 4. **实现 replay harness，先保证“同 bundle 可重放”，再谈批量。**
-   - 在 `src/input_v2/telemetry/ReplayHarness.*` 实现两个固定模式：
+   - 在 `src/input_v2/telemetry/ReplayHarness.*` 最终需要实现两个 behavioral 模式：
      - `dispatcher`：按 `dispatcher_schedule.csv` 回放 ingress snapshot，并驱动 `PadEventSnapshotDispatcher`
      - `processor`：直接按 `processed_snapshot_*.csv` 喂 `PadEventSnapshotProcessor`
    - 两个模式都要在每个 scenario 开头统一 reset：
@@ -258,22 +260,24 @@
      - `KeyboardHelperBackend::Reset()`
      - `GameplayOwnershipCoordinator::Reset()`
    - replay harness 输出目录固定为 `build/replay/<scenario>/`，输出文件名与 golden bundle 同名。
-   - harness 不是测试断言层；它只负责“重放并产出 candidate bundle”。
+   - 在 behavioral 模式实现前，允许存在 `validate-schema` 与 `materialize-fixture` bootstrap 模式；这两者只能证明 schema / diff plumbing，不证明 dispatcher / processor runtime 行为。
+   - harness 不是测试断言层；behavioral 模式只负责“重放并产出 candidate bundle”，diff 工具负责比较。
 
 5. **把 replay runner 和测试入口写成明确 target，不复用现有 `MenuContextPolicyTests`。**
    - 在 `xmake.lua` 新增：
      - `target("DualPadReplayHarness")`
        - `set_kind("binary")`
-       - 负责读取 scenario、输出 candidate bundle
+     - 负责读取 scenario；`materialize-fixture` 只输出 copied fixture bundle，behavioral `dispatcher` / `processor` 才能输出 candidate bundle
      - `target("DualPadReplayHarnessTests")`
        - `set_kind("binary")`
        - 编译 `tests/ReplayHarnessTests.cpp`
    - `tests/ReplayHarnessTests.cpp` 必须至少覆盖：
      - CSV schema round-trip
-     - `dispatcher_schedule.csv` 驱动下的 submit/drain 顺序恢复
-     - `processed_snapshot` 回放能还原 `expected_authoritative_poll.csv`
+     - `materialize-fixture` 能保留 `dispatcher_schedule.csv` 的 submit/drain 行顺序
+     - `materialize-fixture` 能保留 `expected_authoritative_poll.csv` 数据行
      - glyph 规范化结果能还原 `expected_glyph_results.csv`
      - `KeyboardNativeBridge` 命令顺序保持稳定
+     - `dispatcher` / `processor` 在未实现 runtime replay 前必须 fail，且不能复制 golden 文件伪装通过
    - 这一步完成后，Phase 0 的最小命令入口固定为：
      - `xmake build DualPadReplayHarness`
      - `xmake build DualPadReplayHarnessTests`
@@ -343,7 +347,7 @@
    - 对每个 scenario 至少跑一遍：
 
    ```powershell
-   xmake run DualPadReplayHarness -- --scenario tests/replay/golden/phase0/01_gameplay_walk_attack_block_sprint --mode dispatcher --output build/replay/01_gameplay_walk_attack_block_sprint
+   xmake run DualPadReplayHarness -- --scenario tests/replay/golden/phase0/01_gameplay_walk_attack_block_sprint --mode materialize-fixture --output build/replay/01_gameplay_walk_attack_block_sprint
    python scripts/dev/dualpad_trace_diff.py --expected tests/replay/golden/phase0/01_gameplay_walk_attack_block_sprint --actual build/replay/01_gameplay_walk_attack_block_sprint --report build/replay-diff/01_gameplay_walk_attack_block_sprint/report.md
    ```
 
@@ -424,13 +428,14 @@
 - `xmake.lua` 里已有 `DualPadReplayHarness` 和 `DualPadReplayHarnessTests` 两个独立 target。
 - `tests/replay/golden/phase0/` 下 10 个 repo-owned mandatory scenario 目录全部存在，且 bundle 文件齐全；允许某些 CSV 只有表头，但不允许缺文件。
 - 若启用 `06_favorites_page_lr_accept_cancel`，对应 workspace / artifact inventory / capture surface 已先写入 `.dualpad-builder/progress.md`，且该场景 bundle 文件齐全；未恢复 workspace 时不得把 Favorites glyph capture 当作 Phase 0 breach 或退出条件。
-- replay candidate 对 golden 的 diff 为 0；若有差异，必须先解释再改 golden，不能静默覆盖。
+- `validate-schema` 与 `materialize-fixture` bootstrap 验证通过，且不能被表述为 behavioral replay proof。
+- behavioral `dispatcher` / `processor` replay candidate 对 golden 的 diff 为 0；若有差异，必须先解释再改 golden，不能静默覆盖。完成这一项前，`PH0` 不得标成 `completed` / `passes=true`。
 - recorder 在 `enable_trace_recording = false` 时不改变现有运行时行为；这必须通过至少一次关闭开关的 live smoke 验证确认。
 - `.dualpad-builder/progress.md` 已记录开始、完成和验证命令结果。
 
 ## 交接给下一 slice 的合同
 
-- `Phase 1` 及之后的所有 slice，都必须把 `tests/replay/golden/phase0/` 视为 canonical replay root `tests/replay/golden/` 下的第一层回归护栏；新方案进入 mainline 前先跑 Phase 0 barrier。
+- `Phase 1` 及之后的所有 slice，只有在 behavioral replay proof 完成后，才能把 `tests/replay/golden/phase0/` 视为已通过的第一层回归护栏；在此之前，`PH1` 保持 planned / not started。
 - 下一个 slice 只能依赖这些稳定产物，不能要求 Phase 0 再返工 schema：
   - `dispatcher_schedule.csv`
   - `ingress_snapshot_frames.csv`
@@ -442,6 +447,6 @@
   - `expected_presentation_surface.csv`
   - `glyph_queries.csv`
   - `expected_glyph_results.csv`
-- `DualPadReplayHarness` 的 CLI 入口和 `scripts/dev/dualpad_trace_diff.py` 的参数名在 `Phase 1` 前不能再改；如果必须改，先 bump schema version，再提供兼容层。
+- `DualPadReplayHarness` 的 CLI 模式名现在固定为 `validate-schema` / `materialize-fixture` / `dispatcher` / `processor`；`scripts/dev/dualpad_trace_diff.py` 的参数名在 `Phase 1` 前不能再改；如果必须改，先 bump schema version，再提供兼容层。
 - 后续 slice 若新增比较面，只能按 `Replay Extension Governance` 追加 namespace、新文件或新列，不能删除 Phase 0 已冻结的列，也不能改 replay root。
 - `Phase 1` 的第一步不是直接改 manifest/compiler，而是先把它的改动跑过 Phase 0 barrier，确认当前行为仍被完整解释。

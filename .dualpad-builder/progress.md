@@ -574,3 +574,60 @@
   - `.dualpad-builder/feature_list.json` 中 `PH0` 已更新为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json` 中 `S-PH0` 已更新为 `completed`；`S-PH1` 仍保持 `planned`。
   - `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md`、`docs/DOC_INDEX_zh.md` 与本 Phase 0 slice 文档已同步为 closed through `PH0`。
+
+## 2026-05-17 23:20:20 CST
+
+- `PH0` proof honesty correction / start：
+  - 更正上一条 `PH0 done` 结论：当前只能诚实声明 `PH0` schema / harness bootstrap 已完成。
+  - `PH0` behavioral replay barrier 尚未完全证明；此前 `ReplayHarness` 的 dispatcher / processor 路径只做 schema header validation 后 copy golden 到 actual，不能作为 runtime dispatcher / processor / glyph / keyboard behavior proof。
+  - 本轮选择较小 builder memory 变更：不拆 `PH0a/PH0b`，而是把 `PH0` / `S-PH0` 回退为 `active`，`passes=false`；`PH1` 保持 `planned` / not started。
+  - 计划修正：
+    - `ReplayHarness` 增加明确模式边界：`validate-schema`、`materialize-fixture`、`dispatcher`、`processor`。
+    - copy-only 行为只允许称为 `materialize-fixture`，不得称为 runtime replay。
+    - `dispatcher` / `processor` 在真正行为回放实现前必须 fail，不得 materialize golden files。
+    - `10_backlog_gap_overflow` 增加非空 synthetic data row，并让 `DualPadReplayHarnessTests` 在 actual 输出缺少该 row 时失败。
+  - 边界确认：
+    - 未启动 `PH1`。
+    - 未实现 `ContextCatalog` 或 `ActionManifest`。
+    - 未改变旧 SWF 返回 shape。
+    - 未改变 `PromptService` / `PromptProjection`。
+    - `FavoritesMenu` 仍保持 conditional，未恢复 workspace/source/artifact inventory 时不成为 mandatory。
+
+## 2026-05-17 23:36:46 CST
+
+- `PH0` proof honesty correction / validation results：
+  - 本轮代码状态：
+    - `ReplayHarness` 已区分 `validate-schema`、`materialize-fixture`、`dispatcher`、`processor`。
+    - `materialize-fixture` 是唯一 copy-only 路径；`dispatcher` / `processor` 当前返回 not implemented failure，不再复制 golden files 伪装 runtime replay。
+    - `10_backlog_gap_overflow` 已增加非空 synthetic rows；`DualPadReplayHarnessTests` 会检查 materialized actual output 保留这些 rows，缺 row 会失败。
+  - 状态同步：
+    - `.dualpad-builder/feature_list.json` 中 `PH0` 已回退为 `active` / `passes=false`。
+    - `.dualpad-builder/sprint_plan.json` 中 `S-PH0` 已回退为 `active`；`S-PH1` 仍为 `planned`。
+    - 共享入口文档已明确：`PH0` schema / harness bootstrap 已完成，behavioral replay barrier 尚未完全证明。
+  - `xmake build DualPadReplayHarness`
+    - 结果：exit 0；输出包含 `linking.release DualPadReplayHarness.exe` 与 `build ok, spent 0.406s`。
+  - `xmake build DualPadReplayHarnessTests`
+    - 结果：exit 0；输出包含 `linking.release DualPadReplayHarnessTests.exe` 与 `build ok, spent 0.406s`。
+  - `xmake run DualPadReplayHarnessTests`
+    - 结果：exit 0；stdout 为空。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+    - 结果：exit 0；输出：
+      - `01_gameplay_walk_attack_block_sprint: no diff`
+      - `02_gameplay_menu_roundtrip: no diff`
+      - `03_main_menu_glyph: no diff`
+      - `04_journal_confirm_cancel: no diff`
+      - `05_map_cursor_zoom_open_journal: no diff`
+      - `07_book_page_lr: no diff`
+      - `08_console_creations_lockpicking: no diff`
+      - `09_combo_native_pause_screenshot_hotkeys: no diff`
+      - `10_backlog_gap_overflow: no diff`
+      - `11_config_reload_success_failure: no diff`
+    - 口径：该 diff 只证明当前 `materialize-fixture` actual bundle 与 golden 一致；不证明 dispatcher / processor runtime replay behavior。
+  - `xmake build DualPad`
+    - 结果：exit 0；输出包含 `Built: C:\Users\xuany\Documents\dualPad\build\bin\DualPad\DualPad.dll` 与 `build ok, spent 0.828s`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+    - 结果：exit 0；输出包含 `[graphify watch] Rebuilt: 1081 nodes, 2107 edges, 106 communities`，并写入 `graphify-out/graph.json` 与 `graphify-out/GRAPH_REPORT.md`。
+  - 结论：
+    - 本轮 PH0 bootstrap proof honesty 修正已通过要求的本地验证。
+    - `PH0` 不得标记为 `completed` / `passes=true`，直到 behavioral dispatcher / processor replay proof 真正实现并验证通过。
+    - `PH1` 保持 `planned` / not started。

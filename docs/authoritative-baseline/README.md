@@ -36,9 +36,9 @@
 ## 当前工作路（2026-05-17）
 
 - 当前活跃 Sprint：
-  - 无后续活跃 Sprint；本轮已关闭到 `S-PH0`，`PH1` 仍为 planned / not started。
+  - `S-PH0` 仍为 active；`PH0` schema / harness bootstrap 已完成，但 behavioral replay barrier 尚未完全证明。`PH1` 仍为 planned / not started。
 - 当前直接焦点：
-  - `DP1a Route-health contract freeze`、`DP4a Glyph compat diagnostics freeze` 与 `PH0 Phase 0 replay barrier` 已完成；不要在未显式晋升前启动 `PH1`。
+  - `DP1a Route-health contract freeze` 与 `DP4a Glyph compat diagnostics freeze` 已完成；`PH0 Phase 0 replay barrier` 当前只可声明 bootstrap 完成，不能把 materialize-fixture 输出当作 dispatcher / processor runtime replay proof；不要启动 `PH1`。
 - 当前推荐推进顺序：
   1. 先看本目录入口、`work-packages/README.md`、`docs/harness/dualpad-builder.md` 和 `.dualpad-builder/` 记忆层，确认当前 Sprint、边界和 close-out 口径
   2. `DP1a` 已完成；如需复核，入口仍是：
@@ -48,7 +48,7 @@
      - `docs/main_menu_glyph_current_status_zh.md`
      - `docs/plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md`
      - `docs/plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md`
-  4. `Phase 0` 已完成；其 replay barrier 入口固定为：
+  4. `Phase 0` 仍是当前 active gate；其 schema / harness bootstrap 入口固定为：
      - `src/input_v2/telemetry/`
      - `tests/replay/golden/phase0/`
      - `scripts/dev/dualpad_trace_diff.py`
@@ -78,7 +78,7 @@
 - `DP3`：进行中
 - `DP4`：进行中
 - `DP4a`：已完成
-- `PH0`：已完成
+- `PH0`：active；schema / harness bootstrap 已完成，behavioral replay barrier 未完全证明
 - `PH1` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
 - `DP5`：计划中
 

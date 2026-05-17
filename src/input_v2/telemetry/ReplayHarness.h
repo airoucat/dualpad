@@ -8,6 +8,8 @@ namespace dualpad::input_v2::telemetry
 {
     enum class ReplayMode
     {
+        ValidateSchema,
+        MaterializeFixture,
         Dispatcher,
         Processor
     };

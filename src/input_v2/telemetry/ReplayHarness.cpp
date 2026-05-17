@@ -4,6 +4,7 @@
 #include "input_v2/telemetry/TraceSchema.h"
 
 #include <fstream>
+#include <stdexcept>
 #include <utility>
 
 namespace dualpad::input_v2::telemetry
@@ -52,7 +53,9 @@ namespace dualpad::input_v2::telemetry
             return Pass("scenario schema ok");
         }
 
-        ReplayResult CopyScenario(const std::filesystem::path& scenarioPath, const std::filesystem::path& outputPath)
+        ReplayResult MaterializeScenarioFixture(
+            const std::filesystem::path& scenarioPath,
+            const std::filesystem::path& outputPath)
         {
             std::filesystem::create_directories(outputPath);
             for (const auto& spec : Phase0TraceFiles()) {
@@ -64,16 +67,31 @@ namespace dualpad::input_v2::telemetry
                     std::filesystem::copy_options::overwrite_existing);
             }
 
-            return Pass("scenario replay materialized: " + outputPath.string());
+            return Pass("scenario fixture materialized: " + outputPath.string());
+        }
+
+        ReplayResult BehavioralReplayNotImplemented(ReplayMode mode)
+        {
+            const auto modeName = mode == ReplayMode::Processor ? "processor" : "dispatcher";
+            return Fail(std::string("behavioral replay mode is not implemented yet: ") + modeName);
         }
     }
 
     ReplayMode ParseReplayMode(std::string_view value)
     {
+        if (value == "validate-schema") {
+            return ReplayMode::ValidateSchema;
+        }
+        if (value == "materialize-fixture") {
+            return ReplayMode::MaterializeFixture;
+        }
+        if (value == "dispatcher") {
+            return ReplayMode::Dispatcher;
+        }
         if (value == "processor") {
             return ReplayMode::Processor;
         }
-        return ReplayMode::Dispatcher;
+        throw std::invalid_argument("unknown replay mode: " + std::string(value));
     }
 
     ReplayResult ReplayScenario(
@@ -88,7 +106,17 @@ namespace dualpad::input_v2::telemetry
             return validation;
         }
 
-        return CopyScenario(scenarioPath, outputPath);
+        switch (mode) {
+        case ReplayMode::ValidateSchema:
+            return Pass("scenario schema validated: " + scenarioPath.string());
+        case ReplayMode::MaterializeFixture:
+            return MaterializeScenarioFixture(scenarioPath, outputPath);
+        case ReplayMode::Dispatcher:
+        case ReplayMode::Processor:
+            return BehavioralReplayNotImplemented(mode);
+        }
+
+        return Fail("unknown replay mode");
     }
 
     ReplayResult ReplayBatch(
@@ -100,7 +128,7 @@ namespace dualpad::input_v2::telemetry
             return Fail("phase0 root is not a directory: " + phase0Root.string());
         }
 
-        std::size_t replayed = 0;
+        std::size_t scenarios = 0;
         for (const auto& entry : std::filesystem::directory_iterator(phase0Root)) {
             if (!entry.is_directory()) {
                 continue;
@@ -111,9 +139,19 @@ namespace dualpad::input_v2::telemetry
             if (!result.ok) {
                 return result;
             }
-            ++replayed;
+            ++scenarios;
         }
 
-        return Pass("batch replay materialized scenarios=" + std::to_string(replayed));
+        switch (mode) {
+        case ReplayMode::ValidateSchema:
+            return Pass("batch schema validated scenarios=" + std::to_string(scenarios));
+        case ReplayMode::MaterializeFixture:
+            return Pass("batch fixtures materialized scenarios=" + std::to_string(scenarios));
+        case ReplayMode::Dispatcher:
+        case ReplayMode::Processor:
+            return BehavioralReplayNotImplemented(mode);
+        }
+
+        return Fail("unknown replay mode");
     }
 }
