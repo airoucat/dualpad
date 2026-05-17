@@ -10,9 +10,21 @@
   - presentation / glyph 兼容面
 - 给后续 `Phase 1 / 3 / 6 / 7` 提供统一回归入口；后续切换若改变行为，必须先跑 Phase 0 barrier，再决定是否更新 golden。
 - 本 slice 不修旧问题、不顺手优化结构、不提前引入 `InputKernel`。Phase 0 只做“冻结现状并能稳定重放”。
+
+## 实现状态（2026-05-17）
+
+- `PH0` 已完成并写回 `.dualpad-builder/feature_list.json` / `.dualpad-builder/sprint_plan.json`。
+- 当前落地入口：
+  - `src/input_v2/telemetry/`
+  - `tests/replay/golden/phase0/`
+  - `scripts/dev/dualpad_trace_diff.py`
+  - `DualPadReplayHarness`
+  - `DualPadReplayHarnessTests`
+- `06_favorites_page_lr_accept_cancel` 仍只在 `phase0_scenarios.json` 中标记为 `mandatory=false` / `conditional_live`；仓库未恢复 `FavoritesMenu` workspace、页面源码或 artifact inventory，因此它不是默认退出条件。
+
 ## 当前 repo reality 缺口与 breach 边界
 
-- 在 `Phase 0` 真正开工前，当前 repo 允许尚不存在下列 deliverables：
+- 在 `Phase 0` 实现前，repo 允许尚不存在下列 deliverables；本轮 `PH0` close-out 已补齐这些入口：
   - `src/input_v2/telemetry/`
   - `scripts/dev/dualpad_trace_diff.py`
   - `target("DualPadReplayHarness")`

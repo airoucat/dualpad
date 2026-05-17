@@ -159,6 +159,17 @@ namespace dualpad::input
                 backend.HasHeldContributor(actions::Sprint, backend::HeldContributor::Gamepad);
         }
 
+        std::string_view ToReplayString(GameplayOwnershipCoordinator::ChannelOwner owner)
+        {
+            switch (owner) {
+            case GameplayOwnershipCoordinator::ChannelOwner::Gamepad:
+                return "Gamepad";
+            case GameplayOwnershipCoordinator::ChannelOwner::KeyboardMouse:
+            default:
+                return "KeyboardMouse";
+            }
+        }
+
     }
 
     InputModalityTracker& InputModalityTracker::GetSingleton()
@@ -312,6 +323,28 @@ namespace dualpad::input
     bool InputModalityTracker::IsGameplayMenuEntrySeedGamepad() const
     {
         return _gameplayMenuEntrySeed.load(std::memory_order_relaxed) == PresentationOwner::Gamepad;
+    }
+
+    InputModalityTracker::ReplayCompatibilitySurface InputModalityTracker::CaptureCompatibilitySurfaceForReplay() const
+    {
+        const auto context = _observedContext.load(std::memory_order_relaxed);
+        const auto contextEpoch = _observedContextEpoch.load(std::memory_order_relaxed);
+        const auto presentationOwner = GetEffectivePresentationOwner(context);
+        const auto cursorOwner = GetEffectiveCursorOwner(context);
+        const auto gameplayPresentation =
+            GameplayOwnershipCoordinator::GetSingleton().GetPublishedGameplayPresentationState();
+
+        return ReplayCompatibilitySurface{
+            .context = context,
+            .contextEpoch = contextEpoch,
+            .isUsingGamepad = ResolveIsUsingGamepad(),
+            .gamepadControlsCursor = cursorOwner == CursorOwner::Gamepad,
+            .gamepadDeviceEnabled = presentationOwner == PresentationOwner::Gamepad || IsGamepadLeaseActive(),
+            .presentationOwner = std::string(ToString(presentationOwner)),
+            .cursorOwner = std::string(ToString(cursorOwner)),
+            .gameplayEngineOwner = std::string(ToReplayString(gameplayPresentation.engineOwner)),
+            .gameplayMenuEntryOwner = std::string(ToReplayString(gameplayPresentation.menuEntryOwner))
+        };
     }
 
     void InputModalityTracker::ApplyGameplayMenuInheritance(InputContext context, std::string_view reason)

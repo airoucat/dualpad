@@ -1,8 +1,8 @@
 {
   "project": "DualPad Authoritative Baseline",
   "status": "active",
-  "current_sprint": "S-DP4a",
-  "updated_at": "2026-05-17T21:36:22+08:00",
+  "current_sprint": "S-PH0",
+  "updated_at": "2026-05-17T22:55:00+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -154,7 +154,7 @@
       "requirements": [
         "B4"
       ],
-      "status": "active",
+      "status": "completed",
       "exit_criteria": [
         "status / fallback / ambiguity 的当前归宿被正式写成内部诊断面，而不是旧 UI 对外 contract",
         "旧 DualPad_GetActionGlyphToken 继续返回单个 token string；旧 DualPad_GetActionGlyph descriptor 继续保持 ok / buttonArtToken / semanticId / contextName",
@@ -183,7 +183,7 @@
         "B4",
         "B5"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "trace schema、recorder、replay harness、diff runner 和 Phase 0 mandatory scenarios 落地",
         "10 个 repo-owned mandatory scenario bundle 齐全，phase0_scenarios.json 把 FavoritesMenu 标成 mandatory=false / conditional_live",

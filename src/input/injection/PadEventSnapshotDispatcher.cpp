@@ -5,6 +5,7 @@
 #include "input/RuntimeConfig.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
 #include "input/injection/UpstreamGamepadHook.h"
+#include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace logger = SKSE::log;
 
@@ -86,6 +87,13 @@ namespace dualpad::input
             std::size_t pendingBefore,
             std::size_t pendingAfter)
         {
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordDispatcherDrain(
+                telemetryContext,
+                budget,
+                drained,
+                pendingBefore,
+                pendingAfter);
+
             if (!RuntimeConfig::GetSingleton().LogRouteHealth()) {
                 return;
             }
@@ -120,10 +128,12 @@ namespace dualpad::input
         bool shouldScheduleTask = false;
         bool scheduledByHighWaterFallback = false;
         bool forcedCrossContextProbe = false;
+        std::size_t pendingCountBeforeQueue = 0;
         std::size_t pendingCountAfterQueue = 0;
         bool framePumpEnabled = false;
         {
             std::scoped_lock lock(_mutex);
+            pendingCountBeforeQueue = _pendingCount;
 
             if (snapshot.type == PadEventSnapshotType::Reset) {
                 _pendingHead = 0;
@@ -171,6 +181,11 @@ namespace dualpad::input
                 shouldScheduleTask = true;
             }
         }
+
+        input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordDispatcherSubmit(
+            snapshot,
+            pendingCountBeforeQueue,
+            pendingCountAfterQueue);
 
         if (shouldScheduleTask) {
             ScheduleDrainTask();

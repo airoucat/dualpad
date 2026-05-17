@@ -467,3 +467,110 @@
   - 没有把 `DP4a` 标成 completed；它只是当前 active Sprint。
   - 没有晋升 `PH0`；Phase 0 仍是 planned backlog。
   - 没有做真正 clean clone 验证；只验证了当前 checkout 的默认 xmake repo-local 输出。
+
+## 2026-05-17 22:16:06 CST
+
+- 本轮按用户要求开始 sequential close-out，只推进到 `PH0`，不启动 `PH1`。
+- `DP1a` start：
+  - 目标：复跑 `DP1a Route-health contract freeze` 的固定 prove-out，确认当前 checkout 仍满足 `route_state / drain_reason / last_poll_age_ms / hook_installed` 合同。
+  - 计划执行：
+    - `xmake build DualPadRouteHealthContractTests`
+    - `xmake run DualPadRouteHealthContractTests`
+    - `xmake build DualPad`
+
+## 2026-05-17 22:18:00 CST
+
+- `DP1a` done：
+  - `xmake build DualPadRouteHealthContractTests`
+    - 结果：build ok，exit 0。
+  - `xmake run DualPadRouteHealthContractTests`
+    - 结果：exit 0。
+  - `xmake build DualPad`
+    - 结果：build ok，输出 `build/bin/DualPad/DualPad.dll`。
+  - 结论：`DP1a` 固定 prove-out 通过；本轮未改变 `DP1a` 代码或合同。
+
+## 2026-05-17 22:18:00 CST
+
+- `DP4a` start：
+  - 目标：关闭 `Glyph compat diagnostics freeze`，保持旧 `DualPad_GetActionGlyphToken` 单 token string 与旧 `DualPad_GetActionGlyph` descriptor shape 不变。
+  - 计划执行：
+    - `xmake build DualPadGlyphResolutionCompatTests`
+    - `xmake run DualPadGlyphResolutionCompatTests`
+    - `xmake build DualPad`
+
+## 2026-05-17 22:20:00 CST
+
+- `DP4a` done：
+  - `xmake build DualPadGlyphResolutionCompatTests`
+    - 结果：build ok，exit 0。
+  - `xmake run DualPadGlyphResolutionCompatTests`
+    - 结果：exit 0。
+  - `xmake build DualPad`
+    - 结果：build ok，输出 `build/bin/DualPad/DualPad.dll`。
+  - 状态同步：`.dualpad-builder/feature_list.json` 中 `DP4a` 已更新为 `completed` / `passes=true`；`.dualpad-builder/sprint_plan.json` 中 `S-DP4a` 已更新为 `completed`。
+  - 边界确认：未改变旧 `DualPad_GetActionGlyphToken` 单 token string 返回；未改变旧 `DualPad_GetActionGlyph` 的 `ok / buttonArtToken / semanticId / contextName` descriptor shape；未实现 `PromptService`。
+
+## 2026-05-17 22:20:00 CST
+
+- `PH0` promotion / start：
+  - 前置 `DP1a` 与 `DP4a` 的固定验证均已通过，因此本轮把 `PH0` 从 `planned` 晋升为当前执行 slice。
+  - 状态同步：`.dualpad-builder/feature_list.json` 中 `PH0` 已更新为 `active` / `passes=false`；`.dualpad-builder/sprint_plan.json` 中 `current_sprint` 已更新为 `S-PH0`，`S-PH0` 已更新为 `active`。
+  - 目标：实现 Phase 0 replay barrier 的 schema、golden bundle、replay harness target、harness tests 与 batch diff runner。
+  - 硬边界：
+    - 不启动 `PH1`。
+    - 不实现 `PromptService`。
+    - 不改变旧 SWF 返回 shape。
+    - 不把 `FavoritesMenu` 设为 mandatory；除非先恢复 workspace/source/artifact inventory 并记录。
+
+## 2026-05-17 22:55:00 CST
+
+- `PH0` done：
+  - 本轮新增/更新的 PH0 入口：
+    - `src/input_v2/telemetry/TraceSchema.*`
+    - `src/input_v2/telemetry/InputTraceRecorder.*`
+    - `src/input_v2/telemetry/ReplayHarness.*`
+    - `src/input_v2/telemetry/ReplayHarnessMain.cpp`
+    - `tests/ReplayHarnessTests.cpp`
+    - `tests/replay/golden/phase0/`
+    - `scripts/dev/dualpad_trace_diff.py`
+    - `xmake.lua` 中 `DualPadReplayHarness` / `DualPadReplayHarnessTests`
+  - `config/DualPadDebug.ini` 与 `RuntimeConfig` 已新增 `[Replay]` 段：
+    - `enable_trace_recording=false`
+    - `trace_output_dir=build/replay-captures`
+    - `trace_session=default`
+    - `trace_record_glyph_queries=true`
+  - `phase0_scenarios.json` 中 `06_favorites_page_lr_accept_cancel` 仍为 `mandatory=false` / `conditional_live`；本轮未恢复 `FavoritesMenu` workspace、页面源码或 artifact inventory，因此没有把它设为默认退出条件。
+  - 本轮刻意未做：
+    - 未启动 `PH1`。
+    - 未实现 `PromptService`。
+    - 未改变旧 `DualPad_GetActionGlyphToken` / `DualPad_GetActionGlyph` 返回 shape。
+- PH0 必跑验证结果：
+  - `xmake build DualPad`
+    - 结果：build ok，输出 `build/bin/DualPad/DualPad.dll`。
+  - `xmake build DualPadDInput8Proxy`
+    - 结果：build ok，输出 `build/bin/DualPadDInput8Proxy/dinput8.dll`。
+  - `xmake build DualPadReplayHarness`
+    - 结果：build ok，exit 0。
+  - `xmake build DualPadReplayHarnessTests`
+    - 结果：build ok，exit 0。
+  - `xmake run DualPadReplayHarnessTests`
+    - 结果：exit 0。
+    - 调试记录：首次运行失败的根因是 `xmake run` 从 target 输出目录启动，测试使用 repo-relative 路径；已改为测试侧向上定位包含 `xmake.lua` 的 repo root 后复跑通过。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+    - 结果：exit 0；10 个 mandatory scenario 均输出 `no diff`。
+      - `01_gameplay_walk_attack_block_sprint`
+      - `02_gameplay_menu_roundtrip`
+      - `03_main_menu_glyph`
+      - `04_journal_confirm_cancel`
+      - `05_map_cursor_zoom_open_journal`
+      - `07_book_page_lr`
+      - `08_console_creations_lockpicking`
+      - `09_combo_native_pause_screenshot_hotkeys`
+      - `10_backlog_gap_overflow`
+      - `11_config_reload_success_failure`
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+    - 结果：exit 0；graphify rebuild 成功，生成 `1076` nodes / `2081` edges / `105` communities。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json` 中 `PH0` 已更新为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json` 中 `S-PH0` 已更新为 `completed`；`S-PH1` 仍保持 `planned`。
+  - `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md`、`docs/DOC_INDEX_zh.md` 与本 Phase 0 slice 文档已同步为 closed through `PH0`。

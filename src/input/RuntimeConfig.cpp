@@ -184,6 +184,26 @@ namespace dualpad::input
                     "[DualPad][RuntimeConfig] enable_gameplay_ownership is retired and ignored; gameplay ownership now always uses the mainline path");
             }
         };
+        const auto parseReplay = [&](const auto& values) {
+            if (auto it = values.find("enable_trace_recording"); it != values.end()) {
+                _enableTraceRecording = ini::ParseBool(it->second, _enableTraceRecording);
+            }
+            if (auto it = values.find("trace_output_dir"); it != values.end()) {
+                const auto value = ini::Trim(it->second);
+                if (!value.empty()) {
+                    _traceOutputDir = value;
+                }
+            }
+            if (auto it = values.find("trace_session"); it != values.end()) {
+                const auto value = ini::Trim(it->second);
+                if (!value.empty()) {
+                    _traceSession = value;
+                }
+            }
+            if (auto it = values.find("trace_record_glyph_queries"); it != values.end()) {
+                _traceRecordGlyphQueries = ini::ParseBool(it->second, _traceRecordGlyphQueries);
+            }
+        };
         try {
             if (auto it = sections.find("Logging"); it != sections.end()) {
                 parseLogging(it->second);
@@ -194,13 +214,16 @@ namespace dualpad::input
             if (auto it = sections.find("Features"); it != sections.end()) {
                 parseFeatures(it->second);
             }
+            if (auto it = sections.find("Replay"); it != sections.end()) {
+                parseReplay(it->second);
+            }
         }
         catch (const std::exception& e) {
             logger::warn("[DualPad][RuntimeConfig] Parse error: {}", e.what());
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} routeHealth={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} routeHealth={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={} replay trace={} outputDir={} session={} glyphQueries={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -213,7 +236,11 @@ namespace dualpad::input
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
             _enableForceCrossContextRecoveryProbe,
-            _enableComboNativeHotkeys3To8);
+            _enableComboNativeHotkeys3To8,
+            _enableTraceRecording,
+            _traceOutputDir.string(),
+            _traceSession,
+            _traceRecordGlyphQueries);
         if (_useUpstreamGamepadHook) {
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
@@ -237,6 +264,11 @@ namespace dualpad::input
         _logNativeInjection = false;
         _logKeyboardInjection = false;
         _logRouteHealth = false;
+
+        _enableTraceRecording = false;
+        _traceOutputDir = "build/replay-captures";
+        _traceSession = "default";
+        _traceRecordGlyphQueries = true;
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;

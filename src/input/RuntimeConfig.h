@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 namespace dualpad::input
 {
@@ -28,6 +30,10 @@ namespace dualpad::input
         bool LogNativeInjection() const { return _logNativeInjection; }
         bool LogKeyboardInjection() const { return _logKeyboardInjection; }
         bool LogRouteHealth() const { return _logRouteHealth; }
+        bool EnableTraceRecording() const { return _enableTraceRecording; }
+        const std::filesystem::path& TraceOutputDir() const { return _traceOutputDir; }
+        std::string_view TraceSession() const { return _traceSession; }
+        bool TraceRecordGlyphQueries() const { return _traceRecordGlyphQueries; }
 
         bool UseUpstreamGamepadHook() const { return _useUpstreamGamepadHook; }
         UpstreamGamepadHookMode GetUpstreamGamepadHookMode() const { return _upstreamGamepadHookMode; }
@@ -51,6 +57,11 @@ namespace dualpad::input
         bool _logNativeInjection{ false };
         bool _logKeyboardInjection{ false };
         bool _logRouteHealth{ false };
+
+        bool _enableTraceRecording{ false };
+        std::filesystem::path _traceOutputDir{ "build/replay-captures" };
+        std::string _traceSession{ "default" };
+        bool _traceRecordGlyphQueries{ true };
 
         bool _useUpstreamGamepadHook{ true };
         UpstreamGamepadHookMode _upstreamGamepadHookMode{ UpstreamGamepadHookMode::PollXInputCall };

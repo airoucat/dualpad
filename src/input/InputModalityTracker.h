@@ -17,6 +17,19 @@ namespace dualpad::input
         public RE::BSTEventSink<RE::InputEvent*>
     {
     public:
+        struct ReplayCompatibilitySurface
+        {
+            InputContext context{ InputContext::Gameplay };
+            std::uint32_t contextEpoch{ 0 };
+            bool isUsingGamepad{ false };
+            bool gamepadControlsCursor{ false };
+            bool gamepadDeviceEnabled{ false };
+            std::string presentationOwner;
+            std::string cursorOwner;
+            std::string gameplayEngineOwner;
+            std::string gameplayMenuEntryOwner;
+        };
+
         static InputModalityTracker& GetSingleton();
 
         void Install();
@@ -27,6 +40,7 @@ namespace dualpad::input
         bool IsUsingGamepad() const;
         bool IsGameplayUsingGamepad() const;
         bool IsGameplayMenuEntrySeedGamepad() const;
+        ReplayCompatibilitySurface CaptureCompatibilitySurfaceForReplay() const;
         void MarkSyntheticKeyboardScancode(
             std::uint8_t scancode,
             std::uint8_t pendingEvents = 1,

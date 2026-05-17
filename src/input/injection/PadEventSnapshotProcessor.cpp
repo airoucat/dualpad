@@ -8,12 +8,14 @@
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input/AuthoritativePollState.h"
 #include "input/BindingManager.h"
+#include "input/InputModalityTracker.h"
 #include "input/InputContext.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/AxisProjection.h"
 #include "input/injection/GameplayOwnershipCoordinator.h"
 #include "input/injection/SyntheticStateDebugLogger.h"
 #include "input/injection/UnmanagedDigitalPublisher.h"
+#include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace logger = SKSE::log;
 
@@ -596,6 +598,7 @@ namespace dualpad::input
 
         const auto context = snapshot.context;
         const auto contextEpoch = snapshot.contextEpoch;
+        input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(snapshot.sequence);
         const auto& syntheticFrame = _stateReducer.Reduce(snapshot, context);
         AuthoritativePollState::GetSingleton().PublishFrameMetadata(
             syntheticFrame.sourceTimestampUs,
@@ -678,6 +681,10 @@ namespace dualpad::input
         // Reduced raw edges still publish unmanaged digital facts here so the
         // authoritative poll state remains the single output contract.
         PublishUnmanagedDigitalState(syntheticFrame, handledButtons);
+        input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordProcessedSnapshot(
+            snapshot,
+            AuthoritativePollState::GetSingleton().ReadSnapshot(),
+            InputModalityTracker::GetSingleton().CaptureCompatibilitySurfaceForReplay());
 
         _lastProcessedSequence = snapshot.sequence;
         if (!degradedSnapshot) {

@@ -2,7 +2,9 @@
 
 #include "input/glyph/ScaleformGlyphBridge.h"
 
+#include "input/RuntimeConfig.h"
 #include "input/glyph/GlyphResolutionCompat.h"
+#include "input_v2/telemetry/InputTraceRecorder.h"
 
 #include <RE/F/FxDelegateArgs.h>
 #include <RE/F/FxResponseArgs.h>
@@ -88,6 +90,12 @@ namespace dualpad::input::glyph
             resolution.reverseLookupAmbiguous,
             dualpad::input::ToString(resolution.resolvedTriggerType),
             resolution.resolvedTriggerCode);
+        if (RuntimeConfig::GetSingleton().TraceRecordGlyphQueries()) {
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordGlyphResult(
+                actionId,
+                contextName,
+                resolution);
+        }
 
         args.Respond(response);
     }
@@ -153,6 +161,12 @@ namespace dualpad::input::glyph
             resolution.reverseLookupAmbiguous,
             dualpad::input::ToString(resolution.resolvedTriggerType),
             resolution.resolvedTriggerCode);
+        if (RuntimeConfig::GetSingleton().TraceRecordGlyphQueries()) {
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordGlyphResult(
+                actionId,
+                contextName,
+                resolution);
+        }
 
         args.Respond(descriptor);
     }

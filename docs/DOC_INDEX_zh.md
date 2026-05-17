@@ -19,7 +19,7 @@
 
 ## 按当前工作路阅读
 
-### 当前活跃 Sprint：`S-DP1a`
+### 当前活跃 Sprint：无；已关闭到 `S-PH0`
 
 1. 先确认入口和约束：
    - [authoritative-baseline/README.md](authoritative-baseline/README.md)
@@ -29,23 +29,28 @@
    - [../.dualpad-builder/feature_list.json](../.dualpad-builder/feature_list.json)
    - [../.dualpad-builder/sprint_plan.json](../.dualpad-builder/sprint_plan.json)
    - [../.dualpad-builder/progress.md](../.dualpad-builder/progress.md)
-2. 先进入当前 gate `DP1a`：
+2. `DP1a` 已完成；如需复核，入口仍是：
    - [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
    - [plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md](plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md)
-3. 只有 `DP1a` 完成后，才进入 `DP4a`：
+3. `DP4a` 已完成；如需复核，入口仍是：
    - [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)
    - [dynamic_glyph_svg_system_plan_zh.md](dynamic_glyph_svg_system_plan_zh.md)
    - [plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md](plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md)
    - [plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md](plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md)
-4. 只有 `DP1a -> DP4a` 完成后，才允许继续下游计划包，并按固定依赖顺序推进：
+4. `PH0` 已完成；当前 replay barrier 入口是：
    - [plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md](plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md)
+   - [plans/dualpad_rearchitecture/phase0_scenarios.json](plans/dualpad_rearchitecture/phase0_scenarios.json)
+   - [../src/input_v2/telemetry/TraceSchema.h](../src/input_v2/telemetry/TraceSchema.h)
+   - [../tests/replay/golden/phase0/](../tests/replay/golden/phase0/)
+   - [../scripts/dev/dualpad_trace_diff.py](../scripts/dev/dualpad_trace_diff.py)
+5. 后续计划包必须先在 `.dualpad-builder/` 中晋升，当前不得直接启动：
    - [plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md](plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md)
    - [plans/dualpad_rearchitecture/03_slice_phase2_menu_instance_truth_zh.md](plans/dualpad_rearchitecture/03_slice_phase2_menu_instance_truth_zh.md)
    - [plans/dualpad_rearchitecture/04_slice_phase3_presentation_split_zh.md](plans/dualpad_rearchitecture/04_slice_phase3_presentation_split_zh.md)
    - [plans/dualpad_rearchitecture/05_slice_phase4_action_graph_and_interaction_engine_zh.md](plans/dualpad_rearchitecture/05_slice_phase4_action_graph_and_interaction_engine_zh.md)
    - [plans/dualpad_rearchitecture/06_slice_phase5_gameplay_projection_zh.md](plans/dualpad_rearchitecture/06_slice_phase5_gameplay_projection_zh.md)
    - [plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md](plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md)
-5. 做验证、handoff 或 close-out 时，再收回：
+6. 做验证、handoff 或 close-out 时，再收回：
    - [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
    - [reviews/README_zh.md](reviews/README_zh.md)
    - [../.dualpad-builder/progress.md](../.dualpad-builder/progress.md)

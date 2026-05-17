@@ -36,20 +36,23 @@
 ## 当前工作路（2026-05-17）
 
 - 当前活跃 Sprint：
-  - `S-DP4a`
+  - 无后续活跃 Sprint；本轮已关闭到 `S-PH0`，`PH1` 仍为 planned / not started。
 - 当前直接焦点：
-  - `DP1a Route-health contract freeze` 已完成；当前进入 `DP4a Glyph compat diagnostics freeze`，不要越过当前 gate 直接进入 Phase 0 或后续 phase
+  - `DP1a Route-health contract freeze`、`DP4a Glyph compat diagnostics freeze` 与 `PH0 Phase 0 replay barrier` 已完成；不要在未显式晋升前启动 `PH1`。
 - 当前推荐推进顺序：
   1. 先看本目录入口、`work-packages/README.md`、`docs/harness/dualpad-builder.md` 和 `.dualpad-builder/` 记忆层，确认当前 Sprint、边界和 close-out 口径
   2. `DP1a` 已完成；如需复核，入口仍是：
      - `docs/current_input_pipeline_zh.md`
      - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
-  3. 当前进入 `DP4a`：
+  3. `DP4a` 已完成；如需复核，入口仍是：
      - `docs/main_menu_glyph_current_status_zh.md`
      - `docs/plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md`
      - `docs/plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md`
-  4. 只有 `DP1a -> DP4a` 完成后，才允许继续下游计划包；顺序必须与重构计划依赖保持一致：
-     - `Phase 0`
+  4. `Phase 0` 已完成；其 replay barrier 入口固定为：
+     - `src/input_v2/telemetry/`
+     - `tests/replay/golden/phase0/`
+     - `scripts/dev/dualpad_trace_diff.py`
+  5. 后续计划包仍必须按依赖顺序单独晋升，不得把 planned backlog 误写成 active / completed：
      - `Phase 1`
      - `Phase 2`
      - `Phase 3`
@@ -61,7 +64,7 @@
      - `Phase 8A`
      - `Phase 8B`
      - 这些 phase 已作为 planned backlog 登记到 `.dualpad-builder/`，但只有对应 Sprint 从 `planned` 晋升后才是当前执行 authority。
-  5. 需要做验证、风险复查或 handoff 时，再回到 `DP5` 路线：
+  6. 需要做验证、风险复查或 handoff 时，再回到 `DP5` 路线：
      - `docs/current_cleanup_risk_review_zh.md`
      - `docs/reviews/README_zh.md`
      - `.dualpad-builder/progress.md`
@@ -74,13 +77,14 @@
 - `DP2`：进行中
 - `DP3`：进行中
 - `DP4`：进行中
-- `DP4a`：当前活跃 Sprint
-- `PH0` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
+- `DP4a`：已完成
+- `PH0`：已完成
+- `PH1` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
 - `DP5`：计划中
 
 ## 主题路由
 
-主题路由只用于理解某个主题的 current reality，不替代上面的当前工作路 gate；若当前任务是继续推进实现，当前先按 `S-DP4a` 进入。
+主题路由只用于理解某个主题的 current reality，不替代上面的当前工作路 gate；若当前任务是继续推进实现，必须先在 `.dualpad-builder/` 晋升对应 Sprint。
 
 - 输入主链 / runtime contract：
   - `docs/current_input_pipeline_zh.md`

@@ -66,6 +66,7 @@ target("DualPad")
     })
 
     add_files("src/**.cpp")
+    remove_files("src/input_v2/telemetry/ReplayHarnessMain.cpp")
     add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
@@ -168,6 +169,33 @@ target("DualPadGlyphResolutionCompatTests")
         "src/input/InputContextNames.cpp",
         "src/input/glyph/GlyphResolutionCompat.cpp")
     add_headerfiles("tests/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadReplayHarness")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files(
+        "src/input_v2/telemetry/TraceSchema.cpp",
+        "src/input_v2/telemetry/ReplayHarness.cpp",
+        "src/input_v2/telemetry/ReplayHarnessMain.cpp")
+    add_headerfiles("src/input_v2/telemetry/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadReplayHarnessTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files(
+        "tests/ReplayHarnessTests.cpp",
+        "src/input_v2/telemetry/TraceSchema.cpp",
+        "src/input_v2/telemetry/ReplayHarness.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/input_v2/telemetry/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 

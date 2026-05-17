@@ -14,12 +14,13 @@
 - `DP2`：`in_progress`
 - `DP3`：`in_progress`
 - `DP4`：`in_progress`
-- `DP4a`：`active`
-- `PH0` - `PH8B`：`planned`
+- `DP4a`：`completed`
+- `PH0`：`completed`
+- `PH1` - `PH8B`：`planned`
 - `DP5`：`planned`
-- 当前活跃 Sprint：`S-DP4a`
+- 当前活跃 Sprint：无后续活跃 Sprint；`S-PH0` 已 completed，`S-PH1` 仍 planned / not started
 
-## 当前工作路（`S-DP4a`）
+## 当前工作路（closed through `S-PH0`）
 
 如果只是继续当前主线，而不是重新梳理整个仓库，默认按下面顺序走：
 
@@ -40,7 +41,7 @@
   - 顶层合同继续只认 `route_state = active_fresh | active_stale | disabled`。
   - `drain_reason`、`last_poll_age_ms`、`hook_installed` 继续作为 secondary diagnostics。
   - 本 slice 不删除 `use_upstream_gamepad_hook=false`，不删除 stale assist drain，也不引入新的 owner 抽象。
-3. 当前进入 `DP4a Glyph compat diagnostics freeze`：
+3. `DP4a Glyph compat diagnostics freeze` 已完成；如需复核，入口仍是：
    - `docs/main_menu_glyph_current_status_zh.md`
    - `docs/plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md`
    - `docs/plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md`
@@ -51,8 +52,11 @@
   - 当前 DP4 仍是 repo-owned main-menu glyph compatibility surface，不是最终 glyph / prompt authority。
   - `status / fallback / ambiguity` 先只进入内部诊断面。旧 `DualPad_GetActionGlyphToken` 继续返回单个 token string；旧 `DualPad_GetActionGlyph` descriptor 继续保持 `ok / buttonArtToken / semanticId / contextName`。
   - 任何旧返回对象字段扩展，都必须等 `Phase 6` 定义完新 prompt contract 后再决定，不能默认旧 SWF 安全兼容。
-4. 只有 `DP1a -> DP4a` 完成后，才允许继续下游计划包；顺序必须与 `.dualpad-builder/sprint_plan.json` 里登记的 planned backlog 保持一致：
-   - `Phase 0` Replay Barrier
+4. `Phase 0` Replay Barrier 已完成，当前 replay barrier 入口是：
+   - `src/input_v2/telemetry/`
+   - `tests/replay/golden/phase0/`
+   - `scripts/dev/dualpad_trace_diff.py`
+5. 后续计划包必须按 `.dualpad-builder/sprint_plan.json` 里登记的 planned backlog 顺序单独晋升：
    - `Phase 1` ContextCatalog / ActionManifest groundwork
    - `Phase 2` Menu instance truth
    - `Phase 3` Presentation split
@@ -65,7 +69,7 @@
    - `Phase 8B` governance closeout
    - 不得把 `Phase 6` 直接排在 `Phase 1` 后面
    - 不得把 planned backlog 误写成 active / completed；每个 phase 真正开工前仍要把对应 Sprint 晋升并写入 `.dualpad-builder/progress.md`
-5. 做 close-out、验证或 handoff 时，再收回 `DP5`：
+6. 做 close-out、验证或 handoff 时，再收回 `DP5`：
    - `docs/current_cleanup_risk_review_zh.md`
    - `docs/reviews/README_zh.md`
    - `.dualpad-builder/progress.md`
@@ -152,7 +156,7 @@
 - 目标：
   - 在不改变旧 SWF 外部返回 shape 的前提下，冻结 glyph compat 诊断边界与最小验证面
 - 状态：
-  - 当前活跃 Sprint
+  - 已完成
 - 首读：
   - `docs/main_menu_glyph_current_status_zh.md`
   - `docs/plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md`
@@ -168,6 +172,29 @@
   - `xmake run DualPadGlyphResolutionCompatTests`
   - `xmake build DualPad`
   - 若本轮改到 `ScaleformGlyphBridge` 或 `SWF` surface，再补本机手工验证记录
+
+## `PH0` Phase 0 replay barrier
+
+- 目标：
+  - 建立 repo-owned replay / diff / golden trace barrier，并把 `FavoritesMenu` 条件场景从默认退出条件中拆出。
+- 状态：
+  - 已完成
+- 首读：
+  - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
+  - `docs/plans/dualpad_rearchitecture/phase0_scenarios.json`
+  - `src/input_v2/telemetry/`
+  - `tests/replay/golden/phase0/`
+  - `scripts/dev/dualpad_trace_diff.py`
+- 硬边界：
+  - `06_favorites_page_lr_accept_cancel` 仍是 `mandatory=false` / `conditional_live`；未恢复 workspace/source/artifact inventory 时不得成为默认退出条件。
+  - `PH1` 仍为 planned / not started；不得把本 slice 的 replay barrier 当作 manifest compiler 或 PromptService cutover。
+- prove-out 固定命令：
+  - `xmake build DualPad`
+  - `xmake build DualPadDInput8Proxy`
+  - `xmake build DualPadReplayHarness`
+  - `xmake build DualPadReplayHarnessTests`
+  - `xmake run DualPadReplayHarnessTests`
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
 
 ## `DP5` Validation, cleanup, and workflow honesty
 
