@@ -13,15 +13,15 @@
 
 ## 实现状态（2026-05-17）
 
-- `PH0` 已完成 schema / harness bootstrap，但 behavioral replay barrier 尚未完全证明；`.dualpad-builder/feature_list.json` 中 `PH0` 已回退为 `active` / `passes=false`，`.dualpad-builder/sprint_plan.json` 中 `S-PH0` 保持 active。
-- 当前已落地的 bootstrap 入口：
+- `PH0` 已完成并写回 `.dualpad-builder/feature_list.json` / `.dualpad-builder/sprint_plan.json`：`PH0` 为 `completed` / `passes=true`，`S-PH0` 为 `completed`。
+- 当前落地入口：
   - `src/input_v2/telemetry/`
   - `tests/replay/golden/phase0/`
   - `scripts/dev/dualpad_trace_diff.py`
   - `DualPadReplayHarness`
   - `DualPadReplayHarnessTests`
-- `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`，用途是生成 diff 工具可消费的 actual bundle；它不是 dispatcher / processor runtime replay proof。
-- `dispatcher` / `processor` 模式在真正驱动 `PadEventSnapshotDispatcher` / `PadEventSnapshotProcessor` 并产出 candidate bundle 前，不得作为通过的 behavioral replay barrier。
+- `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`，用途是 schema / diff plumbing；behavioral proof 由 `dispatcher` / `processor` mode 生成 candidate bundle 后再跑 batch diff。
+- `10_backlog_gap_overflow` 与 `11_config_reload_success_failure` 已作为非空 synthetic behavioral scenarios 纳入 `DualPadReplayHarnessTests` 和 batch diff。
 - `06_favorites_page_lr_accept_cancel` 仍只在 `phase0_scenarios.json` 中标记为 `mandatory=false` / `conditional_live`；仓库未恢复 `FavoritesMenu` workspace、页面源码或 artifact inventory，因此它不是默认退出条件。
 
 ## 当前 repo reality 缺口与 breach 边界
@@ -260,7 +260,7 @@
      - `KeyboardHelperBackend::Reset()`
      - `GameplayOwnershipCoordinator::Reset()`
    - replay harness 输出目录固定为 `build/replay/<scenario>/`，输出文件名与 golden bundle 同名。
-   - 在 behavioral 模式实现前，允许存在 `validate-schema` 与 `materialize-fixture` bootstrap 模式；这两者只能证明 schema / diff plumbing，不证明 dispatcher / processor runtime 行为。
+   - `validate-schema` 与 `materialize-fixture` 只证明 schema / diff plumbing；`dispatcher` / `processor` behavioral mode 负责生成 candidate bundle。
    - harness 不是测试断言层；behavioral 模式只负责“重放并产出 candidate bundle”，diff 工具负责比较。
 
 5. **把 replay runner 和测试入口写成明确 target，不复用现有 `MenuContextPolicyTests`。**
@@ -429,13 +429,13 @@
 - `tests/replay/golden/phase0/` 下 10 个 repo-owned mandatory scenario 目录全部存在，且 bundle 文件齐全；允许某些 CSV 只有表头，但不允许缺文件。
 - 若启用 `06_favorites_page_lr_accept_cancel`，对应 workspace / artifact inventory / capture surface 已先写入 `.dualpad-builder/progress.md`，且该场景 bundle 文件齐全；未恢复 workspace 时不得把 Favorites glyph capture 当作 Phase 0 breach 或退出条件。
 - `validate-schema` 与 `materialize-fixture` bootstrap 验证通过，且不能被表述为 behavioral replay proof。
-- behavioral `dispatcher` / `processor` replay candidate 对 golden 的 diff 为 0；若有差异，必须先解释再改 golden，不能静默覆盖。完成这一项前，`PH0` 不得标成 `completed` / `passes=true`。
+- behavioral `dispatcher` / `processor` replay candidate 对 golden 的 diff 为 0；若有差异，必须先解释再改 golden，不能静默覆盖。
 - recorder 在 `enable_trace_recording = false` 时不改变现有运行时行为；这必须通过至少一次关闭开关的 live smoke 验证确认。
 - `.dualpad-builder/progress.md` 已记录开始、完成和验证命令结果。
 
 ## 交接给下一 slice 的合同
 
-- `Phase 1` 及之后的所有 slice，只有在 behavioral replay proof 完成后，才能把 `tests/replay/golden/phase0/` 视为已通过的第一层回归护栏；在此之前，`PH1` 保持 planned / not started。
+- `Phase 1` 及之后的所有 slice，都必须把 `tests/replay/golden/phase0/` 视为 canonical replay root `tests/replay/golden/` 下的第一层回归护栏；新方案进入 mainline 前先跑 Phase 0 barrier。
 - 下一个 slice 只能依赖这些稳定产物，不能要求 Phase 0 再返工 schema：
   - `dispatcher_schedule.csv`
   - `ingress_snapshot_frames.csv`

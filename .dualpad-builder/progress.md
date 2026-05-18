@@ -657,3 +657,46 @@
     - 结果：exit 0；输出 `sprint_plan json parse ok`。
   - `rg "PH0.*已完成|PH0.*completed|passes=true" docs/authoritative-baseline/work-packages/README.md docs/authoritative-baseline/README.md .dualpad-builder/feature_list.json .dualpad-builder/sprint_plan.json`
     - 结果：exit 1；无输出。该命令用来确认没有命中 forbidden status drift，因此 exit 1/no matches 是预期结果。
+
+## 2026-05-18 00:32:49 CST
+
+- `PH0` behavioral replay proof done：
+  - 本轮实现范围：
+    - `ReplayHarness` 的 `dispatcher` mode 读取 `dispatcher_schedule.csv` 与 ingress snapshot CSV，按 submit/drain 顺序生成 candidate bundle。
+    - `ReplayHarness` 的 `processor` mode 读取 `processed_snapshot_frames.csv` / `processed_snapshot_events.csv`，生成 `expected_authoritative_poll.csv` candidate output。
+    - `dispatcher` / `processor` mode 不复制 golden files；生成 actual 后会与 golden bundle 比对，behavioral mismatch 会返回 failure 并保留 generated candidate output 供排查。
+    - `materialize-fixture` 保持独立 plumbing mode，只用于 schema / diff plumbing，不作为 runtime replay proof。
+    - `10_backlog_gap_overflow` 与 `11_config_reload_success_failure` 已作为非空 synthetic behavioral scenarios 覆盖 dispatcher / processor 输出。
+  - 边界确认：
+    - 未启动 `PH1`。
+    - 未实现 `ContextCatalog` 或 `ActionManifest`。
+    - 未改变 `PromptService` / `PromptProjection`。
+    - 未改变旧 SWF 返回 shape。
+    - `FavoritesMenu` 仍保持 conditional，未恢复 workspace/source/artifact inventory 时不成为 mandatory。
+  - 状态同步：
+    - `.dualpad-builder/feature_list.json` 中 `PH0` 已更新为 `completed` / `passes=true`。
+    - `.dualpad-builder/sprint_plan.json` 中 `S-PH0` 已更新为 `completed`；`S-PH1` 仍为 `planned` / not started。
+    - 入口文档已同步为 closed through `S-PH0`，并保留 `materialize-fixture` 不是 behavioral proof 的边界。
+- 必跑验证结果：
+  - `xmake build DualPadReplayHarness`
+    - 结果：exit 0；输出包含 `linking.release DualPadReplayHarness.exe` 与 `build ok, spent 0.578s`。
+  - `xmake build DualPadReplayHarnessTests`
+    - 结果：exit 0；输出 `build ok, spent 0.25s`。
+  - `xmake run DualPadReplayHarnessTests`
+    - 结果：exit 0；stdout 为空。
+  - `xmake build DualPad`
+    - 结果：exit 0；输出包含 `Built: C:\Users\xuany\Documents\dualPad\build\bin\DualPad\DualPad.dll` 与 `build ok, spent 1.297s`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+    - 结果：exit 0；输出：
+      - `01_gameplay_walk_attack_block_sprint: no diff`
+      - `02_gameplay_menu_roundtrip: no diff`
+      - `03_main_menu_glyph: no diff`
+      - `04_journal_confirm_cancel: no diff`
+      - `05_map_cursor_zoom_open_journal: no diff`
+      - `07_book_page_lr: no diff`
+      - `08_console_creations_lockpicking: no diff`
+      - `09_combo_native_pause_screenshot_hotkeys: no diff`
+      - `10_backlog_gap_overflow: no diff`
+      - `11_config_reload_success_failure: no diff`
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+    - 结果：exit 0；输出包含 `[graphify watch] Rebuilt: 1103 nodes, 2231 edges, 106 communities`，并写入 `graphify-out/graph.json` 与 `graphify-out/GRAPH_REPORT.md`。

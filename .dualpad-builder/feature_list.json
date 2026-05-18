@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-17T23:20:20+08:00",
+  "updated_at": "2026-05-18T00:32:49+08:00",
   "features": [
     {
       "id": "WF0",
@@ -136,13 +136,13 @@
       "depends_on": [
         "DP4a"
       ],
-      "status": "active",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "schema / harness bootstrap、diff runner 与 repo-owned mandatory scenario bundle 已落地",
-        "behavioral dispatcher / processor replay barrier 尚未完全证明，不能把 materialize-fixture 输出当作 runtime replay proof",
+        "dispatcher / processor behavioral replay seam 已能生成 candidate bundle，并在 mismatch 时失败；materialize-fixture 仍只作为独立 plumbing mode",
         "phase0_scenarios.json 以 mandatory=false / conditional_live 标记 FavoritesMenu 条件场景，workspace 未恢复时不会成为退出条件",
-        "Phase 0 target、trace schema、diff runner 和 progress close-out 可追踪；passes 只能在 behavioral replay proof 完成后改回 true"
+        "Phase 0 target、trace schema、behavioral replay tests、batch diff runner 和 progress close-out 可追踪"
       ]
     },
     {

@@ -50,6 +50,61 @@ namespace
         }
     }
 
+    void WriteBehaviorBundle(
+        const std::filesystem::path& scenario,
+        std::string_view dispatcherRows,
+        std::string_view frameRows,
+        std::string_view eventRows,
+        std::string_view expectedPollRows)
+    {
+        WriteHeaderOnlyBundle(scenario);
+        WriteFile(
+            scenario / "dispatcher_schedule.csv",
+            std::string(telemetry::FindPhase0TraceFile("dispatcher_schedule.csv")->header) + "\n" +
+                std::string(dispatcherRows));
+        WriteFile(
+            scenario / "ingress_snapshot_frames.csv",
+            std::string(telemetry::FindPhase0TraceFile("ingress_snapshot_frames.csv")->header) + "\n" +
+                std::string(frameRows));
+        WriteFile(
+            scenario / "ingress_snapshot_events.csv",
+            std::string(telemetry::FindPhase0TraceFile("ingress_snapshot_events.csv")->header) + "\n" +
+                std::string(eventRows));
+        WriteFile(
+            scenario / "processed_snapshot_frames.csv",
+            std::string(telemetry::FindPhase0TraceFile("processed_snapshot_frames.csv")->header) + "\n" +
+                std::string(frameRows));
+        WriteFile(
+            scenario / "processed_snapshot_events.csv",
+            std::string(telemetry::FindPhase0TraceFile("processed_snapshot_events.csv")->header) + "\n" +
+                std::string(eventRows));
+        WriteFile(
+            scenario / "expected_authoritative_poll.csv",
+            std::string(telemetry::FindPhase0TraceFile("expected_authoritative_poll.csv")->header) + "\n" +
+                std::string(expectedPollRows));
+    }
+
+    void WriteProcessorBehaviorBundle(
+        const std::filesystem::path& scenario,
+        std::string_view frameRows,
+        std::string_view eventRows,
+        std::string_view expectedPollRows)
+    {
+        WriteHeaderOnlyBundle(scenario);
+        WriteFile(
+            scenario / "processed_snapshot_frames.csv",
+            std::string(telemetry::FindPhase0TraceFile("processed_snapshot_frames.csv")->header) + "\n" +
+                std::string(frameRows));
+        WriteFile(
+            scenario / "processed_snapshot_events.csv",
+            std::string(telemetry::FindPhase0TraceFile("processed_snapshot_events.csv")->header) + "\n" +
+                std::string(eventRows));
+        WriteFile(
+            scenario / "expected_authoritative_poll.csv",
+            std::string(telemetry::FindPhase0TraceFile("expected_authoritative_poll.csv")->header) + "\n" +
+                std::string(expectedPollRows));
+    }
+
     std::filesystem::path ProjectRoot()
     {
         auto current = std::filesystem::current_path();
@@ -187,36 +242,94 @@ namespace
             "validate-schema mode must not materialize candidate output");
     }
 
-    void TestBehavioralModesDoNotMaterializeFixtures()
+    void TestDispatcherModeProducesCandidateOutput()
     {
-        const auto root = TempRoot() / "behavioral";
+        const auto root = TempRoot() / "dispatcher-behavior";
         const auto scenario = root / "expected";
-        const auto dispatcherActual = root / "dispatcher-actual";
-        const auto processorActual = root / "processor-actual";
+        const auto actual = root / "actual";
         std::filesystem::remove_all(root);
-        WriteHeaderOnlyBundle(scenario);
+        WriteBehaviorBundle(
+            scenario,
+            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n"
+            "1,drain,0,1,upstream_poll,active_fresh,4,true,1,0,1\n",
+            "1,1,1000,Gameplay,1,false,false,false,2,0.5,0,0,0,0,0\n",
+            "1,0,ButtonPress,Button,2,0,None,0,0,1000,0,0,0,Disabled,None,None\n",
+            "1,Gameplay,1,1000,2,2,0,0,2,2,0,0,0,0,0,0,0.5,0,0,0,0,0,true,true,false,false\n");
+
+        const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::Dispatcher, actual);
+        Require(result.ok, result.message);
+
+        const auto processed = ReadLines(actual / "processed_snapshot_frames.csv");
+        Require(processed.size() == 2, "dispatcher mode should produce processed snapshot candidate rows");
+        Require(processed[1].starts_with("1,1,1000,Gameplay,"), "dispatcher mode should drain submitted ingress snapshot");
+    }
+
+    void TestDispatcherModeFailsOnBehavioralMismatch()
+    {
+        const auto root = TempRoot() / "dispatcher-mismatch";
+        const auto scenario = root / "expected";
+        const auto actual = root / "actual";
+        std::filesystem::remove_all(root);
+        WriteBehaviorBundle(
+            scenario,
+            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n"
+            "1,drain,0,1,upstream_poll,active_fresh,4,true,1,0,1\n",
+            "1,1,1000,Gameplay,1,false,false,false,2,0.5,0,0,0,0,0\n",
+            "1,0,ButtonPress,Button,2,0,None,0,0,1000,0,0,0,Disabled,None,None\n",
+            "1,Gameplay,1,1000,2,2,0,0,2,2,0,0,0,0,0,0,0.5,0,0,0,0,0,true,true,false,false\n");
         WriteFile(
-            scenario / "dispatcher_schedule.csv",
-            "step_index,op,sequence,budget,reason,route_state,last_poll_age_ms,hook_installed,pending_before,pending_after,drained_count\n"
-            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n");
+            scenario / "processed_snapshot_frames.csv",
+            std::string(telemetry::FindPhase0TraceFile("processed_snapshot_frames.csv")->header) + "\n"
+            "1,1,1000,Gameplay,1,false,false,false,8,0.5,0,0,0,0,0\n");
 
-        const auto dispatcher = telemetry::ReplayScenario(
-            scenario,
-            telemetry::ReplayMode::Dispatcher,
-            dispatcherActual);
-        Require(!dispatcher.ok, "dispatcher behavioral replay must not silently pass before it is implemented");
+        const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::Dispatcher, actual);
+        Require(!result.ok, "dispatcher mode should fail when generated behavior differs from golden");
+        const auto processed = ReadLines(actual / "processed_snapshot_frames.csv");
+        Require(processed.size() == 2, "dispatcher mismatch should still leave generated candidate output");
         Require(
-            !std::filesystem::exists(dispatcherActual),
-            "dispatcher mode must not write fixture output as proof of replay");
+            processed[1].find(",2,0.5,") != std::string::npos,
+            "dispatcher candidate output should come from ingress data, not copied processed golden");
+    }
 
-        const auto processor = telemetry::ReplayScenario(
+    void TestProcessorModeProducesCandidateOutput()
+    {
+        const auto root = TempRoot() / "processor-behavior";
+        const auto scenario = root / "expected";
+        const auto actual = root / "actual";
+        std::filesystem::remove_all(root);
+        WriteProcessorBehaviorBundle(
             scenario,
-            telemetry::ReplayMode::Processor,
-            processorActual);
-        Require(!processor.ok, "processor behavioral replay must not silently pass before it is implemented");
+            "3,3,3000,Gameplay,2,false,false,false,4,0,0,0.25,0,0,1\n",
+            "3,0,ButtonPress,Button,4,0,None,0,0,3000,0,0,0,Disabled,None,None\n",
+            "1,Gameplay,2,3000,4,4,0,0,4,4,0,0,0,0,0,0,0,0,0.25,0,0,1,true,true,false,false\n");
+
+        const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::Processor, actual);
+        Require(result.ok, result.message);
+
+        const auto poll = ReadLines(actual / "expected_authoritative_poll.csv");
+        Require(poll.size() == 2, "processor mode should produce authoritative poll candidate rows");
+        Require(poll[1].find("Gameplay,2,3000,4,4") != std::string::npos, "processor mode should reduce processed snapshots into poll rows");
+    }
+
+    void TestProcessorModeFailsOnBehavioralMismatch()
+    {
+        const auto root = TempRoot() / "processor-mismatch";
+        const auto scenario = root / "expected";
+        const auto actual = root / "actual";
+        std::filesystem::remove_all(root);
+        WriteProcessorBehaviorBundle(
+            scenario,
+            "3,3,3000,Gameplay,2,false,false,false,4,0,0,0.25,0,0,1\n",
+            "3,0,ButtonPress,Button,4,0,None,0,0,3000,0,0,0,Disabled,None,None\n",
+            "1,Gameplay,2,3000,8,8,0,0,8,8,0,0,0,0,0,0,0,0,0.25,0,0,1,true,true,false,false\n");
+
+        const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::Processor, actual);
+        Require(!result.ok, "processor mode should fail when generated poll output differs from golden");
+        const auto poll = ReadLines(actual / "expected_authoritative_poll.csv");
+        Require(poll.size() == 2, "processor mismatch should still leave generated candidate output");
         Require(
-            !std::filesystem::exists(processorActual),
-            "processor mode must not write fixture output as proof of replay");
+            poll[1].find("Gameplay,2,3000,4,4") != std::string::npos,
+            "processor candidate output should be generated from processed snapshots, not copied expected poll");
     }
 
     void TestPhase0SyntheticScenarioMaterializesRows()
@@ -230,17 +343,21 @@ namespace
         Require(goldenLines.size() > 1, "10_backlog_gap_overflow must include at least one synthetic schedule row");
 
         const auto actualLines = ReadLines(actual);
-        Require(actualLines.size() == goldenLines.size(), "materialized 10_backlog_gap_overflow output must keep every schedule row");
+        Require(actualLines.size() == goldenLines.size(), "behavioral 10_backlog_gap_overflow output must keep every schedule row");
         Require(
             actualLines[1] == goldenLines[1],
-            "materialized 10_backlog_gap_overflow output must keep the first synthetic schedule row");
+            "behavioral 10_backlog_gap_overflow output must keep the first synthetic schedule row");
+
+        const auto configActual = ReadLines(
+            ProjectRoot() / "build" / "replay" / "11_config_reload_success_failure" / "expected_authoritative_poll.csv");
+        Require(configActual.size() > 1, "11_config_reload_success_failure must produce non-empty behavioral poll rows");
     }
 
-    void MaterializePhase0GoldenForDiff()
+    void GeneratePhase0BehavioralReplayForDiff()
     {
         const auto result = telemetry::ReplayBatch(
             ProjectRoot() / "tests" / "replay" / "golden" / "phase0",
-            telemetry::ReplayMode::MaterializeFixture,
+            telemetry::ReplayMode::Dispatcher,
             ProjectRoot() / "build" / "replay");
         Require(result.ok, result.message);
     }
@@ -254,8 +371,11 @@ int main()
     TestGlyphRoundTrip();
     TestKeyboardCommandRoundTrip();
     TestValidateSchemaDoesNotMaterializeOutput();
-    TestBehavioralModesDoNotMaterializeFixtures();
-    MaterializePhase0GoldenForDiff();
+    TestDispatcherModeProducesCandidateOutput();
+    TestDispatcherModeFailsOnBehavioralMismatch();
+    TestProcessorModeProducesCandidateOutput();
+    TestProcessorModeFailsOnBehavioralMismatch();
+    GeneratePhase0BehavioralReplayForDiff();
     TestPhase0SyntheticScenarioMaterializesRows();
     return 0;
 }

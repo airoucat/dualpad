@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": "S-PH0",
-  "updated_at": "2026-05-17T23:20:20+08:00",
+  "updated_at": "2026-05-18T00:32:49+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -183,11 +183,11 @@
         "B4",
         "B5"
       ],
-      "status": "active",
+      "status": "completed",
       "exit_criteria": [
         "trace schema、recorder、replay harness、diff runner 和 Phase 0 mandatory scenarios 落地",
-        "schema / harness bootstrap 与 materialize-fixture 验证不得被表述为 dispatcher / processor runtime replay proof",
-        "behavioral dispatcher / processor replay proof 完成前，S-PH0 保持 active 且 PH0 passes=false",
+        "validate-schema / materialize-fixture 与 dispatcher / processor behavioral replay mode 有明确边界",
+        "dispatcher / processor behavioral replay proof 已通过，candidate bundle 对 Phase 0 golden batch diff 为 0",
         "10 个 repo-owned mandatory scenario bundle 齐全，phase0_scenarios.json 把 FavoritesMenu 标成 mandatory=false / conditional_live",
         ".dualpad-builder/progress.md 记录 Phase 0 start / done / blocked 与验证结果"
       ],
@@ -195,8 +195,8 @@
         "xmake build DualPadReplayHarness",
         "xmake build DualPadReplayHarnessTests",
         "xmake run DualPadReplayHarnessTests",
-        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff",
         "xmake build DualPad",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff",
         "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
       ]
     },
