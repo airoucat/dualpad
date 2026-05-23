@@ -138,9 +138,11 @@ struct ReconciledMenuStack {
    - tracked menu 新增 / 确认关闭
    - passthrough overlay 新增 / 确认关闭
    - top tracked menu 改变
-   - 已发布实例的 `MenuInstanceId`、`MenuIdentityQuality`、`depthPriority`、`firstSeenRevision`、`lastSeenRevision`、tracked / overlay 分类发生变化
+   - 已发布实例的 `MenuInstanceId`、`MenuIdentityQuality`、`depthPriority`、`firstSeenRevision`、tracked / overlay 分类发生变化
+   - published shape、identity、top tracked menu 或 tracked / overlay classification 等实际发布语义发生变化
 8. `Unavailable` 快照不发布新 stack，因此不得推进 `menuStackRevision`。
 9. `Partial` 快照允许推进 `menuStackRevision`，但原因只能是“新看到或更新了已看到的实例”；不得因为缺席推断 close。
+10. `lastSeenRevision` 是 bookkeeping / diagnostic 字段，仅用于调试和观测实例最近一次被看到的时间点；纯 `lastSeenRevision` 更新不参与 `menuStackRevision` 推进，也不得被下游当作发布语义变化。
 
 ### `ContextResolver`
 
@@ -490,6 +492,7 @@ struct LegacyContextMirrorState;
    - `lastSeenRevision`
    - `menuStackRevision`
    - observer 原始 runtime facts
+7. `lastSeenRevision` 只作为 bookkeeping / diagnostic 输出；如果其它发布字段未变化，单纯刷新 `lastSeenRevision` 不允许推进 `menuStackRevision`。
 
 这一步完成后，先用纯测试验证下面场景：
 
@@ -712,6 +715,8 @@ xmake run DualPadContextResolverTests
 2. 菜单实例身份已经由 `MenuInstanceId` 驱动，当前运行时不再以菜单名作为实例真相源。
 3. `ContextManager` 已退化为 legacy mirror，不再维护 `_menuStack`、`_passthroughMenuCounts` 这类 authority 状态。
 4. `menuStackRevision` 已成为正式发布字段，且 authoritative owner 明确为 `MenuInstanceRegistry`。
+   - 推进条件只包含 published shape、identity、top tracked menu、tracked / overlay classification 等实际发布语义变化。
+   - `lastSeenRevision` 是 bookkeeping / diagnostic 字段，不参与 revision parity。
 5. `UiMenuObserver` 已按固定时序工作：事件只标脏、每主线程 frame 最多发布一次、查询路径禁止懒采样。
 6. 下游现有调用面仍可继续使用：
    - `ContextManager::GetCurrentContext()`

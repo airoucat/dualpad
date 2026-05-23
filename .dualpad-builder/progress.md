@@ -1016,3 +1016,11 @@
   - `.dualpad-builder/feature_list.json`：`PH2` 已重新标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH2` 已重新标为 `completed`，`current_sprint=null`。
   - `PH3` / `S-PH3` 保持 `planned`，未启动。
+
+## 2026-05-23 23:21:31 CST
+
+- `PH2` close-out doc hygiene：
+  - 只更新 `docs/plans/dualpad_rearchitecture/03_slice_phase2_menu_instance_truth_zh.md` 与 `.dualpad-builder/progress.md`。
+  - Phase 2 计划文档已明确：`lastSeenRevision` 是 bookkeeping / diagnostic 字段，不参与 `menuStackRevision` 推进。
+  - `menuStackRevision` 的推进条件收口为 published shape、identity、top tracked menu、tracked / overlay classification 等实际发布语义变化。
+  - 状态保持：`PH2` / `S-PH2` 继续为 `completed` / `passes=true`；`PH3` / `S-PH3` 保持 `planned` / not started。
