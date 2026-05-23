@@ -36,11 +36,11 @@
 ## 当前工作路（2026-05-23）
 
 - 当前活跃 Sprint：
-  - 无；`S-PH0` 已完成，`S-PH1` 仍 planned / not started。
+  - 无；`S-PH0` 与 `S-PH1` 已完成，`S-PH2` 仍 planned / not started。
 - 当前直接焦点：
   - `DP1a Route-health contract freeze`、`DP4a Glyph compat diagnostics freeze` 与 `PH0 Phase 0 replay barrier` 已完成。
   - `PH0` 的 runtime proof 已通过 dispatcher / processor mode 候选输出与 batch diff；`materialize-fixture` 仍只代表 schema / diff plumbing。
-  - `PH1` 仍为 planned / not started；不要在未显式晋升前启动 `PH1`。
+  - `PH1` 已完成并通过 prove-out；`PH2` 仍为 planned / not started。
 - 当前推荐推进顺序：
   1. 先看本目录入口、`work-packages/README.md`、`docs/harness/dualpad-builder.md` 和 `.dualpad-builder/` 记忆层，确认当前 Sprint、边界和 close-out 口径
   2. `DP1a` 已完成；如需复核，入口仍是：
@@ -55,7 +55,6 @@
      - `tests/replay/golden/phase0/`
      - `scripts/dev/dualpad_trace_diff.py`
   5. 后续计划包仍必须按依赖顺序单独晋升，不得把 planned backlog 误写成 active / completed：
-     - `Phase 1`
      - `Phase 2`
      - `Phase 3`
      - `Phase 4`
@@ -81,7 +80,8 @@
 - `DP4`：进行中
 - `DP4a`：已完成
 - `PH0`：已完成（dispatcher / processor runtime replay barrier 已验证通过）
-- `PH1` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
+- `PH1`：已完成
+- `PH2` - `PH8B`：计划中（已登记为 builder backlog，未晋升为当前 active Sprint）
 - `DP5`：计划中
 
 ## 主题路由

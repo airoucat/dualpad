@@ -134,6 +134,15 @@ target("DualPad")
         print("Deployed: %s", target:targetfile())
     end)
 
+local ph1_manifest_compiler_files = {
+    "src/input_v2/config/LegacyIniImporter.cpp",
+    "src/input_v2/context/ContextCatalog.cpp",
+    "src/input_v2/actions/ActionManifest.cpp",
+    "src/input_v2/config/ManifestValidator.cpp",
+    "src/input_v2/config/AtomicConfigReloader.cpp",
+    "src/input_v2/config/ActionManifestPublisher.cpp"
+}
+
 target("DualPadMenuContextPolicyTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -143,7 +152,25 @@ target("DualPadMenuContextPolicyTests")
         "tests/MenuContextPolicyTests.cpp",
         "src/input/InputContextNames.cpp",
         "src/input/MenuContextPolicy.cpp")
+    add_files(table.unpack(ph1_manifest_compiler_files))
     add_headerfiles("tests/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadManifestCompilerTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/**.cpp")
+    add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(
+        "src/input/BindingManager.cpp",
+        "src/input/BindingConfig.cpp",
+        "src/input/InputContextNames.cpp",
+        "src/input/MenuContextPolicy.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
@@ -211,6 +238,10 @@ local replay_runtime_files = {
     "src/input/mapping/BindingResolver.cpp",
     "src/input/mapping/TriggerMapper.cpp"
 }
+
+for _, file in ipairs(ph1_manifest_compiler_files) do
+    table.insert(replay_runtime_files, file)
+end
 
 target("DualPadReplayHarness")
     set_kind("binary")

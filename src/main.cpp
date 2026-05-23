@@ -18,6 +18,7 @@
 #include "input/RuntimeConfig.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/backend/KeyboardHelperBackend.h"
+#include "input_v2/config/AtomicConfigReloader.h"
 
 #include "input/injection/UpstreamGamepadHook.h"
 
@@ -75,10 +76,20 @@ namespace
             LogReverseProbeAddresses();
 
             dualpad::input::RuntimeConfig::GetSingleton().Load();
+
+            const auto compiledConfig = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().LoadOrRecover();
+            if (!compiledConfig.ok) {
+                logger::error(
+                    "[DualPad][PH1] AtomicConfigReloader startup load failed: {}",
+                    compiledConfig.message);
+            } else if (compiledConfig.recoveredFromDiskLkg) {
+                logger::warn("[DualPad][PH1] AtomicConfigReloader recovered from last-known-good bundle");
+            }
+
             dualpad::input::MenuContextPolicy::GetSingleton().Load();
+            dualpad::input::BindingConfig::GetSingleton().Load();
             dualpad::input::ContextEventSink::GetSingleton().Register();
 
-            dualpad::input::BindingConfig::GetSingleton().Load();
             dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton().RegisterInitialMenus();
             if (!dualpad::input::ControlMapOverlay::GetSingleton().Apply()) {
                 logger::warn(

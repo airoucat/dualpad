@@ -4,6 +4,8 @@
 
 #include "input/IniParseHelpers.h"
 #include "input/InputContextNames.h"
+#include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/context/ContextCatalog.h"
 
 #include <RE/U/UI.h>
 
@@ -229,38 +231,50 @@ namespace dualpad::input
     bool MenuContextPolicy::Load(const std::filesystem::path& path)
     {
         const auto configPath = path.empty() ? GetDefaultPath() : path;
-        MenuContextPolicyConfig parsedConfig;
-        MenuContextPolicyConfig effectiveConfig;
-        std::vector<std::string> warnings;
 
         ResetToDefaults();
 
-        logger::info("[DualPad][MenuPolicy] Loading from: {}", configPath.string());
+        // Phase 1: MenuContextPolicy is a compatibility facade over the compiled catalog.
+        // It no longer parses DualPadMenuPolicy.ini directly.
+        logger::info("[DualPad][MenuPolicy] Loading from compiled catalog (path hint: {})", configPath.string());
 
-        if (!std::filesystem::exists(configPath)) {
-            logger::warn("[DualPad][MenuPolicy] Config file not found, using defaults");
+        MenuContextPolicyConfig effectiveConfig{};
+
+        const auto bundle = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        if (!bundle) {
+            logger::error("[DualPad][MenuPolicy] No active compiled bundle; policy load failed");
             std::scoped_lock lock(_mutex);
             _configPath = configPath;
             return false;
         }
 
-        std::ifstream stream(configPath);
-        if (!stream.is_open()) {
-            logger::error("[DualPad][MenuPolicy] Failed to open: {}", configPath.string());
-            return false;
+        // Project the Phase 1 menu policy metadata onto legacy MenuContextPolicyConfig.
+        const auto& meta = bundle->catalog.menuPolicy;
+        effectiveConfig.unknownMenuPolicy =
+            (meta.unknownMenuPolicy == dualpad::input_v2::context::UnknownMenuPolicy::Track) ?
+            UnknownMenuPolicy::Track :
+            UnknownMenuPolicy::Passthrough;
+        effectiveConfig.logUnknownMenuProbe = meta.logUnknownMenuProbe;
+        effectiveConfig.logUnknownMenuDecision = meta.logUnknownMenuDecision;
+
+        for (const auto& [menuName, targetId] : meta.trackRules) {
+            const auto* entry = dualpad::input_v2::context::ContextCatalog::FindById(bundle->catalog, targetId);
+            if (!entry || !entry->legacyInputContext) {
+                logger::error(
+                    "[DualPad][MenuPolicy] Compiled track rule '{}' targets non-legacy context id {}",
+                    menuName,
+                    static_cast<std::uint32_t>(targetId));
+                continue;
+            }
+            effectiveConfig.trackRules.emplace(menuName, *entry->legacyInputContext);
         }
 
-        ParseConfig(stream, parsedConfig, &warnings);
-
-        for (const auto& warning : warnings) {
-            logger::warn("[DualPad][MenuPolicy] {}", warning);
-        }
+        effectiveConfig.ignoreRules = meta.ignoreRules;
 
         {
             std::scoped_lock lock(_mutex);
             _configPath = configPath;
-            _config = std::move(parsedConfig);
-            effectiveConfig = _config;
+            _config = effectiveConfig;
         }
 
         logger::info(
@@ -275,18 +289,12 @@ namespace dualpad::input
 
     bool MenuContextPolicy::Reload()
     {
-        std::filesystem::path configPath;
-
-        {
-            std::scoped_lock lock(_mutex);
-            configPath = _configPath;
+        // Phase 1: runtime reload is owned by AtomicConfigReloader; this facade just re-syncs.
+        const auto reloadResult = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().Reload();
+        if (!reloadResult.ok) {
+            logger::warn("[DualPad][MenuPolicy] AtomicConfigReloader reload failed: {}", reloadResult.message);
         }
-
-        if (configPath.empty()) {
-            return Load();
-        }
-
-        return Load(configPath);
+        return Load();
     }
 
     std::optional<MenuRuntimeSnapshot> MenuContextPolicy::CaptureRuntimeSnapshot(std::string_view menuName) const
@@ -606,46 +614,12 @@ namespace dualpad::input
 
     std::optional<InputContext> MenuContextPolicy::KnownMenuNameToContext(std::string_view menuName)
     {
-        if (menuName == RE::InventoryMenu::MENU_NAME) return InputContext::InventoryMenu;
-        if (menuName == RE::MagicMenu::MENU_NAME) return InputContext::MagicMenu;
-        if (menuName == RE::MapMenu::MENU_NAME) return InputContext::MapMenu;
-        if (menuName == RE::JournalMenu::MENU_NAME) return InputContext::JournalMenu;
-
-        if (menuName == "DialogueMenu" || menuName == "Dialogue Menu") return InputContext::DialogueMenu;
-        if (menuName == "FavoritesMenu" || menuName == "Favorites Menu") return InputContext::FavoritesMenu;
-        if (menuName == "TweenMenu" || menuName == "Tween Menu") return InputContext::TweenMenu;
-        if (menuName == "ContainerMenu" || menuName == "Container Menu") return InputContext::ContainerMenu;
-        if (menuName == "BarterMenu" || menuName == "Barter Menu") return InputContext::BarterMenu;
-        if (menuName == "Training Menu") return InputContext::TrainingMenu;
-        if (menuName == "LevelUp Menu") return InputContext::LevelUpMenu;
-        if (menuName == "RaceSex Menu") return InputContext::RaceSexMenu;
-        if (menuName == "StatsMenu" || menuName == "Stats Menu") return InputContext::StatsMenu;
-        if (menuName == "SkillMenu" || menuName == "Skill Menu") return InputContext::SkillMenu;
-        if (menuName == "Book Menu" || menuName == "BookMenu") return InputContext::BookMenu;
-        if (menuName == "MessageBoxMenu" || menuName == "MessageBox Menu") return InputContext::MessageBoxMenu;
-        if (menuName == "QuantityMenu" || menuName == "Quantity Menu") return InputContext::QuantityMenu;
-        if (menuName == "GiftMenu" || menuName == "Gift Menu") return InputContext::GiftMenu;
-        if (menuName == "Creations Menu" ||
-            menuName == "Creation Club Menu" ||
-            menuName == "Mod Manager Menu") {
-            return InputContext::CreationsMenu;
+        const auto& catalog = dualpad::input_v2::context::ContextCatalog::BuiltInCatalog();
+        const auto ctxId = dualpad::input_v2::context::ContextCatalog::ResolveMenuName(catalog, menuName);
+        if (!ctxId) {
+            return std::nullopt;
         }
-
-        if (menuName == "Console" || menuName == "Console Native UI Menu") return InputContext::Console;
-        if (menuName == "Lockpicking Menu" || menuName == "LockpickingMenu") return InputContext::Lockpicking;
-        if (menuName == "Loading Menu" ||
-            menuName == "Main Menu" ||
-            menuName == "Credits Menu" ||
-            menuName == "Crafting Menu" ||
-            menuName == "TitleSequence Menu" ||
-            menuName == "Sleep/Wait Menu" ||
-            menuName == "Kinect Menu" ||
-            menuName == "SafeZoneMenu" ||
-            menuName == "StreamingInstallMenu") {
-            return InputContext::Menu;
-        }
-
-        return std::nullopt;
+        return dualpad::input_v2::context::ContextCatalog::ToLegacyInputContext(catalog, *ctxId);
     }
 
     void MenuContextPolicy::ResetToDefaults()

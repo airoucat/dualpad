@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-23T15:37:00+08:00",
+  "updated_at": "2026-05-23T19:53:49+08:00",
   "features": [
     {
       "id": "WF0",
@@ -157,8 +157,8 @@
       "depends_on": [
         "PH0"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "ContextCatalog、ActionManifest、LegacyIniImporter 和 ManifestValidator 有固定代码落点",
         "AtomicConfigReloader::Promote() 与 ActionManifestPublisher::PublishPromotedBundle(...) 的 manifest marker handoff 不再留到实现阶段决定",

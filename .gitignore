@@ -17,3 +17,5 @@ lib/
 .gitconfig.codex
 compile_commands.json
 review_repair_template.md
+# Phase 1: runtime-generated last-known-good manifest bundle (do not commit).
+config/DualPad.Manifest.lkg.json

@@ -860,3 +860,42 @@
   - PH0 / PH1 状态确认：
     - `.dualpad-builder/feature_list.json`：`PH0` 为 `completed` / `passes=true`；`PH1` 为 `planned`。
     - `.dualpad-builder/sprint_plan.json`：`S-PH0` 为 `completed`，`current_sprint=null`；`S-PH1` 为 `planned`。
+
+## 2026-05-23 16:22:05 CST
+
+- `PH1` start：
+  - 已将 `PH1` / `S-PH1` 从 `planned` 晋升为 `in_progress`（`current_sprint=S-PH1`）。
+  - 本轮范围：`ContextCatalog`、`ActionManifest`、`LegacyIniImporter`、`ManifestValidator`、`AtomicConfigReloader`、manifest publication handoff。
+  - 本轮非目标：`PH2` 菜单实例真相、`PH3` presentation split、`PH4` InteractionEngine、`PH6` PromptService / PromptProjection、`PH7` IngressHub / FrameAssembler；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-23 19:50:00 CST
+
+- `PH1` close-out verification：
+  - 验证结果：
+    - `xmake build DualPadManifestCompilerTests`
+      - 结果：exit 0。
+    - `xmake run DualPadManifestCompilerTests`
+      - 结果：exit 0。
+    - `xmake build DualPadMenuContextPolicyTests`
+      - 结果：exit 0。
+    - `xmake run DualPadMenuContextPolicyTests`
+      - 结果：exit 0。
+    - `xmake build DualPad`
+      - 结果：exit 0；输出包含 `Deployed: local configured deploy target` 与 `build ok`。
+    - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`
+      - 结果：exit 0；输出包含 `batch dispatcher runtime replay matched scenarios=10`。
+    - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`
+      - 结果：exit 0；全部场景 `no diff`。
+    - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`
+      - 结果：exit 0；输出包含 `batch processor runtime replay matched scenarios=10`。
+    - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`
+      - 结果：exit 0；全部场景 `no diff`。
+    - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+      - 结果：exit 0；输出包含 `Rebuilt: 1317 nodes, 2648 edges, 116 communities`，并写入 `graphify-out/graph.json` 与 `graphify-out/GRAPH_REPORT.md`。
+
+## 2026-05-23 19:53:49 CST
+
+- `PH1` builder memory close-out：
+  - `.dualpad-builder/feature_list.json`：`PH1` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH1` 已标为 `completed`，并将 `current_sprint=null`。
+  - `PH2` / `S-PH2` 保持 `planned`，未启动。

@@ -16,11 +16,12 @@
 - `DP4`：`in_progress`
 - `DP4a`：`completed`
 - `PH0`：`completed`（dispatcher / processor runtime replay proof 已验证通过）
-- `PH1` - `PH8B`：`planned`
+- `PH1`：`completed`
+- `PH2` - `PH8B`：`planned`
 - `DP5`：`planned`
-- 当前活跃 Sprint：无；`S-PH0` 已完成，`S-PH1` 仍 planned / not started
+- 当前活跃 Sprint：无；`S-PH0` 与 `S-PH1` 已完成，`S-PH2` 仍 planned / not started
 
-## 当前工作路（closed through `S-PH0`）
+## 当前工作路（closed through `S-PH1`）
 
 如果只是继续当前主线，而不是重新梳理整个仓库，默认按下面顺序走：
 
@@ -189,7 +190,7 @@
   - `scripts/dev/dualpad_trace_diff.py`
 - 硬边界：
   - `06_favorites_page_lr_accept_cancel` 仍是 `mandatory=false` / `conditional_live`；未恢复 workspace/source/artifact inventory 时不得成为默认退出条件。
-  - `PH1` 仍为 planned / not started；不得把本 slice 的 replay barrier 当作 manifest compiler 或 PromptService cutover。
+  - `PH2` 仍为 planned / not started；不得把本 slice 的 replay barrier 当作 menu instance truth 或 PromptService cutover。
   - `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`；runtime proof 必须走 `dispatcher` / `processor` mode 生成 candidate bundle。
 - prove-out 固定命令：
   - `xmake build DualPad`

@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-23T15:37:00+08:00",
+  "updated_at": "2026-05-23T19:53:49+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -216,7 +216,7 @@
         "B3",
         "B4"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "catalog 与 manifest schema 有固定字段、版本和 validation 规则",
         "AtomicConfigReloader::Promote() 只负责 active bundle / epoch / LKG；ActionManifestPublisher::PublishPromotedBundle(...) 是唯一 ManifestEpochChanged producer seam",
@@ -225,7 +225,13 @@
       "verification": [
         "xmake build DualPadManifestCompilerTests",
         "xmake run DualPadManifestCompilerTests",
+        "xmake build DualPadMenuContextPolicyTests",
+        "xmake run DualPadMenuContextPolicyTests",
         "xmake build DualPad",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor",
         "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
       ]
     },
