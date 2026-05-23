@@ -18,17 +18,19 @@ namespace dualpad::input_v2::config
     public:
         static ActionManifestPublisher& GetSingleton();
 
-        void PublishPromotedBundle(const CompiledConfigBundle& bundle, std::uint64_t manifestEpoch);
+        bool PublishPromotedBundle(const CompiledConfigBundle& bundle, std::uint64_t manifestEpoch);
 
         std::optional<std::uint64_t> GetLastPublishedEpoch() const;
+        std::optional<std::uint64_t> GetActiveEpochObservedAtLastPublish() const;
         std::uint64_t GetPublishCount() const;
+        void ResetForTests();
 
     private:
         ActionManifestPublisher() = default;
 
         mutable std::mutex _mutex;
         std::optional<std::uint64_t> _lastPublishedEpoch;
+        std::optional<std::uint64_t> _activeEpochObservedAtLastPublish;
         std::uint64_t _publishCount{ 0 };
     };
 }
-

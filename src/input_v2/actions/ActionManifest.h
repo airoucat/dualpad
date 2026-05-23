@@ -44,7 +44,23 @@ namespace dualpad::input_v2::actions
     {
         std::string id;
         ActionValueKind valueKind{ ActionValueKind::Unknown };
+        std::string contract;
+        std::string outputDescriptorId;
+        std::string promptHintId;
         ActionDomain domain{ ActionDomain::Unknown };
+    };
+
+    struct OutputDescriptor
+    {
+        std::string id;
+        std::string kind;
+        std::string target;
+    };
+
+    struct ManifestPolicy
+    {
+        std::string id;
+        std::string value;
     };
 
     struct CompiledBinding
@@ -52,12 +68,27 @@ namespace dualpad::input_v2::actions
         std::string actionId;
         std::string baseSetId;
         std::optional<std::string> layerId;
+        std::string deviceFamily{ "DualSense" };
 
         std::string controlPath;
         std::string interaction;
         std::vector<std::string> requiredChordPaths; // for Layer semantics
 
         // Phase 1 compatibility: normalized legacy Trigger used by BindingManager.
+        dualpad::input::Trigger legacyTrigger{};
+        dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Unknown };
+    };
+
+    struct DisplayBinding
+    {
+        std::string actionId;
+        std::string baseSetId;
+        std::optional<std::string> layerId;
+        std::string deviceFamily{ "DualSense" };
+        std::string controlPath;
+        std::string interaction;
+
+        // Phase 1 compatibility projection fields.
         dualpad::input::Trigger legacyTrigger{};
         dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Unknown };
     };
@@ -85,6 +116,10 @@ namespace dualpad::input_v2::actions
         std::vector<std::string> actionSets;   // base set registry
         std::vector<std::string> actionLayers; // layer registry
         std::vector<CompiledBinding> bindings;
+        std::vector<DisplayBinding> displayBindings;
+        std::vector<OutputDescriptor> outputDescriptors;
+        std::vector<ManifestPolicy> policies;
+        dualpad::input::TouchpadConfig touchpadConfig{};
 
         LegacyBindingProjection legacyBindingProjection;
     };
@@ -107,4 +142,3 @@ namespace dualpad::input_v2::actions
         static bool IsKnownActionId(std::string_view actionId);
     };
 }
-

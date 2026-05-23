@@ -283,6 +283,46 @@ namespace dualpad::input_v2::config
                 manifest.legacyBindingProjection.manifestEpoch,
                 manifest.manifestEpoch));
         }
+        if (manifest.actions.empty()) {
+            return Fail("manifest actions table must not be empty");
+        }
+        if (manifest.outputDescriptors.empty()) {
+            return Fail("manifest outputDescriptors table must not be empty");
+        }
+        if (manifest.policies.empty()) {
+            return Fail("manifest policies table must not be empty");
+        }
+
+        std::unordered_set<std::string> outputDescriptorIds;
+        for (const auto& descriptor : manifest.outputDescriptors) {
+            if (descriptor.id.empty() || descriptor.kind.empty() || descriptor.target.empty()) {
+                return Fail("manifest output descriptor entries must have id/kind/target");
+            }
+            if (!outputDescriptorIds.insert(descriptor.id).second) {
+                return Fail(std::format("duplicate output descriptor id '{}'", descriptor.id));
+            }
+        }
+
+        std::unordered_set<std::string> actionIds;
+        for (const auto& action : manifest.actions) {
+            if (action.id.empty() ||
+                action.valueKind == actions::ActionValueKind::Unknown ||
+                action.contract.empty() ||
+                action.outputDescriptorId.empty() ||
+                action.promptHintId.empty() ||
+                action.domain == actions::ActionDomain::Unknown) {
+                return Fail(std::format("action '{}' has incomplete metadata", action.id));
+            }
+            if (!outputDescriptorIds.contains(action.outputDescriptorId)) {
+                return Fail(std::format(
+                    "action '{}' references unknown output descriptor '{}'",
+                    action.id,
+                    action.outputDescriptorId));
+            }
+            if (!actionIds.insert(action.id).second) {
+                return Fail(std::format("duplicate action id '{}'", action.id));
+            }
+        }
 
         std::unordered_set<std::string> baseSets;
         for (const auto& id : manifest.actionSets) {
@@ -307,6 +347,48 @@ namespace dualpad::input_v2::config
                 return Fail("manifest contains empty layer id");
             }
             layers.insert(id);
+        }
+
+        for (const auto& binding : manifest.bindings) {
+            if (!actionIds.contains(binding.actionId)) {
+                return Fail(std::format("binding references unknown action '{}'", binding.actionId));
+            }
+            if (!baseSets.contains(binding.baseSetId)) {
+                return Fail(std::format(
+                    "binding for action '{}' references unknown base set '{}'",
+                    binding.actionId,
+                    binding.baseSetId));
+            }
+            if (binding.layerId && !layers.contains(*binding.layerId)) {
+                return Fail(std::format(
+                    "binding for action '{}' references unknown layer '{}'",
+                    binding.actionId,
+                    *binding.layerId));
+            }
+            if (binding.controlPath.empty() || binding.interaction.empty() || binding.deviceFamily.empty()) {
+                return Fail(std::format("binding for action '{}' has incomplete lowering metadata", binding.actionId));
+            }
+        }
+
+        for (const auto& display : manifest.displayBindings) {
+            if (!actionIds.contains(display.actionId)) {
+                return Fail(std::format("display binding references unknown action '{}'", display.actionId));
+            }
+            if (!baseSets.contains(display.baseSetId)) {
+                return Fail(std::format(
+                    "display binding for action '{}' references unknown base set '{}'",
+                    display.actionId,
+                    display.baseSetId));
+            }
+            if (display.layerId && !layers.contains(*display.layerId)) {
+                return Fail(std::format(
+                    "display binding for action '{}' references unknown layer '{}'",
+                    display.actionId,
+                    *display.layerId));
+            }
+            if (display.controlPath.empty() || display.interaction.empty() || display.deviceFamily.empty()) {
+                return Fail(std::format("display binding for action '{}' has incomplete metadata", display.actionId));
+            }
         }
 
         for (const auto& entry : catalog.entries) {

@@ -607,6 +607,27 @@ namespace dualpad::input_v2::config
             return false;
         }
 
+        if (compiled->manifestEpoch != promotedEpoch ||
+            compiled->catalog.manifestEpoch != promotedEpoch ||
+            compiled->manifest.manifestEpoch != promotedEpoch ||
+            compiled->manifest.legacyBindingProjection.manifestEpoch != promotedEpoch) {
+            outMessage = std::format(
+                "Promote epoch mismatch: arg={} bundle={} catalog={} manifest={} projection={}",
+                promotedEpoch,
+                compiled->manifestEpoch,
+                compiled->catalog.manifestEpoch,
+                compiled->manifest.manifestEpoch,
+                compiled->manifest.legacyBindingProjection.manifestEpoch);
+            return false;
+        }
+
+        // Publish first so no compatibility facade can observe the new active bundle
+        // before the ManifestEpochChanged producer seam has accepted the epoch.
+        if (!ActionManifestPublisher::GetSingleton().PublishPromotedBundle(*compiled, promotedEpoch)) {
+            outMessage = std::format("PublishPromotedBundle failed for manifest epoch {}", promotedEpoch);
+            return false;
+        }
+
         // Promote must be an atomic pointer swap; keep lock scope minimal.
         {
             std::scoped_lock lock(_mutex);
@@ -614,9 +635,6 @@ namespace dualpad::input_v2::config
             _lastKnownGoodBundle = compiled;
             _currentEpoch = promotedEpoch;
         }
-
-        // Publication seam must happen before any legacy facade observes the new bundle.
-        ActionManifestPublisher::GetSingleton().PublishPromotedBundle(*compiled, promotedEpoch);
 
         outMessage = "ok";
         logger::info("[DualPad][PH1][Reloader] promoted manifest epoch {}", promotedEpoch);

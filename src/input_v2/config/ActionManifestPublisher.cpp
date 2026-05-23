@@ -16,28 +16,32 @@ namespace dualpad::input_v2::config
         return instance;
     }
 
-    void ActionManifestPublisher::PublishPromotedBundle(
+    bool ActionManifestPublisher::PublishPromotedBundle(
         const CompiledConfigBundle& bundle,
         std::uint64_t manifestEpoch)
     {
-        // Fail-closed by default: keep publication observable even if caller passes mismatched values.
         if (bundle.manifestEpoch != manifestEpoch ||
             bundle.catalog.manifestEpoch != manifestEpoch ||
             bundle.manifest.manifestEpoch != manifestEpoch ||
             bundle.manifest.legacyBindingProjection.manifestEpoch != manifestEpoch) {
-            logger::warn(
+            logger::error(
                 "[DualPad][PH1][Publisher] PublishPromotedBundle epoch mismatch: arg={} bundle={} catalog={} manifest={} projection={}",
                 manifestEpoch,
                 bundle.manifestEpoch,
                 bundle.catalog.manifestEpoch,
                 bundle.manifest.manifestEpoch,
                 bundle.manifest.legacyBindingProjection.manifestEpoch);
+            return false;
         }
+
+        const auto activeEpochBeforePublish = AtomicConfigReloader::GetSingleton().GetActiveEpoch();
 
         std::scoped_lock lock(_mutex);
         _lastPublishedEpoch = manifestEpoch;
+        _activeEpochObservedAtLastPublish = activeEpochBeforePublish;
         ++_publishCount;
         logger::info("[DualPad][PH1][Publisher] Published manifest epoch {}", manifestEpoch);
+        return true;
     }
 
     std::optional<std::uint64_t> ActionManifestPublisher::GetLastPublishedEpoch() const
@@ -51,5 +55,18 @@ namespace dualpad::input_v2::config
         std::scoped_lock lock(_mutex);
         return _publishCount;
     }
-}
 
+    std::optional<std::uint64_t> ActionManifestPublisher::GetActiveEpochObservedAtLastPublish() const
+    {
+        std::scoped_lock lock(_mutex);
+        return _activeEpochObservedAtLastPublish;
+    }
+
+    void ActionManifestPublisher::ResetForTests()
+    {
+        std::scoped_lock lock(_mutex);
+        _lastPublishedEpoch.reset();
+        _activeEpochObservedAtLastPublish.reset();
+        _publishCount = 0;
+    }
+}

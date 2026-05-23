@@ -81,10 +81,14 @@ namespace dualpad::input
             std::string_view menuName,
             std::optional<MenuRuntimeSnapshot> runtimeSnapshot = std::nullopt) const;
 
+#if defined(DUALPAD_ENABLE_TEST_ONLY_MENU_POLICY_PARSE)
+        // Deprecated test-only compatibility parser. Runtime policy truth comes from
+        // LegacyIniImporter -> ContextCatalog -> active compiled bundle.
         static bool ParseConfig(
             std::istream& stream,
             MenuContextPolicyConfig& outConfig,
             std::vector<std::string>* warnings = nullptr);
+#endif
 
         static MenuTrackingDecision ResolveMenuTracking(
             const MenuContextPolicyConfig& config,

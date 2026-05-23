@@ -96,6 +96,7 @@
 - 如果任务是 `FavoritesMenu`：
   - 第一步先恢复 SWF workspace 与页面源码，再重新做 artifact inventory
 - 在宣称验证通过前，必须真的跑过对应命令或手工验证步骤，并把结果写进 `.dualpad-builder/progress.md`
+- 变更完成并通过验证后，默认提交并推送到当前跟踪远端分支；除非用户明确要求只保留本地改动、不提交或不推送。
 
 ## 快速路由
 

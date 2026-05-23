@@ -105,6 +105,7 @@ namespace dualpad::input
         const auto reloadResult = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().Reload();
         if (!reloadResult.ok) {
             logger::warn("[DualPad][Config] AtomicConfigReloader reload failed: {}", reloadResult.message);
+            return false;
         }
         // Load() will skip a second compile and only materialize the active bundle.
         return Load(_configPath);

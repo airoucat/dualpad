@@ -19,7 +19,7 @@
 
 ## 按当前工作路阅读
 
-### 当前活跃 Sprint：无（closed through `S-PH0`）
+### 当前活跃 Sprint：无（closed through `S-PH1`）
 
 1. 先确认入口和约束：
    - [authoritative-baseline/README.md](authoritative-baseline/README.md)
@@ -44,14 +44,19 @@
    - [../tests/replay/golden/phase0/](../tests/replay/golden/phase0/)
    - [../scripts/dev/dualpad_trace_diff.py](../scripts/dev/dualpad_trace_diff.py)
    - dispatcher / processor mode 已生成 runtime candidate bundle 并通过 batch diff；`materialize-fixture` 只证明 plumbing，不代表 runtime dispatcher / processor replay proof。
-5. 后续计划包必须先在 `.dualpad-builder/` 中晋升，当前不得直接启动：
+5. `PH1` 已完成；当前 catalog / manifest compiler 入口是：
    - [plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md](plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md)
+   - [../src/input_v2/context/ContextCatalog.h](../src/input_v2/context/ContextCatalog.h)
+   - [../src/input_v2/actions/ActionManifest.h](../src/input_v2/actions/ActionManifest.h)
+   - [../src/input_v2/config/AtomicConfigReloader.h](../src/input_v2/config/AtomicConfigReloader.h)
+   - `PH1` close-out blocker 已修复；`PH2` 仍为 planned / not started。
+6. 后续计划包必须先在 `.dualpad-builder/` 中晋升，当前不得直接启动：
    - [plans/dualpad_rearchitecture/03_slice_phase2_menu_instance_truth_zh.md](plans/dualpad_rearchitecture/03_slice_phase2_menu_instance_truth_zh.md)
    - [plans/dualpad_rearchitecture/04_slice_phase3_presentation_split_zh.md](plans/dualpad_rearchitecture/04_slice_phase3_presentation_split_zh.md)
    - [plans/dualpad_rearchitecture/05_slice_phase4_action_graph_and_interaction_engine_zh.md](plans/dualpad_rearchitecture/05_slice_phase4_action_graph_and_interaction_engine_zh.md)
    - [plans/dualpad_rearchitecture/06_slice_phase5_gameplay_projection_zh.md](plans/dualpad_rearchitecture/06_slice_phase5_gameplay_projection_zh.md)
    - [plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md](plans/dualpad_rearchitecture/07_slice_phase6_prompt_projection_zh.md)
-6. 做验证、handoff 或 close-out 时，再收回：
+7. 做验证、handoff 或 close-out 时，再收回：
    - [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
    - [reviews/README_zh.md](reviews/README_zh.md)
    - [../.dualpad-builder/progress.md](../.dualpad-builder/progress.md)

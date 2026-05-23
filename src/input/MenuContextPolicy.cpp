@@ -204,6 +204,7 @@ namespace dualpad::input
             return description;
         }
 
+#if defined(DUALPAD_ENABLE_TEST_ONLY_MENU_POLICY_PARSE)
         std::optional<UnknownMenuPolicy> ParseUnknownMenuPolicyValue(std::string_view value)
         {
             const auto normalized = ini::ToLower(ini::Trim(std::string(value)));
@@ -215,6 +216,7 @@ namespace dualpad::input
             }
             return std::nullopt;
         }
+#endif
     }
 
     MenuContextPolicy& MenuContextPolicy::GetSingleton()
@@ -293,8 +295,9 @@ namespace dualpad::input
         const auto reloadResult = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().Reload();
         if (!reloadResult.ok) {
             logger::warn("[DualPad][MenuPolicy] AtomicConfigReloader reload failed: {}", reloadResult.message);
+            return false;
         }
-        return Load();
+        return Load(_configPath);
     }
 
     std::optional<MenuRuntimeSnapshot> MenuContextPolicy::CaptureRuntimeSnapshot(std::string_view menuName) const
@@ -345,6 +348,7 @@ namespace dualpad::input
         return decision;
     }
 
+#if defined(DUALPAD_ENABLE_TEST_ONLY_MENU_POLICY_PARSE)
     bool MenuContextPolicy::ParseConfig(
         std::istream& stream,
         MenuContextPolicyConfig& outConfig,
@@ -476,6 +480,7 @@ namespace dualpad::input
 
         return true;
     }
+#endif
 
     MenuTrackingDecision MenuContextPolicy::ResolveMenuTracking(
         const MenuContextPolicyConfig& config,

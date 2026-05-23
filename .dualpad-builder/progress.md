@@ -899,3 +899,37 @@
   - `.dualpad-builder/feature_list.json`：`PH1` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH1` 已标为 `completed`，并将 `current_sprint=null`。
   - `PH2` / `S-PH2` 保持 `planned`，未启动。
+
+## 2026-05-23 20:43:10 CST
+
+- `PH1` close-out blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH1` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH1` 回退为 `active`，并将 `current_sprint` 设为 `S-PH1`。
+  - `PH2` / `S-PH2` 保持 `planned`，本轮不启动。
+  - 本轮修复范围限定为 `PH1` close-out blocker：ActionManifest schema、manifest publication fail-closed、AtomicConfigReloader promote 顺序、reload failure propagation、MenuContextPolicy runtime parser authority。
+
+## 2026-05-23 21:08:26 CST
+
+- `PH1` close-out blocker / fixed：
+  - `ActionManifest` schema 已补齐 `actions / actionSets / actionLayers / bindings / displayBindings / outputDescriptors / policies / touchpadConfig / legacyBindingProjection`。
+  - `actions` metadata 已显式包含 `id / valueKind / contract / outputDescriptorId / promptHintId / domain`，并由 validator 校验 descriptor 引用与必填字段。
+  - `ActionManifestPublisher::PublishPromotedBundle(...)` 改为 epoch mismatch fail-closed：不发布、不增加 `publishCount`、返回 failure；`AtomicConfigReloader::Promote()` 会感知 publisher failure。
+  - `AtomicConfigReloader::Promote()` 顺序改为先发布 manifest epoch seam，发布成功后才 swap active bundle；测试证明 publish seam 观察到的是旧 active epoch。
+  - `BindingConfig::Reload()` 与 `MenuContextPolicy::Reload()` 在 reloader 失败时返回 failure，并保留旧 active bundle。
+  - `MenuContextPolicy::ParseConfig()` 已移出生产 runtime surface，仅在 `DualPadMenuContextPolicyTests` 的 test-only define 下保留兼容测试入口。
+  - 未启动 `PH2`，未实现 `PH2 / PH3 / PH4 / PH6 / PH7`，未改变旧 SWF 返回 shape。
+- 验证结果：
+  - `xmake build DualPadManifestCompilerTests`：exit 0。
+  - `xmake run DualPadManifestCompilerTests`：exit 0。
+  - `xmake build DualPadMenuContextPolicyTests`：exit 0。
+  - `xmake run DualPadMenuContextPolicyTests`：exit 0。
+  - `xmake build DualPad`：exit 0。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1328 nodes, 2679 edges, 117 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH1` 已重新标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH1` 已重新标为 `completed`，`current_sprint=null`。
+  - `PH2` / `S-PH2` 保持 `planned`，未启动。

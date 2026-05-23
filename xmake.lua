@@ -147,6 +147,7 @@ target("DualPadMenuContextPolicyTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
     add_syslinks("ole32", "user32")
+    add_defines("DUALPAD_ENABLE_TEST_ONLY_MENU_POLICY_PARSE")
 
     add_files(
         "tests/MenuContextPolicyTests.cpp",

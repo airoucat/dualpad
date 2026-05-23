@@ -353,6 +353,11 @@ namespace dualpad::input_v2::actions
             return text.size() >= prefix.size() && text.substr(0, prefix.size()) == prefix;
         }
 
+        bool EndsWith(std::string_view text, std::string_view suffix)
+        {
+            return text.size() >= suffix.size() && text.substr(text.size() - suffix.size()) == suffix;
+        }
+
         bool IsModEvent(std::string_view actionId)
         {
             if (!StartsWith(actionId, "ModEvent")) {
@@ -544,6 +549,135 @@ namespace dualpad::input_v2::actions
             };
 
             return kKnown;
+        }
+
+        ActionValueKind InferActionValueKind(std::string_view actionId)
+        {
+            if (actionId == "Game.Move" ||
+                actionId == "Game.Look" ||
+                actionId == dualpad::input::actions::MapLook ||
+                actionId == dualpad::input::actions::MapCursor ||
+                actionId == dualpad::input::actions::CursorMove ||
+                actionId == dualpad::input::actions::DebugMapLook ||
+                actionId == dualpad::input::actions::DebugMapMove) {
+                return ActionValueKind::Axis2D;
+            }
+            if (EndsWith(actionId, "Trigger") ||
+                EndsWith(actionId, "ZoomIn") ||
+                EndsWith(actionId, "ZoomOut") ||
+                EndsWith(actionId, "Rotate") ||
+                actionId == "Game.LeftTrigger" ||
+                actionId == "Game.RightTrigger") {
+                return ActionValueKind::Axis1D;
+            }
+            return ActionValueKind::Digital;
+        }
+
+        ActionDomain InferActionDomain(std::string_view actionId)
+        {
+            if (StartsWith(actionId, "Game.")) {
+                if (actionId == dualpad::input::actions::Pause ||
+                    actionId == dualpad::input::actions::Screenshot ||
+                    actionId == dualpad::input::actions::NativeScreenshot ||
+                    actionId == dualpad::input::actions::Wait) {
+                    return ActionDomain::Utility;
+                }
+                return ActionDomain::Gameplay;
+            }
+            if (StartsWith(actionId, "ModEvent") ||
+                StartsWith(actionId, "VirtualKey.") ||
+                StartsWith(actionId, "FKey.")) {
+                return ActionDomain::Utility;
+            }
+            return ActionDomain::Menu;
+        }
+
+        std::string OutputDescriptorIdFor(std::string_view actionId, ActionValueKind valueKind, ActionDomain domain)
+        {
+            if (StartsWith(actionId, "ModEvent") ||
+                StartsWith(actionId, "VirtualKey.") ||
+                StartsWith(actionId, "FKey.")) {
+                return "out.keyboard-helper";
+            }
+            if (valueKind == ActionValueKind::Axis1D || valueKind == ActionValueKind::Axis2D) {
+                return "out.native-axis";
+            }
+            if (domain == ActionDomain::Gameplay) {
+                return "out.native-digital";
+            }
+            if (domain == ActionDomain::Utility) {
+                return "out.utility";
+            }
+            return "out.menu-digital";
+        }
+
+        std::string ContractFor(std::string_view actionId, ActionValueKind valueKind, ActionDomain domain)
+        {
+            if (StartsWith(actionId, "ModEvent") ||
+                StartsWith(actionId, "VirtualKey.") ||
+                StartsWith(actionId, "FKey.")) {
+                return "KeyboardHelperPulse";
+            }
+            if (valueKind == ActionValueKind::Axis1D || valueKind == ActionValueKind::Axis2D) {
+                return "NativeAxis";
+            }
+            if (domain == ActionDomain::Gameplay) {
+                return "NativeDigital";
+            }
+            if (domain == ActionDomain::Utility) {
+                return "UtilityPulse";
+            }
+            return "MenuDigital";
+        }
+
+        ActionDefinition MakeActionDefinition(std::string_view actionId)
+        {
+            ActionDefinition action{};
+            action.id = std::string(actionId);
+            action.valueKind = InferActionValueKind(action.id);
+            action.domain = InferActionDomain(action.id);
+            action.contract = ContractFor(action.id, action.valueKind, action.domain);
+            action.outputDescriptorId = OutputDescriptorIdFor(action.id, action.valueKind, action.domain);
+            action.promptHintId = std::string("prompt.") + action.id;
+            return action;
+        }
+
+        std::vector<OutputDescriptor> BuiltInOutputDescriptors()
+        {
+            return {
+                OutputDescriptor{ .id = "out.native-digital", .kind = "NativeDigital", .target = "AuthoritativePollState" },
+                OutputDescriptor{ .id = "out.native-axis", .kind = "NativeAxis", .target = "AuthoritativePollState" },
+                OutputDescriptor{ .id = "out.menu-digital", .kind = "MenuDigital", .target = "BindingManagerCompat" },
+                OutputDescriptor{ .id = "out.keyboard-helper", .kind = "KeyboardHelper", .target = "KeyboardHelperBackend" },
+                OutputDescriptor{ .id = "out.utility", .kind = "Utility", .target = "ActionDispatcher" },
+            };
+        }
+
+        std::vector<ManifestPolicy> BuiltInPolicies()
+        {
+            return {
+                ManifestPolicy{ .id = "displayBinding.ambiguity", .value = "fail-closed" },
+                ManifestPolicy{ .id = "legacyBindingProjection.authority", .value = "compiled-manifest-only" },
+                ManifestPolicy{ .id = "actionSet.model", .value = "base-set-plus-layer-stack" },
+            };
+        }
+
+        DisplayBinding MakeDisplayBinding(
+            const ProjectedLegacyBinding& projected,
+            std::string_view baseSetId,
+            std::string_view layerId)
+        {
+            DisplayBinding display{};
+            display.actionId = projected.actionId;
+            display.baseSetId = std::string(baseSetId);
+            display.layerId = layerId.empty() ? std::nullopt : std::optional<std::string>(std::string(layerId));
+            display.deviceFamily = "DualSense";
+            display.controlPath =
+                std::string(dualpad::input::ToString(projected.trigger.type)) + ":" + std::to_string(projected.trigger.code);
+            display.interaction = std::string(dualpad::input::ToString(projected.trigger.type));
+            display.legacyTrigger = projected.trigger;
+            display.legacyContext = projected.context;
+            return display;
         }
 
         void AddIfMissing(
@@ -855,6 +989,8 @@ namespace dualpad::input_v2::actions
         ActionManifestCompileResult result{};
         result.manifest.manifestEpoch = manifestEpoch;
         result.manifest.legacyBindingProjection.manifestEpoch = manifestEpoch;
+        result.manifest.outputDescriptors = BuiltInOutputDescriptors();
+        result.manifest.policies = BuiltInPolicies();
 
         // Freeze base set registry for Phase 1.
         result.manifest.actionSets = { "GameplayBase", "MenuBase" };
@@ -1047,6 +1183,7 @@ namespace dualpad::input_v2::actions
                 binding.actionId = actionId;
                 binding.baseSetId = baseSetId;
                 binding.layerId = layerId;
+                binding.deviceFamily = "DualSense";
                 binding.legacyTrigger = trigger;
                 binding.legacyContext = ctx;
 
@@ -1169,6 +1306,8 @@ namespace dualpad::input_v2::actions
 
                             if (preferred.has_value()) {
                                 result.manifest.legacyBindingProjection.displayBindings.push_back(*preferred);
+                                result.manifest.displayBindings.push_back(
+                                    MakeDisplayBinding(*preferred, group.baseSetId, group.layerId));
                                 continue;
                             }
                         }
@@ -1185,11 +1324,32 @@ namespace dualpad::input_v2::actions
 
                     // Canonicalize duplicates by keeping a single representative for this base+layer group.
                     result.manifest.legacyBindingProjection.displayBindings.push_back(list[0]);
+                    result.manifest.displayBindings.push_back(
+                        MakeDisplayBinding(list[0], group.baseSetId, group.layerId));
                 }
             }
         }
 
-        result.manifest.legacyBindingProjection.touchpadConfig = touchpadConfig;
+        {
+            std::unordered_set<std::string> actionIds;
+            for (const auto actionId : KnownActionIdSet()) {
+                actionIds.insert(std::string(actionId));
+            }
+            for (const auto& binding : result.manifest.bindings) {
+                actionIds.insert(binding.actionId);
+            }
+
+            std::vector<std::string> sortedActionIds(actionIds.begin(), actionIds.end());
+            (std::sort)(sortedActionIds.begin(), sortedActionIds.end());
+
+            result.manifest.actions.reserve(sortedActionIds.size());
+            for (const auto& actionId : sortedActionIds) {
+                result.manifest.actions.push_back(MakeActionDefinition(actionId));
+            }
+        }
+
+        result.manifest.touchpadConfig = touchpadConfig;
+        result.manifest.legacyBindingProjection.touchpadConfig = result.manifest.touchpadConfig;
         result.ok = true;
         result.message = "ok";
         return result;

@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <stdexcept>
 #include <string_view>
 
@@ -69,6 +70,41 @@ void RunActionManifestTests()
         Require(
             compiledManifest.manifest.legacyBindingProjection.manifestEpoch == 5,
             "legacyBindingProjection epoch should match");
+        Require(!compiledManifest.manifest.actions.empty(), "manifest should expose action registry");
+        Require(!compiledManifest.manifest.actionSets.empty(), "manifest should expose action sets");
+        Require(!compiledManifest.manifest.actionLayers.empty(), "manifest should expose action layers");
+        Require(!compiledManifest.manifest.bindings.empty(), "manifest should expose compiled bindings");
+        Require(!compiledManifest.manifest.displayBindings.empty(), "manifest should expose display bindings");
+        Require(!compiledManifest.manifest.outputDescriptors.empty(), "manifest should expose output descriptors");
+        Require(!compiledManifest.manifest.policies.empty(), "manifest should expose policies");
+        Require(
+            compiledManifest.manifest.touchpadConfig.mode == dualpad::input::TouchpadMode::Disabled,
+            "top-level touchpad config should be compiled from [Touchpad]");
+        Require(
+            compiledManifest.manifest.legacyBindingProjection.touchpadConfig.mode ==
+                compiledManifest.manifest.touchpadConfig.mode,
+            "legacy projection touchpad config should be copied from compiled manifest");
+
+        const auto actionIt = std::find_if(
+            compiledManifest.manifest.actions.begin(),
+            compiledManifest.manifest.actions.end(),
+            [](const act::ActionDefinition& action) {
+                return action.id == dualpad::input::actions::MenuConfirm;
+            });
+        Require(actionIt != compiledManifest.manifest.actions.end(), "Menu.Confirm action metadata should exist");
+        Require(actionIt->valueKind == act::ActionValueKind::Digital, "Menu.Confirm should be digital");
+        Require(actionIt->domain == act::ActionDomain::Menu, "Menu.Confirm should be a menu action");
+        Require(!actionIt->contract.empty(), "action contract should be explicit");
+        Require(!actionIt->outputDescriptorId.empty(), "action output descriptor id should be explicit");
+        Require(!actionIt->promptHintId.empty(), "action prompt hint id should be explicit");
+
+        const auto descriptorIt = std::find_if(
+            compiledManifest.manifest.outputDescriptors.begin(),
+            compiledManifest.manifest.outputDescriptors.end(),
+            [&](const act::OutputDescriptor& descriptor) {
+                return descriptor.id == actionIt->outputDescriptorId;
+            });
+        Require(descriptorIt != compiledManifest.manifest.outputDescriptors.end(), "action descriptor ref should resolve");
 
         bool foundConfirm = false;
         for (const auto& b : compiledManifest.manifest.legacyBindingProjection.bindings) {
@@ -79,6 +115,16 @@ void RunActionManifestTests()
             }
         }
         Require(foundConfirm, "compiled projection should include Menu.Confirm binding in Menu context");
+
+        bool foundCompiledDisplayBinding = false;
+        for (const auto& display : compiledManifest.manifest.displayBindings) {
+            if (display.actionId == dualpad::input::actions::MenuConfirm &&
+                display.baseSetId == "MenuBase") {
+                foundCompiledDisplayBinding = true;
+                break;
+            }
+        }
+        Require(foundCompiledDisplayBinding, "compiled manifest should include top-level display binding");
     }
 
     {
@@ -111,4 +157,3 @@ Button:Circle=Menu.Cancel
         Require(!compiledManifest.ok, "ambiguous display bindings should fail compilation");
     }
 }
-
