@@ -3,7 +3,6 @@
 #include <RE/Skyrim.h>
 
 #include "input/InputContext.h"
-#include "input/backend/PollCommitCoordinator.h"
 
 #include <array>
 #include <atomic>
@@ -41,6 +40,8 @@ namespace dualpad::input
         bool IsGameplayUsingGamepad() const;
         bool IsGameplayMenuEntrySeedGamepad() const;
         ReplayCompatibilitySurface CaptureCompatibilitySurfaceForReplay() const;
+        void ResetForReplayCapture();
+        void SetReplayContext(InputContext context, std::uint32_t epoch);
         void MarkSyntheticKeyboardScancode(
             std::uint8_t scancode,
             std::uint8_t pendingEvents = 1,

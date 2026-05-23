@@ -347,6 +347,31 @@ namespace dualpad::input
         };
     }
 
+    void InputModalityTracker::ResetForReplayCapture()
+    {
+        _presentationOwner.store(PresentationOwner::KeyboardMouse, std::memory_order_relaxed);
+        _navigationOwner.store(NavigationOwner::None, std::memory_order_relaxed);
+        _cursorOwner.store(CursorOwner::KeyboardMouse, std::memory_order_relaxed);
+        _gameplayOwner.store(GameplayOwner::KeyboardMouse, std::memory_order_relaxed);
+        _gameplayMenuEntrySeed.store(PresentationOwner::KeyboardMouse, std::memory_order_relaxed);
+        _engineGameplayPresentationLatch.store(PresentationOwner::KeyboardMouse, std::memory_order_relaxed);
+        _pointerIntent.store(PointerIntent::None, std::memory_order_relaxed);
+        _observedContext.store(InputContext::Gameplay, std::memory_order_relaxed);
+        _observedContextEpoch.store(0, std::memory_order_relaxed);
+        _syntheticKeyboardWindowExpiresAtMs.store(0, std::memory_order_relaxed);
+        _gamepadLeaseExpiresAtMs.store(0, std::memory_order_relaxed);
+        _refreshQueued.store(false, std::memory_order_relaxed);
+        ResetMouseMoveAccumulator();
+        std::scoped_lock lock(_suppressionMutex);
+        _suppressedKeyboardScancodes = {};
+    }
+
+    void InputModalityTracker::SetReplayContext(InputContext context, std::uint32_t epoch)
+    {
+        _observedContext.store(context, std::memory_order_relaxed);
+        _observedContextEpoch.store(epoch, std::memory_order_relaxed);
+    }
+
     void InputModalityTracker::ApplyGameplayMenuInheritance(InputContext context, std::string_view reason)
     {
         const auto inheritedPresentationSeed =

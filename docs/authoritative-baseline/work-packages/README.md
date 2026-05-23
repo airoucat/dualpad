@@ -15,10 +15,10 @@
 - `DP3`：`in_progress`
 - `DP4`：`in_progress`
 - `DP4a`：`completed`
-- `PH0`：`completed`
+- `PH0`：`completed`（dispatcher / processor runtime replay proof 已验证通过）
 - `PH1` - `PH8B`：`planned`
 - `DP5`：`planned`
-- 当前活跃 Sprint：无后续活跃 Sprint；`S-PH0` 已 completed，`S-PH1` 仍 planned / not started
+- 当前活跃 Sprint：无；`S-PH0` 已完成，`S-PH1` 仍 planned / not started
 
 ## 当前工作路（closed through `S-PH0`）
 
@@ -56,6 +56,8 @@
    - `src/input_v2/telemetry/`
    - `tests/replay/golden/phase0/`
    - `scripts/dev/dualpad_trace_diff.py`
+   - schema / harness bootstrap 已完成；`materialize-fixture` 只证明 schema / diff plumbing，不能作为 runtime replay proof。
+   - runtime close-out 已由 `dispatcher` / `processor` mode 真实驱动 `PadEventSnapshotDispatcher` / `PadEventSnapshotProcessor` 后生成的 candidate bundle 与 batch diff 验证。
 5. 后续计划包必须按 `.dualpad-builder/sprint_plan.json` 里登记的 planned backlog 顺序单独晋升：
    - `Phase 1` ContextCatalog / ActionManifest groundwork
    - `Phase 2` Menu instance truth
@@ -178,7 +180,7 @@
 - 目标：
   - 建立 repo-owned replay / diff / golden trace barrier，并把 `FavoritesMenu` 条件场景从默认退出条件中拆出。
 - 状态：
-  - 已完成
+  - 已完成；dispatcher / processor runtime replay proof 已验证通过
 - 首读：
   - `docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md`
   - `docs/plans/dualpad_rearchitecture/phase0_scenarios.json`
@@ -188,15 +190,18 @@
 - 硬边界：
   - `06_favorites_page_lr_accept_cancel` 仍是 `mandatory=false` / `conditional_live`；未恢复 workspace/source/artifact inventory 时不得成为默认退出条件。
   - `PH1` 仍为 planned / not started；不得把本 slice 的 replay barrier 当作 manifest compiler 或 PromptService cutover。
-  - `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`；behavioral proof 必须走 `dispatcher` / `processor` mode 生成 candidate bundle。
+  - `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`；runtime proof 必须走 `dispatcher` / `processor` mode 生成 candidate bundle。
 - prove-out 固定命令：
   - `xmake build DualPad`
   - `xmake build DualPadDInput8Proxy`
   - `xmake build DualPadReplayHarness`
   - `xmake build DualPadReplayHarnessTests`
   - `xmake run DualPadReplayHarnessTests`
-  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
-  - `materialize-fixture` diff 只证明 schema / diff plumbing 与 fixture materialization；PH0 behavioral close-out 以 `dispatcher` / `processor` mode 的 candidate output 和 batch diff 为准。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`
+  - `materialize-fixture` diff 只证明 schema / diff plumbing 与 fixture materialization；PH0 runtime close-out 以 `dispatcher` / `processor` mode 的 candidate output 和 batch diff 为准。
 
 ## `DP5` Validation, cleanup, and workflow honesty
 

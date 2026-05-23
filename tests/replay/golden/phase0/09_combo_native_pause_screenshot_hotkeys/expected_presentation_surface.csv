@@ -1,1 +1,2 @@
 sequence,context,context_epoch,is_using_gamepad,gamepad_controls_cursor,gamepad_device_enabled,presentation_owner,cursor_owner,gameplay_engine_owner,gameplay_menu_entry_owner
+9,Gameplay,2,false,false,false,KeyboardMouse,KeyboardMouse,KeyboardMouse,KeyboardMouse

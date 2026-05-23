@@ -21,6 +21,8 @@ namespace dualpad::input_v2::telemetry
         static InputTraceRecorder& GetSingleton();
 
         void ResetSession();
+        void BeginReplaySession(const std::filesystem::path& root, std::string_view session);
+        void EndReplaySession();
         void SetActiveSnapshotSequence(std::uint64_t sequence);
         void RecordDispatcherSubmit(
             const input::PadEventSnapshot& snapshot,
@@ -59,7 +61,9 @@ namespace dualpad::input_v2::telemetry
         std::filesystem::path _activeRoot;
         std::string _activeSession;
         bool _headersReady{ false };
+        bool _replaySessionActive{ false };
         std::uint64_t _activeSnapshotSequence{ 0 };
+        std::uint64_t _keyboardCommandSequence{ 0 };
         std::uint64_t _scheduleStepIndex{ 0 };
         std::uint64_t _keyboardCommandIndex{ 0 };
         std::uint64_t _glyphQueryId{ 0 };

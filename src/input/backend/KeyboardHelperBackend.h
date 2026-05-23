@@ -4,6 +4,7 @@
 #include "input/backend/ActionOutputContract.h"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,7 @@ namespace dualpad::input::backend
         bool HasActiveBridgeConsumer() const;
         bool ShouldExposeModEventConfiguration() const;
         bool IsModEventTransportReady() const;
+        void SetReplayRouteActive(bool active);
 
         void Reset();
         bool IsRouteActive() const;
@@ -81,5 +83,6 @@ namespace dualpad::input::backend
         std::unordered_map<std::string, ActiveKeyboardAction, TransparentStringHash, std::equal_to<>> _activeActions{};
         bool _attemptedInstall{ false };
         bool _installed{ false };
+        std::atomic_bool _replayRouteActive{ false };
     };
 }

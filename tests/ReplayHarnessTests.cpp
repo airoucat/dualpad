@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -50,7 +51,7 @@ namespace
         }
     }
 
-    void WriteBehaviorBundle(
+    void WriteRuntimeReplayBundle(
         const std::filesystem::path& scenario,
         std::string_view dispatcherRows,
         std::string_view frameRows,
@@ -103,6 +104,45 @@ namespace
             scenario / "expected_authoritative_poll.csv",
             std::string(telemetry::FindPhase0TraceFile("expected_authoritative_poll.csv")->header) + "\n" +
                 std::string(expectedPollRows));
+    }
+
+    void WritePresentationRows(
+        const std::filesystem::path& scenario,
+        std::string_view expectedPresentationRows)
+    {
+        WriteFile(
+            scenario / "expected_presentation_surface.csv",
+            std::string(telemetry::FindPhase0TraceFile("expected_presentation_surface.csv")->header) + "\n" +
+                std::string(expectedPresentationRows));
+    }
+
+    void WriteRuntimeSurfaceBundle(
+        const std::filesystem::path& scenario,
+        std::string_view frameRows,
+        std::string_view eventRows,
+        std::string_view expectedPollRows,
+        std::string_view expectedKeyboardRows,
+        std::string_view expectedPresentationRows,
+        std::string_view glyphQueryRows,
+        std::string_view expectedGlyphRows)
+    {
+        WriteProcessorBehaviorBundle(scenario, frameRows, eventRows, expectedPollRows);
+        WriteFile(
+            scenario / "expected_keyboard_bridge.csv",
+            std::string(telemetry::FindPhase0TraceFile("expected_keyboard_bridge.csv")->header) + "\n" +
+                std::string(expectedKeyboardRows));
+        WriteFile(
+            scenario / "expected_presentation_surface.csv",
+            std::string(telemetry::FindPhase0TraceFile("expected_presentation_surface.csv")->header) + "\n" +
+                std::string(expectedPresentationRows));
+        WriteFile(
+            scenario / "glyph_queries.csv",
+            std::string(telemetry::FindPhase0TraceFile("glyph_queries.csv")->header) + "\n" +
+                std::string(glyphQueryRows));
+        WriteFile(
+            scenario / "expected_glyph_results.csv",
+            std::string(telemetry::FindPhase0TraceFile("expected_glyph_results.csv")->header) + "\n" +
+                std::string(expectedGlyphRows));
     }
 
     std::filesystem::path ProjectRoot()
@@ -248,13 +288,16 @@ namespace
         const auto scenario = root / "expected";
         const auto actual = root / "actual";
         std::filesystem::remove_all(root);
-        WriteBehaviorBundle(
+        WriteRuntimeReplayBundle(
             scenario,
             "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n"
             "1,drain,0,1,upstream_poll,active_fresh,4,true,1,0,1\n",
             "1,1,1000,Gameplay,1,false,false,false,2,0.5,0,0,0,0,0\n",
             "1,0,ButtonPress,Button,2,0,None,0,0,1000,0,0,0,Disabled,None,None\n",
-            "1,Gameplay,1,1000,2,2,0,0,2,2,0,0,0,0,0,0,0.5,0,0,0,0,0,true,true,false,false\n");
+            "0,Gameplay,0,1000,0,0,0,0,0,0,0,0,0,0,0,0,0.5,0,0,0,0,0,true,true,false,false\n");
+        WritePresentationRows(
+            scenario,
+            "1,Gameplay,1,false,false,false,KeyboardMouse,KeyboardMouse,Gamepad,Gamepad\n");
 
         const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::Dispatcher, actual);
         Require(result.ok, result.message);
@@ -270,7 +313,7 @@ namespace
         const auto scenario = root / "expected";
         const auto actual = root / "actual";
         std::filesystem::remove_all(root);
-        WriteBehaviorBundle(
+        WriteRuntimeReplayBundle(
             scenario,
             "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n"
             "1,drain,0,1,upstream_poll,active_fresh,4,true,1,0,1\n",
@@ -299,16 +342,19 @@ namespace
         std::filesystem::remove_all(root);
         WriteProcessorBehaviorBundle(
             scenario,
-            "3,3,3000,Gameplay,2,false,false,false,4,0,0,0.25,0,0,1\n",
-            "3,0,ButtonPress,Button,4,0,None,0,0,3000,0,0,0,Disabled,None,None\n",
-            "1,Gameplay,2,3000,4,4,0,0,4,4,0,0,0,0,0,0,0,0,0.25,0,0,1,true,true,false,false\n");
+            "3,3,3000,Gameplay,2,false,false,false,2,0,0,0.25,0,0,1\n",
+            "3,0,ButtonPress,Button,2,0,None,0,0,3000,0,0,0,Disabled,None,None\n",
+            "0,Gameplay,0,3000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.25,0,0,1,true,true,false,false\n");
+        WritePresentationRows(
+            scenario,
+            "3,Gameplay,2,false,false,false,KeyboardMouse,KeyboardMouse,Gamepad,Gamepad\n");
 
         const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::Processor, actual);
         Require(result.ok, result.message);
 
         const auto poll = ReadLines(actual / "expected_authoritative_poll.csv");
         Require(poll.size() == 2, "processor mode should produce authoritative poll candidate rows");
-        Require(poll[1].find("Gameplay,2,3000,4,4") != std::string::npos, "processor mode should reduce processed snapshots into poll rows");
+        Require(poll[1].find("Gameplay,0,3000,0,0") != std::string::npos, "processor mode should reduce processed snapshots into runtime poll rows");
     }
 
     void TestProcessorModeFailsOnBehavioralMismatch()
@@ -328,11 +374,38 @@ namespace
         const auto poll = ReadLines(actual / "expected_authoritative_poll.csv");
         Require(poll.size() == 2, "processor mismatch should still leave generated candidate output");
         Require(
-            poll[1].find("Gameplay,2,3000,4,4") != std::string::npos,
+            poll[1].find("Gameplay,0,3000,0,0") != std::string::npos,
             "processor candidate output should be generated from processed snapshots, not copied expected poll");
     }
 
-    void TestPhase0SyntheticScenarioMaterializesRows()
+    void TestProcessorModeCapturesRuntimeSurfaces()
+    {
+        const auto root = TempRoot() / "processor-runtime-surfaces";
+        const auto scenario = root / "expected";
+        const auto actual = root / "actual";
+        std::filesystem::remove_all(root);
+        WriteRuntimeSurfaceBundle(
+            scenario,
+            "9,9,9000,Gameplay,2,false,false,false,4,0,0,0,0,0,0\n",
+            "9,0,ButtonPress,Button,4,0,None,0,0,9000,0,0,0,Disabled,None,None\n",
+            "0,Gameplay,0,9000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,true,true,false,false\n",
+            "9,0,pulse,100,VirtualKey.DIK_F13,Pulse,Gameplay\n",
+            "9,Gameplay,2,false,false,false,KeyboardMouse,KeyboardMouse,KeyboardMouse,KeyboardMouse\n",
+            "0,9,Menu.Confirm,Menu\n",
+            "0,true,360_Y,Menu.Confirm,Menu\n");
+
+        const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::Processor, actual);
+        Require(result.ok, result.message);
+
+        const auto keyboard = ReadLines(actual / "expected_keyboard_bridge.csv");
+        Require(keyboard.size() == 2, "processor runtime replay should capture keyboard bridge commands");
+        const auto presentation = ReadLines(actual / "expected_presentation_surface.csv");
+        Require(presentation.size() == 2, "processor runtime replay should capture presentation surface rows");
+        const auto glyph = ReadLines(actual / "expected_glyph_results.csv");
+        Require(glyph.size() == 2, "processor runtime replay should capture glyph bridge results");
+    }
+
+    void TestPhase0SyntheticScenarioProducesRows()
     {
         const auto golden = ProjectRoot() / "tests" / "replay" / "golden" / "phase0" / "10_backlog_gap_overflow" /
             "dispatcher_schedule.csv";
@@ -343,17 +416,17 @@ namespace
         Require(goldenLines.size() > 1, "10_backlog_gap_overflow must include at least one synthetic schedule row");
 
         const auto actualLines = ReadLines(actual);
-        Require(actualLines.size() == goldenLines.size(), "behavioral 10_backlog_gap_overflow output must keep every schedule row");
+        Require(actualLines.size() == goldenLines.size(), "runtime 10_backlog_gap_overflow output must keep every schedule row");
         Require(
             actualLines[1] == goldenLines[1],
-            "behavioral 10_backlog_gap_overflow output must keep the first synthetic schedule row");
+            "runtime 10_backlog_gap_overflow output must keep the first synthetic schedule row");
 
         const auto configActual = ReadLines(
             ProjectRoot() / "build" / "replay" / "11_config_reload_success_failure" / "expected_authoritative_poll.csv");
-        Require(configActual.size() > 1, "11_config_reload_success_failure must produce non-empty behavioral poll rows");
+        Require(configActual.size() > 1, "11_config_reload_success_failure must produce non-empty runtime poll rows");
     }
 
-    void GeneratePhase0BehavioralReplayForDiff()
+    void GeneratePhase0RuntimeReplayForDiff()
     {
         const auto result = telemetry::ReplayBatch(
             ProjectRoot() / "tests" / "replay" / "golden" / "phase0",
@@ -365,17 +438,23 @@ namespace
 
 int main()
 {
-    TestSchemaRoundTrip();
-    TestMaterializeFixturePreservesDispatcherScheduleRows();
-    TestMaterializeFixturePreservesProcessedPollRows();
-    TestGlyphRoundTrip();
-    TestKeyboardCommandRoundTrip();
-    TestValidateSchemaDoesNotMaterializeOutput();
-    TestDispatcherModeProducesCandidateOutput();
-    TestDispatcherModeFailsOnBehavioralMismatch();
-    TestProcessorModeProducesCandidateOutput();
-    TestProcessorModeFailsOnBehavioralMismatch();
-    GeneratePhase0BehavioralReplayForDiff();
-    TestPhase0SyntheticScenarioMaterializesRows();
-    return 0;
+    try {
+        TestSchemaRoundTrip();
+        TestMaterializeFixturePreservesDispatcherScheduleRows();
+        TestMaterializeFixturePreservesProcessedPollRows();
+        TestGlyphRoundTrip();
+        TestKeyboardCommandRoundTrip();
+        TestValidateSchemaDoesNotMaterializeOutput();
+        TestDispatcherModeProducesCandidateOutput();
+        TestDispatcherModeFailsOnBehavioralMismatch();
+        TestProcessorModeProducesCandidateOutput();
+        TestProcessorModeFailsOnBehavioralMismatch();
+        TestProcessorModeCapturesRuntimeSurfaces();
+        GeneratePhase0RuntimeReplayForDiff();
+        TestPhase0SyntheticScenarioProducesRows();
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << '\n';
+        return 1;
+    }
 }

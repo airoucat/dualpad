@@ -700,3 +700,137 @@
       - `11_config_reload_success_failure: no diff`
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
     - 结果：exit 0；输出包含 `[graphify watch] Rebuilt: 1103 nodes, 2231 edges, 106 communities`，并写入 `graphify-out/graph.json` 与 `graphify-out/GRAPH_REPORT.md`。
+
+## 2026-05-19 00:00:00 CST
+
+- `PH0` runtime replay barrier correction / start：
+  - 更正上一条 `PH0 behavioral replay proof done` 结论：当前 dispatcher / processor mode 仍未完成真实 runtime replay proof。
+  - 现状边界：
+    - schema / harness bootstrap 已落地。
+    - `validate-schema` 与 `materialize-fixture` 只能证明 schema / fixture plumbing。
+    - 既有 CSV simulator 可保留为测试辅助，但不得称为 runtime dispatcher / processor replay proof。
+    - 真正 PH0 runtime proof 必须驱动 `PadEventSnapshotDispatcher` / `PadEventSnapshotProcessor` 并采集 `AuthoritativePollState`、keyboard bridge、glyph 与 presentation surface 输出。
+  - 状态同步：
+    - `.dualpad-builder/feature_list.json` 中 `PH0` 已回退为 `active` / `passes=false`。
+    - `.dualpad-builder/sprint_plan.json` 中 `S-PH0` 已回退为 `active`。
+    - `PH1` 仍为 `planned` / not started。
+  - 本轮边界确认：
+    - 未启动 `PH1`。
+    - 未实现 `ContextCatalog` 或 `ActionManifest`。
+    - 未改变 `PromptService` / `PromptProjection`。
+    - 未改变旧 SWF 返回 shape。
+    - `FavoritesMenu` 保持 conditional，未恢复 workspace/source/artifact inventory 时不成为默认退出条件。
+  - 验证执行状态：
+    - 按用户要求，本轮不由 Codex 自行启动测试或 replay 验证；需要验证时仅列出命令，由用户手动执行并回传结果。
+
+## 2026-05-19 00:00:00 CST
+
+- `PH0` runtime replay barrier / implementation update：
+  - 本轮继续实装真实 runtime replay proof，但不关闭 `PH0`：
+    - `ReplayHarness` 的 `dispatcher` mode 保持通过 `PadEventSnapshotDispatcher::SubmitSnapshot(...)` 和 replay-only `DrainForReplay(...)` 驱动真实 dispatcher queue，再把 drained snapshot 交给 `PadEventSnapshotProcessor::Process(...)`。
+    - `ReplayHarness` 的 `processor` mode 保持直接向 `PadEventSnapshotProcessor::Process(...)` 喂 `processed_snapshot_*.csv` 构造出的 snapshot。
+    - `InputTraceRecorder` 负责采集 runtime candidate bundle：dispatcher schedule、ingress / processed snapshot、`AuthoritativePollState`、keyboard bridge、presentation surface 与 glyph results。
+    - `materialize-fixture` 仍是唯一 copy-only 模式；`dispatcher` / `processor` 不复制 golden。
+    - 旧 CSV poll simulator 已明确降级为 fixture-test helper，不作为 runtime replay proof。
+  - 本轮修正 replay target 的 Skyrim-only 依赖边界：
+    - `NativeButtonCommitBackend` 在 `DUALPAD_REPLAY_HARNESS` 下不再包含 `PollCommitCoordinator` 成员，也不再继承 `IPollCommitEmitter`，避免 replay CLI 静态构造 `RE::BSFixedString` 状态。
+    - `InputModalityTracker.h` 移除不必要的 `PollCommitCoordinator.h` include，降低 replay target 间接拉入 `RE::BSFixedString` 的风险。
+    - `PadEventSnapshotDispatcher::ResetForReplay()` 开启 manual drain mode，replay submit 不再调度 SKSE task；submit/drain queue 语义仍由 dispatcher 本体执行。
+  - 本轮补齐 runtime surface 覆盖：
+    - `03_main_menu_glyph` 增加非空 glyph query / expected result。
+    - `09_combo_native_pause_screenshot_hotkeys` 增加非空 dispatcher / processor rows、keyboard bridge row 与 presentation surface row。
+    - `10_backlog_gap_overflow` 与 `11_config_reload_success_failure` 的 expected poll / keyboard / presentation rows 已按 runtime processor 输出口径更新。
+  - 状态同步：
+    - `.dualpad-builder/feature_list.json`：`PH0` 仍为 `active` / `passes=false`。
+    - `.dualpad-builder/sprint_plan.json`：`S-PH0` 仍为 `active`；`S-PH1` 仍为 `planned`。
+    - `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md`、`docs/DOC_INDEX_zh.md` 与 Phase 0 slice 文档已同步为 `S-PH0` active，不再写 closed through `S-PH0`。
+  - 本轮边界确认：
+    - 未启动 `PH1`。
+    - 未实现 `ContextCatalog` 或 `ActionManifest`。
+    - 未改变 `PromptService` / `PromptProjection`。
+    - 未改变旧 SWF 返回 shape。
+    - `FavoritesMenu` 保持 conditional，未恢复 workspace/source/artifact inventory 时不成为默认退出条件。
+- 验证执行状态：
+  - 按用户要求，Codex 未自行启动测试、build、replay CLI 或 graphify rebuild；以下命令待用户手动运行并回传结果后再记录 exact results：
+    - `xmake build DualPadReplayHarness`
+    - `xmake build DualPadReplayHarnessTests`
+    - `xmake run DualPadReplayHarnessTests`
+    - `xmake build DualPad`
+    - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`
+    - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`
+    - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`
+    - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`
+    - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+
+## 2026-05-23 15:38:00 CST
+
+- `PH0` runtime replay barrier / done：
+  - 本轮完成真实 runtime dispatcher / processor replay proof，并关闭 `PH0`：
+    - `dispatcher` mode 通过 `PadEventSnapshotDispatcher::SubmitSnapshot(...)` 与 replay-only `DrainForReplay(...)` 驱动真实 dispatcher queue，再把 drained snapshot 交给 `PadEventSnapshotProcessor::Process(...)`。
+    - `processor` mode 从 `processed_snapshot_*.csv` 构造 snapshot，并直接驱动 `PadEventSnapshotProcessor::Process(...)`。
+    - `InputTraceRecorder` 采集 runtime candidate bundle：dispatcher schedule、ingress / processed snapshot、`AuthoritativePollState`、keyboard bridge、presentation surface 与 glyph results。
+    - `materialize-fixture` 仍是独立 copy-only plumbing mode，不作为 runtime replay proof。
+    - `03_main_menu_glyph`、`09_combo_native_pause_screenshot_hotkeys`、`10_backlog_gap_overflow` 与 `11_config_reload_success_failure` 均已有非空 runtime coverage rows。
+  - 状态同步：
+    - `.dualpad-builder/feature_list.json`：`PH0` 已更新为 `completed` / `passes=true`。
+    - `.dualpad-builder/sprint_plan.json`：`S-PH0` 已更新为 `completed`，`current_sprint=null`；`S-PH1` 仍为 `planned` / not started。
+    - `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md`、`docs/DOC_INDEX_zh.md` 与 Phase 0 slice 文档已同步为 closed through `S-PH0`。
+  - 本轮边界确认：
+    - 未启动 `PH1`。
+    - 未实现 `ContextCatalog` 或 `ActionManifest`。
+    - 未改变 `PromptService` / `PromptProjection`。
+    - 未改变旧 SWF 返回 shape。
+    - `FavoritesMenu` 保持 conditional，未恢复 workspace/source/artifact inventory 时不成为默认退出条件。
+- 中途失败与修正记录：
+  - `xmake build DualPadReplayHarness`
+    - 初次结果：exit 1；link 阶段 unresolved `ParseReplayMode`、`ReplayScenario`、`ReplayBatch`。
+    - 根因：`xmake.lua` 中 `add_files(table.unpack(replay_runtime_files), "ReplayHarnessMain.cpp")` 在 Lua vararg 规则下只接入了第一个 unpack 项。
+    - 修正：将 replay runtime files 与 main/tests files 拆成两次 `add_files(...)`。
+  - `xmake run DualPadReplayHarnessTests`
+    - 初次结果：exit 1；`expected_authoritative_poll.csv` mismatch，expected `Gameplay,1`，actual `Gameplay,0`。
+    - 根因：当前 `AuthoritativePollState` 在无 native committed button 的 runtime replay 中保持 `context_epoch=0`；已按真实 runtime 输出修正 golden / tests。
+    - 再次结果：exit 1；`expected_presentation_surface.csv` mismatch，runtime owner 与测试期望不一致。
+    - 根因：09 场景触发 keyboard bridge 命令，不是 gate-aware `NativeButtonCommit`，不会给 gameplay presentation 发 Gamepad lease；已按真实 runtime seam 修正 09 presentation 期望。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`
+    - 中途结果：exit 1；`phase0 root is not a directory: tests/replay/golden/phase0`。
+    - 根因：xmake 运行目标时 cwd 不稳定，relative path 在 exe 工作目录下解析失败。
+    - 修正：`ReplayHarnessMain` 忽略 standalone `--`，并将相对路径解析到最近的 `xmake.lua` project root。
+- 必跑验证结果：
+  - `xmake build DualPadReplayHarness`
+    - 最终结果：exit 0；输出包含 `linking.release DualPadReplayHarness.exe` 与 `build ok, spent 0.5s`。
+  - `xmake build DualPadReplayHarnessTests`
+    - 最终结果：exit 0；输出 `build ok, spent 0.265s`。
+  - `xmake run DualPadReplayHarnessTests`
+    - 最终结果：exit 0；输出为 runtime config / binding config 日志，未再出现 test failure；命令成功结束。
+  - `xmake build DualPad`
+    - 结果：exit 0；输出包含 `linking.release DualPad.dll`、`Deployed: G:\skyrim_mod_develop\mods\dualPad\SKSE\Plugins\DualPad.dll` 与 `build ok, spent 5.187s`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`
+    - 最终结果：exit 0；输出结尾 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`
+    - 结果：exit 0；输出：
+      - `01_gameplay_walk_attack_block_sprint: no diff`
+      - `02_gameplay_menu_roundtrip: no diff`
+      - `03_main_menu_glyph: no diff`
+      - `04_journal_confirm_cancel: no diff`
+      - `05_map_cursor_zoom_open_journal: no diff`
+      - `07_book_page_lr: no diff`
+      - `08_console_creations_lockpicking: no diff`
+      - `09_combo_native_pause_screenshot_hotkeys: no diff`
+      - `10_backlog_gap_overflow: no diff`
+      - `11_config_reload_success_failure: no diff`
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`
+    - 结果：exit 0；输出结尾 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`
+    - 结果：exit 0；输出：
+      - `01_gameplay_walk_attack_block_sprint: no diff`
+      - `02_gameplay_menu_roundtrip: no diff`
+      - `03_main_menu_glyph: no diff`
+      - `04_journal_confirm_cancel: no diff`
+      - `05_map_cursor_zoom_open_journal: no diff`
+      - `07_book_page_lr: no diff`
+      - `08_console_creations_lockpicking: no diff`
+      - `09_combo_native_pause_screenshot_hotkeys: no diff`
+      - `10_backlog_gap_overflow: no diff`
+      - `11_config_reload_success_failure: no diff`
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+    - 结果：exit 0；输出包含 `[graphify watch] Rebuilt: 1207 nodes, 2477 edges, 108 communities`，并写入 `graphify-out/graph.json` 与 `graphify-out/GRAPH_REPORT.md`。

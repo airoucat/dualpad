@@ -177,6 +177,7 @@ namespace dualpad::input
                 kUpstreamTaskFallbackPollStaleMs);
             scheduledByHighWaterFallback = forceTaskFallback && framePumpEnabled;
             if (forceTaskFallback &&
+                !_replayManualDrainActive.load(std::memory_order_acquire) &&
                 !_drainTaskQueued.exchange(true, std::memory_order_acq_rel)) {
                 shouldScheduleTask = true;
             }
@@ -321,6 +322,85 @@ namespace dualpad::input
         }
 
         return processedCount;
+    }
+
+    std::size_t PadEventSnapshotDispatcher::DrainForReplay(
+        std::size_t maxSnapshots,
+        const DrainTelemetryContext* telemetryContext,
+        ReplayDrainSink sink,
+        void* context)
+    {
+        if (maxSnapshots == 0 || sink == nullptr) {
+            return 0;
+        }
+
+        std::size_t processedCount = 0;
+        std::size_t pendingBefore = 0;
+        for (; processedCount < maxSnapshots; ++processedCount) {
+            PadEventSnapshot snapshot{};
+            std::uint64_t droppedSnapshots = 0;
+            {
+                std::scoped_lock lock(_mutex);
+                if (_pendingCount == 0) {
+                    _drainTaskQueued.store(false, std::memory_order_release);
+                    if (telemetryContext) {
+                        LogDrainTelemetry(*telemetryContext, maxSnapshots, processedCount, pendingBefore, 0);
+                    }
+                    return processedCount;
+                }
+
+                if (processedCount == 0) {
+                    pendingBefore = _pendingCount;
+                }
+
+                droppedSnapshots = _droppedSnapshots;
+                _droppedSnapshots = 0;
+                snapshot = _pending[_pendingHead];
+                _pending[_pendingHead] = {};
+                _pendingHead = (_pendingHead + 1) % _pending.size();
+                --_pendingCount;
+            }
+
+            if (droppedSnapshots != 0) {
+                logger::warn(
+                    "[DualPad][Snapshot] Dropped {} pending snapshots due to replay dispatcher queue overflow (capacity={})",
+                    droppedSnapshots,
+                    kPendingSnapshotCapacity);
+            }
+
+            sink(snapshot, context);
+        }
+
+        std::size_t pendingAfterDrain = 0;
+        {
+            std::scoped_lock lock(_mutex);
+            if (_pendingCount > 1 && !HasResetInPendingLocked()) {
+                CoalescePendingLocked();
+            }
+
+            pendingAfterDrain = _pendingCount;
+            if (_pendingCount == 0) {
+                _drainTaskQueued.store(false, std::memory_order_release);
+            }
+        }
+
+        if (telemetryContext) {
+            LogDrainTelemetry(*telemetryContext, maxSnapshots, processedCount, pendingBefore, pendingAfterDrain);
+        }
+
+        return processedCount;
+    }
+
+    void PadEventSnapshotDispatcher::ResetForReplay()
+    {
+        std::scoped_lock lock(_mutex);
+        _pending = {};
+        _pendingHead = 0;
+        _pendingCount = 0;
+        _droppedSnapshots = 0;
+        _drainTaskQueued.store(false, std::memory_order_release);
+        _framePumpEnabled.store(false, std::memory_order_release);
+        _replayManualDrainActive.store(true, std::memory_order_release);
     }
 
     void PadEventSnapshotDispatcher::SetFramePumpEnabled(bool enabled)

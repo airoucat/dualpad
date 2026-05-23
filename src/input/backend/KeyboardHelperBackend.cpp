@@ -309,9 +309,15 @@ namespace dualpad::input::backend
             HasActiveBridgeConsumer();
     }
 
+    void KeyboardHelperBackend::SetReplayRouteActive(bool active)
+    {
+        _replayRouteActive.store(active, std::memory_order_release);
+    }
+
     bool KeyboardHelperBackend::IsRouteActive() const
     {
-        return _installed && HasProxyDllInGameRoot();
+        return _replayRouteActive.load(std::memory_order_acquire) ||
+            (_installed && HasProxyDllInGameRoot());
     }
 
     void KeyboardHelperBackend::Reset()

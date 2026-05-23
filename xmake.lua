@@ -67,6 +67,7 @@ target("DualPad")
 
     add_files("src/**.cpp")
     remove_files("src/input_v2/telemetry/ReplayHarnessMain.cpp")
+    remove_files("src/input_v2/telemetry/*ReplayStub.cpp")
     add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
@@ -172,15 +173,53 @@ target("DualPadGlyphResolutionCompatTests")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
+local replay_runtime_files = {
+    "src/input_v2/telemetry/TraceSchema.cpp",
+    "src/input_v2/telemetry/InputTraceRecorder.cpp",
+    "src/input_v2/telemetry/ReplayHarness.cpp",
+    "src/input_v2/telemetry/ActionExecutorReplayStub.cpp",
+    "src/input_v2/telemetry/ContextManagerReplayStub.cpp",
+    "src/input_v2/telemetry/GameplayKbmFactTrackerReplayStub.cpp",
+    "src/input_v2/telemetry/InputModalityTrackerReplayStub.cpp",
+    "src/input_v2/telemetry/NativeButtonCommitBackendReplayStub.cpp",
+    "src/input_v2/telemetry/ScaleformGlyphBridgeReplayStub.cpp",
+    "src/input_v2/telemetry/UpstreamGamepadHookReplayStub.cpp",
+    "src/input/ActionDispatcher.cpp",
+    "src/input/AuthoritativePollState.cpp",
+    "src/input/BindingConfig.cpp",
+    "src/input/BindingManager.cpp",
+    "src/input/InputContextNames.cpp",
+    "src/input/RuntimeConfig.cpp",
+    "src/input/XInputButtonSerialization.cpp",
+    "src/input/backend/ActionBackendPolicy.cpp",
+    "src/input/backend/ActionLifecycleCoordinator.cpp",
+    "src/input/backend/FrameActionPlanDebugLogger.cpp",
+    "src/input/backend/FrameActionPlanner.cpp",
+    "src/input/backend/KeyboardHelperBackend.cpp",
+    "src/input/backend/KeyboardNativeBridge.cpp",
+    "src/input/backend/NativeActionDescriptor.cpp",
+    "src/input/glyph/GlyphResolutionCompat.cpp",
+    "src/input/injection/AxisProjection.cpp",
+    "src/input/injection/GameplayOwnershipCoordinator.cpp",
+    "src/input/injection/PadEventSnapshotDispatcher.cpp",
+    "src/input/injection/PadEventSnapshotProcessor.cpp",
+    "src/input/injection/RouteHealthContract.cpp",
+    "src/input/injection/SourceBlockCoordinator.cpp",
+    "src/input/injection/SyntheticStateDebugLogger.cpp",
+    "src/input/injection/SyntheticStateReducer.cpp",
+    "src/input/injection/UnmanagedDigitalPublisher.cpp",
+    "src/input/mapping/BindingResolver.cpp",
+    "src/input/mapping/TriggerMapper.cpp"
+}
+
 target("DualPadReplayHarness")
     set_kind("binary")
     add_deps("commonlibsse-ng")
     add_syslinks("ole32", "user32")
+    add_defines("DUALPAD_REPLAY_HARNESS")
 
-    add_files(
-        "src/input_v2/telemetry/TraceSchema.cpp",
-        "src/input_v2/telemetry/ReplayHarness.cpp",
-        "src/input_v2/telemetry/ReplayHarnessMain.cpp")
+    add_files(table.unpack(replay_runtime_files))
+    add_files("src/input_v2/telemetry/ReplayHarnessMain.cpp")
     add_headerfiles("src/input_v2/telemetry/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
@@ -189,11 +228,10 @@ target("DualPadReplayHarnessTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
     add_syslinks("ole32", "user32")
+    add_defines("DUALPAD_REPLAY_HARNESS")
 
-    add_files(
-        "tests/ReplayHarnessTests.cpp",
-        "src/input_v2/telemetry/TraceSchema.cpp",
-        "src/input_v2/telemetry/ReplayHarness.cpp")
+    add_files("tests/ReplayHarnessTests.cpp")
+    add_files(table.unpack(replay_runtime_files))
     add_headerfiles("tests/**.h")
     add_headerfiles("src/input_v2/telemetry/**.h")
     add_includedirs("src")

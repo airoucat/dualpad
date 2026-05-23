@@ -164,10 +164,33 @@ namespace dualpad::input_v2::telemetry
         _activeRoot.clear();
         _activeSession.clear();
         _headersReady = false;
+        _replaySessionActive = false;
         _activeSnapshotSequence = 0;
+        _keyboardCommandSequence = 0;
         _scheduleStepIndex = 0;
         _keyboardCommandIndex = 0;
         _glyphQueryId = 0;
+    }
+
+    void InputTraceRecorder::BeginReplaySession(const std::filesystem::path& root, std::string_view session)
+    {
+        std::scoped_lock lock(_mutex);
+        _activeRoot = root;
+        _activeSession = std::string(session);
+        _headersReady = false;
+        _replaySessionActive = true;
+        _activeSnapshotSequence = 0;
+        _keyboardCommandSequence = 0;
+        _scheduleStepIndex = 0;
+        _keyboardCommandIndex = 0;
+        _glyphQueryId = 0;
+        EnsureHeadersLocked();
+    }
+
+    void InputTraceRecorder::EndReplaySession()
+    {
+        std::scoped_lock lock(_mutex);
+        _replaySessionActive = false;
     }
 
     void InputTraceRecorder::SetActiveSnapshotSequence(std::uint64_t sequence)
@@ -178,6 +201,11 @@ namespace dualpad::input_v2::telemetry
 
     bool InputTraceRecorder::EnsureSessionLocked()
     {
+        if (_replaySessionActive) {
+            EnsureHeadersLocked();
+            return true;
+        }
+
         const auto& config = input::RuntimeConfig::GetSingleton();
         if (!config.EnableTraceRecording()) {
             return false;
@@ -190,6 +218,7 @@ namespace dualpad::input_v2::telemetry
             _activeSession = std::string(session);
             _headersReady = false;
             _activeSnapshotSequence = 0;
+            _keyboardCommandSequence = 0;
             _scheduleStepIndex = 0;
             _keyboardCommandIndex = 0;
             _glyphQueryId = 0;
@@ -324,6 +353,11 @@ namespace dualpad::input_v2::telemetry
         }
 
         std::ostringstream command;
+        if (_keyboardCommandSequence != _activeSnapshotSequence) {
+            _keyboardCommandSequence = _activeSnapshotSequence;
+            _keyboardCommandIndex = 0;
+        }
+
         command << _activeSnapshotSequence << ','
                 << _keyboardCommandIndex++ << ','
                 << ToString(type) << ','
@@ -346,7 +380,8 @@ namespace dualpad::input_v2::telemetry
 
         const auto queryId = _glyphQueryId++;
         std::ostringstream query;
-        query << queryId << ",0,"
+        query << queryId << ','
+              << _activeSnapshotSequence << ','
               << EscapeCsv(actionId) << ','
               << EscapeCsv(requestedContextName);
         AppendLineLocked("glyph_queries.csv", query.str());

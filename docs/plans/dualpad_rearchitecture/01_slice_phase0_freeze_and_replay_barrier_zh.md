@@ -11,17 +11,20 @@
 - 给后续 `Phase 1 / 3 / 6 / 7` 提供统一回归入口；后续切换若改变行为，必须先跑 Phase 0 barrier，再决定是否更新 golden。
 - 本 slice 不修旧问题、不顺手优化结构、不提前引入 `InputKernel`。Phase 0 只做“冻结现状并能稳定重放”。
 
-## 实现状态（2026-05-17）
+## 实现状态（2026-05-23）
 
-- `PH0` 已完成并写回 `.dualpad-builder/feature_list.json` / `.dualpad-builder/sprint_plan.json`：`PH0` 为 `completed` / `passes=true`，`S-PH0` 为 `completed`。
+- `PH0` 已完成 / passes=true，并写回 `.dualpad-builder/feature_list.json` / `.dualpad-builder/sprint_plan.json`；`S-PH1` 仍为 planned / not started。
+- 已完成 schema / harness bootstrap、fixture materialization、初始 golden bundle、CLI mode 边界、diff runner，以及真实 runtime dispatcher / processor replay proof。
+- `dispatcher` / `processor` mode 已真实驱动 runtime seam 并通过 batch diff；后续 slice 必须继续把 Phase 0 barrier 作为回归护栏。
 - 当前落地入口：
   - `src/input_v2/telemetry/`
   - `tests/replay/golden/phase0/`
   - `scripts/dev/dualpad_trace_diff.py`
   - `DualPadReplayHarness`
   - `DualPadReplayHarnessTests`
-- `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`，用途是 schema / diff plumbing；behavioral proof 由 `dispatcher` / `processor` mode 生成 candidate bundle 后再跑 batch diff。
-- `10_backlog_gap_overflow` 与 `11_config_reload_success_failure` 已作为非空 synthetic behavioral scenarios 纳入 `DualPadReplayHarnessTests` 和 batch diff。
+- `ReplayHarness` 的 copy-only 行为只能称为 `materialize-fixture`，用途是 schema / diff plumbing；runtime proof 必须由 `dispatcher` / `processor` mode 生成 candidate bundle 后再跑 batch diff。
+- 当前 CSV simulator 只能作为测试辅助或历史 bootstrap 参照，不得称为 full runtime replay proof。
+- `10_backlog_gap_overflow` 与 `11_config_reload_success_failure` 已作为非空 synthetic behavioral scenarios 纳入 replay proof 范围；`03_main_menu_glyph`、`09_combo_native_pause_screenshot_hotkeys` 与 presentation surface 也已有非空 runtime candidate 覆盖。
 - `06_favorites_page_lr_accept_cancel` 仍只在 `phase0_scenarios.json` 中标记为 `mandatory=false` / `conditional_live`；仓库未恢复 `FavoritesMenu` workspace、页面源码或 artifact inventory，因此它不是默认退出条件。
 
 ## 当前 repo reality 缺口与 breach 边界
@@ -49,8 +52,9 @@
 2. **Replay 资产格式固定为 repo 内 CSV bundle，不引入新的运行时解析依赖。**
    - replay 资产唯一根路径固定为 `tests/replay/golden/`
    - Phase 0 golden 目录固定为 `tests/replay/golden/phase0/<scenario>/`
-   - harness 输出目录固定为 `build/replay/<scenario>/`
-   - diff 报告目录固定为 `build/replay-diff/<scenario>/`
+   - `materialize-fixture` 的默认 plumbing 输出目录为 `build/replay/<scenario>/`
+   - runtime proof 输出目录按模式分开：`build/replay-dispatcher/<scenario>/` 与 `build/replay-processor/<scenario>/`
+   - diff 报告目录按模式分开：`build/replay-diff-dispatcher/<scenario>/` 与 `build/replay-diff-processor/<scenario>/`
    - Phase 0 不为 trace 资产引入 JSON 库；schema 以固定列 CSV 落地，便于 C++ 和 Python 同时消费。
 
 3. **新增 Phase 0 代码固定落在 `src/input_v2/telemetry/`，不把 recorder / replay 逻辑塞回旧主线模块。**
@@ -249,7 +253,7 @@
    - 这一阶段保留当前 fallback 行为；invalid `contextName` 仍按现状录成 `Menu` fallback 结果。
 
 4. **实现 replay harness，先保证“同 bundle 可重放”，再谈批量。**
-   - 在 `src/input_v2/telemetry/ReplayHarness.*` 最终需要实现两个 behavioral 模式：
+   - 在 `src/input_v2/telemetry/ReplayHarness.*` 最终需要实现两个 runtime 模式：
      - `dispatcher`：按 `dispatcher_schedule.csv` 回放 ingress snapshot，并驱动 `PadEventSnapshotDispatcher`
      - `processor`：直接按 `processed_snapshot_*.csv` 喂 `PadEventSnapshotProcessor`
    - 两个模式都要在每个 scenario 开头统一 reset：
@@ -259,15 +263,15 @@
      - `NativeButtonCommitBackend::Reset()`
      - `KeyboardHelperBackend::Reset()`
      - `GameplayOwnershipCoordinator::Reset()`
-   - replay harness 输出目录固定为 `build/replay/<scenario>/`，输出文件名与 golden bundle 同名。
-   - `validate-schema` 与 `materialize-fixture` 只证明 schema / diff plumbing；`dispatcher` / `processor` behavioral mode 负责生成 candidate bundle。
-   - harness 不是测试断言层；behavioral 模式只负责“重放并产出 candidate bundle”，diff 工具负责比较。
+   - replay harness 输出文件名与 golden bundle 同名；`materialize-fixture` 可写入 `build/replay/<scenario>/`，runtime proof 使用 `build/replay-dispatcher/<scenario>/` 与 `build/replay-processor/<scenario>/` 分开落盘。
+   - `validate-schema` 与 `materialize-fixture` 只证明 schema / diff plumbing；`dispatcher` / `processor` runtime mode 负责生成 candidate bundle。
+   - harness 不是测试断言层；runtime 模式只负责“重放并产出 candidate bundle”，diff 工具负责比较。
 
 5. **把 replay runner 和测试入口写成明确 target，不复用现有 `MenuContextPolicyTests`。**
    - 在 `xmake.lua` 新增：
      - `target("DualPadReplayHarness")`
        - `set_kind("binary")`
-     - 负责读取 scenario；`materialize-fixture` 只输出 copied fixture bundle，behavioral `dispatcher` / `processor` 才能输出 candidate bundle
+     - 负责读取 scenario；`materialize-fixture` 只输出 copied fixture bundle，runtime `dispatcher` / `processor` 才能输出 candidate bundle
      - `target("DualPadReplayHarnessTests")`
        - `set_kind("binary")`
        - 编译 `tests/ReplayHarnessTests.cpp`
@@ -277,7 +281,7 @@
      - `materialize-fixture` 能保留 `expected_authoritative_poll.csv` 数据行
      - glyph 规范化结果能还原 `expected_glyph_results.csv`
      - `KeyboardNativeBridge` 命令顺序保持稳定
-     - `dispatcher` / `processor` 在未实现 runtime replay 前必须 fail，且不能复制 golden 文件伪装通过
+     - `dispatcher` / `processor` 必须生成 runtime candidate output；若 runtime seam 缺失或行为不匹配，必须 fail，且不能复制 golden 文件伪装通过
    - 这一步完成后，Phase 0 的最小命令入口固定为：
      - `xmake build DualPadReplayHarness`
      - `xmake build DualPadReplayHarnessTests`
@@ -287,8 +291,8 @@
    - diff 工具固定落在 `scripts/dev/dualpad_trace_diff.py`。
    - 它接收：
      - `--expected tests/replay/golden/phase0/<scenario>`
-     - `--actual build/replay/<scenario>`
-     - 可选 `--report build/replay-diff/<scenario>/report.md`
+     - `--actual build/replay-dispatcher/<scenario>` 或 `--actual build/replay-processor/<scenario>`
+     - 可选 `--report build/replay-diff-dispatcher/<scenario>/report.md` 或 `--report build/replay-diff-processor/<scenario>/report.md`
    - 比较规则固定为：
      - 行数必须完全一致
      - 除浮点列外，其余列逐字段精确匹配
@@ -300,7 +304,8 @@
      - 期望值 / 实际值
      - 对应 scenario 和 mode
    - 同时支持 batch 模式：
-     - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+     - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`
+     - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`
 
 7. **golden trace 范围在本 slice 一次性定死，不把“先录哪些”留到 work 阶段。**
    - Phase 0 默认必录 10 个 repo-owned scenario 目录，另保留 1 个 `FavoritesMenu` 条件场景。
@@ -344,17 +349,22 @@
      - `xmake build DualPadReplayHarness`
      - `xmake build DualPadReplayHarnessTests`
      - `xmake run DualPadReplayHarnessTests`
-   - 对每个 scenario 至少跑一遍：
+   - 对每个 scenario 至少跑一遍 runtime replay；下面是单场景 dispatcher / processor 示例：
 
    ```powershell
-   xmake run DualPadReplayHarness -- --scenario tests/replay/golden/phase0/01_gameplay_walk_attack_block_sprint --mode materialize-fixture --output build/replay/01_gameplay_walk_attack_block_sprint
-   python scripts/dev/dualpad_trace_diff.py --expected tests/replay/golden/phase0/01_gameplay_walk_attack_block_sprint --actual build/replay/01_gameplay_walk_attack_block_sprint --report build/replay-diff/01_gameplay_walk_attack_block_sprint/report.md
+   xmake run DualPadReplayHarness -- --scenario tests/replay/golden/phase0/10_backlog_gap_overflow --mode dispatcher --output build/replay-dispatcher/10_backlog_gap_overflow
+   python scripts/dev/dualpad_trace_diff.py --expected tests/replay/golden/phase0/10_backlog_gap_overflow --actual build/replay-dispatcher/10_backlog_gap_overflow --report build/replay-diff-dispatcher/10_backlog_gap_overflow/report.md
+   xmake run DualPadReplayHarness -- --scenario tests/replay/golden/phase0/11_config_reload_success_failure --mode processor --output build/replay-processor/11_config_reload_success_failure
+   python scripts/dev/dualpad_trace_diff.py --expected tests/replay/golden/phase0/11_config_reload_success_failure --actual build/replay-processor/11_config_reload_success_failure --report build/replay-diff-processor/11_config_reload_success_failure/report.md
    ```
 
    - 全量批量命令固定为：
 
    ```powershell
-   python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff
+   xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher
+   python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher
+   xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor
+   python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor
    ```
 
    - 代码文件有改动，所以 close-out 前必须执行：
@@ -409,7 +419,10 @@
   - `xmake build DualPadReplayHarnessTests`
 - **自动验证**
   - `xmake run DualPadReplayHarnessTests`
-  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`
 - **runtime 观测点**
   - `PadEventSnapshotDispatcher` 的 submit/drain/coalesce 日志
   - `PadEventSnapshotProcessor` 的 degraded recovery 日志
@@ -428,8 +441,8 @@
 - `xmake.lua` 里已有 `DualPadReplayHarness` 和 `DualPadReplayHarnessTests` 两个独立 target。
 - `tests/replay/golden/phase0/` 下 10 个 repo-owned mandatory scenario 目录全部存在，且 bundle 文件齐全；允许某些 CSV 只有表头，但不允许缺文件。
 - 若启用 `06_favorites_page_lr_accept_cancel`，对应 workspace / artifact inventory / capture surface 已先写入 `.dualpad-builder/progress.md`，且该场景 bundle 文件齐全；未恢复 workspace 时不得把 Favorites glyph capture 当作 Phase 0 breach 或退出条件。
-- `validate-schema` 与 `materialize-fixture` bootstrap 验证通过，且不能被表述为 behavioral replay proof。
-- behavioral `dispatcher` / `processor` replay candidate 对 golden 的 diff 为 0；若有差异，必须先解释再改 golden，不能静默覆盖。
+- `validate-schema` 与 `materialize-fixture` bootstrap 验证通过，且不能被表述为 runtime replay proof。
+- runtime `dispatcher` / `processor` replay candidate 对 golden 的 diff 为 0；若有差异，必须先解释再改 golden，不能静默覆盖。
 - recorder 在 `enable_trace_recording = false` 时不改变现有运行时行为；这必须通过至少一次关闭开关的 live smoke 验证确认。
 - `.dualpad-builder/progress.md` 已记录开始、完成和验证命令结果。
 

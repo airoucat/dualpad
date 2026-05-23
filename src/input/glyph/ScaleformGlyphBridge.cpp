@@ -43,6 +43,21 @@ namespace dualpad::input::glyph
         }
     }
 
+    GlyphResolutionCompatResult ScaleformGlyphBridge::ReplayResolveActionGlyph(
+        std::string_view actionId,
+        std::string_view contextName)
+    {
+        const auto resolution = ResolveActionGlyphCompat(actionId, contextName);
+        if (RuntimeConfig::GetSingleton().TraceRecordGlyphQueries()) {
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordGlyphResult(
+                actionId,
+                contextName,
+                resolution);
+        }
+
+        return resolution;
+    }
+
     void ScaleformGlyphBridge::Accept(CallbackProcessor* processor)
     {
         if (!processor) {

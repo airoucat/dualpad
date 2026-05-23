@@ -1,8 +1,8 @@
 {
   "project": "DualPad Authoritative Baseline",
   "status": "active",
-  "current_sprint": "S-PH0",
-  "updated_at": "2026-05-18T00:32:49+08:00",
+  "current_sprint": null,
+  "updated_at": "2026-05-23T15:37:00+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -186,8 +186,8 @@
       "status": "completed",
       "exit_criteria": [
         "trace schema、recorder、replay harness、diff runner 和 Phase 0 mandatory scenarios 落地",
-        "validate-schema / materialize-fixture 与 dispatcher / processor behavioral replay mode 有明确边界",
-        "dispatcher / processor behavioral replay proof 已通过，candidate bundle 对 Phase 0 golden batch diff 为 0",
+        "validate-schema / materialize-fixture 与 dispatcher / processor runtime replay mode 有明确边界",
+        "dispatcher / processor runtime replay proof 通过后，candidate bundle 对 Phase 0 golden batch diff 为 0",
         "10 个 repo-owned mandatory scenario bundle 齐全，phase0_scenarios.json 把 FavoritesMenu 标成 mandatory=false / conditional_live",
         ".dualpad-builder/progress.md 记录 Phase 0 start / done / blocked 与验证结果"
       ],
@@ -196,7 +196,10 @@
         "xmake build DualPadReplayHarnessTests",
         "xmake run DualPadReplayHarnessTests",
         "xmake build DualPad",
-        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor",
         "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
       ]
     },

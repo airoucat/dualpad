@@ -12,6 +12,8 @@ namespace dualpad::input
     class PadEventSnapshotDispatcher
     {
     public:
+        using ReplayDrainSink = void(*)(const PadEventSnapshot& snapshot, void* context);
+
         static PadEventSnapshotDispatcher& GetSingleton();
 
         void SubmitSnapshot(const PadEventSnapshot& snapshot);
@@ -20,6 +22,12 @@ namespace dualpad::input
         std::size_t DrainOnMainThread(
             std::size_t maxSnapshots = kDefaultDrainBudget,
             const DrainTelemetryContext* telemetryContext = nullptr);
+        std::size_t DrainForReplay(
+            std::size_t maxSnapshots,
+            const DrainTelemetryContext* telemetryContext,
+            ReplayDrainSink sink,
+            void* context);
+        void ResetForReplay();
         void SetFramePumpEnabled(bool enabled);
         bool IsFramePumpEnabled() const;
 
@@ -43,5 +51,6 @@ namespace dualpad::input
         std::mutex _mutex;
         std::atomic_bool _drainTaskQueued{ false };
         std::atomic_bool _framePumpEnabled{ false };
+        std::atomic_bool _replayManualDrainActive{ false };
     };
 }

@@ -1,12 +1,19 @@
 #include "pch.h"
 #include "input_v2/telemetry/ReplayHarness.h"
 
+#include "input/BindingConfig.h"
+#include "input/InputContextNames.h"
+#include "input/InputModalityTracker.h"
+#include "input/RuntimeConfig.h"
+#include "input/backend/KeyboardHelperBackend.h"
+#include "input/glyph/ScaleformGlyphBridge.h"
+#include "input/injection/PadEventSnapshotDispatcher.h"
+#include "input/injection/PadEventSnapshotProcessor.h"
+#include "input_v2/telemetry/InputTraceRecorder.h"
 #include "input_v2/telemetry/TraceSchema.h"
 
 #include <cmath>
-#include <deque>
 #include <fstream>
-#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -29,7 +36,6 @@ namespace dualpad::input_v2::telemetry
 
         using CsvRow = std::vector<std::string>;
         using CsvRows = std::vector<CsvRow>;
-        using CsvBundleRows = std::map<std::string, CsvRows>;
         using RowsBySequence = std::unordered_map<std::uint64_t, CsvRows>;
 
         std::vector<std::string> SplitCsvLine(std::string_view line)
@@ -96,6 +102,117 @@ namespace dualpad::input_v2::telemetry
             }
         }
 
+        bool ParseBool(const std::string& value, std::string_view field)
+        {
+            if (value == "true") {
+                return true;
+            }
+            if (value == "false") {
+                return false;
+            }
+            throw std::runtime_error("invalid bool field " + std::string(field) + ": " + value);
+        }
+
+        input::InputContext ParseContext(const std::string& value)
+        {
+            const auto parsed = input::ParseInputContextName(value);
+            if (!parsed) {
+                throw std::runtime_error("invalid context: " + value);
+            }
+            return *parsed;
+        }
+
+        input::PadEventType ParsePadEventType(const std::string& value)
+        {
+            if (value == "None") return input::PadEventType::None;
+            if (value == "ButtonPress") return input::PadEventType::ButtonPress;
+            if (value == "ButtonRelease") return input::PadEventType::ButtonRelease;
+            if (value == "AxisChange") return input::PadEventType::AxisChange;
+            if (value == "Layer") return input::PadEventType::Layer;
+            if (value == "Combo") return input::PadEventType::Combo;
+            if (value == "Hold") return input::PadEventType::Hold;
+            if (value == "Tap") return input::PadEventType::Tap;
+            if (value == "Gesture") return input::PadEventType::Gesture;
+            if (value == "TouchpadPress") return input::PadEventType::TouchpadPress;
+            if (value == "TouchpadRelease") return input::PadEventType::TouchpadRelease;
+            if (value == "TouchpadSlide") return input::PadEventType::TouchpadSlide;
+            throw std::runtime_error("invalid pad event type: " + value);
+        }
+
+        input::TriggerType ParseTriggerType(const std::string& value)
+        {
+            if (value == "Button") return input::TriggerType::Button;
+            if (value == "Gesture") return input::TriggerType::Gesture;
+            if (value == "Layer") return input::TriggerType::Layer;
+            if (value == "Combo") return input::TriggerType::Combo;
+            if (value == "Axis") return input::TriggerType::Axis;
+            if (value == "Hold") return input::TriggerType::Hold;
+            if (value == "Tap") return input::TriggerType::Tap;
+            throw std::runtime_error("invalid trigger type: " + value);
+        }
+
+        input::PadAxisId ParsePadAxisId(const std::string& value)
+        {
+            if (value == "None") return input::PadAxisId::None;
+            if (value == "LeftStickX") return input::PadAxisId::LeftStickX;
+            if (value == "LeftStickY") return input::PadAxisId::LeftStickY;
+            if (value == "RightStickX") return input::PadAxisId::RightStickX;
+            if (value == "RightStickY") return input::PadAxisId::RightStickY;
+            if (value == "LeftTrigger") return input::PadAxisId::LeftTrigger;
+            if (value == "RightTrigger") return input::PadAxisId::RightTrigger;
+            throw std::runtime_error("invalid pad axis: " + value);
+        }
+
+        input::TouchpadMode ParseTouchpadMode(const std::string& value)
+        {
+            if (value == "LeftCenterRight") return input::TouchpadMode::LeftCenterRight;
+            if (value == "Edge") return input::TouchpadMode::Edge;
+            if (value == "Whole") return input::TouchpadMode::Whole;
+            if (value == "Disabled") return input::TouchpadMode::Disabled;
+            throw std::runtime_error("invalid touchpad mode: " + value);
+        }
+
+        input::TouchpadPressRegion ParseTouchpadRegion(const std::string& value)
+        {
+            if (value == "None") return input::TouchpadPressRegion::None;
+            if (value == "Left") return input::TouchpadPressRegion::Left;
+            if (value == "Center") return input::TouchpadPressRegion::Center;
+            if (value == "Right") return input::TouchpadPressRegion::Right;
+            if (value == "TopEdge") return input::TouchpadPressRegion::TopEdge;
+            if (value == "BottomEdge") return input::TouchpadPressRegion::BottomEdge;
+            if (value == "LeftEdge") return input::TouchpadPressRegion::LeftEdge;
+            if (value == "RightEdge") return input::TouchpadPressRegion::RightEdge;
+            if (value == "Whole") return input::TouchpadPressRegion::Whole;
+            throw std::runtime_error("invalid touchpad region: " + value);
+        }
+
+        input::TouchpadSlideDirection ParseTouchpadSlideDirection(const std::string& value)
+        {
+            if (value == "None") return input::TouchpadSlideDirection::None;
+            if (value == "Up") return input::TouchpadSlideDirection::Up;
+            if (value == "Down") return input::TouchpadSlideDirection::Down;
+            if (value == "Left") return input::TouchpadSlideDirection::Left;
+            if (value == "Right") return input::TouchpadSlideDirection::Right;
+            throw std::runtime_error("invalid touchpad slide direction: " + value);
+        }
+
+        input::DrainReason ParseDrainReason(const std::string& value)
+        {
+            if (value == "frame_pump_disabled") return input::DrainReason::FramePumpDisabled;
+            if (value == "frame_pump_assist_stale") return input::DrainReason::FramePumpAssistStale;
+            if (value == "task_fallback_high_water") return input::DrainReason::TaskFallbackHighWater;
+            if (value == "upstream_poll") return input::DrainReason::UpstreamPoll;
+            throw std::runtime_error("invalid drain reason: " + value);
+        }
+
+        input::UpstreamRouteState ParseRouteState(const std::string& value)
+        {
+            if (value == "disabled") return input::UpstreamRouteState::Disabled;
+            if (value == "active_fresh") return input::UpstreamRouteState::ActiveFresh;
+            if (value == "active_stale") return input::UpstreamRouteState::ActiveStale;
+            throw std::runtime_error("invalid route state: " + value);
+        }
+
         std::string ToString(std::uint64_t value)
         {
             return std::to_string(value);
@@ -148,11 +265,6 @@ namespace dualpad::input_v2::telemetry
             return ReadCsvRows(scenarioPath / std::string(fileName));
         }
 
-        CsvRows& OutputRows(CsvBundleRows& bundle, std::string_view fileName)
-        {
-            return bundle[std::string(fileName)];
-        }
-
         void WriteCsvRows(
             const std::filesystem::path& outputPath,
             const TraceFileSpec& spec,
@@ -163,22 +275,6 @@ namespace dualpad::input_v2::telemetry
             out << spec.header << '\n';
             for (const auto& row : rows) {
                 out << JoinCsvRow(row) << '\n';
-            }
-        }
-
-        void WriteGeneratedBundle(
-            const std::filesystem::path& outputPath,
-            const CsvBundleRows& bundle)
-        {
-            std::filesystem::remove_all(outputPath);
-            std::filesystem::create_directories(outputPath);
-            for (const auto& spec : Phase0TraceFiles()) {
-                const auto found = bundle.find(std::string(spec.name));
-                if (found != bundle.end()) {
-                    WriteCsvRows(outputPath, spec, found->second);
-                } else {
-                    WriteCsvRows(outputPath, spec, {});
-                }
             }
         }
 
@@ -215,7 +311,204 @@ namespace dualpad::input_v2::telemetry
             destination.insert(destination.end(), found->second.begin(), found->second.end());
         }
 
-        CsvRows GeneratePollRows(const CsvRows& processedFrames, const CsvRows& processedEvents)
+        input::PadEvent ParseEventRow(const CsvRow& row)
+        {
+            if (row.size() < 16) {
+                throw std::runtime_error("event row has too few columns");
+            }
+
+            input::PadEvent event{};
+            event.type = ParsePadEventType(row[2]);
+            event.triggerType = ParseTriggerType(row[3]);
+            event.code = ParseU32(row[4], "code");
+            event.modifierMask = ParseU32(row[5], "modifier_mask");
+            event.axis = ParsePadAxisId(row[6]);
+            event.previousValue = ParseFloat(row[7]);
+            event.value = ParseFloat(row[8]);
+            event.timestampUs = ParseU64(row[9], "timestamp_us");
+            event.touchId = static_cast<std::uint8_t>(ParseU32(row[10], "touch_id"));
+            event.touchX = static_cast<std::uint16_t>(ParseU32(row[11], "touch_x"));
+            event.touchY = static_cast<std::uint16_t>(ParseU32(row[12], "touch_y"));
+            event.touchpadMode = ParseTouchpadMode(row[13]);
+            event.touchRegion = ParseTouchpadRegion(row[14]);
+            event.slideDirection = ParseTouchpadSlideDirection(row[15]);
+            if (event.type == input::PadEventType::AxisChange &&
+                event.code == 0 &&
+                event.axis != input::PadAxisId::None) {
+                event.code = static_cast<std::uint32_t>(event.axis);
+            }
+            return event;
+        }
+
+        input::PadEventSnapshot BuildSnapshot(const CsvRow& frame, const RowsBySequence& eventsBySequence)
+        {
+            if (frame.size() < 15) {
+                throw std::runtime_error("snapshot frame row has too few columns");
+            }
+
+            input::PadEventSnapshot snapshot{};
+            snapshot.sequence = ParseU64(frame[0], "sequence");
+            snapshot.firstSequence = ParseU64(frame[1], "first_sequence");
+            snapshot.sourceTimestampUs = ParseU64(frame[2], "source_timestamp_us");
+            snapshot.context = ParseContext(frame[3]);
+            snapshot.contextEpoch = ParseU32(frame[4], "context_epoch");
+            snapshot.overflowed = ParseBool(frame[5], "overflowed");
+            snapshot.coalesced = ParseBool(frame[6], "coalesced");
+            snapshot.crossContextMismatch = ParseBool(frame[7], "cross_context_mismatch");
+            snapshot.state.connected = true;
+            snapshot.state.sequence = snapshot.sequence;
+            snapshot.state.timestampUs = snapshot.sourceTimestampUs;
+            snapshot.state.buttons.digitalMask = ParseU32(frame[8], "digital_mask");
+            snapshot.state.leftStick.x = ParseFloat(frame[9]);
+            snapshot.state.leftStick.y = ParseFloat(frame[10]);
+            snapshot.state.rightStick.x = ParseFloat(frame[11]);
+            snapshot.state.rightStick.y = ParseFloat(frame[12]);
+            snapshot.state.leftTrigger.normalized = ParseFloat(frame[13]);
+            snapshot.state.rightTrigger.normalized = ParseFloat(frame[14]);
+
+            const auto events = eventsBySequence.find(snapshot.sequence);
+            if (events != eventsBySequence.end()) {
+                for (const auto& row : events->second) {
+                    if (!snapshot.events.Push(ParseEventRow(row))) {
+                        throw std::runtime_error("snapshot event buffer overflow while replaying sequence " +
+                            ToString(snapshot.sequence));
+                    }
+                }
+            }
+
+            return snapshot;
+        }
+
+        input::DrainTelemetryContext BuildDrainTelemetry(const CsvRow& row)
+        {
+            if (row.size() < 11) {
+                throw std::runtime_error("dispatcher schedule row has too few columns");
+            }
+
+            std::optional<std::uint64_t> lastPollAgeMs{};
+            if (row[6] != "none") {
+                lastPollAgeMs = ParseU64(row[6], "last_poll_age_ms");
+            }
+
+            return input::DrainTelemetryContext{
+                .reason = ParseDrainReason(row[4]),
+                .routeState = ParseRouteState(row[5]),
+                .lastPollAgeMs = lastPollAgeMs,
+                .hookInstalled = ParseBool(row[7], "hook_installed")
+            };
+        }
+
+        std::filesystem::path FindProjectRoot(std::filesystem::path from)
+        {
+            if (std::filesystem::is_regular_file(from)) {
+                from = from.parent_path();
+            }
+            while (!from.empty()) {
+                if (std::filesystem::is_regular_file(from / "xmake.lua")) {
+                    return from;
+                }
+                const auto parent = from.parent_path();
+                if (parent == from) {
+                    break;
+                }
+                from = parent;
+            }
+            return std::filesystem::current_path();
+        }
+
+        void LoadReplayRuntimeConfig(const std::filesystem::path& scenarioPath)
+        {
+            const auto projectRoot = FindProjectRoot(scenarioPath);
+            input::RuntimeConfig::GetSingleton().Load(projectRoot / "config" / "DualPadDebug.ini");
+            input::BindingConfig::GetSingleton().Load(projectRoot / "config" / "DualPadBindings.ini");
+        }
+
+        struct ReplayRuntimeSession
+        {
+            explicit ReplayRuntimeSession(std::filesystem::path outputPath) :
+                output(std::move(outputPath))
+            {
+                std::filesystem::remove_all(output);
+                input_v2::telemetry::InputTraceRecorder::GetSingleton().BeginReplaySession(
+                    output.parent_path(),
+                    output.filename().string());
+                input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(true);
+            }
+
+            ~ReplayRuntimeSession()
+            {
+                Finish();
+            }
+
+            void Finish()
+            {
+                if (!active) {
+                    return;
+                }
+                input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(false);
+                input_v2::telemetry::InputTraceRecorder::GetSingleton().EndReplaySession();
+                active = false;
+            }
+
+            std::filesystem::path output;
+            bool active{ true };
+        };
+
+        void ResetProcessorRuntimeForReplay()
+        {
+            input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(false);
+            input::InputModalityTracker::GetSingleton().ResetForReplayCapture();
+            input::PadEventSnapshotProcessor::GetSingleton().ResetState();
+            input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(true);
+        }
+
+        void ProcessSnapshotThroughRuntime(const input::PadEventSnapshot& snapshot)
+        {
+            input::InputModalityTracker::GetSingleton().SetReplayContext(snapshot.context, snapshot.contextEpoch);
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(snapshot.sequence);
+            input::PadEventSnapshotProcessor::GetSingleton().Process(snapshot);
+        }
+
+        void ProcessSnapshotThroughRuntimeSink(const input::PadEventSnapshot& snapshot, void*)
+        {
+            ProcessSnapshotThroughRuntime(snapshot);
+        }
+
+        void ReplayGlyphQueries(const std::filesystem::path& scenarioPath)
+        {
+            const auto glyphQueries = ReadScenarioRows(scenarioPath, "glyph_queries.csv");
+            for (const auto& row : glyphQueries) {
+                if (row.size() < 4) {
+                    throw std::runtime_error("glyph query row has too few columns");
+                }
+
+                input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(
+                    ParseU64(row[1], "glyph sequence"));
+                (void)input::glyph::ScaleformGlyphBridge::GetSingleton().ReplayResolveActionGlyph(row[2], row[3]);
+            }
+        }
+
+        void CarryProcessorInputRows(
+            const std::filesystem::path& scenarioPath,
+            const std::filesystem::path& outputPath)
+        {
+            for (const auto fileName : {
+                    std::string_view("dispatcher_schedule.csv"),
+                    std::string_view("ingress_snapshot_frames.csv"),
+                    std::string_view("ingress_snapshot_events.csv") }) {
+                const auto* spec = FindPhase0TraceFile(fileName);
+                if (!spec) {
+                    throw std::runtime_error("missing phase0 spec for processor input carry");
+                }
+                WriteCsvRows(outputPath, *spec, ReadScenarioRows(scenarioPath, fileName));
+            }
+        }
+
+        // Legacy CSV simulator retained as a fixture-test helper only. Dispatcher
+        // and processor replay modes must use the runtime seams below.
+        [[maybe_unused]] CsvRows GenerateSyntheticPollRowsForFixtureTests(
+            const CsvRows& processedFrames,
+            const CsvRows& processedEvents)
         {
             const auto eventsBySequence = EventsBySequence(processedEvents);
             CsvRows pollRows;
@@ -319,21 +612,21 @@ namespace dualpad::input_v2::telemetry
                 if (expected.size() != actual.size()) {
                     return Fail(
                         std::string(spec.name) +
-                        ": behavioral row count mismatch expected=" + std::to_string(expected.size()) +
+                        ": runtime row count mismatch expected=" + std::to_string(expected.size()) +
                         " actual=" + std::to_string(actual.size()));
                 }
                 for (std::size_t i = 0; i < expected.size(); ++i) {
                     if (expected[i] != actual[i]) {
                         return Fail(
                             std::string(spec.name) +
-                            ": behavioral row mismatch at data row " + std::to_string(i + 1) +
+                            ": runtime row mismatch at data row " + std::to_string(i + 1) +
                             " expected=" + JoinCsvRow(expected[i]) +
                             " actual=" + JoinCsvRow(actual[i]));
                     }
                 }
             }
 
-            return Pass("behavioral replay matched golden: " + outputPath.string());
+            return Pass("runtime replay matched golden: " + outputPath.string());
         }
 
         ReplayResult ValidateScenario(const std::filesystem::path& scenarioPath)
@@ -379,22 +672,28 @@ namespace dualpad::input_v2::telemetry
             const std::filesystem::path& outputPath)
         {
             try {
-                CsvBundleRows bundle;
-                auto processedFrames = ReadScenarioRows(scenarioPath, "processed_snapshot_frames.csv");
-                auto processedEvents = ReadScenarioRows(scenarioPath, "processed_snapshot_events.csv");
-                OutputRows(bundle, "processed_snapshot_frames.csv") = processedFrames;
-                OutputRows(bundle, "processed_snapshot_events.csv") = processedEvents;
-                OutputRows(bundle, "expected_authoritative_poll.csv") =
-                    GeneratePollRows(processedFrames, processedEvents);
+                LoadReplayRuntimeConfig(scenarioPath);
+                ResetProcessorRuntimeForReplay();
+                ReplayRuntimeSession session(outputPath);
 
-                WriteGeneratedBundle(outputPath, bundle);
+                const auto processedFrames = ReadScenarioRows(scenarioPath, "processed_snapshot_frames.csv");
+                const auto processedEvents = ReadScenarioRows(scenarioPath, "processed_snapshot_events.csv");
+                const auto eventsBySequence = EventsBySequence(processedEvents);
+                for (const auto& frame : processedFrames) {
+                    ProcessSnapshotThroughRuntime(BuildSnapshot(frame, eventsBySequence));
+                }
+
+                ReplayGlyphQueries(scenarioPath);
+                session.Finish();
+                CarryProcessorInputRows(scenarioPath, outputPath);
+
                 const auto comparison = CompareGeneratedBundle(scenarioPath, outputPath);
                 if (!comparison.ok) {
                     return comparison;
                 }
-                return Pass("processor behavioral replay matched golden: " + outputPath.string());
+                return Pass("processor runtime replay matched golden: " + outputPath.string());
             } catch (const std::exception& e) {
-                return Fail(std::string("processor behavioral replay failed: ") + e.what());
+                return Fail(std::string("processor runtime replay failed: ") + e.what());
             }
         }
 
@@ -403,77 +702,52 @@ namespace dualpad::input_v2::telemetry
             const std::filesystem::path& outputPath)
         {
             try {
+                LoadReplayRuntimeConfig(scenarioPath);
+                input::PadEventSnapshotDispatcher::GetSingleton().ResetForReplay();
+                ResetProcessorRuntimeForReplay();
+                ReplayRuntimeSession session(outputPath);
+
                 const auto schedule = ReadScenarioRows(scenarioPath, "dispatcher_schedule.csv");
                 const auto ingressFrames = ReadScenarioRows(scenarioPath, "ingress_snapshot_frames.csv");
                 const auto ingressEvents = ReadScenarioRows(scenarioPath, "ingress_snapshot_events.csv");
                 const auto framesBySequence = FramesBySequence(ingressFrames);
                 const auto eventsBySequence = EventsBySequence(ingressEvents);
-
-                CsvBundleRows bundle;
-                auto& actualSchedule = OutputRows(bundle, "dispatcher_schedule.csv");
-                auto& actualIngressFrames = OutputRows(bundle, "ingress_snapshot_frames.csv");
-                auto& actualIngressEvents = OutputRows(bundle, "ingress_snapshot_events.csv");
-                auto& actualProcessedFrames = OutputRows(bundle, "processed_snapshot_frames.csv");
-                auto& actualProcessedEvents = OutputRows(bundle, "processed_snapshot_events.csv");
-
-                std::deque<std::uint64_t> pending;
                 for (const auto& row : schedule) {
                     if (row.size() < 11) {
                         throw std::runtime_error("dispatcher schedule row has too few columns");
                     }
 
-                    actualSchedule.push_back(row);
                     const auto& op = row[1];
                     const auto sequence = ParseU64(row[2], "sequence");
-                    const auto pendingBefore = ParseSize(row[8], "pending_before");
-                    const auto pendingAfter = ParseSize(row[9], "pending_after");
-                    const auto drainedCount = ParseSize(row[10], "drained_count");
-                    if (pendingBefore != pending.size()) {
-                        throw std::runtime_error("dispatcher schedule pending_before mismatch at step " + row[0]);
-                    }
-
                     if (op == "submit") {
                         const auto frame = framesBySequence.find(sequence);
                         if (frame == framesBySequence.end()) {
                             throw std::runtime_error("missing ingress frame for submitted sequence " + row[2]);
                         }
-                        actualIngressFrames.push_back(frame->second);
-                        AppendEventsForSequence(actualIngressEvents, eventsBySequence, sequence);
-                        pending.push_back(sequence);
+                        input::PadEventSnapshotDispatcher::GetSingleton().SubmitSnapshot(
+                            BuildSnapshot(frame->second, eventsBySequence));
                     } else if (op == "drain") {
-                        for (std::size_t i = 0; i < drainedCount; ++i) {
-                            if (pending.empty()) {
-                                throw std::runtime_error("dispatcher drain exceeded pending queue at step " + row[0]);
-                            }
-                            const auto drainedSequence = pending.front();
-                            pending.pop_front();
-                            const auto frame = framesBySequence.find(drainedSequence);
-                            if (frame == framesBySequence.end()) {
-                                throw std::runtime_error("missing ingress frame for drained sequence");
-                            }
-                            actualProcessedFrames.push_back(frame->second);
-                            AppendEventsForSequence(actualProcessedEvents, eventsBySequence, drainedSequence);
-                        }
+                        const auto telemetry = BuildDrainTelemetry(row);
+                        (void)input::PadEventSnapshotDispatcher::GetSingleton().DrainForReplay(
+                            ParseSize(row[3], "budget"),
+                            &telemetry,
+                            ProcessSnapshotThroughRuntimeSink,
+                            nullptr);
                     } else {
                         throw std::runtime_error("unknown dispatcher schedule op: " + op);
                     }
-
-                    if (pendingAfter != pending.size()) {
-                        throw std::runtime_error("dispatcher schedule pending_after mismatch at step " + row[0]);
-                    }
                 }
 
-                OutputRows(bundle, "expected_authoritative_poll.csv") =
-                    GeneratePollRows(actualProcessedFrames, actualProcessedEvents);
+                ReplayGlyphQueries(scenarioPath);
+                session.Finish();
 
-                WriteGeneratedBundle(outputPath, bundle);
                 const auto comparison = CompareGeneratedBundle(scenarioPath, outputPath);
                 if (!comparison.ok) {
                     return comparison;
                 }
-                return Pass("dispatcher behavioral replay matched golden: " + outputPath.string());
+                return Pass("dispatcher runtime replay matched golden: " + outputPath.string());
             } catch (const std::exception& e) {
-                return Fail(std::string("dispatcher behavioral replay failed: ") + e.what());
+                return Fail(std::string("dispatcher runtime replay failed: ") + e.what());
             }
         }
     }
@@ -548,9 +822,9 @@ namespace dualpad::input_v2::telemetry
         case ReplayMode::MaterializeFixture:
             return Pass("batch fixtures materialized scenarios=" + std::to_string(scenarios));
         case ReplayMode::Dispatcher:
-            return Pass("batch dispatcher behavioral replay matched scenarios=" + std::to_string(scenarios));
+            return Pass("batch dispatcher runtime replay matched scenarios=" + std::to_string(scenarios));
         case ReplayMode::Processor:
-            return Pass("batch processor behavioral replay matched scenarios=" + std::to_string(scenarios));
+            return Pass("batch processor runtime replay matched scenarios=" + std::to_string(scenarios));
         }
 
         return Fail("unknown replay mode");

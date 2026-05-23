@@ -35,6 +35,10 @@ namespace
         Args args{};
         for (int i = 1; i < argc; ++i) {
             const std::string_view key(argv[i]);
+            if (key == "--") {
+                continue;
+            }
+
             const auto next = [&]() -> const char* {
                 if (i + 1 >= argc) {
                     return "";
@@ -61,6 +65,32 @@ namespace
     {
         return mode != dualpad::input_v2::telemetry::ReplayMode::ValidateSchema;
     }
+
+    std::filesystem::path FindProjectRoot()
+    {
+        auto current = std::filesystem::current_path();
+        while (!current.empty()) {
+            if (std::filesystem::is_regular_file(current / "xmake.lua")) {
+                return current;
+            }
+            const auto parent = current.parent_path();
+            if (parent == current) {
+                break;
+            }
+            current = parent;
+        }
+        return {};
+    }
+
+    std::filesystem::path ResolveProjectRelative(
+        const std::filesystem::path& path,
+        const std::filesystem::path& projectRoot)
+    {
+        if (path.empty() || path.is_absolute() || projectRoot.empty()) {
+            return path;
+        }
+        return projectRoot / path;
+    }
 }
 
 int main(int argc, char** argv)
@@ -73,6 +103,12 @@ int main(int argc, char** argv)
         PrintUsage();
         return 2;
     }
+
+    const auto projectRoot = FindProjectRoot();
+    args.scenario = ResolveProjectRelative(args.scenario, projectRoot);
+    args.output = ResolveProjectRelative(args.output, projectRoot);
+    args.batch = ResolveProjectRelative(args.batch, projectRoot);
+    args.outputRoot = ResolveProjectRelative(args.outputRoot, projectRoot);
 
     dualpad::input_v2::telemetry::ReplayResult result{};
 

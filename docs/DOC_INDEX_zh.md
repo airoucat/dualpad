@@ -19,7 +19,7 @@
 
 ## 按当前工作路阅读
 
-### 当前活跃 Sprint：无；已关闭到 `S-PH0`
+### 当前活跃 Sprint：无（closed through `S-PH0`）
 
 1. 先确认入口和约束：
    - [authoritative-baseline/README.md](authoritative-baseline/README.md)
@@ -43,6 +43,7 @@
    - [../src/input_v2/telemetry/TraceSchema.h](../src/input_v2/telemetry/TraceSchema.h)
    - [../tests/replay/golden/phase0/](../tests/replay/golden/phase0/)
    - [../scripts/dev/dualpad_trace_diff.py](../scripts/dev/dualpad_trace_diff.py)
+   - dispatcher / processor mode 已生成 runtime candidate bundle 并通过 batch diff；`materialize-fixture` 只证明 plumbing，不代表 runtime dispatcher / processor replay proof。
 5. 后续计划包必须先在 `.dualpad-builder/` 中晋升，当前不得直接启动：
    - [plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md](plans/dualpad_rearchitecture/02_slice_phase1_catalog_and_manifest_compiler_zh.md)
    - [plans/dualpad_rearchitecture/03_slice_phase2_menu_instance_truth_zh.md](plans/dualpad_rearchitecture/03_slice_phase2_menu_instance_truth_zh.md)

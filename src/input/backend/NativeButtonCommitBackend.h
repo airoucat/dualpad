@@ -1,15 +1,34 @@
 #pragma once
 
 #include "input/backend/FrameActionPlan.h"
-#include "input/backend/IPollCommitEmitter.h"
 #include "input/backend/NativeControlCode.h"
+
+#ifndef DUALPAD_REPLAY_HARNESS
 #include "input/backend/PollCommitCoordinator.h"
+#endif
 
 #include <cstdint>
 #include <mutex>
+#include <string_view>
 
 namespace dualpad::input::backend
 {
+#ifdef DUALPAD_REPLAY_HARNESS
+    enum class HeldContributor : std::uint8_t
+    {
+        None = 0,
+        Gamepad = 1u << 0,
+        KeyboardMouse = 1u << 1
+    };
+
+    enum class HeldEmitterSource : std::uint8_t
+    {
+        None = 0,
+        Gamepad,
+        KeyboardMouse
+    };
+#endif
+
     struct CommittedButtonState
     {
         std::uint32_t buttonDownMask{ 0 };
@@ -21,7 +40,10 @@ namespace dualpad::input::backend
         std::uint64_t pollSequence{ 0 };
     };
 
-    class NativeButtonCommitBackend final : public IPollCommitEmitter
+    class NativeButtonCommitBackend final
+#ifndef DUALPAD_REPLAY_HARNESS
+        : public IPollCommitEmitter
+#endif
     {
     public:
         static NativeButtonCommitBackend& GetSingleton();
@@ -43,9 +65,14 @@ namespace dualpad::input::backend
         void ForceCancelGateAwareGameplayTransientActions();
         [[nodiscard]] CommittedButtonState CommitPollState();
 
+#ifndef DUALPAD_REPLAY_HARNESS
         EmitResult Emit(const EmitRequest& request) override;
+#endif
 
     private:
+#ifdef DUALPAD_REPLAY_HARNESS
+        NativeButtonCommitBackend() = default;
+#else
         struct SprintProbeSnapshot
         {
             bool valid{ false };
@@ -98,5 +125,6 @@ namespace dualpad::input::backend
         SneakProbeSnapshot _lastSneakProbeSnapshot{};
         bool _suppressGameplayDigitalTransientActions{ false };
         mutable std::mutex _lock;
+#endif
     };
 }
