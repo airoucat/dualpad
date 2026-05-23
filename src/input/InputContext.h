@@ -3,8 +3,12 @@
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
+
+namespace dualpad::input_v2::context
+{
+    struct LegacyContextMirrorState;
+}
 
 namespace dualpad::input
 {
@@ -127,7 +131,7 @@ namespace dualpad::input
         }
     }
 
-    // Tracks the active context and restores previous contexts when menus close.
+    // Publishes the legacy context mirror consumed by pre-cutover runtime paths.
     class ContextManager
     {
     public:
@@ -136,11 +140,13 @@ namespace dualpad::input
         InputContext GetCurrentContext() const;
         std::uint32_t GetCurrentEpoch() const;
 
-        // Menu events push and restore UI contexts around their lifetime.
+        // Compatibility shims only. Menu instance truth is owned by PH2 ContextResolver.
         void OnMenuOpen(std::string_view menuName);
         void OnMenuClose(std::string_view menuName);
+        void ApplyResolvedContext(const dualpad::input_v2::context::LegacyContextMirrorState& state);
 
         // Polls player state for gameplay-only transitions such as sneak or death.
+        InputContext DetectGameplayContext() const;
         void UpdateFrameState();
         void UpdateGameplayContext();
 
@@ -149,23 +155,14 @@ namespace dualpad::input
         void SetContext(InputContext context);
 
     private:
-        struct MenuContextEntry
-        {
-            std::string menuName;
-            InputContext context{ InputContext::Menu };
-        };
-
         ContextManager() = default;
 
         InputContext _currentContext{ InputContext::Gameplay };
         InputContext _baseContext{ InputContext::Gameplay };
         std::uint32_t _contextEpoch{ 1 };
         std::vector<InputContext> _contextStack;
-        std::vector<MenuContextEntry> _menuStack;
-        std::unordered_map<std::string, std::size_t> _passthroughMenuCounts;
         mutable std::mutex _mutex;
 
-        InputContext DetectGameplayContext() const;
-        void RefreshCurrentContextLocked();
+        void SetCurrentContextLocked(InputContext context);
     };
 }

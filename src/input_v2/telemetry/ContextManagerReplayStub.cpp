@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "input/InputContext.h"
 
+#include "input_v2/context/ContextResolver.h"
+
 namespace dualpad::input
 {
     ContextManager& ContextManager::GetSingleton()
@@ -27,6 +29,14 @@ namespace dualpad::input
 
     void ContextManager::OnMenuClose(std::string_view)
     {
+    }
+
+    void ContextManager::ApplyResolvedContext(const dualpad::input_v2::context::LegacyContextMirrorState& state)
+    {
+        std::scoped_lock lock(_mutex);
+        _currentContext = state.context;
+        _contextEpoch = state.epoch;
+        _baseContext = state.context;
     }
 
     void ContextManager::UpdateFrameState()
@@ -62,8 +72,11 @@ namespace dualpad::input
         return InputContext::Gameplay;
     }
 
-    void ContextManager::RefreshCurrentContextLocked()
+    void ContextManager::SetCurrentContextLocked(InputContext context)
     {
-        _currentContext = _baseContext;
+        if (_currentContext != context) {
+            _currentContext = context;
+            ++_contextEpoch;
+        }
     }
 }

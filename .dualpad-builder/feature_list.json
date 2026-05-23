@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-23T21:08:26+08:00",
+  "updated_at": "2026-05-23T21:52:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -174,8 +174,8 @@
       "depends_on": [
         "PH1"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "UiMenuObserver、MenuInstanceRegistry、ContextResolver 和 ActionSetResolver 的 owner 边界落地",
         "contextRevision、menuStackRevision 和 presentationPolicyId 有 shadow compare gate",

@@ -933,3 +933,54 @@
   - `.dualpad-builder/feature_list.json`：`PH1` 已重新标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH1` 已重新标为 `completed`，`current_sprint=null`。
   - `PH2` / `S-PH2` 保持 `planned`，未启动。
+
+## 2026-05-23 21:30:00 CST
+
+- `PH2` start：
+  - 已将 `PH2` / `S-PH2` 从 `planned` 晋升为 `active`（`current_sprint=S-PH2`）。
+  - 本轮范围：`UiMenuObserver`、`MenuInstanceRegistry`、`ContextResolver`、`ActionSetResolver`、`contextRevision`、`menuStackRevision`、`presentationPolicyId` 与 shadow compare gate。
+  - 本轮硬边界：`CompiledContextCatalog` / `CompiledActionManifest` 继续作为 config truth；`MenuContextPolicy`、`InputContextNames`、`BindingManager` 只保留兼容职责，不重新成为 menu instance / context / binding truth。
+  - 本轮非目标：不启动 `PH3` presentation split、`PH4` InteractionEngine、`PH5` GameplayProjection、`PH6` PromptService / PromptProjection、`PH7` IngressHub / FrameAssembler；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-23 21:52:00 CST
+
+- `PH2` menu instance truth / done：
+  - 本轮新增并接入：
+    - `src/input_v2/menu/UiMenuObserver.*`
+    - `src/input_v2/menu/MenuInstanceRegistry.*`
+    - `src/input_v2/context/ContextResolver.*`
+    - `src/input_v2/actions/ActionSetResolver.*`
+    - `tests/input_v2/ContextResolverTests.cpp`
+    - `xmake` target `DualPadContextResolverTests`
+  - `UiMenuObserver` 负责 RE::UI open-menu snapshot；`MenuOpenCloseEvent` 只标记 dirty 并触发刷新。
+  - `MenuInstanceRegistry` 发布 `menuStackRevision`，覆盖 stable pointer、same-name duplicate、partial snapshot 与 unavailable 保持旧发布值。
+  - `ContextResolver` 只消费 `CompiledContextCatalog` 与 `MenuInstanceRegistry`，发布 `contextRevision`、`presentationPolicyId`、canonical `UiContextId` 与 legacy mirror。
+  - `ActionSetResolver` 只输出 `baseSetId + layerIds + scopeAnchorIds`，未引入 per-context `.Base` set。
+  - `ContextManager` 已退化为 legacy mirror；`_menuStack` / `_passthroughMenuCounts` / `RefreshCurrentContextLocked` 已移除，旧 `OnMenuOpen/OnMenuClose` 只保留兼容 shim。
+  - Shadow compare helper 覆盖 `topMenuInstanceId`、`identityQuality`、`menuStackRevision`、`uiContextId`、`ActionSetStack`、`presentationPolicyId`、`legacyInputContext`、`legacyContextEpoch`、`contextRevision`。
+  - 边界确认：未启动 `PH3`、`PH4`、`PH5`、`PH6`、`PH7`；未改变旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- 中途失败与修正记录：
+  - `xmake run DualPadContextResolverTests` 初次失败：stable pointer 第二帧错误推进 `menuStackRevision`。
+    - 根因：新建的非零 pointer 实例首帧被标成 `DegradedIdentity`，第二帧才变成 `StablePointer`。
+    - 修正：非零 `menuPtr` 首次出现即标记为 `StablePointer`，纯 last-seen bookkeeping 不推动 revision。
+  - `xmake run DualPadReplayHarness ... --mode dispatcher` 初次失败：`ContextManagerReplayStub` 仍实现旧 `RefreshCurrentContextLocked`。
+    - 修正：stub 改为实现 `ApplyResolvedContext(...)` 与新的 `SetCurrentContextLocked(...)` mirror 语义。
+  - 边界 grep 初次发现 `ContextResolver.cpp` 为 epoch helper 引入 `InputContextNames.h`。
+    - 修正：resolver 改用本地 legacy mirror domain 判定，不消费 `InputContextNames`。
+- 验证结果：
+  - `xmake build DualPadContextResolverTests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadContextResolverTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，日志中的部署目标按本机配置处理，不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1374 nodes, 2745 edges, 120 communities`。
+  - `git diff --check`：exit 0；stdout 仅包含 Windows 换行提示。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - 新 PH2 boundary grep：exit 1 / no matches，确认新 PH2 resolver/registry/action-set 文件未消费 `MenuContextPolicy`、`InputContextNames`、`ParseInputContextName`、`BindingManager`、`value_or(InputContext::Menu)` 或 per-context `.Base`。
+  - 旧 authority grep：exit 1 / no matches，确认 `src/input` 与 replay stub 中已无 `_menuStack`、`_passthroughMenuCounts`、`RefreshCurrentContextLocked`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH2` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH2` 已标为 `completed`，`current_sprint=null`。
+  - `PH3` / `S-PH3` 保持 `planned`，未启动。

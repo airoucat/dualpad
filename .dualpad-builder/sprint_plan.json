@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-23T21:08:26+08:00",
+  "updated_at": "2026-05-23T21:52:00+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -246,7 +246,7 @@
       "requirements": [
         "B2"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "UiMenuObserver、MenuInstanceRegistry、ContextResolver、ActionSetResolver 的 owner 边界落地",
         "Shadow compare 覆盖 stable pointer、same-name duplicate、partial snapshot 与 presentationPolicyId publish parity",

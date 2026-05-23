@@ -143,6 +143,13 @@ local ph1_manifest_compiler_files = {
     "src/input_v2/config/ActionManifestPublisher.cpp"
 }
 
+local ph2_context_resolver_files = {
+    "src/input_v2/menu/UiMenuObserver.cpp",
+    "src/input_v2/menu/MenuInstanceRegistry.cpp",
+    "src/input_v2/context/ContextResolver.cpp",
+    "src/input_v2/actions/ActionSetResolver.cpp"
+}
+
 target("DualPadMenuContextPolicyTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -164,12 +171,26 @@ target("DualPadManifestCompilerTests")
     add_syslinks("ole32", "user32")
 
     add_files("tests/input_v2/**.cpp")
+    remove_files("tests/input_v2/ContextResolverTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(
         "src/input/BindingManager.cpp",
         "src/input/BindingConfig.cpp",
         "src/input/InputContextNames.cpp",
         "src/input/MenuContextPolicy.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadContextResolverTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/ContextResolverTests.cpp")
+    add_files(table.unpack(ph2_context_resolver_files))
+    add_files("src/input_v2/context/ContextCatalog.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -241,6 +262,10 @@ local replay_runtime_files = {
 }
 
 for _, file in ipairs(ph1_manifest_compiler_files) do
+    table.insert(replay_runtime_files, file)
+end
+
+for _, file in ipairs(ph2_context_resolver_files) do
     table.insert(replay_runtime_files, file)
 end
 
