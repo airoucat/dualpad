@@ -1061,3 +1061,35 @@
   - `.dualpad-builder/feature_list.json`：`PH3` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH3` 已标为 `completed`，`current_sprint=null`。
   - `PH4` / `S-PH4` 保持 `planned`，未启动。
+
+## 2026-05-24 00:52:13 CST
+
+- `PH3` close-out blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH3` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH3` 回退为 `active`，并将 `current_sprint` 设为 `S-PH3`。
+  - `PH4` / `S-PH4` 保持 `planned`，本轮不启动。
+  - 本轮修复范围限定为 `PH3` close-out blocker：`GameplayPresentationAdapter`、`SourceEvidenceCollector` 采证迁移、`InputModalityTracker` façade、menu refresh cutover、三个 compatibility hook cutover、rollback 不污染 published presentation / PH2 context truth。
+
+## 2026-05-24 01:14:33 CST
+
+- `PH3` close-out blocker / fixed：
+  - 新增 `src/input_v2/presentation/GameplayPresentationAdapter.*`：只读 `GameplayOwnershipCoordinator::GetPublishedGameplayPresentationState()`，发布 `PublishedGameplayPresentation`，并在 `engineOwner / menuEntryOwner / reason` 变化或 clean baseline resync 时递增 `gameplayPresentationRevision`。
+  - `SourceEvidenceCollector` 已接管 `keyboardEvidence / mouseButtonEvidence / mouseMoveEvidence / gamepadEvidence / syntheticKeyboardWindow / gamepadLease / pointerSignal / context boundary reset`；collector 不产生 `PresentationOwner / CursorOwner / NavigationOwner` 结论。
+  - `InputModalityTracker` 的外层入口保留，内部将 synthetic keyboard、mouse accumulator、gamepad lease 与 context boundary reset 转发给 `SourceEvidenceCollector`，并通过 `GameplayPresentationAdapter -> PresentationProjection -> SkyrimCompatibilitySurface` 发布 runtime presentation。
+  - `IsUsingGamepadHook`、`GamepadControlsCursorHook` 与 remap-mode `IsGamepadDeviceEnabledHook` 已切到 `SkyrimCompatibilitySurface`。
+  - `SetPresentationOwner` / `SetCursorOwner` 不再直接 `RefreshMenus()`；menu refresh 只由 `SkyrimCompatibilitySurface::ShouldRefreshMenus()` 根据 `PublishedPresentationState.epoch + dirty` 去重触发。
+  - rollback 保持在 `SkyrimCompatibilitySurface`：只返回 legacy compatibility output，不修改 committed `PublishedPresentationState`，不污染 PH2 context truth。
+  - 边界确认：未启动 `PH4`、`PH5`、`PH6`、`PH7`；未改变旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- 验证结果：
+  - `xmake build DualPadPresentationProjectionTests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1436 nodes, 2893 edges, 123 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH3` 已重新标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH3` 已重新标为 `completed`，`current_sprint=null`。
+  - `PH4` / `S-PH4` 保持 `planned`，未启动。

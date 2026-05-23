@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input_v2/presentation/PresentationProjection.h"
+#include "input_v2/presentation/GameplayPresentationAdapter.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
@@ -71,6 +72,19 @@ void RunPresentationProjectionTests()
         Require(
             frame.records[1].sourceEvidence.contextRevision == 7,
             "SourceEvidenceSnapshot must pair with the PH2 resolved context revision");
+
+        collector.MarkSyntheticKeyboardScancode(42, 1, 100, 1000);
+        Require(collector.IsSyntheticKeyboardWindowActive(1050), "collector must own synthetic keyboard window state");
+        Require(collector.ConsumeSyntheticKeyboardScancode(42, 1050), "collector must consume pending synthetic keyboard scancode");
+        collector.RecordKeyboardEvidence(true, false, 1060);
+        collector.RecordMouseButtonEvidence(true, 1061);
+        collector.RecordMouseMoveEvidence(6, 6, 1062);
+        collector.RecordGamepadEvidence(true, 1063, 1500);
+        Require(collector.HasGamepadLeaseActive(1200), "collector must own gamepad lease state");
+        Require(collector.ShouldPromoteMouseMove(10, 120, 1200), "collector must own mouse move accumulator state");
+        collector.ResetForContextBoundary(1201);
+        Require(!collector.ShouldPromoteMouseMove(10, 120, 1400), "context boundary must reset mouse move evidence");
+        Require(collector.GetLatestSnapshot().pointerSignal == presentation::PointerSignal::None, "context boundary reset must clear pointer signal");
     }
 
     {
@@ -169,6 +183,30 @@ void RunPresentationProjectionTests()
             true);
         Require(!diff.passes, "shadow parity must fail on projected hook output mismatch");
         Require(diff.diffs.size() == 1 && diff.diffs.front() == "isUsingGamepad", "shadow parity must report hook field diffs");
+    }
+
+    {
+        presentation::GameplayPresentationAdapter adapter;
+        const auto first = adapter.PublishForTests(
+            presentation::GameplayPresentationAdapterInput{
+                .engineOwner = presentation::PresentationOwner::Gamepad,
+                .menuEntryOwner = presentation::PresentationOwner::Gamepad,
+                .reason = presentation::GameplayPresentationReasonCode::CoordinatorPublished,
+                .publishedTick = 1
+            });
+        Require(first.gameplayPresentationRevision == 1, "adapter must increment gameplayPresentationRevision on published owner changes");
+
+        const auto unchanged = adapter.PublishForTests(
+            presentation::GameplayPresentationAdapterInput{
+                .engineOwner = presentation::PresentationOwner::Gamepad,
+                .menuEntryOwner = presentation::PresentationOwner::Gamepad,
+                .reason = presentation::GameplayPresentationReasonCode::CoordinatorPublished,
+                .publishedTick = 2
+            });
+        Require(unchanged.gameplayPresentationRevision == 1, "adapter must not increment gameplayPresentationRevision on unchanged published state");
+
+        const auto resynced = adapter.PublishCleanBaselineForTests(3);
+        Require(resynced.gameplayPresentationRevision == 2, "adapter explicit clean baseline must increment gameplayPresentationRevision");
     }
 }
 

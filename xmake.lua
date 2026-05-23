@@ -173,6 +173,7 @@ target("DualPadManifestCompilerTests")
 
     add_files("tests/input_v2/**.cpp")
     remove_files("tests/input_v2/ContextResolverTests.cpp")
+    remove_files("tests/input_v2/PresentationProjectionTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(
         "src/input/BindingManager.cpp",
@@ -208,6 +209,7 @@ target("DualPadPresentationProjectionTests")
     add_files(table.unpack(ph2_context_resolver_files))
     add_files(
         "src/input_v2/presentation/SourceEvidenceCollector.cpp",
+        "src/input_v2/presentation/GameplayPresentationAdapter.cpp",
         "src/input_v2/presentation/PresentationProjection.cpp",
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
         "src/input/InputContext.cpp")

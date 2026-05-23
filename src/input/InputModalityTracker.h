@@ -3,6 +3,10 @@
 #include <RE/Skyrim.h>
 
 #include "input/InputContext.h"
+#include "input_v2/presentation/GameplayPresentationAdapter.h"
+#include "input_v2/presentation/PresentationProjection.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+#include "input_v2/presentation/SourceEvidenceCollector.h"
 
 #include <array>
 #include <atomic>
@@ -98,20 +102,6 @@ namespace dualpad::input
             PresentationAndCursor
         };
 
-        struct SuppressedScancodeState
-        {
-            std::uint8_t pendingEvents{ 0 };
-            std::uint64_t expiresAtMs{ 0 };
-        };
-
-        struct MouseMoveAccumulator
-        {
-            std::int32_t dx{ 0 };
-            std::int32_t dy{ 0 };
-            std::uint64_t windowStartMs{ 0 };
-            std::uint64_t lastMoveAtMs{ 0 };
-        };
-
         struct OwnerPolicy
         {
             bool mouseMoveCanPromote{ false };
@@ -141,6 +131,8 @@ namespace dualpad::input
             InputContext context,
             std::uint32_t epoch,
             std::string_view reason);
+        void PublishPresentationState(std::string_view reason);
+        dualpad::input_v2::context::ResolvedContextSnapshot GetPresentationContextSnapshot() const;
         void SetEngineGameplayPresentationLatch(
             PresentationOwner owner,
             InputContext context,
@@ -192,11 +184,10 @@ namespace dualpad::input
         std::atomic_bool _refreshQueued{ false };
         std::atomic<InputContext> _observedContext{ InputContext::Gameplay };
         std::atomic<std::uint32_t> _observedContextEpoch{ 0 };
-        mutable std::atomic<std::uint64_t> _syntheticKeyboardWindowExpiresAtMs{ 0 };
-        mutable std::atomic<std::uint64_t> _gamepadLeaseExpiresAtMs{ 0 };
-        std::mutex _suppressionMutex;
-        mutable std::mutex _mouseMoveMutex;
-        std::array<SuppressedScancodeState, 256> _suppressedKeyboardScancodes{};
-        MouseMoveAccumulator _mouseMoveAccumulator{};
+        dualpad::input_v2::presentation::DeviceFamilyIngressPublisher _deviceFamilyIngress;
+        dualpad::input_v2::presentation::SourceEvidenceCollector _sourceEvidence;
+        dualpad::input_v2::presentation::GameplayPresentationAdapter _gameplayPresentationAdapter;
+        dualpad::input_v2::presentation::PresentationProjection _presentationProjection;
+        dualpad::input_v2::presentation::SkyrimCompatibilitySurface _compatibilitySurface;
     };
 }

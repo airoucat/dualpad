@@ -6,6 +6,7 @@
 #include "input/PadProfile.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/GameplayOwnershipCoordinator.h"
+#include "input_v2/context/ContextResolver.h"
 
 #include <algorithm>
 #include <cmath>
@@ -36,8 +37,6 @@ namespace dualpad::input
         constexpr std::ptrdiff_t kGamepadDelegateOffset = 0x08;
         constexpr std::ptrdiff_t kMenuControlsRemapModeOffset = 0x82;
         constexpr float kThumbstickPromotionThreshold = 0.25f;
-        constexpr std::uint64_t kMouseMoveAccumulatorResetMs = 250;
-
         std::uint64_t GetMonotonicMs()
         {
             return ::GetTickCount64();
@@ -252,6 +251,7 @@ namespace dualpad::input
         }
 
         ReconcileContextState();
+        PublishPresentationState("register");
         inputManager->PrependEventSink(this);
         _registered = true;
         logger::info("[DualPad][InputOwner] Registered input event sink");
@@ -264,7 +264,7 @@ namespace dualpad::input
 
     bool InputModalityTracker::IsUsingGamepad() const
     {
-        return ResolveIsUsingGamepad();
+        return _compatibilitySurface.IsUsingGamepadHook();
     }
 
     bool InputModalityTracker::ResolveIsUsingGamepad() const
@@ -329,21 +329,21 @@ namespace dualpad::input
     {
         const auto context = _observedContext.load(std::memory_order_relaxed);
         const auto contextEpoch = _observedContextEpoch.load(std::memory_order_relaxed);
-        const auto presentationOwner = GetEffectivePresentationOwner(context);
-        const auto cursorOwner = GetEffectiveCursorOwner(context);
-        const auto gameplayPresentation =
-            GameplayOwnershipCoordinator::GetSingleton().GetPublishedGameplayPresentationState();
+        const auto& published = _compatibilitySurface.GetCommittedState();
+        const auto gameplayPresentation = _gameplayPresentationAdapter.GetPublished();
+        const bool usingGamepad = _compatibilitySurface.IsUsingGamepadHook();
+        const bool cursorGamepad = _compatibilitySurface.GamepadControlsCursorHook();
 
         return ReplayCompatibilitySurface{
             .context = context,
             .contextEpoch = contextEpoch,
-            .isUsingGamepad = ResolveIsUsingGamepad(),
-            .gamepadControlsCursor = cursorOwner == CursorOwner::Gamepad,
-            .gamepadDeviceEnabled = presentationOwner == PresentationOwner::Gamepad || IsGamepadLeaseActive(),
-            .presentationOwner = std::string(ToString(presentationOwner)),
-            .cursorOwner = std::string(ToString(cursorOwner)),
-            .gameplayEngineOwner = std::string(ToReplayString(gameplayPresentation.engineOwner)),
-            .gameplayMenuEntryOwner = std::string(ToReplayString(gameplayPresentation.menuEntryOwner))
+            .isUsingGamepad = usingGamepad,
+            .gamepadControlsCursor = cursorGamepad,
+            .gamepadDeviceEnabled = _compatibilitySurface.IsGamepadDeviceEnabledHook(true),
+            .presentationOwner = published.owner == input_v2::presentation::PresentationOwner::Gamepad ? "Gamepad" : "KeyboardMouse",
+            .cursorOwner = published.cursorOwner == input_v2::presentation::CursorOwner::Gamepad ? "Gamepad" : "KeyboardMouse",
+            .gameplayEngineOwner = gameplayPresentation.engineOwner == input_v2::presentation::PresentationOwner::Gamepad ? "Gamepad" : "KeyboardMouse",
+            .gameplayMenuEntryOwner = gameplayPresentation.menuEntryOwner == input_v2::presentation::PresentationOwner::Gamepad ? "Gamepad" : "KeyboardMouse"
         };
     }
 
@@ -358,18 +358,78 @@ namespace dualpad::input
         _pointerIntent.store(PointerIntent::None, std::memory_order_relaxed);
         _observedContext.store(InputContext::Gameplay, std::memory_order_relaxed);
         _observedContextEpoch.store(0, std::memory_order_relaxed);
-        _syntheticKeyboardWindowExpiresAtMs.store(0, std::memory_order_relaxed);
-        _gamepadLeaseExpiresAtMs.store(0, std::memory_order_relaxed);
         _refreshQueued.store(false, std::memory_order_relaxed);
+        _deviceFamilyIngress.ResetForTests();
+        _sourceEvidence.ResetForTests();
+        _gameplayPresentationAdapter.ResetForTests();
+        _presentationProjection.ResetForTests();
+        _compatibilitySurface.DisableRollback();
         ResetMouseMoveAccumulator();
-        std::scoped_lock lock(_suppressionMutex);
-        _suppressedKeyboardScancodes = {};
     }
 
     void InputModalityTracker::SetReplayContext(InputContext context, std::uint32_t epoch)
     {
         _observedContext.store(context, std::memory_order_relaxed);
         _observedContextEpoch.store(epoch, std::memory_order_relaxed);
+        PublishPresentationState("replay-context");
+    }
+
+    input_v2::context::ResolvedContextSnapshot InputModalityTracker::GetPresentationContextSnapshot() const
+    {
+        const auto& snapshot = input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        if (snapshot.contextRevision != 0) {
+            return snapshot;
+        }
+
+        input_v2::context::ResolvedContextSnapshot fallback{};
+        const auto context = _observedContext.load(std::memory_order_relaxed);
+        fallback.hostMode = IsMenuOwnedContext(context) ?
+            input_v2::context::HostMode::Menu :
+            input_v2::context::HostMode::Gameplay;
+        fallback.contextRevision = _observedContextEpoch.load(std::memory_order_relaxed);
+        fallback.legacyInputContext = context;
+        fallback.legacyContextEpoch = fallback.contextRevision;
+        fallback.presentationPolicyId = IsMenuOwnedContext(context) ? "Menu" : "Gameplay";
+        return fallback;
+    }
+
+    void InputModalityTracker::PublishPresentationState(std::string_view reason)
+    {
+        const auto nowMs = GetMonotonicMs();
+        const auto& latestEvidence = _sourceEvidence.GetLatestSnapshot();
+        auto family = _deviceFamilyIngress.GetPublished().family;
+        auto source = _deviceFamilyIngress.GetPublished().source;
+        if (latestEvidence.gamepadEvidence) {
+            family = input_v2::presentation::DeviceFamily::Gamepad;
+            source = input_v2::presentation::DeviceFamilyEvidenceSource::RawInputIngress;
+        } else if (latestEvidence.keyboardEvidence ||
+            latestEvidence.mouseButtonEvidence ||
+            latestEvidence.mouseMoveEvidence) {
+            family = input_v2::presentation::DeviceFamily::KeyboardMouse;
+            source = input_v2::presentation::DeviceFamilyEvidenceSource::RawInputIngress;
+        }
+
+        const auto contextSnapshot = GetPresentationContextSnapshot();
+        const auto publication = _deviceFamilyIngress.Publish(family, source, nowMs);
+        const auto frame = _sourceEvidence.CollectAfterDeviceFamilyIngress(publication, contextSnapshot, nowMs);
+        const auto& sourceSnapshot = frame.records.back().sourceEvidence;
+        const auto gameplay = _gameplayPresentationAdapter.PublishFromCoordinator(
+            GameplayOwnershipCoordinator::GetSingleton(),
+            nowMs);
+        const auto published = _presentationProjection.Project(sourceSnapshot, contextSnapshot, gameplay);
+        _compatibilitySurface.Commit(published);
+
+        logger::debug(
+            "[DualPad][PresentationProjection] publish reason={} ctxRevision={} deviceFamilyRevision={} gameplayPresentationRevision={} epoch={}",
+            reason,
+            published.contextRevision,
+            published.deviceFamilyRevision,
+            published.gameplayPresentationRevision,
+            published.epoch);
+
+        if (_compatibilitySurface.ShouldRefreshMenus()) {
+            RefreshMenus();
+        }
     }
 
     void InputModalityTracker::ApplyGameplayMenuInheritance(InputContext context, std::string_view reason)
@@ -437,6 +497,7 @@ namespace dualpad::input
         _observedContextEpoch.store(epoch, std::memory_order_relaxed);
         ResetMouseMoveAccumulator();
         SetPointerIntent(PointerIntent::None);
+        _sourceEvidence.ResetForContextBoundary(GetMonotonicMs());
 
         if (previousWasGameplay) {
             ApplyGameplayMenuInheritance(context, "authoritative-enter-menu");
@@ -450,6 +511,7 @@ namespace dualpad::input
             ToString(_navigationOwner.load(std::memory_order_relaxed)),
             ToString(_cursorOwner.load(std::memory_order_relaxed)),
             ToString(_gameplayOwner.load(std::memory_order_relaxed)));
+        PublishPresentationState("authoritative-menu-open");
     }
 
     void InputModalityTracker::MarkSyntheticKeyboardScancode(
@@ -461,20 +523,7 @@ namespace dualpad::input
             return;
         }
 
-        std::scoped_lock lock(_suppressionMutex);
-        auto& state = _suppressedKeyboardScancodes[scancode];
-        const auto expiresAtMs = GetMonotonicMs() + windowMs;
-        const auto accumulated = static_cast<unsigned int>(state.pendingEvents) + pendingEvents;
-        state.pendingEvents = static_cast<std::uint8_t>((std::min)(accumulated, 0xFFu));
-        state.expiresAtMs = expiresAtMs;
-
-        auto trackedExpiresAt = _syntheticKeyboardWindowExpiresAtMs.load(std::memory_order_relaxed);
-        while (trackedExpiresAt < expiresAtMs &&
-            !_syntheticKeyboardWindowExpiresAtMs.compare_exchange_weak(
-                trackedExpiresAt,
-                expiresAtMs,
-                std::memory_order_relaxed)) {
-        }
+        _sourceEvidence.MarkSyntheticKeyboardScancode(scancode, pendingEvents, windowMs, GetMonotonicMs());
     }
 
     RE::BSEventNotifyControl InputModalityTracker::ProcessEvent(
@@ -515,6 +564,7 @@ namespace dualpad::input
             current = current->next;
         }
 
+        PublishPresentationState("input-event");
         return RE::BSEventNotifyControl::kContinue;
     }
 
@@ -564,6 +614,7 @@ namespace dualpad::input
         _observedContextEpoch.store(epoch, std::memory_order_relaxed);
         ResetMouseMoveAccumulator();
         SetPointerIntent(PointerIntent::None);
+        _sourceEvidence.ResetForContextBoundary(GetMonotonicMs());
 
         const auto currentPresentationOwner = _presentationOwner.load(std::memory_order_relaxed);
         const auto previousWasGameplay = IsGameplayDomainContext(previousContext);
@@ -615,17 +666,20 @@ namespace dualpad::input
             ToString(_gameplayOwner.load(std::memory_order_relaxed)),
             ToString(_pointerIntent.load(std::memory_order_relaxed)),
             ToString(policyKind));
+        PublishPresentationState("context-boundary");
     }
 
     void InputModalityTracker::HandleKeyboardEvent(const RE::InputEvent& event, InputContext context, const OwnerPolicy&)
     {
+        const auto nowMs = GetMonotonicMs();
         bool shouldPromote = true;
         const bool menuContext = IsMenuContextActive(context);
+        bool syntheticConsumed = false;
         if (event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
             const auto* buttonEvent = event.AsButtonEvent();
             if (buttonEvent) {
                 const auto keyCode = buttonEvent->GetIDCode();
-                const bool consumedSynthetic = ConsumeSyntheticKeyboardEvent(keyCode);
+                syntheticConsumed = ConsumeSyntheticKeyboardEvent(keyCode);
                 if (menuContext) {
                     logger::info(
                         "[DualPad][MenuProbe] keyboard-event ctx={} code={} pressed={} down={} held={} up={} syntheticConsumed={}",
@@ -635,9 +689,10 @@ namespace dualpad::input
                         buttonEvent->IsDown(),
                         buttonEvent->IsHeld(),
                         buttonEvent->IsUp(),
-                        consumedSynthetic);
+                        syntheticConsumed);
                 }
-                if (consumedSynthetic) {
+                if (syntheticConsumed) {
+                    _sourceEvidence.RecordKeyboardEvidence(false, true, nowMs);
                     return;
                 }
 
@@ -654,6 +709,7 @@ namespace dualpad::input
         }
 
         if (syntheticWindowActive) {
+            _sourceEvidence.RecordKeyboardEvidence(false, true, nowMs);
             if (menuContext) {
                 logger::info(
                     "[DualPad][MenuProbe] keyboard-event ctx={} suppressedBySyntheticWindow=true",
@@ -666,6 +722,7 @@ namespace dualpad::input
             return;
         }
 
+        _sourceEvidence.RecordKeyboardEvidence(true, false, nowMs);
         if (menuContext) {
             logger::info(
                 "[DualPad][MenuProbe] keyboard-event ctx={} promotingToKeyboardMouse=true type={}",
@@ -678,6 +735,7 @@ namespace dualpad::input
 
     void InputModalityTracker::HandleMouseEvent(const RE::InputEvent& event, InputContext context, const OwnerPolicy& policy)
     {
+        const auto nowMs = GetMonotonicMs();
         bool shouldPromote = true;
         if (IsMenuContextActive(context) && event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
             if (const auto* buttonEvent = event.AsButtonEvent()) {
@@ -705,6 +763,7 @@ namespace dualpad::input
             return;
         }
 
+        _sourceEvidence.RecordMouseButtonEvidence(true, nowMs);
         PromoteToKeyboardMouse(context, event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel", PointerIntent::PointerActive);
     }
 
@@ -752,6 +811,7 @@ namespace dualpad::input
     void InputModalityTracker::HandleGamepadEvent(const RE::InputEvent& event, InputContext context, const OwnerPolicy& policy)
     {
         const bool meaningful = IsMeaningfulGamepadEvent(event);
+        const auto nowMs = GetMonotonicMs();
         bool shouldPromote = meaningful;
         if (IsMenuContextActive(context)) {
             switch (event.GetEventType()) {
@@ -797,6 +857,7 @@ namespace dualpad::input
             return;
         }
 
+        _sourceEvidence.RecordGamepadEvidence(true, nowMs, policy.gamepadStickyMs);
         PromoteToGamepad(
             context,
             policy,
@@ -809,12 +870,14 @@ namespace dualpad::input
     {
         auto& gameplayOwnership = GameplayOwnershipCoordinator::GetSingleton();
         const auto epoch = ContextManager::GetSingleton().GetCurrentEpoch();
+        const auto nowMs = GetMonotonicMs();
 
         switch (event.GetDevice()) {
         case RE::INPUT_DEVICE::kKeyboard:
             if (event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
                 const auto* buttonEvent = event.AsButtonEvent();
                 if (buttonEvent && ConsumeSyntheticKeyboardEvent(buttonEvent->GetIDCode())) {
+                    _sourceEvidence.RecordKeyboardEvidence(false, true, nowMs);
                     return;
                 }
                 if (buttonEvent) {
@@ -843,9 +906,11 @@ namespace dualpad::input
             }
 
             if (IsSyntheticKeyboardWindowActive()) {
+                _sourceEvidence.RecordKeyboardEvidence(false, true, nowMs);
                 return;
             }
 
+            _sourceEvidence.RecordKeyboardEvidence(true, false, nowMs);
             SetGameplayOwner(
                 GameplayOwner::KeyboardMouse,
                 context,
@@ -867,6 +932,7 @@ namespace dualpad::input
                     return;
                 }
                 GameplayKbmFactTracker::GetSingleton().MarkMouseLookActivity();
+                _sourceEvidence.RecordMouseMoveEvidence(mouseMoveEvent->mouseInputX, mouseMoveEvent->mouseInputY, nowMs);
                 SetGameplayOwner(GameplayOwner::KeyboardMouse, context, "mouse-move");
                 gameplayOwnership.RecordGameplayPresentationHint(
                     context,
@@ -902,6 +968,7 @@ namespace dualpad::input
                 }
             }
 
+            _sourceEvidence.RecordMouseButtonEvidence(true, nowMs);
             SetGameplayOwner(
                 GameplayOwner::KeyboardMouse,
                 context,
@@ -948,6 +1015,7 @@ namespace dualpad::input
                         ownerReason);
                 }
                 if (shouldUpdateGameplayPresentation) {
+                    _sourceEvidence.RecordGamepadEvidence(true, nowMs, 1500);
                     gameplayOwnership.RecordGameplayPresentationHint(
                         context,
                         shouldPromoteGameplayOwner ?
@@ -966,57 +1034,17 @@ namespace dualpad::input
 
     bool InputModalityTracker::ConsumeSyntheticKeyboardEvent(std::uint32_t scancode)
     {
-        const auto index = static_cast<std::uint8_t>(scancode & 0xFF);
-        std::scoped_lock lock(_suppressionMutex);
-        auto& state = _suppressedKeyboardScancodes[index];
-        if (state.pendingEvents == 0) {
-            return false;
-        }
-
-        const auto now = GetMonotonicMs();
-        if (state.expiresAtMs != 0 && now > state.expiresAtMs) {
-            state = {};
-            return false;
-        }
-
-        --state.pendingEvents;
-        if (state.pendingEvents == 0) {
-            state.expiresAtMs = 0;
-        }
-
-        return true;
+        return _sourceEvidence.ConsumeSyntheticKeyboardScancode(scancode, GetMonotonicMs());
     }
 
     bool InputModalityTracker::IsSyntheticKeyboardWindowActive() const
     {
-        const auto expiresAtMs = _syntheticKeyboardWindowExpiresAtMs.load(std::memory_order_relaxed);
-        if (expiresAtMs == 0) {
-            return false;
-        }
-
-        const auto now = GetMonotonicMs();
-        if (now > expiresAtMs) {
-            _syntheticKeyboardWindowExpiresAtMs.store(0, std::memory_order_relaxed);
-            return false;
-        }
-
-        return true;
+        return const_cast<InputModalityTracker*>(this)->_sourceEvidence.IsSyntheticKeyboardWindowActive(GetMonotonicMs());
     }
 
     bool InputModalityTracker::IsGamepadLeaseActive() const
     {
-        const auto expiresAtMs = _gamepadLeaseExpiresAtMs.load(std::memory_order_relaxed);
-        if (expiresAtMs == 0) {
-            return false;
-        }
-
-        const auto now = GetMonotonicMs();
-        if (now > expiresAtMs) {
-            _gamepadLeaseExpiresAtMs.store(0, std::memory_order_relaxed);
-            return false;
-        }
-
-        return true;
+        return const_cast<InputModalityTracker*>(this)->_sourceEvidence.HasGamepadLeaseActive(GetMonotonicMs());
     }
 
     bool InputModalityTracker::IsMenuContextActive() const
@@ -1031,14 +1059,7 @@ namespace dualpad::input
 
     void InputModalityTracker::RefreshGamepadLease(std::uint64_t windowMs)
     {
-        const auto expiresAtMs = GetMonotonicMs() + windowMs;
-        auto trackedExpiresAt = _gamepadLeaseExpiresAtMs.load(std::memory_order_relaxed);
-        while (trackedExpiresAt < expiresAtMs &&
-            !_gamepadLeaseExpiresAtMs.compare_exchange_weak(
-                trackedExpiresAt,
-                expiresAtMs,
-                std::memory_order_relaxed)) {
-        }
+        _sourceEvidence.RecordGamepadEvidence(true, GetMonotonicMs(), windowMs);
     }
 
     void InputModalityTracker::PromoteToGamepad(InputContext context, const OwnerPolicy& policy, std::string_view reason)
@@ -1053,7 +1074,7 @@ namespace dualpad::input
 
     void InputModalityTracker::PromoteToKeyboardMouse(InputContext context, std::string_view reason, PointerIntent pointerIntent)
     {
-        _gamepadLeaseExpiresAtMs.store(0, std::memory_order_relaxed);
+        _sourceEvidence.ClearGamepadLease();
         ResetMouseMoveAccumulator();
         SetPointerIntent(pointerIntent);
         SetNavigationOwner(IsMenuContextActive(context) ? NavigationOwner::KeyboardMouse : NavigationOwner::None);
@@ -1089,8 +1110,6 @@ namespace dualpad::input
             ToString(_navigationOwner.load(std::memory_order_relaxed)),
             ToString(_cursorOwner.load(std::memory_order_relaxed)),
             ToString(_pointerIntent.load(std::memory_order_relaxed)));
-
-        RefreshMenus();
     }
 
     void InputModalityTracker::SetNavigationOwner(NavigationOwner owner)
@@ -1113,12 +1132,6 @@ namespace dualpad::input
             dualpad::input::ToString(context),
             ToString(_presentationOwner.load(std::memory_order_relaxed)));
 
-        // Some menus keep pointer/gamepad affordances cached more aggressively
-        // than the cursor hook alone. Refresh on real cursor-owner flips so
-        // mouse-entered menus can hand control back to gamepad without reopen.
-        if (IsMenuContextActive(context)) {
-            RefreshMenus();
-        }
     }
 
     void InputModalityTracker::SetPointerIntent(PointerIntent intent)
@@ -1161,38 +1174,20 @@ namespace dualpad::input
 
     void InputModalityTracker::ResetMouseMoveAccumulator()
     {
-        std::scoped_lock lock(_mouseMoveMutex);
-        _mouseMoveAccumulator = {};
+        _sourceEvidence.ResetMouseMoveEvidence();
     }
 
     void InputModalityTracker::AccumulateMouseMove(const RE::MouseMoveEvent& event, std::uint64_t nowMs)
     {
-        std::scoped_lock lock(_mouseMoveMutex);
-        if (_mouseMoveAccumulator.windowStartMs == 0 ||
-            (_mouseMoveAccumulator.lastMoveAtMs != 0 &&
-                nowMs - _mouseMoveAccumulator.lastMoveAtMs > kMouseMoveAccumulatorResetMs)) {
-            _mouseMoveAccumulator = {};
-            _mouseMoveAccumulator.windowStartMs = nowMs;
-        }
-
-        _mouseMoveAccumulator.dx += std::abs(event.mouseInputX);
-        _mouseMoveAccumulator.dy += std::abs(event.mouseInputY);
-        _mouseMoveAccumulator.lastMoveAtMs = nowMs;
+        _sourceEvidence.RecordMouseMoveEvidence(event.mouseInputX, event.mouseInputY, nowMs);
     }
 
     bool InputModalityTracker::ShouldPromoteMouseMoveToKeyboardMouse(const OwnerPolicy& policy, std::uint64_t nowMs) const
     {
-        std::scoped_lock lock(_mouseMoveMutex);
-        if (_mouseMoveAccumulator.windowStartMs == 0) {
-            return false;
-        }
-
-        const auto elapsedMs = nowMs - _mouseMoveAccumulator.windowStartMs;
-        if (elapsedMs < policy.mouseMovePromoteDelayMs) {
-            return false;
-        }
-
-        return (_mouseMoveAccumulator.dx + _mouseMoveAccumulator.dy) >= policy.mouseMoveThresholdPx;
+        return _sourceEvidence.ShouldPromoteMouseMove(
+            policy.mouseMoveThresholdPx,
+            policy.mouseMovePromoteDelayMs,
+            nowMs);
     }
 
     InputModalityTracker::OwnerPolicyKind InputModalityTracker::ResolveOwnerPolicyKind(InputContext context) const
@@ -1355,13 +1350,12 @@ namespace dualpad::input
 
     bool InputModalityTracker::IsUsingGamepadHook()
     {
-        return GetSingleton().IsUsingGamepad();
+        return GetSingleton()._compatibilitySurface.IsUsingGamepadHook();
     }
 
     bool InputModalityTracker::IsGamepadCursorHook()
     {
-        auto& tracker = GetSingleton();
-        return tracker.GetEffectiveCursorOwner(tracker._observedContext.load(std::memory_order_relaxed)) == CursorOwner::Gamepad;
+        return GetSingleton()._compatibilitySurface.GamepadControlsCursorHook();
     }
 
     bool InputModalityTracker::IsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device)
@@ -1380,8 +1374,7 @@ namespace dualpad::input
             *reinterpret_cast<const bool*>(reinterpret_cast<const std::uint8_t*>(menuControls) + kMenuControlsRemapModeOffset);
 
         if (playerRemapMode || menuRemapMode) {
-            auto& tracker = GetSingleton();
-            return tracker.ResolveIsUsingGamepad();
+            return GetSingleton()._compatibilitySurface.IsGamepadDeviceEnabledHook(true);
         }
 
         return true;
