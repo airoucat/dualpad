@@ -147,6 +147,7 @@ local ph2_context_resolver_files = {
     "src/input_v2/menu/UiMenuObserver.cpp",
     "src/input_v2/menu/MenuInstanceRegistry.cpp",
     "src/input_v2/context/ContextResolver.cpp",
+    "src/input_v2/context/ContextRefreshTick.cpp",
     "src/input_v2/actions/ActionSetResolver.cpp"
 }
 
@@ -189,8 +190,9 @@ target("DualPadContextResolverTests")
     add_syslinks("ole32", "user32")
 
     add_files("tests/input_v2/ContextResolverTests.cpp")
+    add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(table.unpack(ph2_context_resolver_files))
-    add_files("src/input_v2/context/ContextCatalog.cpp")
+    add_files("src/input/InputContext.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")

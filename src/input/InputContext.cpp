@@ -2,6 +2,7 @@
 #include "input/InputContext.h"
 
 #include "input/InputContextNames.h"
+#include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/context/ContextResolver.h"
 
 #include <RE/Skyrim.h>
@@ -127,7 +128,8 @@ namespace dualpad::input
 
     void ContextManager::UpdateGameplayContext()
     {
-        UpdateFrameState();
+        auto& refresh = dualpad::input_v2::context::ContextRefreshTick::GetSingleton();
+        refresh.RefreshOnMainThread(refresh.BeginFrame());
     }
 
     void ContextManager::OnMenuOpen(std::string_view menuName)

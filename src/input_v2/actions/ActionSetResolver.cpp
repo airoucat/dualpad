@@ -16,6 +16,10 @@ namespace dualpad::input_v2::actions
             };
         }
 
+        if (uiContextId == context::UiContextId::PassthroughOverlay) {
+            return ActionSetStack{};
+        }
+
         return ActionSetStack{
             .baseSetId = "MenuBase",
             .layerIds = { "UnknownTrackedMenuLayer" },

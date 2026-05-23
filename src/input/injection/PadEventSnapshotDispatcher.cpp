@@ -5,6 +5,7 @@
 #include "input/RuntimeConfig.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
 #include "input/injection/UpstreamGamepadHook.h"
+#include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace logger = SKSE::log;
@@ -228,6 +229,9 @@ namespace dualpad::input
             return 0;
         }
 
+        auto& contextRefresh = input_v2::context::ContextRefreshTick::GetSingleton();
+        contextRefresh.RefreshOnMainThread(contextRefresh.BeginFrame());
+
         std::size_t processedCount = 0;
         std::size_t pendingBefore = 0;
         for (; processedCount < maxSnapshots; ++processedCount) {
@@ -262,7 +266,6 @@ namespace dualpad::input
                     kPendingSnapshotCapacity);
             }
 
-            ContextManager::GetSingleton().UpdateGameplayContext();
             PadEventSnapshotProcessor::GetSingleton().Process(snapshot);
         }
 

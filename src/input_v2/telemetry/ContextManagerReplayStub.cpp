@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "input/InputContext.h"
 
+#include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/context/ContextResolver.h"
 
 namespace dualpad::input
@@ -45,6 +46,8 @@ namespace dualpad::input
 
     void ContextManager::UpdateGameplayContext()
     {
+        auto& refresh = dualpad::input_v2::context::ContextRefreshTick::GetSingleton();
+        refresh.RefreshOnMainThread(refresh.BeginFrame());
     }
 
     void ContextManager::PushContext(InputContext context)

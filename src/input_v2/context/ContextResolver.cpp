@@ -27,11 +27,6 @@ namespace dualpad::input_v2::context
             return true;
         }
 
-        PresentationPolicyId PresentationPolicyFor(const CompiledContextEntry& entry)
-        {
-            return entry.canonicalContextName;
-        }
-
         bool HasSameResolutionFields(const ResolvedContextSnapshot& lhs, const ResolvedContextSnapshot& rhs)
         {
             return lhs.hostMode == rhs.hostMode &&
@@ -87,7 +82,7 @@ namespace dualpad::input_v2::context
         }
 
         if (entry) {
-            next.presentationPolicyId = PresentationPolicyFor(*entry);
+            next.presentationPolicyId = entry->presentationPolicyId;
             if (entry->legacyInputContext) {
                 next.legacyInputContext = *entry->legacyInputContext;
             }

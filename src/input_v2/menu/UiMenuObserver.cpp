@@ -96,4 +96,12 @@ namespace dualpad::input_v2::menu
         std::scoped_lock lock(_mutex);
         return _published;
     }
+
+    void UiMenuObserver::ResetForTests()
+    {
+        std::scoped_lock lock(_mutex);
+        _dirty = false;
+        _eventSequence = 0;
+        _published = ObservedMenuSnapshot{};
+    }
 }

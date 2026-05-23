@@ -101,6 +101,7 @@ namespace dualpad::input_v2::context
     {
         UiContextId uiContextId{ UiContextId::None };
         std::string canonicalContextName;
+        std::string presentationPolicyId;
         std::optional<dualpad::input::InputContext> legacyInputContext;
 
         // Base-set anchor and default layer stack for this context.

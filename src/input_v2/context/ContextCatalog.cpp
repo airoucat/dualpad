@@ -23,6 +23,7 @@ namespace dualpad::input_v2::context
             std::vector<std::string> scopeAnchorIds;
             std::vector<std::string> aliases;
             std::vector<std::string> menuNames;
+            std::optional<const char*> presentationPolicyId;
         };
 
         std::vector<ContextSeed> BuildSeed()
@@ -36,7 +37,7 @@ namespace dualpad::input_v2::context
             // NOTE: The Phase 1 plan requires we move all legacy context aliases/menu names into this seed,
             //       so InputContextNames.cpp and MenuContextPolicy::KnownMenuNameToContext() do not maintain
             //       a second hand-written table.
-            return {
+            auto seed = std::vector<ContextSeed>{
                 entry({ UiContextId::None, "Gameplay", Legacy::Gameplay, kGameplayBase, {}, { kGameplayBase },
                     { "Gameplay" },
                     {} }),
@@ -188,6 +189,13 @@ namespace dualpad::input_v2::context
                 entry({ UiContextId::PassthroughOverlay, "PassthroughOverlay", std::nullopt, std::nullopt, {}, {},
                     { "PassthroughOverlay" }, {} }),
             };
+
+            for (auto& s : seed) {
+                if (!s.presentationPolicyId) {
+                    s.presentationPolicyId = s.canonicalName;
+                }
+            }
+            return seed;
         }
 
         std::string NormalizeKey(std::string_view text)
@@ -258,6 +266,12 @@ namespace dualpad::input_v2::context
             CompiledContextEntry entry{};
             entry.uiContextId = s.id;
             entry.canonicalContextName = canonical;
+            entry.presentationPolicyId = NormalizeKey(*s.presentationPolicyId);
+            if (entry.presentationPolicyId.empty()) {
+                result.ok = false;
+                result.message = std::format("empty presentationPolicyId in seed: {}", canonical);
+                return result;
+            }
             entry.legacyInputContext = s.legacyInputContext;
             if (s.defaultActionSetId) {
                 entry.defaultActionSetId = std::string(*s.defaultActionSetId);

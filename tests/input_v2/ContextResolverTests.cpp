@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include "input/InputContext.h"
+#include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"
 
@@ -65,6 +67,7 @@ void RunContextResolverTests()
             catalog);
         Require(stack.menuStackRevision == 1, "unchanged stable pointer should not advance menuStackRevision");
         Require(stack.trackedMenus.front().instanceId == firstId, "stable pointer must retain MenuInstanceId");
+        Require(stack.trackedMenus.front().lastSeenRevision == 1, "lastSeenRevision bookkeeping is not part of published revision semantics");
     }
 
     {
@@ -140,6 +143,27 @@ void RunContextResolverTests()
     {
         menu::MenuInstanceRegistry registry;
         ctx::ContextResolver resolver;
+        auto customCatalog = catalog;
+        auto* journal = const_cast<ctx::CompiledContextEntry*>(
+            ctx::ContextCatalog::FindById(customCatalog, ctx::UiContextId::Journal));
+        Require(journal != nullptr, "custom catalog should contain Journal entry");
+        journal->presentationPolicyId = "JournalPolicyFromCatalog";
+
+        const auto stack = registry.ReconcileAndPublish(
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Complete,
+                .nodes = { Node(0x6100, "JournalMenu", 7) }
+            },
+            customCatalog);
+        const auto resolved = resolver.ResolveAndPublish(stack, ctx::GameplaySubstate::None, customCatalog);
+        Require(
+            resolved.presentationPolicyId == "JournalPolicyFromCatalog",
+            "presentationPolicyId must be forwarded from CompiledContextEntry, not derived from canonicalContextName");
+    }
+
+    {
+        menu::MenuInstanceRegistry registry;
+        ctx::ContextResolver resolver;
         const auto stack = registry.ReconcileAndPublish(
             menu::ObservedMenuSnapshot{
                 .completeness = menu::ObserverCompleteness::Complete,
@@ -155,6 +179,19 @@ void RunContextResolverTests()
     }
 
     {
+        const auto passthrough = actions::ActionSetResolver::Resolve(catalog, ctx::UiContextId::PassthroughOverlay);
+        Require(passthrough.baseSetId.empty(), "passthrough overlay must not claim MenuBase");
+        Require(passthrough.layerIds.empty(), "passthrough overlay must not inherit UnknownTrackedMenuLayer");
+        Require(passthrough.scopeAnchorIds.empty(), "passthrough overlay must not create scope anchors");
+
+        const auto unknown = actions::ActionSetResolver::Resolve(catalog, ctx::UiContextId::UnknownTrackedMenu);
+        Require(unknown.baseSetId == "MenuBase", "unknown tracked menu should claim MenuBase");
+        Require(
+            unknown.layerIds == std::vector<std::string>{ "UnknownTrackedMenuLayer" },
+            "unknown tracked menu should use UnknownTrackedMenuLayer");
+    }
+
+    {
         const auto gameplay = actions::ActionSetResolver::Resolve(catalog, ctx::UiContextId::None);
         Require(gameplay.baseSetId == "GameplayBase", "gameplay base set should come from catalog");
         Require(gameplay.layerIds.empty(), "plain gameplay should not add menu layers");
@@ -162,6 +199,49 @@ void RunContextResolverTests()
         const auto sneak = actions::ActionSetResolver::Resolve(catalog, ctx::UiContextId::Sneaking);
         Require(sneak.baseSetId == "GameplayBase", "sneaking should remain in GameplayBase");
         Require(sneak.layerIds == std::vector<std::string>{ "SneakLayer" }, "sneaking layer should come from catalog");
+    }
+
+    {
+        auto& tick = ctx::ContextRefreshTick::GetSingleton();
+        tick.ResetForTests();
+
+        const auto frame = tick.BeginFrame();
+        tick.MarkCombatEvent(true);
+        const auto combat = tick.RefreshObservedForTests(
+            frame,
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Complete,
+                .nodes = {}
+            },
+            InputContext::Gameplay,
+            catalog);
+        Require(combat.uiContextId == ctx::UiContextId::Combat, "combat event fact must publish through ContextResolver");
+        Require(combat.legacyInputContext == InputContext::Combat, "combat fact must mirror via ApplyResolvedContext");
+        Require(
+            dualpad::input::ContextManager::GetSingleton().GetCurrentContext() == InputContext::Combat,
+            "legacy ContextManager should only mirror resolved combat context");
+
+        const auto skipped = tick.RefreshObservedForTests(
+            frame,
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Complete,
+                .nodes = { Node(0x7000, "InventoryMenu", 10) }
+            },
+            InputContext::Gameplay,
+            catalog);
+        Require(skipped.uiContextId == ctx::UiContextId::Combat, "same frame must not run a second context refresh");
+
+        tick.MarkCombatEvent(false);
+        const auto gameplay = tick.RefreshObservedForTests(
+            tick.BeginFrame(),
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Complete,
+                .nodes = {}
+            },
+            InputContext::Gameplay,
+            catalog);
+        Require(gameplay.uiContextId == ctx::UiContextId::None, "combat clear must publish gameplay through ContextResolver");
+        Require(gameplay.legacyInputContext == InputContext::Gameplay, "gameplay mirror should return via resolved context");
     }
 
     {

@@ -392,6 +392,12 @@ namespace dualpad::input_v2::config
         }
 
         for (const auto& entry : catalog.entries) {
+            if (entry.presentationPolicyId.empty()) {
+                return Fail(std::format(
+                    "catalog entry '{}' missing presentationPolicyId",
+                    entry.canonicalContextName));
+            }
+
             if (entry.defaultActionSetId) {
                 if (!baseSets.contains(*entry.defaultActionSetId)) {
                     return Fail(std::format(

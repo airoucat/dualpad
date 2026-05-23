@@ -46,6 +46,7 @@ namespace dualpad::input_v2::menu
         ObservedMenuSnapshot Capture();
         void Publish(ObservedMenuSnapshot snapshot);
         ObservedMenuSnapshot GetPublishedSnapshot() const;
+        void ResetForTests();
 
     private:
         mutable std::mutex _mutex;

@@ -984,3 +984,35 @@
   - `.dualpad-builder/feature_list.json`：`PH2` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH2` 已标为 `completed`，`current_sprint=null`。
   - `PH3` / `S-PH3` 保持 `planned`，未启动。
+
+## 2026-05-23 22:04:43 CST
+
+- `PH2` close-out blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH2` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH2` 回退为 `active`，并将 `current_sprint` 设为 `S-PH2`。
+  - `PH3` / `S-PH3` 保持 `planned`，本轮不启动。
+  - 本轮修复范围限定为 `PH2` close-out blocker：`MenuOpenCloseEvent` 只 dirty、单一主线程 refresh tick、`presentationPolicyId` catalog truth、passthrough overlay action-set 语义、`menuStackRevision` 语义、gameplay facts 经 `ContextResolver` 发布。
+
+## 2026-05-23 22:29:24 CST
+
+- `PH2` close-out blocker / fixed：
+  - `ContextEventSink` 的 `MenuOpenCloseEvent` 路径只调用 `UiMenuObserver::MarkMenuEvent(...)` 标记 dirty，不再直接 `Capture / Publish / Reconcile / Resolve / ApplyResolvedContext`。
+  - 新增 `ContextRefreshTick` 作为主线程单一刷新入口；每个 frame token 最多执行一次 `Capture -> MenuInstanceRegistry -> ContextResolver -> ContextManager mirror`。
+  - combat event 只记录 gameplay fact；combat / gameplay substate 变化经 `ContextRefreshTick -> ContextResolver::ResolveAndPublish(...) -> ContextManager::ApplyResolvedContext(...)` 发布，legacy `ContextManager` 只做 mirror。
+  - `CompiledContextEntry` 已增加 `presentationPolicyId`，catalog seed 填入字段；`ContextResolver` 只转发 `entry.presentationPolicyId`，不再从 `canonicalContextName` 推导。
+  - `ActionSetResolver` 明确区分 `PassthroughOverlay` 与 `UnknownTrackedMenu`：passthrough 返回空 action-set stack；只有 unknown tracked menu 返回 `MenuBase + UnknownTrackedMenuLayer`；未引入 per-context `.Base` set。
+  - `menuStackRevision` 决策保持为 published shape 变化才推进；`lastSeenRevision` bookkeeping 不参与 revision，已由 `DualPadContextResolverTests` 覆盖。
+  - 边界确认：未启动 `PH3`、`PH4`、`PH5`、`PH6`、`PH7`；未改变旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- 验证结果：
+  - `xmake build DualPadContextResolverTests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadContextResolverTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1384 nodes, 2775 edges, 119 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH2` 已重新标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH2` 已重新标为 `completed`，`current_sprint=null`。
+  - `PH3` / `S-PH3` 保持 `planned`，未启动。

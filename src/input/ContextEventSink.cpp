@@ -1,47 +1,12 @@
 #include "pch.h"
 #include "input/ContextEventSink.h"
-#include "input/InputContext.h"
-#include "input/InputModalityTracker.h"
-#include "input/glyph/ScaleformGlyphBridge.h"
-#include "input_v2/config/AtomicConfigReloader.h"
-#include "input_v2/context/ContextResolver.h"
-#include "input_v2/menu/MenuInstanceRegistry.h"
+#include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/menu/UiMenuObserver.h"
 
 namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
-    namespace
-    {
-        const dualpad::input_v2::context::CompiledContextCatalog& ActiveCatalog()
-        {
-            auto active = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
-            if (active) {
-                return active->catalog;
-            }
-            return dualpad::input_v2::context::ContextCatalog::BuiltInCatalog();
-        }
-
-        void RefreshContextV2()
-        {
-            namespace ctx = dualpad::input_v2::context;
-            namespace menu = dualpad::input_v2::menu;
-
-            auto& observer = menu::UiMenuObserver::GetSingleton();
-            const auto observed = observer.Capture();
-            observer.Publish(observed);
-
-            const auto& catalog = ActiveCatalog();
-            const auto stack = menu::MenuInstanceRegistry::GetSingleton().ReconcileAndPublish(observed, catalog);
-
-            auto& contextMgr = ContextManager::GetSingleton();
-            const auto gameplay = ctx::ContextResolver::GameplaySubstateFromLegacy(contextMgr.DetectGameplayContext());
-            const auto resolved = ctx::ContextResolver::GetSingleton().ResolveAndPublish(stack, gameplay, catalog);
-            contextMgr.ApplyResolvedContext(ctx::ContextResolver::ToLegacyMirror(resolved));
-        }
-    }
-
     ContextEventSink& ContextEventSink::GetSingleton()
     {
         static ContextEventSink instance;
@@ -102,16 +67,6 @@ namespace dualpad::input
 
         auto& observer = dualpad::input_v2::menu::UiMenuObserver::GetSingleton();
         observer.MarkMenuEvent(event->menuName.c_str(), event->opening);
-        RefreshContextV2();
-
-        auto& contextMgr = ContextManager::GetSingleton();
-
-        if (event->opening) {
-            InputModalityTracker::GetSingleton().OnAuthoritativeMenuOpen(
-                contextMgr.GetCurrentContext(),
-                contextMgr.GetCurrentEpoch());
-            glyph::ScaleformGlyphBridge::GetSingleton().OnMenuOpened(event->menuName.c_str());
-        }
 
         return RE::BSEventNotifyControl::kContinue;
     }
@@ -135,17 +90,15 @@ namespace dualpad::input
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        auto& contextMgr = ContextManager::GetSingleton();
-
         if (event->newState == RE::ACTOR_COMBAT_STATE::kCombat) {
 
             logger::info("[DualPad][ContextSink] Player entered combat");
-            contextMgr.SetContext(InputContext::Combat);
+            dualpad::input_v2::context::ContextRefreshTick::GetSingleton().MarkCombatEvent(true);
         }
         else if (event->newState == RE::ACTOR_COMBAT_STATE::kNone) {
 
             logger::info("[DualPad][ContextSink] Player left combat");
-            contextMgr.SetContext(InputContext::Gameplay);
+            dualpad::input_v2::context::ContextRefreshTick::GetSingleton().MarkCombatEvent(false);
         }
 
         return RE::BSEventNotifyControl::kContinue;
