@@ -624,7 +624,7 @@
       - `11_config_reload_success_failure: no diff`
     - 口径：该 diff 只证明当前 `materialize-fixture` actual bundle 与 golden 一致；不证明 dispatcher / processor runtime replay behavior。
   - `xmake build DualPad`
-    - 结果：exit 0；输出包含 `Built: C:\Users\xuany\Documents\dualPad\build\bin\DualPad\DualPad.dll` 与 `build ok, spent 0.828s`。
+    - 结果：exit 0；输出包含 `Built: build/bin/DualPad/DualPad.dll` 与 `build ok, spent 0.828s`。
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
     - 结果：exit 0；输出包含 `[graphify watch] Rebuilt: 1081 nodes, 2107 edges, 106 communities`，并写入 `graphify-out/graph.json` 与 `graphify-out/GRAPH_REPORT.md`。
   - 结论：
@@ -685,7 +685,7 @@
   - `xmake run DualPadReplayHarnessTests`
     - 结果：exit 0；stdout 为空。
   - `xmake build DualPad`
-    - 结果：exit 0；输出包含 `Built: C:\Users\xuany\Documents\dualPad\build\bin\DualPad\DualPad.dll` 与 `build ok, spent 1.297s`。
+    - 结果：exit 0；输出包含 `Built: build/bin/DualPad/DualPad.dll` 与 `build ok, spent 1.297s`。
   - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
     - 结果：exit 0；输出：
       - `01_gameplay_walk_attack_block_sprint: no diff`
@@ -803,7 +803,7 @@
   - `xmake run DualPadReplayHarnessTests`
     - 最终结果：exit 0；输出为 runtime config / binding config 日志，未再出现 test failure；命令成功结束。
   - `xmake build DualPad`
-    - 结果：exit 0；输出包含 `linking.release DualPad.dll`、`Deployed: G:\skyrim_mod_develop\mods\dualPad\SKSE\Plugins\DualPad.dll` 与 `build ok, spent 5.187s`。
+    - 结果：exit 0；输出包含 `linking.release DualPad.dll`、`Deployed: local configured deploy target` 与 `build ok, spent 5.187s`。
   - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`
     - 最终结果：exit 0；输出结尾 `batch dispatcher runtime replay matched scenarios=10`。
   - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`
@@ -834,3 +834,29 @@
       - `11_config_reload_success_failure: no diff`
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
     - 结果：exit 0；输出包含 `[graphify watch] Rebuilt: 1207 nodes, 2477 edges, 108 communities`，并写入 `graphify-out/graph.json` 与 `graphify-out/GRAPH_REPORT.md`。
+
+## 2026-05-23 16:00:00 CST
+
+- `PH0` close-out hygiene：
+  - 本轮只补齐 PH0 hygiene validation，不启动 `PH1`。
+  - 新增验证 `xmake build DualPadDInput8Proxy` 已通过，因此 `PH0` 继续保持 `completed` / `passes=true`。
+  - 清理 `.dualpad-builder/progress.md` 中的机器私有路径：
+    - repo 内构建产物统一记录为 repo-relative 路径，例如 `build/bin/DualPad/DualPad.dll`。
+    - 本机部署输出统一记录为 `local configured deploy target`，不写入具体盘符路径。
+  - 边界确认：
+    - `PH1` 仍为 `planned` / not started。
+    - 未实现 `ContextCatalog` 或 `ActionManifest`。
+    - 未改变 `PromptService` / `PromptProjection`。
+    - 未改变旧 SWF 返回 shape。
+- 验证结果：
+  - `xmake build DualPadDInput8Proxy`
+    - 结果：exit 0；输出包含 `Deployed dinput8 proxy: local configured deploy target` 与 `build ok, spent 0.031s`。
+  - `git diff --check`
+    - 结果：exit 0；stdout 仅包含 Windows 换行提示：`warning: in the working copy of '.dualpad-builder/progress.md', LF will be replaced by CRLF the next time Git touches it`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`
+    - 结果：exit 0；无输出。
+  - 私有路径扫描命令（按用户给定模式扫描 progress、authoritative baseline 与 dualpad rearchitecture plans）
+    - 结果：exit 1；无输出。该命令用于确认没有机器私有路径命中，因此 exit 1/no matches 是预期结果。
+  - PH0 / PH1 状态确认：
+    - `.dualpad-builder/feature_list.json`：`PH0` 为 `completed` / `passes=true`；`PH1` 为 `planned`。
+    - `.dualpad-builder/sprint_plan.json`：`S-PH0` 为 `completed`，`current_sprint=null`；`S-PH1` 为 `planned`。
