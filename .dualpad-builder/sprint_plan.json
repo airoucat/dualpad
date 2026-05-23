@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-23T22:29:24+08:00",
+  "updated_at": "2026-05-24T00:23:07+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -271,7 +271,7 @@
         "B2",
         "B5"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "SourceEvidenceCollector 发布 DeviceFamilyChanged marker 与配对 SourceEvidence snapshot",
         "DeviceFamilyChangedPayload.newRevision 与紧随其后的 SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision 有 targeted test 覆盖",

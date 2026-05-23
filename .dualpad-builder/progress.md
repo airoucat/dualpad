@@ -1024,3 +1024,40 @@
   - Phase 2 计划文档已明确：`lastSeenRevision` 是 bookkeeping / diagnostic 字段，不参与 `menuStackRevision` 推进。
   - `menuStackRevision` 的推进条件收口为 published shape、identity、top tracked menu、tracked / overlay classification 等实际发布语义变化。
   - 状态保持：`PH2` / `S-PH2` 继续为 `completed` / `passes=true`；`PH3` / `S-PH3` 保持 `planned` / not started。
+
+## 2026-05-23 23:51:42 CST
+
+- `PH3` start：
+  - 已将 `PH3` / `S-PH3` 从 `planned` 晋升为 `active`（`current_sprint=S-PH3`）。
+  - 本轮范围：`InputModalityTracker` presentation 职责拆分、`SourceEvidenceCollector`、`PresentationProjection`、`SkyrimCompatibilitySurface`、`DeviceFamilyChanged` marker 与紧随 `SourceEvidenceSnapshot` 配对、presentation rollback / shadow parity。
+  - 本轮硬边界：`PresentationProjection` 只能消费 PH2 `ResolvedContextSnapshot` / `presentationPolicyId`，不得重新推导菜单语义；`SkyrimCompatibilitySurface` 只负责 legacy 兼容输出，不承担 presentation truth；失败 rollback 退回旧 compatibility surface，不污染 PH2 context truth。
+  - 本轮非目标：不启动 `PH4` Action Graph / InteractionEngine、`PH5` GameplayProjection、`PH6` PromptService / PromptProjection、`PH7` IngressHub / FrameAssembler；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-24 00:23:07 CST
+
+- `PH3` presentation split / done：
+  - 本轮新增并接入：
+    - `src/input_v2/presentation/SourceEvidenceCollector.*`
+    - `src/input_v2/presentation/PresentationProjection.*`
+    - `src/input_v2/presentation/SkyrimCompatibilitySurface.*`
+    - `tests/input_v2/PresentationProjectionTests.cpp`
+    - `xmake` target `DualPadPresentationProjectionTests`
+  - `DeviceFamilyIngressPublisher` 是本 slice 内唯一递增 `deviceFamilyRevision` 的 source-evidence producer；`SourceEvidenceCollector::CollectAfterDeviceFamilyIngress(...)` 在 device family 变化时发布 `DeviceFamilyChanged` marker，并紧随一条 `SourceEvidenceSnapshot`。
+  - `DeviceFamilyChangedPayload.newRevision == SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision` 已由 `DualPadPresentationProjectionTests` 覆盖。
+  - `PresentationProjection` 只消费 `SourceEvidenceSnapshot`、PH2 `ResolvedContextSnapshot` 与 `PublishedGameplayPresentation`；`presentationPolicyId`、`uiContextId` 与 `ActionSetStack` 逐字段转发 PH2 snapshot，不反查 `ContextCatalog` 或重新推导菜单语义。
+  - `SkyrimCompatibilitySurface` 只把 `PublishedPresentationState` 适配为 legacy hook / refresh 输出；rollback 模式只返回旧 compatibility output，不修改 committed `PublishedPresentationState` 或 PH2 context truth。
+  - Shadow parity 落在 `SkyrimCompatibilitySurface::CompareShadowParity(...)`，只记录 legacy vs projected 输出 diff 与 `contextRevision / deviceFamilyRevision / gameplayPresentationRevision / epoch / reason`，不回答 hook、不改 published state、不触发 refresh。
+  - 边界确认：未启动 `PH4`、`PH5`、`PH6`、`PH7`；未改变旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- 验证结果：
+  - `xmake build DualPadPresentationProjectionTests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1418 nodes, 2826 edges, 124 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH3` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH3` 已标为 `completed`，`current_sprint=null`。
+  - `PH4` / `S-PH4` 保持 `planned`，未启动。

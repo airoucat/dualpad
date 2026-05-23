@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-23T22:29:24+08:00",
+  "updated_at": "2026-05-24T00:23:07+08:00",
   "features": [
     {
       "id": "WF0",
@@ -192,8 +192,8 @@
       "depends_on": [
         "PH2"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "SourceEvidenceCollector、PresentationProjection 和 SkyrimCompatibilitySurface 分层落地",
         "DeviceFamilyChanged marker 与 SourceEvidence 配对合同进入已发布 seam，且 revision 一致性有 exit gate",

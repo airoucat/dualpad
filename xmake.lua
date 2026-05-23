@@ -198,6 +198,24 @@ target("DualPadContextResolverTests")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
+target("DualPadPresentationProjectionTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/PresentationProjectionTests.cpp")
+    add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph2_context_resolver_files))
+    add_files(
+        "src/input_v2/presentation/SourceEvidenceCollector.cpp",
+        "src/input_v2/presentation/PresentationProjection.cpp",
+        "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
+        "src/input/InputContext.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
 target("DualPadRouteHealthContractTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
