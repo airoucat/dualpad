@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-24T16:13:14+08:00",
+  "updated_at": "2026-05-24T21:30:41+08:00",
   "features": [
     {
       "id": "WF0",
@@ -264,8 +264,8 @@
       "depends_on": [
         "PH6"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "manifestEpoch 与 deviceFamilyRevision 的 authoritative 来源固定为 ingress marker payload",
         "boundary key、transition frame、HardReset / SoftResync 规则无第二 authority",

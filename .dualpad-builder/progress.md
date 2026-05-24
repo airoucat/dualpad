@@ -1443,3 +1443,54 @@
   - `.dualpad-builder/feature_list.json`：`PH6` 已标回 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH6` 已标回 `completed`，`current_sprint=null`。
   - `PH7` / `S-PH7` 保持 `planned`，未启动。
+
+## 2026-05-24 21:22:33 CST
+
+- `PH7` ingress and resync / start：
+  - 已将 `.dualpad-builder/feature_list.json` 中 `PH7` 从 `planned` 晋升为 `active`，`passes=false`。
+  - 已将 `.dualpad-builder/sprint_plan.json` 中 `S-PH7` 从 `planned` 晋升为 `active`，并将 `current_sprint` 设为 `S-PH7`。
+  - 本轮范围限定为 `IngressHub`、`FrameAssembler`、四字段 boundary key、transition frame、`SequenceGap` / `QueueOverflow` recovery、`ManifestEpochChanged` / `DeviceFamilyChanged` marker、dispatcher / coalescing / resync 重做，以及 legacy dispatcher / processor adapter 化。
+  - 本轮硬边界：`manifestEpoch` 的唯一 authoritative source 是 `ManifestEpochChanged` marker payload；`deviceFamilyRevision` 的唯一 authoritative source 是 `DeviceFamilyChanged` marker payload；boundary key 固定为 `manifestEpoch / contextRevision / menuStackRevision / deviceFamilyRevision`；`FrameAssembler` 不得从 active graph / `PromptService` / `PresentationProjection` 反查这些 revision。
+  - 本轮非目标：不启动 `PH8` / `09a` runtime deletion；不启动 `PH8` / `09b` governance closeout；不重新设计 `PH0-PH6` 已冻结合同；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-24 21:30:41 CST
+
+- `PH7` ingress and resync / done：
+  - 本轮新增：
+    - `src/input_v2/ingress/IngressHub.*`
+    - `src/input_v2/ingress/FrameAssembler.*`
+    - `src/input_v2/ingress/IngressBoundaryKey.*`
+    - `src/input_v2/ingress/IngressMarkers.*`
+    - `src/input_v2/ingress/IngressRecovery.*`
+    - `tests/input_v2/IngressTests.cpp`
+    - `tests/input_v2/ReplayTests.cpp`
+    - `xmake` target `DualPadIngressTests`
+    - `xmake` target `DualPadReplayTests`
+  - `IngressHub` 作为 producer adapter ingress 队列落地：统一分配单调 `seq` / `monotonicUs`，queue full 正式产出 `QueueOverflow` marker，显式支持 `SequenceGap` / `ExplicitReset`。
+  - `PadEventSnapshotDispatcher` 已在 submit seam 转发 `PadEventSnapshot` 到 `IngressHub`，旧 dispatcher 不再新增 boundary / recovery truth；现有 drain 仍保留以维持 Phase 0 replay parity。
+  - `FrameAssembler` 已成为 PH7 新 coalescing 合同入口：只消费 ingress events 与 assembler state；输出 `Stable` / `Transition` 两类 frame；`Transition` frame 不进入 `InteractionEngine`。
+  - boundary key 已固定为四字段：`manifestEpoch / contextRevision / menuStackRevision / deviceFamilyRevision`。
+  - `manifestEpoch` 只从 `ManifestEpochChangedPayload.manifestEpoch` 进入 boundary；`deviceFamilyRevision` 只从 `DeviceFamilyChangedPayload.deviceFamilyRevision` 进入 boundary；`SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision` 只做配对 / 校验 / 镜像。
+  - `SequenceGap` 映射为 `SoftResync`；`QueueOverflow`、`ExplicitReset` 与 `ManifestEpochChanged` 映射为 `HardReset`；marker mismatch 走 fail-closed `ExplicitReset -> HardReset`。
+  - 静态 guard：`rg -n "GetActiveGraph|ActiveManifestEpoch|PromptService|PresentationProjection|PublishedPresentationState|deviceFamilyRevision|manifestEpoch" src/input_v2/ingress` 只命中 marker payload、boundary key、source evidence 校验与 kernel mirror 字段，未命中 active graph / prompt / presentation 反查入口。
+  - 本轮未启动 `PH8` / `09a` runtime deletion；未启动 `PH8` / `09b` governance closeout；未改旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- RED / GREEN：
+  - RED：`xmake build DualPadIngressTests` 初次 exit 1，原因是 `input_v2/ingress/FrameAssembler.h` 与 PH7 source files 尚不存在，证明测试覆盖了本轮缺口。
+  - GREEN：补齐 ingress 模块后，`xmake build DualPadIngressTests` / `xmake run DualPadIngressTests` 与 `xmake build DualPadReplayTests` / `xmake run DualPadReplayTests` 均 exit 0。
+- 验证结果：
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `git diff --check`：exit 0；stdout 仅包含 Windows 换行提示。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1720 nodes, 3473 edges, 148 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH7` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH7` 已标为 `completed`，`current_sprint=null`。
+  - `PH8` / `S-PH8`、`PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned`，未启动。

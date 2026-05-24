@@ -185,6 +185,14 @@ local ph6_scaleform_prompt_files = {
     "src/input_v2/prompt/ScaleformPromptAdapter.cpp"
 }
 
+local ph7_ingress_files = {
+    "src/input_v2/ingress/IngressHub.cpp",
+    "src/input_v2/ingress/FrameAssembler.cpp",
+    "src/input_v2/ingress/IngressBoundaryKey.cpp",
+    "src/input_v2/ingress/IngressMarkers.cpp",
+    "src/input_v2/ingress/IngressRecovery.cpp"
+}
+
 target("DualPadMenuContextPolicyTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -307,6 +315,30 @@ target("DualPadPromptSnapshotTests")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
+target("DualPadIngressTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/IngressTests.cpp")
+    add_files(table.unpack(ph7_ingress_files))
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadReplayTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/ReplayTests.cpp")
+    add_files(table.unpack(ph7_ingress_files))
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
 target("DualPadRouteHealthContractTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -391,6 +423,10 @@ for _, file in ipairs(ph5_gameplay_runtime_files) do
 end
 
 for _, file in ipairs(ph6_prompt_files) do
+    table.insert(replay_runtime_files, file)
+end
+
+for _, file in ipairs(ph7_ingress_files) do
     table.insert(replay_runtime_files, file)
 end
 

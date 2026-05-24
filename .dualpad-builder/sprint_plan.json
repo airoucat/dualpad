@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-24T16:13:14+08:00",
+  "updated_at": "2026-05-24T21:30:41+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -373,7 +373,7 @@
         "B1",
         "B5"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "boundary key 四字段与 marker authoritative source 在正文和最终合同汇总中一致",
         "SequenceGap / QueueOverflow / ManifestEpochChanged / DeviceFamilyChanged 的 recovery 规则有 targeted tests",

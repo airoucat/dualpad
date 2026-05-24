@@ -6,6 +6,7 @@
 #include "input/injection/PadEventSnapshotProcessor.h"
 #include "input/injection/UpstreamGamepadHook.h"
 #include "input_v2/context/ContextRefreshTick.h"
+#include "input_v2/ingress/IngressHub.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace logger = SKSE::log;
@@ -188,6 +189,7 @@ namespace dualpad::input
             snapshot,
             pendingCountBeforeQueue,
             pendingCountAfterQueue);
+        (void)input_v2::ingress::IngressHub::GetSingleton().PushPadSnapshot(snapshot);
 
         if (shouldScheduleTask) {
             ScheduleDrainTask();
