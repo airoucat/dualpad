@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-24T23:28:33+08:00",
+  "updated_at": "2026-05-24T23:38:32+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -400,7 +400,7 @@
         "B5",
         "B6"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "09a 只负责 runtime closeout，09b 只负责 governance / docgen / CI closeout",
         "6 类 canonical prove-out targets 的创建责任不推迟给 09b 首次补建",

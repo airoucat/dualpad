@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-24T23:28:33+08:00",
+  "updated_at": "2026-05-24T23:38:32+08:00",
   "features": [
     {
       "id": "WF0",
@@ -282,8 +282,8 @@
       "depends_on": [
         "PH7"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "Phase 8 只作为 closeout 入口，不重新设计 runtime 合同",
         "09a runtime closeout 与 09b governance closeout 的职责边界清晰",

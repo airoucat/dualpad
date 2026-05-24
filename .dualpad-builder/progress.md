@@ -1570,3 +1570,26 @@
   - `.dualpad-builder/feature_list.json`：`PH7` 已标回 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH7` 已标回 `completed`，`current_sprint=null`。
   - `PH8` / `S-PH8`、`PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
+## 2026-05-24 23:37:50 CST
+
+- `PH8` cutover entry gate / start：
+  - 已将 `.dualpad-builder/feature_list.json` 中 `PH8` 从 `planned` 晋升为 `active`，`passes=false`。
+  - 已将 `.dualpad-builder/sprint_plan.json` 中 `S-PH8` 从 `planned` 晋升为 `active`，并将 `current_sprint` 设为 `S-PH8`。
+  - 本轮范围仅限 entry gate：审查 `09` / `09a` / `09b` 职责边界，确认 `09a` 只做 runtime closeout / deletion / shim shrink，确认 `09b` 只做 governance / docgen / CI closeout。
+  - 本轮硬边界：不启动 `PH8a` / `09a` runtime deletion，不启动 `PH8b` / `09b` governance closeout，不删除 legacy runtime 文件，不改旧 SWF 返回 shape，不恢复 `FavoritesMenu` workspace，不重命名 canonical test targets。
+  - `PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
+## 2026-05-24 23:38:32 CST
+
+- `PH8` cutover entry gate / done：
+  - 本轮只完成 entry gate，不是 implementation slice；没有启动 `09a` runtime deletion，也没有启动 `09b` governance closeout。
+  - 已审查 `docs/plans/dualpad_rearchitecture/09_slice_phase8_cutover_cleanup_and_ci_zh.md`、`09a_slice_phase8_runtime_closeout_zh.md`、`09b_slice_phase8_governance_closeout_zh.md`、`08_slice_phase7_ingress_and_resync_zh.md` 与 `src/ARCHITECTURE.md`。
+  - 审查结论：`09` 只承担 Phase 8 entry / 共享约束 / handoff gate；`09a` 只承担 runtime public surface swap、legacy deletion、shim shrink 与 canonical prove-out target 首次落地；`09b` 只承担 governance、docgen provenance、reviewed docs 去重和默认 CI 接线。
+  - 6 类 canonical prove-out targets 不推迟到 `09b` 首次补建：`09` 与 `09a` 均明确要求 `DualPadReplayTests`、`DualPadInputV2Tests`、`DualPadIngressTests`、`DualPadPromptSnapshotTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests` 由 `09a` 先落地并 prove-out；`09b` 只能复用同名 targets 接默认 CI。
+  - `PH0-PH7` 已冻结 runtime 合同不在 `PH8` 重新设计；`08` 交给 `PH8` 的合同明确为删除旧路径、清理和 CI 覆盖，不能改回 snapshot/source-driven boundary、legacy resync flag 或重写 boundary key。
+  - replay root 继续固定为 `tests/replay/golden/`；canonical target 名称保持不变。
+  - 本轮没有删除 legacy runtime 文件，没有改旧 SWF 返回 shape，没有恢复 `FavoritesMenu` workspace，没有重命名 canonical test targets。
+  - `.dualpad-builder/feature_list.json`：`PH8` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH8` 已标为 `completed`，`current_sprint=null`。
+  - `PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned` / 未启动。
