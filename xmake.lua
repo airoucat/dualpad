@@ -151,6 +151,14 @@ local ph2_context_resolver_files = {
     "src/input_v2/actions/ActionSetResolver.cpp"
 }
 
+local ph4_action_graph_files = {
+    "src/input_v2/actions/ControlPath.cpp",
+    "src/input_v2/actions/InteractionSpec.cpp",
+    "src/input_v2/actions/CompiledActionGraph.cpp",
+    "src/input_v2/actions/CompiledActionGraphPublisher.cpp",
+    "src/input_v2/actions/InteractionEngine.cpp"
+}
+
 target("DualPadMenuContextPolicyTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -213,6 +221,18 @@ target("DualPadPresentationProjectionTests")
         "src/input_v2/presentation/PresentationProjection.cpp",
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
         "src/input/InputContext.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadInputV2Tests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/InputV2Tests.cpp")
+    add_files(table.unpack(ph4_action_graph_files))
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")

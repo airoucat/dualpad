@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-24T09:19:20+08:00",
+  "updated_at": "2026-05-24T10:01:09+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -298,7 +298,7 @@
         "B3",
         "B4"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "ControlPath、BindingModifier、InteractionSpec、DisplayBinding、CompiledActionGraph 合同落地",
         "CompiledActionGraphPublisher::Publish(...) 是 compiled graph publication 与 hot-swap 的唯一入口，Phase 7 不再另造 publish 点",

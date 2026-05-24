@@ -1126,3 +1126,46 @@
   - `.dualpad-builder/feature_list.json`：`PH3` 已重新标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH3` 已重新标为 `completed`，`current_sprint=null`。
   - `PH4` / `S-PH4` 保持 `planned`，未启动。
+
+## 2026-05-24 09:39:34 CST
+
+- `PH4` start：
+  - 已将 `PH4` / `S-PH4` 从 `planned` 晋升为 `active`（`current_sprint=S-PH4`）。
+  - 本轮范围限定为 Action Graph / InteractionEngine：`ControlPath`、`BindingModifier`、`InteractionSpec`、`DisplayBinding`、`CompiledActionGraph`、`InteractionEngine`、`CompiledActionGraphPublisher::Publish(...)` 与 `DualPadInputV2Tests`。
+  - 本轮硬边界：`PH1 ActionManifest` 仍是 action / binding / display metadata truth；`PH2 ActionSetStack` 仍是 active scope truth；`PH3 PublishedPresentationState` 仍是 presentation truth；`CompiledActionGraphPublisher::Publish(...)` 是 compiled graph publication 与 hot-swap 的唯一入口，`Phase 7` 不得另造 graph publish 点。
+  - 本轮非目标：不启动 `PH5 GameplayProjection`、`PH6 PromptService / PromptProjection`、`PH7 IngressHub / FrameAssembler`；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace；不引入 per-context `.Base` set；不让 `BindingManager` 重新成为 action graph truth。
+
+## 2026-05-24 10:01:09 CST
+
+- `PH4` action graph and interaction engine / done：
+  - 本轮新增并接入：
+    - `src/input_v2/actions/ControlPath.*`
+    - `src/input_v2/actions/InteractionSpec.*`
+    - `src/input_v2/actions/CompiledActionGraph.*`
+    - `src/input_v2/actions/InteractionEngine.*`
+    - `src/input_v2/actions/CompiledActionGraphPublisher.*`
+    - `tests/input_v2/InputV2Tests.cpp`
+    - `xmake` target `DualPadInputV2Tests`
+  - `ControlPath` 只表达物理路径；`BindingModifier` 只表达物理值整形；`InteractionSpec` 收口 `Value / Press / Hold / Tap / Repeat / Toggle / Chord / Gesture`，不把 Layer 当新 interaction kind。
+  - `ActionGraphCompiler` 从 `PH1 ActionManifest` 的 legacy projection 编译不可变 `CompiledActionGraph`，并保持 `PH1 ActionManifest` 是 action / binding / display metadata truth。
+  - `Layer` 降格为主路径交互的 required-path 约束，非顺序、无独立 combo 时间窗、`ExactOnly`。
+  - `Combo` 降格为无序 `Chord`，固定两键、固定 `kLegacyComboWindowUs`、`ExactOnly`；三键 combo fail-closed。
+  - `DisplayBindingRecord` 作为 compiled graph 的显示候选产物生成；显式 manifest display token 可让 axis 从默认 hidden 变为 primary，combo 会标记 legacy token bridge 不可直接渲染。
+  - `CompiledActionGraphPublisher::Publish(...)` 已作为 compiled graph publication 与 hot-swap 的唯一入口落地；manifest epoch mismatch fail-closed 且不替换 active graph。
+  - `InteractionEngine` 只消费 `CompiledActionGraph`、`ActionSetStack` 和 `InteractionInputFrame`，输出 `ResolvedActionFrame`，不调用 backend、不生成 `FrameActionPlan`，也不消费 `BindingManager`。
+  - 边界确认：未启动 `PH5`、`PH6`、`PH7`；未改旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace；未引入 per-context `.Base` set；未让 `BindingManager` 重新成为 action graph truth。
+- 验证结果：
+  - `xmake build DualPadInputV2Tests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1493 nodes, 3030 edges, 131 communities`。
+  - `git diff --check`：exit 0；stdout 仅包含 Windows 换行提示。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH4` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH4` 已标为 `completed`，`current_sprint=null`。
+  - `PH5` / `S-PH5` 保持 `planned`，未启动。

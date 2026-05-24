@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-24T09:19:20+08:00",
+  "updated_at": "2026-05-24T10:01:09+08:00",
   "features": [
     {
       "id": "WF0",
@@ -211,8 +211,8 @@
       "depends_on": [
         "PH3"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "ControlPath、BindingModifier、InteractionSpec、DisplayBinding 与 CompiledActionGraph 合同落地",
         "CompiledActionGraphPublisher::Publish(...) 作为 compiled graph publication owner 与 runtime swap 入口已冻结",
