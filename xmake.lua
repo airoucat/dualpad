@@ -173,6 +173,13 @@ local ph5_gameplay_runtime_files = {
     "src/input_v2/gameplay/DualPadRuntimeLive.cpp"
 }
 
+local ph6_prompt_files = {
+    "src/input_v2/prompt/PromptScope.cpp",
+    "src/input_v2/prompt/PromptSnapshotRecord.cpp",
+    "src/input_v2/prompt/PromptProjection.cpp",
+    "src/input_v2/prompt/PromptService.cpp"
+}
+
 target("DualPadMenuContextPolicyTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -274,6 +281,20 @@ target("DualPadGameplayProjectionTests")
         "src/input/backend/ActionBackendPolicy.cpp",
         "src/input/backend/NativeActionDescriptor.cpp",
         "src/input/RuntimeConfig.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadPromptSnapshotTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/PromptSnapshotTests.cpp")
+    add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph4_action_graph_files))
+    add_files(table.unpack(ph6_prompt_files))
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")

@@ -246,8 +246,8 @@
       "depends_on": [
         "PH5"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "PromptProjection / PromptService 取代 glyph reverse lookup authority",
         "旧 SWF API 兼容策略与 repo-owned startmenu.swf smoke gate 已冻结",

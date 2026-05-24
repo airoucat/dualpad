@@ -347,7 +347,7 @@
       "requirements": [
         "B4"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "PromptSnapshotRecord、PromptScope、PromptService 和 fail-closed 矩阵落地",
         "旧 DualPad_GetActionGlyphToken / DualPad_GetActionGlyph 的兼容策略与 repo-owned startmenu.swf smoke gate 已验证",

@@ -1300,3 +1300,46 @@
     - dispatcher replay + diff：exit 0，10 个 mandatory 场景均为 `no diff`。
     - processor replay + diff：exit 0，10 个 mandatory 场景均为 `no diff`。
     - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1575 nodes, 3159 edges, 139 communities`。
+
+## 2026-05-24 16:30:00 CST
+
+- `PH6` start：
+  - 已将 `PH6` / `S-PH6` 从 `planned` 晋升为 `active`（`current_sprint=S-PH6`）。
+  - 本轮范围限定为 PromptProjection / PromptService：`PromptScope`、`PromptSnapshotRecord`、prompt fail-closed matrix、旧 SWF API 兼容策略与 repo-owned `Interface/startmenu.swf` smoke 记录。
+  - 本轮硬边界：`PH4 CompiledActionGraph / DisplayBinding` 是 prompt binding truth；`PH5 GameplayProjectionFrame / PublishedGameplayPresentation` 只能作为输入事实，prompt 层不得反推 gameplay；`PromptProjection` 只能消费已发布合同，不直接查 `BindingManager` / `Trigger` / legacy INI；`PromptService` 是 prompt snapshot 的唯一服务入口。
+  - 本轮非目标：不启动 `PH7 IngressHub / FrameAssembler`；不做 `09a` runtime deletion；不改 replay/golden authority；不恢复 `FavoritesMenu` workspace；不让 `GameplayOwnershipCoordinator` 回到 prompt / glyph / presentation truth。
+
+## 2026-05-24 18:16:00 CST
+
+- `PH6` prompt projection / done：
+  - 本轮新增并接入：
+    - `src/input_v2/prompt/PromptScope.*`
+    - `src/input_v2/prompt/PromptSnapshotRecord.*`
+    - `src/input_v2/prompt/PromptProjection.*`
+    - `src/input_v2/prompt/PromptService.*`
+    - `tests/input_v2/PromptSnapshotTests.cpp`
+    - `xmake` target `DualPadPromptSnapshotTests`
+  - `PromptProjection` 只消费 `PublishedPresentationState` 与 `manifestEpoch`，发布 `PublishedPromptScope`；presentation unavailable、empty scope 或 missing epoch 均 fail closed 为 `Unavailable`。
+  - `PromptService` 只消费 `PublishedPromptScope + CompiledContextCatalog + CompiledActionGraph`，候选来自 PH4 `DisplayBindingRecord`；未读取 `BindingManager`、`Trigger`、legacy INI，也未引入 gameplay projection 反推。
+  - `PromptSnapshotRecord` 固定为 11 字段派生投影：`actionId / status / resolvedSet / resolvedContext / primary / alternates / resolutionSource / fallback / deviceProfile / promptScopeRevision / manifestEpoch`；成功态由 `status == Ok` 推导。
+  - fail-closed matrix 已在 `DualPadPromptSnapshotTests` 覆盖：missing graph、missing display binding、unknown action、device mismatch、scope mismatch，并补充 unknown context、hidden-only、legacy API failure shape。
+  - 旧 SWF API 兼容策略已收口为 `PromptService` wrappers：`ResolveLegacyGlyphToken(...)` 成功返回 primary token、失败返回 `""`；`ResolveLegacyGlyph(...)` 保持 `ok / buttonArtToken / semanticId / contextName`，并允许附带 `failureReason / resolvedContextId / resolvedActionSetId / resolutionSource / fallback / deviceProfile / manifestEpoch / promptScopeRevision`。
+  - 边界确认：未启动 `PH7`；未做 `09a` runtime deletion；未改 replay/golden authority；未恢复 `FavoritesMenu` workspace；未让 `GameplayOwnershipCoordinator` 回到 prompt / glyph / presentation truth。
+- repo-owned `Interface/startmenu.swf` smoke：
+  - 静态检查：`Interface/startmenu.swf` 存在，大小 `103800` bytes，last write `2026-04-07 23:46:23`。
+  - live SWF / Skyrim smoke：`unavailable`。本轮没有可用的自动化 SWF runner 或已启动 Skyrim UI 会话，且不恢复外部 `FavoritesMenu` workspace；因此未声称 live SWF 调用已执行。
+- 验证结果：
+  - `xmake build DualPadPromptSnapshotTests`：初次失败，原因是 `PromptSnapshotRecord.h` 使用 `ActionId / BindingId` 但未包含 PH4 `CompiledActionGraph.h`；修正 include 后 rerun exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1616 nodes, 3241 edges, 143 communities`。
+  - `git diff --check`：exit 0；stdout 仅包含 Windows 换行提示。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH6` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH6` 已标为 `completed`，`current_sprint=null`。
+  - `PH7` / `S-PH7` 保持 `planned`，未启动。
