@@ -1409,3 +1409,37 @@
   - `.dualpad-builder/feature_list.json`：`PH6` 保持 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH6` 保持 `completed`，`current_sprint=null`。
   - `PH7` / `S-PH7` 保持 `planned`，未启动。
+
+## 2026-05-24 19:18:00 CST
+
+- `PH6` legacy glyph compat target / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH6` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH6` 回退为 `active`，并将 `current_sprint` 设为 `S-PH6`。
+  - `PH7` / `S-PH7` 保持 `planned`，本轮不启动。
+  - 根因范围：`GlyphResolutionCompat.cpp` 已委托 `PromptRuntimeOwner -> PromptService`，但 `DualPadGlyphResolutionCompatTests` target 仍按旧模型链接 `BindingManager / InputContextNames / GlyphResolutionCompat.cpp`，`tests/GlyphResolutionCompatTests.cpp` 也仍直接把 `BindingManager` 当 glyph authority。
+
+## 2026-05-24 20:52:00 CST
+
+- `PH6` legacy glyph compat target / fixed：
+  - `DualPadGlyphResolutionCompatTests` 已更新为 deprecated compat wrapper test target：链接 `ph1_manifest_compiler_files`、`ph4_action_graph_files`、`ph6_prompt_files` 与 `GlyphResolutionCompat.cpp`。
+  - target 不再链接 `src/input/BindingManager.cpp` 或 `src/input/InputContextNames.cpp`，旧 `BindingManager / Trigger` reverse lookup 不再作为 glyph authority。
+  - `tests/GlyphResolutionCompatTests.cpp` 已重写为 PH6 runtime owner 测试：先通过 `AtomicConfigReloader` 发布 active manifest / graph，再通过 `PromptRuntimeOwner` 发布 prompt scope，最后验证 `ResolveActionGlyphCompat(...)` 的 deprecated wrapper 行为。
+  - 覆盖场景：missing prompt scope fail closed；成功路径 token 与 `PromptRuntimeOwner::ResolveLegacyGlyphToken(...)` 一致且来自 compiled display binding token `360_Y`；invalid context fail closed，不 fallback `Menu`，也不重写 resolved context。
+  - 本轮未启动 `PH7` / `S-PH7`，未做 `09a` runtime deletion，未恢复 `FavoritesMenu` workspace。
+  - bookkeeping correction：本地一次过宽状态 patch 曾误触 `DP1a` / `S-DP1a`，已在提交前恢复为 `completed`。
+- RED / GREEN：
+  - RED：`xmake build DualPadGlyphResolutionCompatTests` 初次 exit 1，链接失败，缺 `ContextCatalog::BuiltInCatalog/ResolveAlias/ToLegacyInputContext` 与 `PromptRuntimeOwner::GetSingleton/Resolve`，证明 target 缺 PH1 / PH6 runtime 依赖。
+  - GREEN：更新 target 与测试后，`xmake build DualPadGlyphResolutionCompatTests` exit 0，输出 `build ok`；`xmake run DualPadGlyphResolutionCompatTests` exit 0。
+- 验证结果：
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1646 nodes, 3306 edges, 141 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH6` 已标回 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH6` 已标回 `completed`，`current_sprint=null`。
+  - `PH7` / `S-PH7` 保持 `planned`，未启动。

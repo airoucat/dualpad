@@ -326,10 +326,12 @@ target("DualPadGlyphResolutionCompatTests")
 
     add_files(
         "tests/GlyphResolutionCompatTests.cpp",
-        "src/input/BindingManager.cpp",
-        "src/input/InputContextNames.cpp",
         "src/input/glyph/GlyphResolutionCompat.cpp")
+    add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph4_action_graph_files))
+    add_files(table.unpack(ph6_prompt_files))
     add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
