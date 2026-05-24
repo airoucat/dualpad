@@ -161,6 +161,12 @@ local ph4_action_graph_files = {
     "src/input_v2/actions/LegacyLifecycleBridge.cpp"
 }
 
+local ph5_gameplay_projection_files = {
+    "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
+    "src/input_v2/gameplay/RecoveryPlan.cpp",
+    "src/input_v2/gameplay/GameplayPresentationPublisher.cpp"
+}
+
 target("DualPadMenuContextPolicyTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -250,6 +256,23 @@ target("DualPadInputV2Tests")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
+target("DualPadGameplayProjectionTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/GameplayProjectionTests.cpp")
+    add_files(table.unpack(ph4_action_graph_files))
+    add_files(table.unpack(ph5_gameplay_projection_files))
+    add_files(
+        "src/input/backend/ActionBackendPolicy.cpp",
+        "src/input/backend/NativeActionDescriptor.cpp",
+        "src/input/RuntimeConfig.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
 target("DualPadRouteHealthContractTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -320,6 +343,10 @@ for _, file in ipairs(ph1_manifest_compiler_files) do
 end
 
 for _, file in ipairs(ph4_action_graph_files) do
+    table.insert(replay_runtime_files, file)
+end
+
+for _, file in ipairs(ph5_gameplay_projection_files) do
     table.insert(replay_runtime_files, file)
 end
 

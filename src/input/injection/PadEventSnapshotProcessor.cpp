@@ -8,6 +8,7 @@
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input/AuthoritativePollState.h"
 #include "input/BindingManager.h"
+#include "input/GameplayKbmFactTracker.h"
 #include "input/InputModalityTracker.h"
 #include "input/InputContext.h"
 #include "input/RuntimeConfig.h"
@@ -15,6 +16,8 @@
 #include "input/injection/GameplayOwnershipCoordinator.h"
 #include "input/injection/SyntheticStateDebugLogger.h"
 #include "input/injection/UnmanagedDigitalPublisher.h"
+#include "input_v2/gameplay/GameplayPresentationPublisher.h"
+#include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace logger = SKSE::log;
@@ -182,6 +185,82 @@ namespace dualpad::input
             }
         }
 
+        input_v2::actions::ActionPhase ToResolvedActionPhase(backend::PlannedActionPhase phase)
+        {
+            switch (phase) {
+            case backend::PlannedActionPhase::Pulse:
+                return input_v2::actions::ActionPhase::Pulse;
+            case backend::PlannedActionPhase::Press:
+                return input_v2::actions::ActionPhase::Press;
+            case backend::PlannedActionPhase::Hold:
+                return input_v2::actions::ActionPhase::Hold;
+            case backend::PlannedActionPhase::Release:
+                return input_v2::actions::ActionPhase::Release;
+            case backend::PlannedActionPhase::Value:
+                return input_v2::actions::ActionPhase::Value;
+            case backend::PlannedActionPhase::None:
+            default:
+                return input_v2::actions::ActionPhase::Press;
+            }
+        }
+
+        input_v2::actions::ResolvedActionFrame BuildResolvedActionFrame(
+            const backend::FrameActionPlan& framePlan,
+            const ProjectedAnalogState& analog,
+            std::uint32_t contextEpoch)
+        {
+            input_v2::actions::ResolvedActionFrame resolved{};
+            resolved.contextRevision = contextEpoch;
+            for (const auto& action : framePlan) {
+                resolved.changes.push_back(input_v2::actions::ActionPhaseChange{
+                    .actionId = action.actionId,
+                    .bindingId = action.sourceCode,
+                    .phase = ToResolvedActionPhase(action.phase),
+                    .timestampUs = action.timestampUs
+                });
+            }
+
+            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
+                .actionId = "Game.Move",
+                .kind = input_v2::actions::ActionValueKind::Axis2D,
+                .x = analog.moveX,
+                .y = analog.moveY
+            });
+            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
+                .actionId = "Game.Look",
+                .kind = input_v2::actions::ActionValueKind::Axis2D,
+                .x = analog.lookX,
+                .y = analog.lookY
+            });
+            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
+                .actionId = "Game.LeftTrigger",
+                .kind = input_v2::actions::ActionValueKind::Axis1D,
+                .scalar = analog.leftTrigger
+            });
+            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
+                .actionId = "Game.RightTrigger",
+                .kind = input_v2::actions::ActionValueKind::Axis1D,
+                .scalar = analog.rightTrigger
+            });
+            return resolved;
+        }
+
+        input_v2::gameplay::GameplayPolicy BuildGameplayPolicy(InputContext context)
+        {
+            const auto contextValue = static_cast<std::uint16_t>(context);
+            const bool menuOwnedContext = contextValue >= 100 && contextValue < 2000;
+            const auto facts = GameplayKbmFactTracker::GetSingleton().GetFacts();
+            return input_v2::gameplay::GameplayPolicy{
+                .gameplayContext = !menuOwnedContext && context != InputContext::Console,
+                .mouseLookActive = facts.mouseLookActive,
+                .keyboardMoveActive = facts.IsKeyboardMoveActive(),
+                .keyboardMouseCombatActive = facts.IsKeyboardMouseCombatActive(),
+                .keyboardMouseDigitalActive = facts.IsKeyboardMouseDigitalActive(),
+                .keyboardPhysicalSustainedActive = facts.IsKeyboardMouseSprintActive(),
+                .mousePhysicalSustainedActive = facts.IsKeyboardMouseSprintActive()
+            };
+        }
+
     }
 
     PadEventSnapshotProcessor::PadEventSnapshotProcessor() = default;
@@ -208,7 +287,9 @@ namespace dualpad::input
         backend::NativeButtonCommitBackend::GetSingleton().Reset();
         backend::KeyboardHelperBackend::GetSingleton().Reset();
         GameplayOwnershipCoordinator::GetSingleton().Reset();
+        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().ResetForTests();
         ResetFramePlanning();
+        _lastGameplayProjectionFrame = input_v2::gameplay::GameplayProjectionFrame{};
     }
 
     void PadEventSnapshotProcessor::ResyncNativeState()
@@ -220,7 +301,9 @@ namespace dualpad::input
         _sourceBlockCoordinator.Reset();
         backend::NativeButtonCommitBackend::GetSingleton().Reset();
         GameplayOwnershipCoordinator::GetSingleton().Reset();
+        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().ResetForTests();
         ResetFramePlanning();
+        _lastGameplayProjectionFrame = input_v2::gameplay::GameplayProjectionFrame{};
     }
 
     void PadEventSnapshotProcessor::ResetRecoveryBaseline()
@@ -542,30 +625,53 @@ namespace dualpad::input
             contextEpoch);
     }
 
-    void PadEventSnapshotProcessor::FinishFramePlanning(const SyntheticPadFrame& frame, InputContext context)
+    void PadEventSnapshotProcessor::FinishFramePlanning(
+        const SyntheticPadFrame& frame,
+        InputContext context,
+        std::uint32_t contextEpoch,
+        bool degradedSnapshot,
+        bool hardResync)
     {
-        auto& gameplayOwnership = GameplayOwnershipCoordinator::GetSingleton();
         auto& nativeButtonCommit = backend::NativeButtonCommitBackend::GetSingleton();
-        const auto digitalGatePlan = gameplayOwnership.UpdateDigitalOwnership(context, _framePlan);
-        nativeButtonCommit.SetGameplayDigitalGatePlan(digitalGatePlan.suppressNewTransientActions);
-        if (digitalGatePlan.cancelExistingTransientActions) {
+        const auto analog = CollectBoundAnalogState(frame, context);
+        input_v2::actions::KernelFrame kernel{};
+        kernel.facts.contextRevision = contextEpoch;
+        kernel.facts.monotonicUs = frame.sourceTimestampUs;
+        kernel.state.cleanBoundaryBaseline = !degradedSnapshot;
+        kernel.state.healthDegraded = degradedSnapshot;
+
+        const auto gameplayProjection = input_v2::gameplay::ResolveGameplayProjection(
+            kernel,
+            BuildResolvedActionFrame(_framePlan, analog, contextEpoch),
+            BuildGameplayPolicy(context),
+            _lastGameplayProjectionFrame,
+            input_v2::gameplay::GameplayRecoveryInput{
+                .softResyncRequested = degradedSnapshot && !hardResync,
+                .hardResetRequested = hardResync,
+                .sequenceGapObserved = degradedSnapshot && !hardResync,
+                .explicitResetRequested = false,
+                .cleanFrame = !degradedSnapshot
+            });
+
+        nativeButtonCommit.SetGameplayDigitalGatePlan(
+            gameplayProjection.gatePlan.transientDigitalGate != input_v2::gameplay::DigitalGateMode::Open);
+        if (gameplayProjection.gatePlan.transientDigitalGate == input_v2::gameplay::DigitalGateMode::CancelAndSuppressNewTransient) {
             nativeButtonCommit.ForceCancelGateAwareGameplayTransientActions();
         }
 
         DispatchPlannedActions();
-        const auto analog = CollectBoundAnalogState(frame, context);
-        const auto ownedAnalog =
-            gameplayOwnership.ApplyOwnership(
-                analog,
-                frame,
-                context);
         AuthoritativePollState::GetSingleton().PublishAnalogState(
-            ownedAnalog.analog.moveX,
-            ownedAnalog.analog.moveY,
-            ownedAnalog.analog.lookX,
-            ownedAnalog.analog.lookY,
-            ownedAnalog.analog.leftTrigger,
-            ownedAnalog.analog.rightTrigger);
+            gameplayProjection.gamepadPlan.analog.moveX,
+            gameplayProjection.gamepadPlan.analog.moveY,
+            gameplayProjection.gamepadPlan.analog.lookX,
+            gameplayProjection.gamepadPlan.analog.lookY,
+            gameplayProjection.gamepadPlan.analog.leftTrigger,
+            gameplayProjection.gamepadPlan.analog.rightTrigger);
+        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().PublishAfterOutputApply(
+            gameplayProjection,
+            frame.sourceTimestampUs,
+            true);
+        _lastGameplayProjectionFrame = gameplayProjection;
         backend::LogFrameActionPlan(_framePlan);
     }
     void PadEventSnapshotProcessor::Process(const PadEventSnapshot& snapshot)
@@ -676,7 +782,7 @@ namespace dualpad::input
                 effectiveEvents.count);
         }
         CollectLifecycleActions(syntheticFrame, context, contextEpoch);
-        FinishFramePlanning(syntheticFrame, context);
+        FinishFramePlanning(syntheticFrame, context, contextEpoch, degradedSnapshot, hardResync);
         // Poll-owned digital actions now commit through NativeButtonCommitBackend.
         // Reduced raw edges still publish unmanaged digital facts here so the
         // authoritative poll state remains the single output contract.

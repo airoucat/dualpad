@@ -1,18 +1,18 @@
 #include "pch.h"
 #include "input/InputModalityTracker.h"
 
-#include "input/injection/GameplayOwnershipCoordinator.h"
+#include "input_v2/gameplay/GameplayPresentationPublisher.h"
 
 namespace dualpad::input
 {
     namespace
     {
-        std::string_view ToReplayString(GameplayOwnershipCoordinator::ChannelOwner owner)
+        std::string_view ToReplayString(input_v2::presentation::PresentationOwner owner)
         {
             switch (owner) {
-            case GameplayOwnershipCoordinator::ChannelOwner::Gamepad:
+            case input_v2::presentation::PresentationOwner::Gamepad:
                 return "Gamepad";
-            case GameplayOwnershipCoordinator::ChannelOwner::KeyboardMouse:
+            case input_v2::presentation::PresentationOwner::KeyboardMouse:
             default:
                 return "KeyboardMouse";
             }
@@ -63,7 +63,7 @@ namespace dualpad::input
     InputModalityTracker::ReplayCompatibilitySurface InputModalityTracker::CaptureCompatibilitySurfaceForReplay() const
     {
         const auto gameplayPresentation =
-            GameplayOwnershipCoordinator::GetSingleton().GetPublishedGameplayPresentationState();
+            input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().GetPublished();
 
         return ReplayCompatibilitySurface{
             .context = _observedContext.load(std::memory_order_relaxed),
@@ -82,6 +82,7 @@ namespace dualpad::input
     {
         _observedContext.store(InputContext::Gameplay, std::memory_order_relaxed);
         _observedContextEpoch.store(0, std::memory_order_relaxed);
+        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().ResetForTests();
     }
 
     void InputModalityTracker::SetReplayContext(InputContext context, std::uint32_t epoch)

@@ -38,7 +38,13 @@ namespace dualpad::input_v2::presentation
     {
         None = 0,
         CoordinatorPublished,
-        ExplicitResync
+        ExplicitResync,
+        CarryLookOwner,
+        CarryMoveOwner,
+        CarryCombatOwner,
+        CarryDigitalOwner,
+        NonGameplayContext,
+        RecoveryRepublish
     };
 
     enum class PresentationDecisionReason : std::uint8_t

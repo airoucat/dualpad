@@ -10,6 +10,7 @@
 #include "input/injection/PadEventSnapshot.h"
 #include "input/injection/SourceBlockCoordinator.h"
 #include "input/injection/SyntheticStateReducer.h"
+#include "input_v2/gameplay/GameplayProjectionFrame.h"
 
 #include <cstdint>
 #include <limits>
@@ -70,10 +71,16 @@ namespace dualpad::input
         void DispatchPlannedActions();
         void ResetFramePlanning();
         void BeginFramePlanning(InputContext context, std::uint32_t contextEpoch);
-        void FinishFramePlanning(const SyntheticPadFrame& frame, InputContext context);
+        void FinishFramePlanning(
+            const SyntheticPadFrame& frame,
+            InputContext context,
+            std::uint32_t contextEpoch,
+            bool degradedSnapshot,
+            bool hardResync);
 
         backend::FrameActionPlanner _planner{};
         backend::FrameActionPlan _framePlan{};
         RecoveryBaseline _cleanRecoveryBaseline{};
+        input_v2::gameplay::GameplayProjectionFrame _lastGameplayProjectionFrame{};
     };
 }

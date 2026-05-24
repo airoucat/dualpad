@@ -330,7 +330,8 @@ namespace dualpad::input
         const auto context = _observedContext.load(std::memory_order_relaxed);
         const auto contextEpoch = _observedContextEpoch.load(std::memory_order_relaxed);
         const auto& published = _compatibilitySurface.GetCommittedState();
-        const auto gameplayPresentation = _gameplayPresentationAdapter.GetPublished();
+        const auto gameplayPresentation =
+            input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().GetPublished();
         const bool usingGamepad = _compatibilitySurface.IsUsingGamepadHook();
         const bool cursorGamepad = _compatibilitySurface.GamepadControlsCursorHook();
 
@@ -362,6 +363,7 @@ namespace dualpad::input
         _deviceFamilyIngress.ResetForTests();
         _sourceEvidence.ResetForTests();
         _gameplayPresentationAdapter.ResetForTests();
+        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().ResetForTests();
         _presentationProjection.ResetForTests();
         _compatibilitySurface.DisableRollback();
         ResetMouseMoveAccumulator();
@@ -413,9 +415,8 @@ namespace dualpad::input
         const auto publication = _deviceFamilyIngress.Publish(family, source, nowMs);
         const auto frame = _sourceEvidence.CollectAfterDeviceFamilyIngress(publication, contextSnapshot, nowMs);
         const auto& sourceSnapshot = frame.records.back().sourceEvidence;
-        const auto gameplay = _gameplayPresentationAdapter.PublishFromCoordinator(
-            GameplayOwnershipCoordinator::GetSingleton(),
-            nowMs);
+        const auto gameplay =
+            input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().GetPublished();
         const auto published = _presentationProjection.Project(sourceSnapshot, contextSnapshot, gameplay);
         _compatibilitySurface.Commit(published);
 
@@ -455,7 +456,7 @@ namespace dualpad::input
         GameplayKbmFactTracker::GetSingleton().Reset();
     }
 
-    void InputModalityTracker::SyncGameplayPresentationFromCoordinator(
+    void InputModalityTracker::SyncGameplayPresentationFromPublisher(
         InputContext context,
         std::uint32_t epoch,
         std::string_view reason)
@@ -465,13 +466,13 @@ namespace dualpad::input
         }
 
         const auto state =
-            GameplayOwnershipCoordinator::GetSingleton().GetPublishedGameplayPresentationState();
+            input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().GetPublished();
         const auto menuEntryOwner =
-            state.menuEntryOwner == GameplayOwnershipCoordinator::ChannelOwner::Gamepad ?
+            state.menuEntryOwner == input_v2::presentation::PresentationOwner::Gamepad ?
             PresentationOwner::Gamepad :
             PresentationOwner::KeyboardMouse;
         const auto engineOwner =
-            state.engineOwner == GameplayOwnershipCoordinator::ChannelOwner::Gamepad ?
+            state.engineOwner == input_v2::presentation::PresentationOwner::Gamepad ?
             PresentationOwner::Gamepad :
             PresentationOwner::KeyboardMouse;
 
@@ -627,9 +628,7 @@ namespace dualpad::input
                 GameplayOwner::KeyboardMouse,
                 context,
                 "exit-menu");
-            auto& gameplayOwnership = GameplayOwnershipCoordinator::GetSingleton();
-            gameplayOwnership.RefreshPublishedGameplayPresentation(context);
-            SyncGameplayPresentationFromCoordinator(context, epoch, "exit-menu");
+            SyncGameplayPresentationFromPublisher(context, epoch, "exit-menu");
             GameplayKbmFactTracker::GetSingleton().Reset();
         }
 
@@ -893,7 +892,7 @@ namespace dualpad::input
                                 context,
                                 GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
                                 "keyboard-sprint");
-                            SyncGameplayPresentationFromCoordinator(context, epoch, "keyboard-sprint");
+                            SyncGameplayPresentationFromPublisher(context, epoch, "keyboard-sprint");
                         }
                         return;
                     }
@@ -919,7 +918,7 @@ namespace dualpad::input
                 context,
                 GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard");
-            SyncGameplayPresentationFromCoordinator(
+            SyncGameplayPresentationFromPublisher(
                 context,
                 epoch,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard");
@@ -938,7 +937,7 @@ namespace dualpad::input
                     context,
                     GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseLookOnly,
                     "mouse-move");
-                SyncGameplayPresentationFromCoordinator(context, epoch, "mouse-move");
+                SyncGameplayPresentationFromPublisher(context, epoch, "mouse-move");
                 return;
             }
 
@@ -955,7 +954,7 @@ namespace dualpad::input
                                 context,
                                 GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
                                 "mouse-sprint-button");
-                            SyncGameplayPresentationFromCoordinator(
+                            SyncGameplayPresentationFromPublisher(
                                 context,
                                 epoch,
                                 "mouse-sprint-button");
@@ -977,7 +976,7 @@ namespace dualpad::input
                 context,
                 GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel");
-            SyncGameplayPresentationFromCoordinator(
+            SyncGameplayPresentationFromPublisher(
                 context,
                 epoch,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel");
@@ -1022,7 +1021,7 @@ namespace dualpad::input
                         GameplayOwnershipCoordinator::PresentationHint::GamepadExplicit :
                         GameplayOwnershipCoordinator::PresentationHint::GamepadMoveOnly,
                         presentationReason);
-                    SyncGameplayPresentationFromCoordinator(context, epoch, presentationReason);
+                    SyncGameplayPresentationFromPublisher(context, epoch, presentationReason);
                 }
             }
             return;

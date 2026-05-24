@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-24T10:45:31+08:00",
+  "updated_at": "2026-05-24T13:37:57+08:00",
   "features": [
     {
       "id": "WF0",
@@ -229,8 +229,8 @@
       "depends_on": [
         "PH4"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "GameplayProjectionFrame、RecoveryPlan 和 GameplayPresentationPublisher 落地",
         "HardReset / SoftResync / clean baseline 的 native、helper、presentation 同步顺序有 targeted tests",

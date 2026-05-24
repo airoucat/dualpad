@@ -1211,3 +1211,49 @@
   - `.dualpad-builder/feature_list.json`：`PH4` 已重新标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH4` 已重新标为 `completed`，`current_sprint=null`。
   - `PH5` / `S-PH5` 保持 `planned`，未启动。
+
+## 2026-05-24 12:53:14 CST
+
+- `PH5` start：
+  - 已将 `PH5` / `S-PH5` 从 `planned` 晋升为 `active`（`current_sprint=S-PH5`）。
+  - 本轮范围限定为 GameplayProjection：`GameplayProjectionFrame`、`RecoveryPlan`、`GameplayPresentationPublisher`、`HardReset / SoftResync / clean baseline` 执行顺序、native / helper / presentation 三面同步验证，以及 legacy coordinator feedback loop authority 收缩。
+  - 本轮硬边界：`PH4 ResolvedActionFrame` 是 gameplay projection 输入 truth；`PH3 PublishedGameplayPresentation / PresentationProjection` 是 presentation seam；`GameplayProjectionFrame` 结构固定，不临场补字段；`RecoveryPlan` 明确 HardReset / SoftResync / clean baseline 顺序。
+  - 本轮非目标：不启动 `PH6 PromptService / PromptProjection`、`PH7 IngressHub / FrameAssembler`；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-24 13:37:57 CST
+
+- `PH5` gameplay projection / done：
+  - 本轮新增并接入：
+    - `src/input_v2/gameplay/GameplayProjectionFrame.*`
+    - `src/input_v2/gameplay/RecoveryPlan.*`
+    - `src/input_v2/gameplay/GameplayPresentationPublisher.*`
+    - `tests/input_v2/GameplayProjectionTests.cpp`
+    - `xmake` target `DualPadGameplayProjectionTests`
+  - `GameplayProjectionFrame` 已按 PH5 固定结构落地，包含 native transient/sustained、helper、gate、recovery、presentation plan 与 reasons；`LegacyInputContextCompat` 只作为 frame/debug/replay compatibility 标签。
+  - `RecoveryPlan` 已固定 `HardReset / SoftResync / clean baseline` 顺序：清输出面、清 sustained aggregator、清 projection sticky owner、执行 output plan、必要时提交 clean baseline。
+  - `GameplayPresentationPublisher` 成为 PH5 runtime gameplay presentation seam；`PadEventSnapshotProcessor` 在 output apply 后发布 `PublishedGameplayPresentation`，`InputModalityTracker` 与 replay stub 改读 publisher seam。
+  - `PadEventSnapshotProcessor::FinishFramePlanning(...)` 不再调用 `GameplayOwnershipCoordinator::UpdateDigitalOwnership(...)` 或 `ApplyOwnership(...)`；legacy coordinator live feedback loop 不再是 gameplay projection authority，剩余 backend gate/reset 只消费 `GameplayProjectionFrame.gatePlan`。
+  - native / helper / presentation 三面同步验证已进入 `DualPadGameplayProjectionTests`，覆盖 transient gate、Sprint sustained source aggregation、helper plan、overflow hard reset、publisher output-apply-after-publish 顺序。
+  - 边界确认：未启动 `PH6`、`PH7`；未改变旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- 中途失败与修正记录：
+  - dispatcher replay 初次失败：PH5 默认 trigger enter threshold 过高，导致 golden 中 `0.25` trigger 被错误归零。
+    - 修正：`GameplayPolicy` 默认阈值对齐旧 runtime：look/move enter `0.25`、sustain `0.15`，trigger enter `0.15`、sustain `0.08`。
+  - dispatcher replay 随后出现 presentation surface mismatch：capture 仍读旧 coordinator presentation state。
+    - 修正：processor output apply 后发布 `GameplayPresentationPublisher` runtime seam，presentation capture 与 replay stub 改读该 seam。
+  - native transient action 一度被误当作 presentation Gamepad evidence。
+    - 修正：presentation owner 只由 look/move/combat analog owners 推动；`digitalOwner` 继续只治理 transient native digital gate，不再驱动 presentation。
+- 验证结果：
+  - `xmake build DualPadGameplayProjectionTests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadGameplayProjectionTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1559 nodes, 3157 edges, 136 communities`。
+  - `git diff --check`：exit 0；stdout 仅包含 Windows 换行提示。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH5` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH5` 已标为 `completed`，`current_sprint=null`。
+  - `PH6` / `S-PH6` 保持 `planned`，未启动。

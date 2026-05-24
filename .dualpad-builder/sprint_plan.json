@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-24T10:45:31+08:00",
+  "updated_at": "2026-05-24T13:37:57+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -323,7 +323,7 @@
         "B1",
         "B2"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "GameplayProjectionFrame 与 RecoveryPlan 的结构和执行顺序冻结",
         "HardReset / SoftResync / clean baseline 的 native、helper、presentation 输出同步验证写成 targeted tests，不只依赖 replay diff",
