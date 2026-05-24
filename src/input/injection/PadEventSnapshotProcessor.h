@@ -1,6 +1,5 @@
 #pragma once
 
-#include "input/ActionDispatcher.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/ActionLifecycleCoordinator.h"
 #include "input/backend/FrameActionPlan.h"
@@ -46,7 +45,6 @@ namespace dualpad::input
             std::uint64_t sequence);
 
         BindingResolver _bindingResolver{};
-        ActionDispatcher _actionDispatcher;
         SyntheticStateReducer _stateReducer{};
         backend::ActionLifecycleCoordinator _lifecycleCoordinator{};
         SourceBlockCoordinator _sourceBlockCoordinator{};
@@ -68,7 +66,6 @@ namespace dualpad::input
             const SyntheticPadFrame& frame,
             InputContext context,
             std::uint32_t contextEpoch);
-        void DispatchPlannedActions();
         void ResetFramePlanning();
         void BeginFramePlanning(InputContext context, std::uint32_t contextEpoch);
         void FinishFramePlanning(
@@ -81,6 +78,5 @@ namespace dualpad::input
         backend::FrameActionPlanner _planner{};
         backend::FrameActionPlan _framePlan{};
         RecoveryBaseline _cleanRecoveryBaseline{};
-        input_v2::gameplay::GameplayProjectionFrame _lastGameplayProjectionFrame{};
     };
 }

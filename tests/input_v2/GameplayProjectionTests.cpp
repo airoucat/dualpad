@@ -1,9 +1,12 @@
 #include "pch.h"
 
+#include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
+#include "input_v2/gameplay/PollOutputAdapter.h"
 #include "input_v2/gameplay/RecoveryPlan.h"
 
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -16,6 +19,87 @@ namespace
     namespace gameplay = dualpad::input_v2::gameplay;
     namespace presentation = dualpad::input_v2::presentation;
     namespace backend = dualpad::input::backend;
+
+    void Require(bool condition, std::string_view message);
+
+    class RecordingPollOutputExecutor final : public gameplay::IPollOutputExecutor
+    {
+    public:
+        bool failOnHelperCommand{ false };
+        bool failOnAnalogPublish{ false };
+        std::vector<gameplay::PollOutputApplyStep> steps;
+        std::size_t sustainedCount{ 0 };
+        std::size_t transientCount{ 0 };
+        std::size_t helperCount{ 0 };
+
+        bool ClearNativeOutput() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearNativeOutput);
+            return true;
+        }
+
+        bool ClearHelperOutput() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearHelperOutput);
+            return true;
+        }
+
+        bool ClearSustainedDigitalAggregator() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearSustainedDigitalAggregator);
+            return true;
+        }
+
+        bool ClearProjectionStickyOwners() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearProjectionStickyOwners);
+            return true;
+        }
+
+        bool ApplyGatePlan(const gameplay::GatePlan&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyGatePlan);
+            return true;
+        }
+
+        bool ApplySustainedDigital(const gameplay::NativeSustainedCommand&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplySustainedDigital);
+            ++sustainedCount;
+            return true;
+        }
+
+        bool ApplyTransientDigital(const gameplay::NativeTransientCommand&) override
+        {
+            const auto gateBeforeTransient = std::find(
+                steps.begin(),
+                steps.end(),
+                gameplay::PollOutputApplyStep::ApplyGatePlan) != steps.end();
+            Require(gateBeforeTransient, "transient digital must be applied after GatePlan");
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyTransientDigital);
+            ++transientCount;
+            return true;
+        }
+
+        bool ApplyHelperCommand(const gameplay::HelperOutputCommand&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyHelperCommand);
+            ++helperCount;
+            return !failOnHelperCommand;
+        }
+
+        bool PublishAnalogState(const gameplay::ProjectedAnalogState&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::PublishAnalogState);
+            return !failOnAnalogPublish;
+        }
+
+        bool CommitCleanRecoveryBaseline() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline);
+            return true;
+        }
+    };
 
     void Require(bool condition, std::string_view message)
     {
@@ -201,6 +285,118 @@ namespace
             republished.reason == presentation::GameplayPresentationReasonCode::RecoveryRepublish,
             "hard reset clean baseline must publish RecoveryRepublish reason");
     }
+
+    gameplay::GameplayProjectionFrame OutputFrameWithNativeHelperAndRecovery()
+    {
+        gameplay::GameplayProjectionFrame frame{};
+        frame.contextRevision = 11;
+        frame.recoveryPlan = gameplay::RecoveryPlan{
+            .mode = gameplay::RecoveryMode::HardResetOutputs,
+            .resetNativeCommitBackend = true,
+            .resetKeyboardHelperBackend = true,
+            .resetSustainedDigitalAggregator = true,
+            .clearProjectionStickyOwners = true,
+            .clearRecoveryBaseline = true,
+            .commitCleanRecoveryBaselineAfterApply = true
+        };
+        frame.gatePlan.transientDigitalGate = gameplay::DigitalGateMode::CancelAndSuppressNewTransient;
+        frame.gamepadPlan.sustainedDigital.items[0] = gameplay::NativeSustainedCommand{
+            .actionId = "Game.Sprint",
+            .control = backend::NativeControlCode::Sprint,
+            .activeSourceMask = static_cast<std::uint8_t>(gameplay::SustainedSourceBit::GamepadResolved),
+            .contract = backend::ActionOutputContract::Hold,
+            .contextRevision = 11
+        };
+        frame.gamepadPlan.sustainedDigital.count = 1;
+        frame.gamepadPlan.transientDigital.items[0] = gameplay::NativeTransientCommand{
+            .actionId = "Game.Jump",
+            .control = backend::NativeControlCode::Jump,
+            .phase = actions::ActionPhase::Press,
+            .contract = backend::ActionOutputContract::Pulse,
+            .gateAware = true,
+            .contextRevision = 11
+        };
+        frame.gamepadPlan.transientDigital.count = 1;
+        frame.helperPlan.commands.items[0] = gameplay::HelperOutputCommand{
+            .actionId = "VirtualKey.42",
+            .kind = gameplay::HelperOutputKind::KeyboardKey,
+            .helperCode = 42,
+            .phase = actions::ActionPhase::Press,
+            .contract = backend::ActionOutputContract::Pulse,
+            .contextRevision = 11
+        };
+        frame.helperPlan.commands.count = 1;
+        frame.gamepadPlan.analog.lookX = 0.5f;
+        return frame;
+    }
+
+    void RunPollOutputAdapterExecutionTests()
+    {
+        gameplay::PollOutputAdapter adapter;
+        RecordingPollOutputExecutor executor;
+
+        const auto result = adapter.Apply(OutputFrameWithNativeHelperAndRecovery(), executor);
+        Require(result.outputApplySucceeded, "executor must report success only after every output plan applies");
+        Require(executor.sustainedCount == 1, "executor must apply sustainedDigital commands");
+        Require(executor.transientCount == 1, "executor must apply transientDigital commands");
+        Require(executor.helperCount == 1, "executor must apply helperPlan commands");
+
+        const std::vector<gameplay::PollOutputApplyStep> expected{
+            gameplay::PollOutputApplyStep::ClearNativeOutput,
+            gameplay::PollOutputApplyStep::ClearHelperOutput,
+            gameplay::PollOutputApplyStep::ClearSustainedDigitalAggregator,
+            gameplay::PollOutputApplyStep::ClearProjectionStickyOwners,
+            gameplay::PollOutputApplyStep::ApplyGatePlan,
+            gameplay::PollOutputApplyStep::ApplySustainedDigital,
+            gameplay::PollOutputApplyStep::ApplyTransientDigital,
+            gameplay::PollOutputApplyStep::ApplyHelperCommand,
+            gameplay::PollOutputApplyStep::PublishAnalogState,
+            gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline
+        };
+        Require(executor.steps == expected, "PollOutputAdapter must apply recovery, gate, native, helper, analog, clean baseline in fixed order");
+        Require(result.steps == expected, "PollOutputAdapter result must expose the same fixed order for runtime diagnostics");
+    }
+
+    void RunDualPadRuntimePublisherSeamTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+
+        gameplay::DualPadRuntimeInput input{
+            .kernel = Kernel(),
+            .resolved = Resolved(),
+            .policy = gameplay::GameplayPolicy{},
+            .recovery = gameplay::GameplayRecoveryInput{ .hardResetRequested = true, .cleanFrame = true },
+            .outputTick = 100
+        };
+
+        RecordingPollOutputExecutor successExecutor;
+        const auto success = runtime.ProcessGameplayFrameForTests(input, successExecutor);
+        Require(success.output.outputApplySucceeded, "runtime must publish only after output apply succeeds");
+        Require(
+            runtime.GetPublishedGameplayPresentation().gameplayPresentationRevision == 1,
+            "runtime owner must publish gameplay presentation after successful hard reset output apply");
+        Require(
+            successExecutor.steps.front() == gameplay::PollOutputApplyStep::ClearNativeOutput,
+            "hard reset recovery must clear native output before applying projection plans");
+
+        gameplay::DualPadRuntime failedRuntime;
+        failedRuntime.ResetForTests();
+        RecordingPollOutputExecutor failingExecutor;
+        failingExecutor.failOnAnalogPublish = true;
+        const auto failed = failedRuntime.ProcessGameplayFrameForTests(input, failingExecutor);
+        Require(!failed.output.outputApplySucceeded, "runtime must surface failed output apply");
+        Require(
+            failedRuntime.GetPublishedGameplayPresentation().gameplayPresentationRevision == 0,
+            "runtime owner must not publish gameplay presentation when outputApplySucceeded=false");
+    }
+
+    void RunCoordinatorAuthorityCutoverTests()
+    {
+        Require(
+            !gameplay::DualPadRuntime::LiveCoordinatorPresentationAuthorityReachable(),
+            "GameplayOwnershipCoordinator presentation authority must not be reachable from live PH5 runtime");
+    }
 }
 
 int main()
@@ -211,6 +407,9 @@ int main()
         RunProjectionClassificationAndGateTests();
         RunOverflowFailClosedTests();
         RunPresentationPublisherTests();
+        RunPollOutputAdapterExecutionTests();
+        RunDualPadRuntimePublisherSeamTests();
+        RunCoordinatorAuthorityCutoverTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

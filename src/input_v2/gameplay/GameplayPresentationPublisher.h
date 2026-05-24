@@ -8,8 +8,6 @@ namespace dualpad::input_v2::gameplay
     class GameplayPresentationPublisher
     {
     public:
-        static GameplayPresentationPublisher& GetRuntimePublisher();
-
         presentation::PublishedGameplayPresentation PublishAfterOutputApply(
             const GameplayProjectionFrame& frame,
             std::uint64_t tick,

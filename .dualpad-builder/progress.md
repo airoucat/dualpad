@@ -1257,3 +1257,46 @@
   - `.dualpad-builder/feature_list.json`：`PH5` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH5` 已标为 `completed`，`current_sprint=null`。
   - `PH6` / `S-PH6` 保持 `planned`，未启动。
+
+## 2026-05-24 15:41:19 CST
+
+- `PH5` close-out blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH5` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH5` 回退为 `active`，并将 `current_sprint` 设为 `S-PH5`。
+  - `PH6` / `S-PH6` 保持 `planned`，本轮不启动。
+  - 根因范围：上一轮 PH5 只让 `PadEventSnapshotProcessor` 直接消费 projection 的 gate / analog / presentation plan；`GamepadOutputPlan` / `KeyboardHelperOutputPlan` 没有由固定 executor 应用，`GameplayPresentationPublisher` 的 runtime owner 也不够明确，`GameplayOwnershipCoordinator` presentation API 仍在 live runtime path 可达。
+  - 本轮边界：只修 PH5 runtime executor、publisher seam 和 coordinator authority 收缩；不实现 `PH6`、`PH7`；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-24 16:10:16 CST
+
+- `PH5` close-out blocker / fixed：
+  - 新增 `PollOutputAdapter` / `IPollOutputExecutor`，固定执行顺序为：RecoveryPlan 清 native/helper/sustained/projection sticky、下发 GatePlan、应用 sustainedDigital、应用 transientDigital、应用 helperPlan.commands、发布 analog、必要时提交 clean baseline；`PollOutputApplyResult.outputApplySucceeded` 成为 presentation publish gate。
+  - 新增 `DualPadRuntime` runtime owner；`GameplayPresentationPublisher` 不再提供 runtime singleton，只能由 `DualPadRuntime::PublishGameplayPresentation(...)` 在 output apply 成功后调用。
+  - `PadEventSnapshotProcessor` 已退化为 legacy snapshot runtime adapter：保留旧输入组装 / lifecycle shadow plan / ResolvedActionFrame 构造，不再直接执行 gate、legacy dispatch、analog publish 或 gameplay presentation publish。
+  - `InputModalityTracker` 不再调用 `RecordGameplayPresentationHint(...)`；`GameplayPresentationAdapter::PublishFromCoordinator(...)` 与 coordinator presentation API 已移除；live runtime 可达面不再有 coordinator presentation bridge。
+  - 修复 replay 中 hard reset 空 helper reset 回归：`KeyboardHelperBackend::Reset()` 只在 helper 侧已有活动输出时才向 bridge 下发 reset，仍会清内部 helper 状态。
+- 验证结果：
+  - `xmake build DualPadGameplayProjectionTests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadGameplayProjectionTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1575 nodes, 3159 edges, 139 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH5` 已标回 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH5` 已标回 `completed`，`current_sprint=null`。
+  - `PH6` / `S-PH6` 保持 `planned`，未启动。
+
+## 2026-05-24 16:13:14 CST
+
+- `PH5` runtime publisher seam / final rerun：
+  - 收紧 `DualPadRuntime`：`outputApplySucceeded=false` 时不再调用 publisher，直接保留已发布 presentation；publisher 只在 runtime owner 且 output apply 成功后进入。
+  - 已重新执行本轮要求的完整验证命令，结果仍全部通过：
+    - `xmake build DualPadGameplayProjectionTests`：exit 0。
+    - `xmake run DualPadGameplayProjectionTests`：exit 0。
+    - `xmake build DualPad`：exit 0。
+    - dispatcher replay + diff：exit 0，10 个 mandatory 场景均为 `no diff`。
+    - processor replay + diff：exit 0，10 个 mandatory 场景均为 `no diff`。
+    - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1575 nodes, 3159 edges, 139 communities`。

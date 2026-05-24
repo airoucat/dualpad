@@ -4,12 +4,6 @@
 
 namespace dualpad::input_v2::gameplay
 {
-    GameplayPresentationPublisher& GameplayPresentationPublisher::GetRuntimePublisher()
-    {
-        static GameplayPresentationPublisher publisher;
-        return publisher;
-    }
-
     presentation::PublishedGameplayPresentation GameplayPresentationPublisher::PublishAfterOutputApply(
         const GameplayProjectionFrame& frame,
         std::uint64_t tick,

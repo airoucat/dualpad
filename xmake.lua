@@ -162,9 +162,15 @@ local ph4_action_graph_files = {
 }
 
 local ph5_gameplay_projection_files = {
+    "src/input_v2/gameplay/DualPadRuntime.cpp",
     "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
+    "src/input_v2/gameplay/PollOutputAdapter.cpp",
     "src/input_v2/gameplay/RecoveryPlan.cpp",
     "src/input_v2/gameplay/GameplayPresentationPublisher.cpp"
+}
+
+local ph5_gameplay_runtime_files = {
+    "src/input_v2/gameplay/DualPadRuntimeLive.cpp"
 }
 
 target("DualPadMenuContextPolicyTests")
@@ -347,6 +353,10 @@ for _, file in ipairs(ph4_action_graph_files) do
 end
 
 for _, file in ipairs(ph5_gameplay_projection_files) do
+    table.insert(replay_runtime_files, file)
+end
+
+for _, file in ipairs(ph5_gameplay_runtime_files) do
     table.insert(replay_runtime_files, file)
 end
 

@@ -5,8 +5,8 @@
 #include "input/GameplayKbmFactTracker.h"
 #include "input/PadProfile.h"
 #include "input/backend/NativeButtonCommitBackend.h"
-#include "input/injection/GameplayOwnershipCoordinator.h"
 #include "input_v2/context/ContextResolver.h"
+#include "input_v2/gameplay/DualPadRuntime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -156,17 +156,6 @@ namespace dualpad::input
             auto& backend = backend::NativeButtonCommitBackend::GetSingleton();
             return backend.IsActionDown(actions::Sprint) &&
                 backend.HasHeldContributor(actions::Sprint, backend::HeldContributor::Gamepad);
-        }
-
-        std::string_view ToReplayString(GameplayOwnershipCoordinator::ChannelOwner owner)
-        {
-            switch (owner) {
-            case GameplayOwnershipCoordinator::ChannelOwner::Gamepad:
-                return "Gamepad";
-            case GameplayOwnershipCoordinator::ChannelOwner::KeyboardMouse:
-            default:
-                return "KeyboardMouse";
-            }
         }
 
     }
@@ -331,7 +320,7 @@ namespace dualpad::input
         const auto contextEpoch = _observedContextEpoch.load(std::memory_order_relaxed);
         const auto& published = _compatibilitySurface.GetCommittedState();
         const auto gameplayPresentation =
-            input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().GetPublished();
+            input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();
         const bool usingGamepad = _compatibilitySurface.IsUsingGamepadHook();
         const bool cursorGamepad = _compatibilitySurface.GamepadControlsCursorHook();
 
@@ -363,7 +352,7 @@ namespace dualpad::input
         _deviceFamilyIngress.ResetForTests();
         _sourceEvidence.ResetForTests();
         _gameplayPresentationAdapter.ResetForTests();
-        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().ResetForTests();
+        input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
         _presentationProjection.ResetForTests();
         _compatibilitySurface.DisableRollback();
         ResetMouseMoveAccumulator();
@@ -416,7 +405,7 @@ namespace dualpad::input
         const auto frame = _sourceEvidence.CollectAfterDeviceFamilyIngress(publication, contextSnapshot, nowMs);
         const auto& sourceSnapshot = frame.records.back().sourceEvidence;
         const auto gameplay =
-            input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().GetPublished();
+            input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();
         const auto published = _presentationProjection.Project(sourceSnapshot, contextSnapshot, gameplay);
         _compatibilitySurface.Commit(published);
 
@@ -466,7 +455,7 @@ namespace dualpad::input
         }
 
         const auto state =
-            input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().GetPublished();
+            input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();
         const auto menuEntryOwner =
             state.menuEntryOwner == input_v2::presentation::PresentationOwner::Gamepad ?
             PresentationOwner::Gamepad :
@@ -867,7 +856,6 @@ namespace dualpad::input
 
     void InputModalityTracker::HandleGameplayOnlyEvent(const RE::InputEvent& event, InputContext context)
     {
-        auto& gameplayOwnership = GameplayOwnershipCoordinator::GetSingleton();
         const auto epoch = ContextManager::GetSingleton().GetCurrentEpoch();
         const auto nowMs = GetMonotonicMs();
 
@@ -885,13 +873,7 @@ namespace dualpad::input
                     if (factTracker.IsSprintMappedButton(*buttonEvent)) {
                         // Sprint is a sustained digital action with its own
                         // contributor aggregation. Let it update held facts.
-                        // A real key-down still counts as an explicit KBM
-                        // presentation hint, but should not churn gameplay owner.
                         if (!IsSyntheticKeyboardWindowActive() && buttonEvent->IsDown()) {
-                            gameplayOwnership.RecordGameplayPresentationHint(
-                                context,
-                                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
-                                "keyboard-sprint");
                             SyncGameplayPresentationFromPublisher(context, epoch, "keyboard-sprint");
                         }
                         return;
@@ -914,10 +896,6 @@ namespace dualpad::input
                 GameplayOwner::KeyboardMouse,
                 context,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard");
-            gameplayOwnership.RecordGameplayPresentationHint(
-                context,
-                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
-                event.GetEventType() == RE::INPUT_EVENT_TYPE::kChar ? "keyboard-char" : "keyboard");
             SyncGameplayPresentationFromPublisher(
                 context,
                 epoch,
@@ -933,10 +911,6 @@ namespace dualpad::input
                 GameplayKbmFactTracker::GetSingleton().MarkMouseLookActivity();
                 _sourceEvidence.RecordMouseMoveEvidence(mouseMoveEvent->mouseInputX, mouseMoveEvent->mouseInputY, nowMs);
                 SetGameplayOwner(GameplayOwner::KeyboardMouse, context, "mouse-move");
-                gameplayOwnership.RecordGameplayPresentationHint(
-                    context,
-                    GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseLookOnly,
-                    "mouse-move");
                 SyncGameplayPresentationFromPublisher(context, epoch, "mouse-move");
                 return;
             }
@@ -947,13 +921,7 @@ namespace dualpad::input
                     factTracker.ObserveButtonEvent(*buttonEvent);
                     if (factTracker.IsSprintMappedButton(*buttonEvent)) {
                         // Same as keyboard sprint: keep sustained held facts.
-                        // A real mouse button-down still counts as an explicit
-                        // KBM presentation hint, but should not churn gameplay owner.
                         if (buttonEvent->IsDown()) {
-                            gameplayOwnership.RecordGameplayPresentationHint(
-                                context,
-                                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
-                                "mouse-sprint-button");
                             SyncGameplayPresentationFromPublisher(
                                 context,
                                 epoch,
@@ -971,10 +939,6 @@ namespace dualpad::input
             SetGameplayOwner(
                 GameplayOwner::KeyboardMouse,
                 context,
-                event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel");
-            gameplayOwnership.RecordGameplayPresentationHint(
-                context,
-                GameplayOwnershipCoordinator::PresentationHint::KeyboardMouseExplicit,
                 event.GetEventType() == RE::INPUT_EVENT_TYPE::kButton ? "mouse-button" : "mouse-wheel");
             SyncGameplayPresentationFromPublisher(
                 context,
@@ -1015,12 +979,6 @@ namespace dualpad::input
                 }
                 if (shouldUpdateGameplayPresentation) {
                     _sourceEvidence.RecordGamepadEvidence(true, nowMs, 1500);
-                    gameplayOwnership.RecordGameplayPresentationHint(
-                        context,
-                        shouldPromoteGameplayOwner ?
-                        GameplayOwnershipCoordinator::PresentationHint::GamepadExplicit :
-                        GameplayOwnershipCoordinator::PresentationHint::GamepadMoveOnly,
-                        presentationReason);
                     SyncGameplayPresentationFromPublisher(context, epoch, presentationReason);
                 }
             }

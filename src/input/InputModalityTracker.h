@@ -3,7 +3,7 @@
 #include <RE/Skyrim.h>
 
 #include "input/InputContext.h"
-#include "input_v2/gameplay/GameplayPresentationPublisher.h"
+#include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/presentation/GameplayPresentationAdapter.h"
 #include "input_v2/presentation/PresentationProjection.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"

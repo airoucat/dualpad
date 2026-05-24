@@ -322,13 +322,21 @@ namespace dualpad::input::backend
 
     void KeyboardHelperBackend::Reset()
     {
+        bool hadActiveOutput = false;
         {
             std::scoped_lock lock(_mutex);
+            hadActiveOutput = !_activeActions.empty();
+            for (const auto refCount : _bridgeDesiredRefCounts) {
+                if (refCount != 0) {
+                    hadActiveOutput = true;
+                    break;
+                }
+            }
             _bridgeDesiredRefCounts.fill(0);
             _activeActions.clear();
         }
 
-        if (IsRouteActive()) {
+        if (hadActiveOutput && IsRouteActive()) {
             if (KeyboardNativeBridge::GetSingleton().EnqueueReset()) {
                 input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
                     KeyboardBridgeCommandType::Reset,

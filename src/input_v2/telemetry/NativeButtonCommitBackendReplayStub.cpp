@@ -48,7 +48,7 @@ namespace dualpad::input::backend
 
     bool NativeButtonCommitBackend::ApplyPlannedAction(const PlannedAction&)
     {
-        return false;
+        return true;
     }
 
     void NativeButtonCommitBackend::ForceCancelGateAwareGameplayTransientActions()

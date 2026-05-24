@@ -13,10 +13,9 @@
 #include "input/InputContext.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/AxisProjection.h"
-#include "input/injection/GameplayOwnershipCoordinator.h"
 #include "input/injection/SyntheticStateDebugLogger.h"
 #include "input/injection/UnmanagedDigitalPublisher.h"
-#include "input_v2/gameplay/GameplayPresentationPublisher.h"
+#include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
@@ -43,11 +42,6 @@ namespace dualpad::input
         bool ShouldLogMappingActivity()
         {
             return RuntimeConfig::GetSingleton().LogMappingEvents();
-        }
-
-        bool ShouldLogDispatchPlan()
-        {
-            return RuntimeConfig::GetSingleton().LogActionPlan();
         }
 
         bool ShouldLogHandledButtons()
@@ -286,10 +280,8 @@ namespace dualpad::input
         _sourceBlockCoordinator.Reset();
         backend::NativeButtonCommitBackend::GetSingleton().Reset();
         backend::KeyboardHelperBackend::GetSingleton().Reset();
-        GameplayOwnershipCoordinator::GetSingleton().Reset();
-        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().ResetForTests();
+        input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
         ResetFramePlanning();
-        _lastGameplayProjectionFrame = input_v2::gameplay::GameplayProjectionFrame{};
     }
 
     void PadEventSnapshotProcessor::ResyncNativeState()
@@ -300,10 +292,8 @@ namespace dualpad::input
         _lifecycleCoordinator.Reset();
         _sourceBlockCoordinator.Reset();
         backend::NativeButtonCommitBackend::GetSingleton().Reset();
-        GameplayOwnershipCoordinator::GetSingleton().Reset();
-        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().ResetForTests();
+        input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
         ResetFramePlanning();
-        _lastGameplayProjectionFrame = input_v2::gameplay::GameplayProjectionFrame{};
     }
 
     void PadEventSnapshotProcessor::ResetRecoveryBaseline()
@@ -590,28 +580,6 @@ namespace dualpad::input
         return handledButtons;
     }
 
-    void PadEventSnapshotProcessor::DispatchPlannedActions()
-    {
-        for (const auto& action : _framePlan) {
-            const auto dispatchResult = _actionDispatcher.DispatchPlannedAction(action);
-            if (!dispatchResult.handled) {
-                continue;
-            }
-
-            if (ShouldLogDispatchPlan()) {
-                logger::info(
-                    "[DualPad][DispatchPlan] action={} backend={} phase={} source=0x{:08X} output=0x{:08X} context={} route={}",
-                    action.actionId,
-                    backend::ToString(action.backend),
-                    backend::ToString(action.phase),
-                    action.sourceCode,
-                    action.outputCode,
-                    ToString(action.context),
-                    ToString(dispatchResult.target));
-            }
-        }
-    }
-
     void PadEventSnapshotProcessor::ResetFramePlanning()
     {
         _framePlan.Clear();
@@ -619,10 +587,9 @@ namespace dualpad::input
 
     void PadEventSnapshotProcessor::BeginFramePlanning(InputContext context, std::uint32_t contextEpoch)
     {
+        (void)context;
+        (void)contextEpoch;
         _framePlan.Clear();
-        backend::NativeButtonCommitBackend::GetSingleton().BeginFrame(
-            context,
-            contextEpoch);
     }
 
     void PadEventSnapshotProcessor::FinishFramePlanning(
@@ -632,7 +599,6 @@ namespace dualpad::input
         bool degradedSnapshot,
         bool hardResync)
     {
-        auto& nativeButtonCommit = backend::NativeButtonCommitBackend::GetSingleton();
         const auto analog = CollectBoundAnalogState(frame, context);
         input_v2::actions::KernelFrame kernel{};
         kernel.facts.contextRevision = contextEpoch;
@@ -640,40 +606,24 @@ namespace dualpad::input
         kernel.state.cleanBoundaryBaseline = !degradedSnapshot;
         kernel.state.healthDegraded = degradedSnapshot;
 
-        const auto gameplayProjection = input_v2::gameplay::ResolveGameplayProjection(
-            kernel,
-            BuildResolvedActionFrame(_framePlan, analog, contextEpoch),
-            BuildGameplayPolicy(context),
-            _lastGameplayProjectionFrame,
-            input_v2::gameplay::GameplayRecoveryInput{
-                .softResyncRequested = degradedSnapshot && !hardResync,
-                .hardResetRequested = hardResync,
-                .sequenceGapObserved = degradedSnapshot && !hardResync,
-                .explicitResetRequested = false,
-                .cleanFrame = !degradedSnapshot
+        input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessGameplayFrame(
+            input_v2::gameplay::DualPadRuntimeInput{
+                .kernel = kernel,
+                .resolved = BuildResolvedActionFrame(_framePlan, analog, contextEpoch),
+                .policy = BuildGameplayPolicy(context),
+                .recovery = input_v2::gameplay::GameplayRecoveryInput{
+                    .softResyncRequested = degradedSnapshot && !hardResync,
+                    .hardResetRequested = hardResync,
+                    .sequenceGapObserved = degradedSnapshot && !hardResync,
+                    .explicitResetRequested = false,
+                    .cleanFrame = !degradedSnapshot
+                },
+                .outputTick = frame.sourceTimestampUs,
+                .legacyContext = context
             });
-
-        nativeButtonCommit.SetGameplayDigitalGatePlan(
-            gameplayProjection.gatePlan.transientDigitalGate != input_v2::gameplay::DigitalGateMode::Open);
-        if (gameplayProjection.gatePlan.transientDigitalGate == input_v2::gameplay::DigitalGateMode::CancelAndSuppressNewTransient) {
-            nativeButtonCommit.ForceCancelGateAwareGameplayTransientActions();
-        }
-
-        DispatchPlannedActions();
-        AuthoritativePollState::GetSingleton().PublishAnalogState(
-            gameplayProjection.gamepadPlan.analog.moveX,
-            gameplayProjection.gamepadPlan.analog.moveY,
-            gameplayProjection.gamepadPlan.analog.lookX,
-            gameplayProjection.gamepadPlan.analog.lookY,
-            gameplayProjection.gamepadPlan.analog.leftTrigger,
-            gameplayProjection.gamepadPlan.analog.rightTrigger);
-        input_v2::gameplay::GameplayPresentationPublisher::GetRuntimePublisher().PublishAfterOutputApply(
-            gameplayProjection,
-            frame.sourceTimestampUs,
-            true);
-        _lastGameplayProjectionFrame = gameplayProjection;
         backend::LogFrameActionPlan(_framePlan);
     }
+
     void PadEventSnapshotProcessor::Process(const PadEventSnapshot& snapshot)
     {
         if (snapshot.type == PadEventSnapshotType::Reset) {
@@ -782,11 +732,11 @@ namespace dualpad::input
                 effectiveEvents.count);
         }
         CollectLifecycleActions(syntheticFrame, context, contextEpoch);
-        FinishFramePlanning(syntheticFrame, context, contextEpoch, degradedSnapshot, hardResync);
         // Poll-owned digital actions now commit through NativeButtonCommitBackend.
         // Reduced raw edges still publish unmanaged digital facts here so the
         // authoritative poll state remains the single output contract.
         PublishUnmanagedDigitalState(syntheticFrame, handledButtons);
+        FinishFramePlanning(syntheticFrame, context, contextEpoch, degradedSnapshot, hardResync);
         input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordProcessedSnapshot(
             snapshot,
             AuthoritativePollState::GetSingleton().ReadSnapshot(),

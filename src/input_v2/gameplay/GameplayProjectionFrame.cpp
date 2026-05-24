@@ -287,12 +287,15 @@ namespace dualpad::input_v2::gameplay
                             }) || overflow;
                     }
                 } else if (IsSustainedContract(decision.contract)) {
-                    std::uint8_t mask = static_cast<std::uint8_t>(SustainedSourceBit::GamepadResolved);
-                    if (policy.keyboardPhysicalSustainedActive) {
-                        mask |= static_cast<std::uint8_t>(SustainedSourceBit::KeyboardPhysical);
-                    }
-                    if (policy.mousePhysicalSustainedActive) {
-                        mask |= static_cast<std::uint8_t>(SustainedSourceBit::MousePhysical);
+                    std::uint8_t mask = 0;
+                    if (change.phase != actions::ActionPhase::Release) {
+                        mask = static_cast<std::uint8_t>(SustainedSourceBit::GamepadResolved);
+                        if (policy.keyboardPhysicalSustainedActive) {
+                            mask |= static_cast<std::uint8_t>(SustainedSourceBit::KeyboardPhysical);
+                        }
+                        if (policy.mousePhysicalSustainedActive) {
+                            mask |= static_cast<std::uint8_t>(SustainedSourceBit::MousePhysical);
+                        }
                     }
                     overflow = !TryAppend(
                         frame.gamepadPlan.sustainedDigital,

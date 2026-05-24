@@ -10,7 +10,6 @@
 #include "input/RuntimeConfig.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/NativeActionDescriptor.h"
-#include "input/injection/GameplayOwnershipCoordinator.h"
 #include "input/injection/UpstreamGamepadHook.h"
 
 #include <chrono>
