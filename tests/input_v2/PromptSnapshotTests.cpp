@@ -1,10 +1,14 @@
 #include "pch.h"
 
 #include "input_v2/context/ContextCatalog.h"
+#include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/presentation/PresentationProjection.h"
 #include "input_v2/prompt/PromptProjection.h"
+#include "input_v2/prompt/PromptRuntimeOwner.h"
+#include "input_v2/prompt/ScaleformPromptAdapter.h"
 #include "input_v2/prompt/PromptService.h"
 
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -12,6 +16,7 @@
 namespace
 {
     namespace actions = dualpad::input_v2::actions;
+    namespace config = dualpad::input_v2::config;
     namespace context = dualpad::input_v2::context;
     namespace presentation = dualpad::input_v2::presentation;
     namespace prompt = dualpad::input_v2::prompt;
@@ -102,6 +107,31 @@ namespace
     {
         prompt::PromptProjection projection;
         return projection.BuildPromptScope(JournalPresentation(), 42);
+    }
+
+    std::filesystem::path FindProjectRoot(std::filesystem::path from = std::filesystem::current_path())
+    {
+        while (!from.empty()) {
+            if (std::filesystem::is_regular_file(from / "xmake.lua")) {
+                return from;
+            }
+            const auto parent = from.parent_path();
+            if (parent == from) {
+                break;
+            }
+            from = parent;
+        }
+        throw std::runtime_error("could not find project root");
+    }
+
+    void LoadRuntimeConfigForPromptTests()
+    {
+        const auto root = FindProjectRoot();
+        auto& reloader = config::AtomicConfigReloader::GetSingleton();
+        const auto loaded = reloader.LoadOrRecover(
+            root / "config" / "DualPadBindings.ini",
+            root / "config" / "DualPadMenuPolicy.ini");
+        Require(loaded.ok, loaded.message);
     }
 
     prompt::PromptDescriptor Resolve(
@@ -232,6 +262,49 @@ namespace
         Require(legacyFailure.buttonArtToken.empty(), "legacy descriptor wrapper must return empty buttonArtToken on failure");
         Require(legacyFailure.failureReason == "ContextOutOfScope", "legacy descriptor wrapper must expose failureReason=status");
     }
+
+    void RunPromptRuntimeOwnerTests()
+    {
+        auto& owner = prompt::PromptRuntimeOwner::GetSingleton();
+        owner.ResetForTests();
+        LoadRuntimeConfigForPromptTests();
+
+        Require(
+            owner.ResolveLegacyGlyphToken("Menu.Confirm", "Menu").empty(),
+            "missing prompt scope must fail closed to empty legacy token");
+        const auto missingScopeDescriptor = owner.ResolveLegacyGlyph("Menu.Confirm", "Menu");
+        Require(!missingScopeDescriptor.ok, "missing prompt scope must fail closed to ok=false legacy descriptor");
+        Require(missingScopeDescriptor.buttonArtToken.empty(), "missing prompt scope descriptor must not invent token");
+
+        presentation::PublishedPresentationState menuPresentation{};
+        menuPresentation.family = presentation::DeviceFamily::Gamepad;
+        menuPresentation.uiContextId = context::UiContextId::UnknownTrackedMenu;
+        menuPresentation.actionSetStack = actions::ActionSetStack{
+            .baseSetId = "MenuBase",
+            .layerIds = { "UnknownTrackedMenuLayer" },
+            .scopeAnchorIds = { "MenuBase", "UnknownTrackedMenuLayer" }
+        };
+        menuPresentation.epoch = 1;
+        owner.PublishPresentationState(menuPresentation);
+
+        auto& adapter = prompt::ScaleformPromptAdapter::GetSingleton();
+        Require(
+            adapter.ResolveLegacyGlyphTokenForRuntime("Menu.Confirm", "Menu") == "360_Y",
+            "legacy token API must resolve through PromptService from active graph display binding");
+        const auto descriptor = adapter.ResolveLegacyGlyphForRuntime("Menu.Confirm", "Menu");
+        Require(descriptor.ok, "legacy descriptor API must resolve through PromptService");
+        Require(descriptor.buttonArtToken == "360_Y", "legacy descriptor must preserve buttonArtToken shape");
+        Require(descriptor.semanticId == "Menu.Confirm", "legacy descriptor must preserve semanticId shape");
+        Require(descriptor.contextName == "Menu", "legacy descriptor must preserve contextName shape");
+
+        Require(
+            adapter.ResolveLegacyGlyphTokenForRuntime("Menu.Confirm", "NotAContext").empty(),
+            "invalid context must fail closed instead of falling back to Menu");
+        const auto invalid = adapter.ResolveLegacyGlyphForRuntime("Menu.Confirm", "NotAContext");
+        Require(!invalid.ok, "invalid context descriptor must be ok=false");
+        Require(invalid.buttonArtToken.empty(), "invalid context descriptor must not return generic Menu token");
+        Require(invalid.failureReason == "UnknownContext", "invalid context must expose UnknownContext");
+    }
 }
 
 int main()
@@ -240,6 +313,7 @@ int main()
         RunPromptProjectionTests();
         RunPromptServiceSuccessTests();
         RunPromptServiceFailClosedTests();
+        RunPromptRuntimeOwnerTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

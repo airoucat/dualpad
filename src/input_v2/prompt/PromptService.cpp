@@ -90,6 +90,37 @@ namespace dualpad::input_v2::prompt
         _scope(scope)
     {}
 
+    PromptLegacyGlyphDescriptor MakePromptLegacyGlyphDescriptor(
+        const PromptQuery& query,
+        const PromptDescriptor& descriptor)
+    {
+        PromptLegacyGlyphDescriptor legacy{};
+        legacy.ok = descriptor.ok;
+        legacy.semanticId = std::string(query.actionId);
+        legacy.contextName = std::string(query.contextName);
+        legacy.failureReason = std::string(ToString(descriptor.status));
+        legacy.resolutionSource = std::string(ToString(descriptor.resolutionSource));
+        legacy.fallback = std::string(ToString(descriptor.fallback));
+        legacy.manifestEpoch = descriptor.manifestEpoch;
+        legacy.promptScopeRevision = descriptor.promptScopeRevision;
+        if (descriptor.primary) {
+            legacy.buttonArtToken = descriptor.primary->token;
+        }
+        if (descriptor.resolvedContext) {
+            legacy.resolvedContextId = ContextIdString(*descriptor.resolvedContext);
+        }
+        if (descriptor.resolvedSet) {
+            legacy.resolvedActionSetId = *descriptor.resolvedSet;
+        }
+        if (descriptor.deviceProfile) {
+            legacy.deviceProfile = *descriptor.deviceProfile;
+        }
+        if (!descriptor.ok) {
+            legacy.buttonArtToken.clear();
+        }
+        return legacy;
+    }
+
     PromptDescriptor PromptService::Resolve(const PromptQuery& query) const
     {
         if (_scope.state != PromptScopeState::Ready || !_graph.manifestEpoch || _graph.manifestEpoch != _scope.manifestEpoch) {
@@ -293,36 +324,11 @@ namespace dualpad::input_v2::prompt
         std::string_view actionId,
         std::string_view contextName) const
     {
-        const auto descriptor = Resolve(PromptQuery{
+        const PromptQuery query{
             .actionId = actionId,
             .selectorKind = PromptScopeSelectorKind::ExplicitContextName,
             .contextName = contextName
-        });
-
-        PromptLegacyGlyphDescriptor legacy{};
-        legacy.ok = descriptor.ok;
-        legacy.semanticId = std::string(actionId);
-        legacy.contextName = std::string(contextName);
-        legacy.failureReason = std::string(ToString(descriptor.status));
-        legacy.resolutionSource = std::string(ToString(descriptor.resolutionSource));
-        legacy.fallback = std::string(ToString(descriptor.fallback));
-        legacy.manifestEpoch = descriptor.manifestEpoch;
-        legacy.promptScopeRevision = descriptor.promptScopeRevision;
-        if (descriptor.primary) {
-            legacy.buttonArtToken = descriptor.primary->token;
-        }
-        if (descriptor.resolvedContext) {
-            legacy.resolvedContextId = ContextIdString(*descriptor.resolvedContext);
-        }
-        if (descriptor.resolvedSet) {
-            legacy.resolvedActionSetId = *descriptor.resolvedSet;
-        }
-        if (descriptor.deviceProfile) {
-            legacy.deviceProfile = *descriptor.deviceProfile;
-        }
-        if (!descriptor.ok) {
-            legacy.buttonArtToken.clear();
-        }
-        return legacy;
+        };
+        return MakePromptLegacyGlyphDescriptor(query, Resolve(query));
     }
 }

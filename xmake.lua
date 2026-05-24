@@ -177,7 +177,12 @@ local ph6_prompt_files = {
     "src/input_v2/prompt/PromptScope.cpp",
     "src/input_v2/prompt/PromptSnapshotRecord.cpp",
     "src/input_v2/prompt/PromptProjection.cpp",
-    "src/input_v2/prompt/PromptService.cpp"
+    "src/input_v2/prompt/PromptService.cpp",
+    "src/input_v2/prompt/PromptRuntimeOwner.cpp"
+}
+
+local ph6_scaleform_prompt_files = {
+    "src/input_v2/prompt/ScaleformPromptAdapter.cpp"
 }
 
 target("DualPadMenuContextPolicyTests")
@@ -295,6 +300,8 @@ target("DualPadPromptSnapshotTests")
     add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph6_prompt_files))
+    add_files(table.unpack(ph6_scaleform_prompt_files))
+    add_files("src/input/glyph/GlyphResolutionCompat.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -378,6 +385,10 @@ for _, file in ipairs(ph5_gameplay_projection_files) do
 end
 
 for _, file in ipairs(ph5_gameplay_runtime_files) do
+    table.insert(replay_runtime_files, file)
+end
+
+for _, file in ipairs(ph6_prompt_files) do
     table.insert(replay_runtime_files, file)
 end
 

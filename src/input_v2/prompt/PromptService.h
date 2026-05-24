@@ -22,6 +22,10 @@ namespace dualpad::input_v2::prompt
         std::uint32_t promptScopeRevision{ 0 };
     };
 
+    [[nodiscard]] PromptLegacyGlyphDescriptor MakePromptLegacyGlyphDescriptor(
+        const PromptQuery& query,
+        const PromptDescriptor& descriptor);
+
     class PromptService
     {
     public:

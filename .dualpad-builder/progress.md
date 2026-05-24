@@ -1343,3 +1343,69 @@
   - `.dualpad-builder/feature_list.json`：`PH6` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH6` 已标为 `completed`，`current_sprint=null`。
   - `PH7` / `S-PH7` 保持 `planned`，未启动。
+
+## 2026-05-24 18:45:00 CST
+
+- `PH6` close-out blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH6` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH6` 回退为 `active`，并将 `current_sprint` 设为 `S-PH6`。
+  - `PH7` / `S-PH7` 保持 `planned`，本轮不启动。
+  - 根因范围：上一轮 PH6 只落地 `PromptProjection` / `PromptService` core 和 snapshot tests；live SWF delegate 仍由 `ScaleformGlyphBridge` 直接调用 `ResolveActionGlyphCompat(...)`，后者继续走 `BindingManager::GetTriggerForAction(...)`、`ParseInputContextName(...).value_or(InputContext::Menu)` 和 specific context miss -> generic `Menu` retry。
+  - 本轮边界：只修 PH6 runtime façade / runtime owner / prompt scope 接管 / tests；不实现 `PH7`、不做 `09a` runtime deletion、不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-24 18:58:00 CST
+
+- `PH6` close-out blocker / fixed：
+  - 新增 `PromptRuntimeOwner`，SWF/glyph runtime 查询现在从 active `CompiledContextCatalog`、active `CompiledActionGraph` 和 `PublishedPromptScope` 构造 `PromptService`；missing graph 或 missing scope 均 fail closed。
+  - 新增 `ScaleformPromptAdapter` 作为 runtime façade：负责旧 `DualPad_GetActionGlyphToken` / `DualPad_GetActionGlyph` delegate 的参数解码、PromptService 查询和返回编码；旧 token API 返回 string，旧 descriptor 继续保持 `ok / buttonArtToken / semanticId / contextName`。
+  - `ScaleformGlyphBridge` 已退化为 forwarding shim：`RegisterInitialMenus()`、`OnMenuOpened(...)`、`Accept(...)` 与 replay resolve 均转发到 prompt adapter / prompt owner，不再直接调用 `ResolveActionGlyphCompat(...)`。
+  - `GlyphResolutionCompat` 已降级为 deprecated compat helper：内部委托 `PromptRuntimeOwner -> PromptService`，不再包含 `BindingManager`、`GetTriggerForAction`、`ParseInputContextName(...).value_or(Menu)` 或 specific context miss -> generic `Menu` retry。
+  - `InputModalityTracker::PublishPresentationState(...)` 在 PH3 `PublishedPresentationState` 发布后同步 publish prompt scope；`PromptRuntimeOwner` 会在 active manifest epoch 变化时用最后一份 presentation truth 推进 `promptScopeRevision`。
+  - `ActionGraphCompiler` 现在把 PH1 compiled display binding 的 legacy single-button/trigger display token 编译成旧 SWF 可消费的 ButtonArt token（如 `360_Y`），这是 compile-time display binding truth，不是 runtime trigger reverse lookup。
+  - replay stub 只为缺少输入帧的 legacy glyph-only Phase 0 场景补发布 replay presentation truth；未改 golden 文件。
+  - 边界确认：未启动 `PH7`；未做 `09a` runtime deletion；未恢复 `FavoritesMenu` workspace；未让 `GameplayOwnershipCoordinator` 回到 prompt / glyph / presentation truth。
+- TDD / blocker verification：
+  - RED：新增 runtime owner / adapter 测试后，`xmake build DualPadPromptSnapshotTests` 初次失败，报 `PromptRuntimeOwner.h` 不存在，证明测试覆盖了当前 blocker 缺口。
+  - GREEN：实现 runtime owner / adapter / forwarding shim 后，`xmake build DualPadPromptSnapshotTests` exit 0，`xmake run DualPadPromptSnapshotTests` exit 0。
+  - 测试覆盖：legacy token API 成功走 PromptService、legacy descriptor API 成功走 PromptService、invalid context fail closed 不 fallback Menu、old return shape 保持兼容、missing scope 返回空 token / `ok=false`。
+  - 静态 guard：`rg` 检查 `src/input/glyph` 与 `src/input_v2/prompt` 中不再存在 runtime glyph reverse lookup 关键调用：`BindingManager`、`GetTriggerForAction`、`ParseInputContextName`、`value_or(InputContext::Menu)`、`TriggerToButtonArtToken`、`ButtonCodeToToken`。
+- repo-owned `Interface/startmenu.swf` smoke：
+  - 静态检查：`Interface/startmenu.swf` 存在，大小 `103800` bytes，last write `2026-04-07 23:46:23`。
+  - live SWF / Skyrim smoke：`unavailable`。本轮没有可用自动化 SWF runner 或已启动 Skyrim UI 会话，因此未声称 live SWF 调用已执行。
+- 验证结果：
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1641 nodes, 3294 edges, 146 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH6` 已标回 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH6` 已标回 `completed`，`current_sprint=null`。
+  - `PH7` / `S-PH7` 保持 `planned`，未启动。
+
+## 2026-05-24 19:00:00 CST
+
+- `PH6` close-out blocker / final façade tightening：
+  - 发现并移除 `ScaleformPromptAdapter::ResolveCompatForReplay(...)` 对 deprecated `ResolveActionGlyphCompat(...)` 的间接调用；Scaleform façade / bridge 现在不再引用 `ResolveActionGlyphCompat(...)`。
+  - `DualPad_GetActionGlyphToken` / `DualPad_GetActionGlyph` 继续只经 `PromptRuntimeOwner` 查询 `PromptService` legacy wrappers；replay compat result 也由 `PromptRuntimeOwner::Resolve(...)` 的 `PromptDescriptor` 转换得到。
+  - `GlyphResolutionCompat` 仍保留为 deprecated compat helper，内部委托 `PromptRuntimeOwner -> PromptService`，不再参与 Scaleform runtime façade。
+  - `PH7` / `S-PH7` 保持 `planned`，未启动；未做 `09a` runtime deletion；未恢复 `FavoritesMenu` workspace。
+- 重新验证结果：
+  - static guard：`src/input/glyph` 与 `src/input_v2/prompt` 中无 `BindingManager`、`GetTriggerForAction`、`ParseInputContextName`、`value_or(InputContext::Menu)`、`TriggerToButtonArtToken`、`ButtonCodeToToken`。
+  - static guard：`src/input_v2/prompt` 与 `ScaleformGlyphBridge.*` 中无 `ResolveActionGlyphCompat` 引用。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - repo-owned `Interface/startmenu.swf` static smoke：存在，大小 `103800` bytes，last write `2026-04-07 23:46:23`；live SWF / Skyrim smoke 仍为 `unavailable`，无自动化 SWF runner 或已启动 Skyrim UI 会话。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1644 nodes, 3300 edges, 147 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH6` 保持 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH6` 保持 `completed`，`current_sprint=null`。
+  - `PH7` / `S-PH7` 保持 `planned`，未启动。

@@ -48,6 +48,78 @@ namespace dualpad::input_v2::actions
             };
         }
 
+        std::optional<std::string> LegacyButtonArtToken(const dualpad::input::Trigger& trigger)
+        {
+            constexpr std::uint32_t kSquare = 0x00000001;
+            constexpr std::uint32_t kCross = 0x00000002;
+            constexpr std::uint32_t kCircle = 0x00000004;
+            constexpr std::uint32_t kTriangle = 0x00000008;
+            constexpr std::uint32_t kL1 = 0x00000010;
+            constexpr std::uint32_t kR1 = 0x00000020;
+            constexpr std::uint32_t kL2Button = 0x00000040;
+            constexpr std::uint32_t kR2Button = 0x00000080;
+            constexpr std::uint32_t kCreate = 0x00000100;
+            constexpr std::uint32_t kOptions = 0x00000200;
+            constexpr std::uint32_t kDpadUp = 0x00010000;
+            constexpr std::uint32_t kDpadDown = 0x00020000;
+            constexpr std::uint32_t kDpadLeft = 0x00040000;
+            constexpr std::uint32_t kDpadRight = 0x00080000;
+
+            const auto buttonToken = [](std::uint32_t code) -> std::optional<std::string> {
+                switch (code) {
+                case kSquare:
+                    return "360_X";
+                case kCross:
+                    return "360_A";
+                case kCircle:
+                    return "360_B";
+                case kTriangle:
+                    return "360_Y";
+                case kL1:
+                    return "360_LB";
+                case kR1:
+                    return "360_RB";
+                case kL2Button:
+                    return "360_LT";
+                case kR2Button:
+                    return "360_RT";
+                case kCreate:
+                    return "360_Back";
+                case kOptions:
+                    return "360_Start";
+                case kDpadUp:
+                    return "360_DPAD_UP";
+                case kDpadDown:
+                    return "360_DPAD_DOWN";
+                case kDpadLeft:
+                    return "360_DPAD_LEFT";
+                case kDpadRight:
+                    return "360_DPAD_RIGHT";
+                default:
+                    return std::nullopt;
+                }
+            };
+
+            using dualpad::input::PadAxisId;
+            using dualpad::input::TriggerType;
+            switch (trigger.type) {
+            case TriggerType::Button:
+            case TriggerType::Tap:
+            case TriggerType::Hold:
+                return buttonToken(trigger.code);
+            case TriggerType::Axis:
+                if (trigger.code == static_cast<std::uint32_t>(PadAxisId::LeftTrigger)) {
+                    return "360_LT";
+                }
+                if (trigger.code == static_cast<std::uint32_t>(PadAxisId::RightTrigger)) {
+                    return "360_RT";
+                }
+                return std::nullopt;
+            default:
+                return std::nullopt;
+            }
+        }
+
         std::string JoinPathToken(const std::vector<ControlPath>& paths)
         {
             std::ostringstream out;
@@ -293,7 +365,12 @@ namespace dualpad::input_v2::actions
             display.localizedLabel = display.token;
 
             if (manifestDisplay.has_value()) {
-                if (!manifestDisplay->controlPath.empty()) {
+                if (const auto legacyToken = LegacyButtonArtToken(manifestDisplay->legacyTrigger)) {
+                    display.token = *legacyToken;
+                    display.localizedLabel = *legacyToken;
+                    display.mode = DisplayBindingMode::Primary;
+                    display.legacyTokenRenderable = true;
+                } else if (!manifestDisplay->controlPath.empty()) {
                     display.token = manifestDisplay->controlPath;
                     display.localizedLabel = manifestDisplay->controlPath;
                     display.mode = DisplayBindingMode::Primary;

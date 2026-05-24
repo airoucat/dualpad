@@ -7,6 +7,7 @@
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
+#include "input_v2/prompt/PromptRuntimeOwner.h"
 
 #include <algorithm>
 #include <cmath>
@@ -353,6 +354,7 @@ namespace dualpad::input
         _sourceEvidence.ResetForTests();
         _gameplayPresentationAdapter.ResetForTests();
         input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
+        input_v2::prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
         _presentationProjection.ResetForTests();
         _compatibilitySurface.DisableRollback();
         ResetMouseMoveAccumulator();
@@ -408,6 +410,7 @@ namespace dualpad::input
             input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();
         const auto published = _presentationProjection.Project(sourceSnapshot, contextSnapshot, gameplay);
         _compatibilitySurface.Commit(published);
+        input_v2::prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(published);
 
         logger::debug(
             "[DualPad][PresentationProjection] publish reason={} ctxRevision={} deviceFamilyRevision={} gameplayPresentationRevision={} epoch={}",

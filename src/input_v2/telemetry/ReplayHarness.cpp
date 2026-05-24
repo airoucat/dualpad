@@ -484,6 +484,7 @@ namespace dualpad::input_v2::telemetry
 
                 input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(
                     ParseU64(row[1], "glyph sequence"));
+                input::InputModalityTracker::GetSingleton().SetReplayContext(ParseContext(row[3]), 0);
                 (void)input::glyph::ScaleformGlyphBridge::GetSingleton().ReplayResolveActionGlyph(row[2], row[3]);
             }
         }

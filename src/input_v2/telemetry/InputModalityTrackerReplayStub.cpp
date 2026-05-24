@@ -1,7 +1,11 @@
 #include "pch.h"
 #include "input/InputModalityTracker.h"
 
+#include "input_v2/actions/ActionSetResolver.h"
+#include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/context/ContextCatalog.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
+#include "input_v2/prompt/PromptRuntimeOwner.h"
 
 namespace dualpad::input
 {
@@ -83,12 +87,26 @@ namespace dualpad::input
         _observedContext.store(InputContext::Gameplay, std::memory_order_relaxed);
         _observedContextEpoch.store(0, std::memory_order_relaxed);
         input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
+        input_v2::prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
     }
 
     void InputModalityTracker::SetReplayContext(InputContext context, std::uint32_t epoch)
     {
         _observedContext.store(context, std::memory_order_relaxed);
         _observedContextEpoch.store(epoch, std::memory_order_relaxed);
+
+        const auto bundle = input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        const auto& catalog = bundle ? bundle->catalog : input_v2::context::ContextCatalog::BuiltInCatalog();
+        const auto resolvedContext =
+            input_v2::context::ContextCatalog::ResolveAlias(catalog, dualpad::input::ToString(context))
+                .value_or(input_v2::context::UiContextId::None);
+
+        input_v2::presentation::PublishedPresentationState presentation{};
+        presentation.family = input_v2::presentation::DeviceFamily::Gamepad;
+        presentation.uiContextId = resolvedContext;
+        presentation.actionSetStack = input_v2::actions::ActionSetResolver::Resolve(catalog, resolvedContext);
+        presentation.epoch = epoch == 0 ? 1 : epoch;
+        input_v2::prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(presentation);
     }
 
     void InputModalityTracker::MarkSyntheticKeyboardScancode(std::uint8_t, std::uint8_t, std::uint64_t)
