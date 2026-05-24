@@ -156,7 +156,9 @@ local ph4_action_graph_files = {
     "src/input_v2/actions/InteractionSpec.cpp",
     "src/input_v2/actions/CompiledActionGraph.cpp",
     "src/input_v2/actions/CompiledActionGraphPublisher.cpp",
-    "src/input_v2/actions/InteractionEngine.cpp"
+    "src/input_v2/actions/InteractionEngine.cpp",
+    "src/input_v2/actions/LegacyInteractionInputAdapter.cpp",
+    "src/input_v2/actions/LegacyLifecycleBridge.cpp"
 }
 
 target("DualPadMenuContextPolicyTests")
@@ -170,6 +172,7 @@ target("DualPadMenuContextPolicyTests")
         "src/input/InputContextNames.cpp",
         "src/input/MenuContextPolicy.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph4_action_graph_files))
     add_headerfiles("tests/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
@@ -183,6 +186,7 @@ target("DualPadManifestCompilerTests")
     remove_files("tests/input_v2/ContextResolverTests.cpp")
     remove_files("tests/input_v2/PresentationProjectionTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph4_action_graph_files))
     add_files(
         "src/input/BindingManager.cpp",
         "src/input/BindingConfig.cpp",
@@ -200,6 +204,7 @@ target("DualPadContextResolverTests")
 
     add_files("tests/input_v2/ContextResolverTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
     add_files("src/input/InputContext.cpp")
     add_headerfiles("tests/**.h")
@@ -214,6 +219,7 @@ target("DualPadPresentationProjectionTests")
 
     add_files("tests/input_v2/PresentationProjectionTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
     add_files(
         "src/input_v2/presentation/SourceEvidenceCollector.cpp",
@@ -233,6 +239,12 @@ target("DualPadInputV2Tests")
 
     add_files("tests/input_v2/InputV2Tests.cpp")
     add_files(table.unpack(ph4_action_graph_files))
+    add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(
+        "src/input/BindingManager.cpp",
+        "src/input/BindingConfig.cpp",
+        "src/input/InputContextNames.cpp",
+        "src/input/MenuContextPolicy.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -304,6 +316,10 @@ local replay_runtime_files = {
 }
 
 for _, file in ipairs(ph1_manifest_compiler_files) do
+    table.insert(replay_runtime_files, file)
+end
+
+for _, file in ipairs(ph4_action_graph_files) do
     table.insert(replay_runtime_files, file)
 end
 

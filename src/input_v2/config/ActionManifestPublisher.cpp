@@ -2,6 +2,8 @@
 
 #include "input_v2/config/ActionManifestPublisher.h"
 
+#include "input_v2/actions/CompiledActionGraph.h"
+#include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 
 #include <format>
@@ -31,6 +33,25 @@ namespace dualpad::input_v2::config
                 bundle.catalog.manifestEpoch,
                 bundle.manifest.manifestEpoch,
                 bundle.manifest.legacyBindingProjection.manifestEpoch);
+            return false;
+        }
+
+        const auto graphCompile = actions::ActionGraphCompiler::Compile(bundle.manifest);
+        if (!graphCompile.ok) {
+            logger::error(
+                "[DualPad][PH4][GraphPublisher] Compile failed for manifest epoch {}: {}",
+                manifestEpoch,
+                graphCompile.message);
+            return false;
+        }
+
+        const auto graphPublication =
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(graphCompile.graph, manifestEpoch);
+        if (!graphPublication.ok) {
+            logger::error(
+                "[DualPad][PH4][GraphPublisher] Publish failed for manifest epoch {}: {}",
+                manifestEpoch,
+                graphPublication.message);
             return false;
         }
 

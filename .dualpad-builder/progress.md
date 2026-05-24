@@ -1169,3 +1169,45 @@
   - `.dualpad-builder/feature_list.json`：`PH4` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH4` 已标为 `completed`，`current_sprint=null`。
   - `PH5` / `S-PH5` 保持 `planned`，未启动。
+
+## 2026-05-24 10:24:28 CST
+
+- `PH4` close-out blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH4` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH4` 回退为 `active`，并将 `current_sprint` 设为 `S-PH4`。
+  - `PH5` / `S-PH5` 保持 `planned`，本轮不启动。
+  - 根因范围：上一轮 PH4 骨架缺少 `BindingMatchPolicy` 运行时匹配、同 primary path conflict resolution、unordered combo duplicate detection、命名的 `LegacyInteractionInputAdapter` / `KernelFrame` 输入 seam、manifest promote 后 graph publication runtime owner，以及 `ResolvedActionFrame` 到旧生命周期面的过渡 bridge / parity seam。
+  - 本轮边界：不实现 `PH5`、`PH6`、`PH7`；不改旧 SWF 返回 shape；不恢复 `FavoritesMenu` workspace。
+
+## 2026-05-24 10:45:31 CST
+
+- `PH4` close-out blocker / fixed：
+  - `InteractionEngine` 已实现 `BindingMatchPolicy`：`ExactOnly` 要求同 primary-kind active path 精确匹配；`PreferExactThenSubset` 在无 exact candidate 时允许 subset fallback。
+  - 同 primary path conflict resolution 已按 frozen policy 收口：exact 优先于 subset，更高 specificity 优先，仍冲突时以 `bindingId` 稳定排序；输出继续保留 `bindingId`。
+  - `Layer` exact 命中时不再同时触发 base Button fallback；`Layer / Combo / Gesture / Axis` 继续由 compiler 固定为 `ExactOnly`，`Button / Hold / Tap` 才允许 `PreferExactThenSubset`。
+  - `Combo` duplicate detection 已按 unordered path set canonicalize；`Combo:L1+R1` 与 `Combo:R1+L1` 会视作同一 shape 并 fail-closed。
+  - 对 legacy context alias collapse 产生的同 action / 同 shape / 非 combo 重复，compiler 会去重而不是生成多个 runtime binding；真实 `BookMenu` / `Book` -> `BookLayer` 重复因此不再阻断 graph publication。
+  - 新增 `LegacyInteractionInputAdapter` 与最小 `KernelFrame`，`InteractionEngine` 不再消费匿名 `InteractionInputFrame`；adapter 删除条件固定为 `InputKernel::BuildKernelFrame` 直接消费 `AssembledFactFrame` 后删除或退化为测试夹具。
+  - `CompiledActionGraphPublisher::GetRuntimeOwner()` 已作为 runtime graph publication owner 接入 `ActionManifestPublisher::PublishPromotedBundle(...)`；manifest publish 成功前会先 compile/publish graph，graph compile/publish 失败不会记录 manifest publication，也不会替换 active bundle。
+  - 新增 `LegacyLifecycleBridge::BuildShadowFrameActionPlan(...)`，过渡期可消费 `ResolvedActionFrame` 做 legacy `FrameActionPlan` parity / shadow bridge；旧 `ActionLifecycleCoordinator` 不再是 PH4 唯一可验证的 interaction truth。
+  - 边界确认：未启动 `PH5`、`PH6`、`PH7`；未改旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- 中途失败与修正记录：
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher` 初次失败：`DualPadReplayHarness` 未链接 PH4 graph compiler / publisher。
+    - 修正：所有消费 `ph1_manifest_compiler_files` / replay runtime 的 target 同步接入 `ph4_action_graph_files`。
+  - 修正后 replay 首次进入真实 config promotion 时失败：`BookMenu` 与 `Book` collapse 到同一 `BookLayer` 后产生同 action / 同 shape duplicate。
+    - 修正：compiler 对非 combo 的同 action alias duplicate 去重；不同 action duplicate 与 unordered combo duplicate 继续 fail-closed。
+- 验证结果：
+  - `xmake build DualPadInputV2Tests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0；测试内的 expected fail-closed 日志包含 epoch mismatch 与 duplicate graph compile failure。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1513 nodes, 3077 edges, 134 communities`。
+  - `git diff --check`：exit 0；stdout 仅包含 Windows 换行提示。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH4` 已重新标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH4` 已重新标为 `completed`，`current_sprint=null`。
+  - `PH5` / `S-PH5` 保持 `planned`，未启动。

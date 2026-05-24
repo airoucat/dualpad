@@ -4,6 +4,12 @@
 
 namespace dualpad::input_v2::actions
 {
+    CompiledActionGraphPublisher& CompiledActionGraphPublisher::GetRuntimeOwner()
+    {
+        static CompiledActionGraphPublisher owner;
+        return owner;
+    }
+
     CompiledActionGraphPublication CompiledActionGraphPublisher::Publish(
         const CompiledActionGraph& graph,
         std::uint64_t manifestEpoch)
@@ -34,5 +40,11 @@ namespace dualpad::input_v2::actions
     std::uint64_t CompiledActionGraphPublisher::GetActiveManifestEpoch() const
     {
         return _activeManifestEpoch;
+    }
+
+    void CompiledActionGraphPublisher::ResetForTests()
+    {
+        _activeGraph.reset();
+        _activeManifestEpoch = 0;
     }
 }

@@ -5,6 +5,7 @@
 #include "input/Trigger.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -21,6 +22,12 @@ namespace dualpad::input_v2::actions
             BindingMatchPolicy matchPolicy{ BindingMatchPolicy::ExactOnly };
             DisplayBindingMode defaultDisplayMode{ DisplayBindingMode::Primary };
             bool legacyTokenRenderable{ true };
+        };
+
+        struct DuplicateShapeOwner
+        {
+            std::string actionId;
+            std::string legacyOrigin;
         };
 
         ControlPath DigitalPath(std::uint32_t code)
@@ -137,7 +144,21 @@ namespace dualpad::input_v2::actions
         {
             std::ostringstream out;
             out << binding.actionSetId << '|';
-            for (const auto& path : binding.paths) {
+
+            auto shapePaths = binding.paths;
+            if (binding.interaction.kind == InteractionKind::Chord && binding.interaction.unordered) {
+                (std::sort)(shapePaths.begin(), shapePaths.end(), [](const auto& a, const auto& b) {
+                    if (a.kind != b.kind) {
+                        return static_cast<std::uint8_t>(a.kind) < static_cast<std::uint8_t>(b.kind);
+                    }
+                    if (a.code != b.code) {
+                        return a.code < b.code;
+                    }
+                    return static_cast<std::uint8_t>(a.component) < static_cast<std::uint8_t>(b.component);
+                });
+            }
+
+            for (const auto& path : shapePaths) {
                 out << static_cast<int>(path.kind) << ':' << path.code << ':' << static_cast<int>(path.component) << ';';
             }
             out << '|' << static_cast<int>(binding.interaction.kind);
@@ -211,7 +232,7 @@ namespace dualpad::input_v2::actions
             knownActions.insert(action.id);
         }
 
-        std::set<std::string> seenBindingShapes;
+        std::map<std::string, DuplicateShapeOwner> seenBindingShapes;
         std::set<std::string> displayPriorityKeys;
         BindingId nextBindingId = 1;
 
@@ -233,7 +254,6 @@ namespace dualpad::input_v2::actions
             }
 
             CompiledGraphBinding binding{};
-            binding.bindingId = nextBindingId++;
             binding.actionId = manifestBinding.actionId;
             binding.actionSetId = manifestBinding.layerId.value_or(manifestBinding.baseSetId);
             binding.paths = lowered.paths;
@@ -243,11 +263,24 @@ namespace dualpad::input_v2::actions
             binding.legacyOrigin = std::string(dualpad::input::ToString(manifestBinding.legacyTrigger.type));
 
             const auto shapeKey = BindingShapeKey(binding);
-            if (seenBindingShapes.contains(shapeKey)) {
-                result.message = "Action graph compile failed: duplicate binding in action set '" + binding.actionSetId + "'";
-                return result;
+            const auto duplicateIt = seenBindingShapes.find(shapeKey);
+            if (duplicateIt != seenBindingShapes.end()) {
+                const auto isComboDuplicate =
+                    duplicateIt->second.legacyOrigin == "Combo" || binding.legacyOrigin == "Combo";
+                if (isComboDuplicate || duplicateIt->second.actionId != binding.actionId) {
+                    result.message = "Action graph compile failed: duplicate binding in action set '" + binding.actionSetId + "'";
+                    return result;
+                }
+
+                // PH4 allows idempotent duplicates created by legacy context aliases collapsing into
+                // the same ActionSetStack. They are not runtime conflict candidates.
+                continue;
             }
-            seenBindingShapes.insert(shapeKey);
+            seenBindingShapes.emplace(shapeKey, DuplicateShapeOwner{
+                .actionId = binding.actionId,
+                .legacyOrigin = binding.legacyOrigin
+            });
+            binding.bindingId = nextBindingId++;
 
             const auto manifestDisplay = FindManifestDisplayBinding(manifest, manifestBinding);
             DisplayBindingRecord display{};

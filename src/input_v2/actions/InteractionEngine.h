@@ -3,6 +3,7 @@
 #include "input_v2/actions/ActionManifest.h"
 #include "input_v2/actions/ActionSetResolver.h"
 #include "input_v2/actions/CompiledActionGraph.h"
+#include "input_v2/actions/LegacyInteractionInputAdapter.h"
 
 #include <cstdint>
 #include <optional>
@@ -55,25 +56,6 @@ namespace dualpad::input_v2::actions
         std::vector<ActionOwnershipHint> ownershipHints;
     };
 
-    struct ControlSample
-    {
-        ControlPath path;
-        bool down{ false };
-        bool pressed{ false };
-        bool released{ false };
-        float scalar{ 0.0f };
-        std::uint64_t downAtUs{ 0 };
-        std::uint64_t timestampUs{ 0 };
-    };
-
-    struct InteractionInputFrame
-    {
-        std::uint64_t manifestEpoch{ 0 };
-        std::uint32_t contextRevision{ 0 };
-        std::uint64_t monotonicUs{ 0 };
-        std::vector<ControlSample> samples;
-    };
-
     struct InteractionBindingState
     {
         bool active{ false };
@@ -103,11 +85,11 @@ namespace dualpad::input_v2::actions
         ResolvedActionFrame Resolve(
             const CompiledActionGraph& graph,
             const ActionSetStack& actionSetStack,
-            const InteractionInputFrame& frame,
+            const KernelFrame& frame,
             InteractionStateStore& stateStore) const;
 
         static std::optional<ControlSample> FindSample(
-            const InteractionInputFrame& frame,
+            const KernelFrame& frame,
             const ControlPath& path);
 
     private:

@@ -17,12 +17,15 @@ namespace dualpad::input_v2::actions
     class CompiledActionGraphPublisher
     {
     public:
+        static CompiledActionGraphPublisher& GetRuntimeOwner();
+
         CompiledActionGraphPublication Publish(
             const CompiledActionGraph& graph,
             std::uint64_t manifestEpoch);
 
         [[nodiscard]] std::shared_ptr<const CompiledActionGraph> GetActiveGraph() const;
         [[nodiscard]] std::uint64_t GetActiveManifestEpoch() const;
+        void ResetForTests();
 
     private:
         std::shared_ptr<const CompiledActionGraph> _activeGraph;

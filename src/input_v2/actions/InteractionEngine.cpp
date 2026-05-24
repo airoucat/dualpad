@@ -4,11 +4,28 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace dualpad::input_v2::actions
 {
     namespace
     {
+        enum class BindingMatchStrength : std::uint8_t
+        {
+            None = 0,
+            Subset,
+            Exact
+        };
+
+        struct BindingCandidate
+        {
+            const CompiledGraphBinding* binding{ nullptr };
+            BindingMatchStrength strength{ BindingMatchStrength::None };
+            std::size_t specificity{ 0 };
+        };
+
         void Emit(
             ResolvedActionFrame& resolved,
             const CompiledGraphBinding& binding,
@@ -23,9 +40,162 @@ namespace dualpad::input_v2::actions
             });
         }
 
+        bool IsSamePath(const ControlPath& lhs, const ControlPath& rhs)
+        {
+            return lhs == rhs;
+        }
+
+        bool ContainsPath(const std::vector<ControlPath>& paths, const ControlPath& path)
+        {
+            return std::find_if(
+                paths.begin(),
+                paths.end(),
+                [&](const ControlPath& candidate) {
+                    return IsSamePath(candidate, path);
+                }) != paths.end();
+        }
+
+        bool IsPathActiveForMatch(const ControlSample& sample)
+        {
+            if (sample.path.kind == ControlPathKind::AnalogAxis1D) {
+                return std::fabs(sample.scalar) > 0.0001f;
+            }
+            return sample.down;
+        }
+
+        bool IsBindingPathActive(
+            const KernelFrame& frame,
+            const ControlPath& path,
+            InteractionKind kind)
+        {
+            const auto sample = InteractionEngine::FindSample(frame, path);
+            if (!sample.has_value()) {
+                return false;
+            }
+            if (kind == InteractionKind::Value) {
+                return true;
+            }
+            return sample->down || sample->pressed;
+        }
+
+        std::vector<ControlPath> ActivePathsForPrimaryKind(
+            const KernelFrame& frame,
+            const ControlPath& primaryPath)
+        {
+            std::vector<ControlPath> active;
+            for (const auto& sample : frame.state.controlSamples) {
+                if (sample.path.kind != primaryPath.kind) {
+                    continue;
+                }
+                if (!IsPathActiveForMatch(sample)) {
+                    continue;
+                }
+                if (!ContainsPath(active, sample.path)) {
+                    active.push_back(sample.path);
+                }
+            }
+            return active;
+        }
+
+        BindingMatchStrength EvaluateBindingMatch(
+            const CompiledGraphBinding& binding,
+            const KernelFrame& frame)
+        {
+            if (binding.interaction.primaryPathIndex >= binding.paths.size()) {
+                return BindingMatchStrength::None;
+            }
+
+            for (const auto& path : binding.paths) {
+                if (!IsBindingPathActive(frame, path, binding.interaction.kind)) {
+                    return BindingMatchStrength::None;
+                }
+            }
+
+            const auto& primaryPath = binding.paths[binding.interaction.primaryPathIndex];
+            const auto activePaths = ActivePathsForPrimaryKind(frame, primaryPath);
+            bool hasExtraActivePath = false;
+            for (const auto& activePath : activePaths) {
+                if (!ContainsPath(binding.paths, activePath)) {
+                    hasExtraActivePath = true;
+                    break;
+                }
+            }
+
+            if (!hasExtraActivePath) {
+                return BindingMatchStrength::Exact;
+            }
+            if (binding.matchPolicy == BindingMatchPolicy::PreferExactThenSubset) {
+                return BindingMatchStrength::Subset;
+            }
+            return BindingMatchStrength::None;
+        }
+
+        bool IsLiveState(const InteractionBindingState* state)
+        {
+            return state != nullptr &&
+                (state->active || state->holdFired || state->tapCandidate || state->chordLatched);
+        }
+
+        std::vector<const CompiledGraphBinding*> SelectBindingsForFrame(
+            const std::vector<const CompiledGraphBinding*>& visibleBindings,
+            const KernelFrame& frame,
+            const InteractionStateStore& stateStore)
+        {
+            std::vector<const CompiledGraphBinding*> selected;
+            std::unordered_set<BindingId> selectedIds;
+            std::unordered_map<ControlPath, std::vector<BindingCandidate>, ControlPathHash> candidatesByPrimaryPath;
+
+            for (const auto* binding : visibleBindings) {
+                if (binding == nullptr || binding->interaction.primaryPathIndex >= binding->paths.size()) {
+                    continue;
+                }
+
+                if (IsLiveState(stateStore.Find(binding->bindingId))) {
+                    selected.push_back(binding);
+                    selectedIds.insert(binding->bindingId);
+                    continue;
+                }
+
+                const auto strength = EvaluateBindingMatch(*binding, frame);
+                if (strength == BindingMatchStrength::None) {
+                    continue;
+                }
+
+                const auto& primaryPath = binding->paths[binding->interaction.primaryPathIndex];
+                candidatesByPrimaryPath[primaryPath].push_back(BindingCandidate{
+                    .binding = binding,
+                    .strength = strength,
+                    .specificity = binding->paths.size()
+                });
+            }
+
+            for (auto& [primaryPath, candidates] : candidatesByPrimaryPath) {
+                (void)primaryPath;
+                (std::sort)(candidates.begin(), candidates.end(), [](const auto& lhs, const auto& rhs) {
+                    if (lhs.strength != rhs.strength) {
+                        return static_cast<std::uint8_t>(lhs.strength) > static_cast<std::uint8_t>(rhs.strength);
+                    }
+                    if (lhs.specificity != rhs.specificity) {
+                        return lhs.specificity > rhs.specificity;
+                    }
+                    return lhs.binding->bindingId < rhs.binding->bindingId;
+                });
+
+                if (!candidates.empty() && !selectedIds.contains(candidates.front().binding->bindingId)) {
+                    selected.push_back(candidates.front().binding);
+                    selectedIds.insert(candidates.front().binding->bindingId);
+                }
+            }
+
+            (std::sort)(selected.begin(), selected.end(), [](const auto* lhs, const auto* rhs) {
+                return lhs->bindingId < rhs->bindingId;
+            });
+            return selected;
+        }
+
         bool RequiredPathsDown(
             const CompiledGraphBinding& binding,
-            const InteractionInputFrame& frame)
+            const KernelFrame& frame)
         {
             for (const auto requiredIndex : binding.interaction.requiredPathIndices) {
                 if (requiredIndex >= binding.paths.size()) {
@@ -41,7 +211,7 @@ namespace dualpad::input_v2::actions
 
         bool AnyRequiredPressed(
             const CompiledGraphBinding& binding,
-            const InteractionInputFrame& frame,
+            const KernelFrame& frame,
             std::uint64_t& pressedAtUs)
         {
             for (const auto requiredIndex : binding.interaction.requiredPathIndices) {
@@ -59,7 +229,7 @@ namespace dualpad::input_v2::actions
 
         bool ChordWindowSatisfied(
             const CompiledGraphBinding& binding,
-            const InteractionInputFrame& frame,
+            const KernelFrame& frame,
             const ControlSample& primary)
         {
             for (const auto requiredIndex : binding.interaction.requiredPathIndices) {
@@ -97,19 +267,20 @@ namespace dualpad::input_v2::actions
     ResolvedActionFrame InteractionEngine::Resolve(
         const CompiledActionGraph& graph,
         const ActionSetStack& actionSetStack,
-        const InteractionInputFrame& frame,
+        const KernelFrame& frame,
         InteractionStateStore& stateStore) const
     {
         ResolvedActionFrame resolved{};
-        resolved.manifestEpoch = frame.manifestEpoch;
-        resolved.contextRevision = frame.contextRevision;
+        resolved.manifestEpoch = frame.facts.manifestEpoch;
+        resolved.contextRevision = frame.facts.contextRevision;
 
-        if (frame.manifestEpoch != graph.manifestEpoch) {
+        if (frame.facts.manifestEpoch != graph.manifestEpoch) {
             return resolved;
         }
 
         const auto visibleBindings = graph.BindingsForActionSet(actionSetStack.baseSetId, actionSetStack.layerIds);
-        for (const auto* bindingPtr : visibleBindings) {
+        const auto selectedBindings = SelectBindingsForFrame(visibleBindings, frame, stateStore);
+        for (const auto* bindingPtr : selectedBindings) {
             const auto& binding = *bindingPtr;
             if (binding.interaction.primaryPathIndex >= binding.paths.size()) {
                 continue;
@@ -123,7 +294,7 @@ namespace dualpad::input_v2::actions
             auto& state = stateStore.ForBinding(binding.bindingId);
             const auto requiredDown = RequiredPathsDown(binding, frame);
             const auto activeByPrimary = primary->down && requiredDown;
-            const auto now = frame.monotonicUs != 0 ? frame.monotonicUs : primary->timestampUs;
+            const auto now = frame.facts.monotonicUs != 0 ? frame.facts.monotonicUs : primary->timestampUs;
 
             switch (binding.interaction.kind) {
             case InteractionKind::Value: {
@@ -236,16 +407,16 @@ namespace dualpad::input_v2::actions
     }
 
     std::optional<ControlSample> InteractionEngine::FindSample(
-        const InteractionInputFrame& frame,
+        const KernelFrame& frame,
         const ControlPath& path)
     {
         const auto it = std::find_if(
-            frame.samples.begin(),
-            frame.samples.end(),
+            frame.state.controlSamples.begin(),
+            frame.state.controlSamples.end(),
             [&](const ControlSample& sample) {
                 return sample.path == path;
             });
-        if (it == frame.samples.end()) {
+        if (it == frame.state.controlSamples.end()) {
             return std::nullopt;
         }
         return *it;
