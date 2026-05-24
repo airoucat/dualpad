@@ -1538,3 +1538,35 @@
   - `.dualpad-builder/feature_list.json`：`PH7` 保持 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH7` 保持 `completed`，`current_sprint=null`。
   - `PH8` / `S-PH8`、`PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
+## 2026-05-24 23:16:21 CST
+
+- `PH7` close-out 漏洞 / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH7` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH7` 回退为 `active`，并将 `current_sprint` 设为 `S-PH7`。
+  - 根因范围：上一轮新增的 legacy snapshot / marker producer targeted tests 已存在，但未全部接入 `DualPadIngressTests` 的 `main()`；同时 `InputModalityTracker::PublishPresentationState(...)` 已生成 `SourceEvidenceFrame`，但还未把该 frame 推入 `IngressHub`，导致真实 runtime device-family marker producer seam 未接线。
+  - 本轮修复范围限定为 PH7 close-out 漏洞：补齐 `IngressTests` main 调用、接入 `PublishSourceEvidenceFrameToIngressHub(frame)`，并确认 `SourceEvidence` 仍只做配对 / 校验 / mirror。
+  - `PH8` / `09a` / `09b` 保持 `planned`，本轮不启动。
+
+## 2026-05-24 23:28:33 CST
+
+- `PH7` close-out 漏洞 / fixed：
+  - `tests/input_v2/IngressTests.cpp` 的 `main()` 已接入 `TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger`、`TestLegacySequenceDiscontinuityProducesSequenceGap`、`TestManifestPublisherProducesIngressMarker`、`TestDeviceFamilyProducerProducesMarkerAndPairedSourceEvidence`。
+  - `InputModalityTracker::PublishPresentationState(...)` 已在 `CollectAfterDeviceFamilyIngress(...)` 产出 `SourceEvidenceFrame` 后调用 `PublishSourceEvidenceFrameToIngressHub(frame)`，真实 runtime device-family marker producer seam 已推入 ingress。
+  - `FrameAssembler` 仍只通过 `DeviceFamilyChangedPayload.deviceFamilyRevision` 写入 boundary key；`SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision` 只用于 pending marker 配对、mismatch fail-closed 校验与 facts mirror，不成为 `deviceFamilyRevision` authority。
+  - 本轮没有启动 `PH8` / `09a` / `09b`。
+- 验证结果：
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1737 nodes, 3533 edges, 149 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH7` 已标回 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH7` 已标回 `completed`，`current_sprint=null`。
+  - `PH8` / `S-PH8`、`PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned`，未启动。

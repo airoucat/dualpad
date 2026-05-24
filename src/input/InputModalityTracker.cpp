@@ -7,6 +7,7 @@
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
+#include "input_v2/ingress/LegacyIngressAdapter.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
 #include <algorithm>
@@ -405,6 +406,7 @@ namespace dualpad::input
         const auto contextSnapshot = GetPresentationContextSnapshot();
         const auto publication = _deviceFamilyIngress.Publish(family, source, nowMs);
         const auto frame = _sourceEvidence.CollectAfterDeviceFamilyIngress(publication, contextSnapshot, nowMs);
+        input_v2::ingress::PublishSourceEvidenceFrameToIngressHub(frame);
         const auto& sourceSnapshot = frame.records.back().sourceEvidence;
         const auto gameplay =
             input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();

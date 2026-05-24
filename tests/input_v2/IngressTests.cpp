@@ -346,6 +346,10 @@ namespace
 int main()
 {
     TestHubAssignsSeqAndEmitsOverflowMarker();
+    TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
+    TestLegacySequenceDiscontinuityProducesSequenceGap();
+    TestManifestPublisherProducesIngressMarker();
+    TestDeviceFamilyProducerProducesMarkerAndPairedSourceEvidence();
     TestStableMergeKeepsPulseLedger();
     TestBoundaryChangeFlushesStableThenTransition();
     TestRecoveryMarkersMapFailClosed();
