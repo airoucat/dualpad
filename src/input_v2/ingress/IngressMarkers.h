@@ -1,10 +1,12 @@
 #pragma once
 
 #include "input_v2/actions/LegacyInteractionInputAdapter.h"
+#include "input/injection/PadEventSnapshot.h"
 #include "input_v2/ingress/IngressBoundaryKey.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace dualpad::input_v2::ingress
@@ -35,6 +37,12 @@ namespace dualpad::input_v2::ingress
     struct PadSnapshotPayload
     {
         std::vector<actions::ControlSample> samples;
+        std::optional<dualpad::input::PadEventSnapshot> legacySnapshot;
+        std::uint64_t firstSequence{ 0 };
+        std::uint64_t sequence{ 0 };
+        bool overflowed{ false };
+        bool coalesced{ false };
+        bool crossContextMismatch{ false };
     };
 
     struct UiSnapshotPayload

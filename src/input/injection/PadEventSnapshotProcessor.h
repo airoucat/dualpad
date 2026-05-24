@@ -9,6 +9,7 @@
 #include "input/injection/PadEventSnapshot.h"
 #include "input/injection/SourceBlockCoordinator.h"
 #include "input/injection/SyntheticStateReducer.h"
+#include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 
 #include <cstdint>
@@ -22,6 +23,7 @@ namespace dualpad::input
         static PadEventSnapshotProcessor& GetSingleton();
 
         void Process(const PadEventSnapshot& snapshot);
+        void ProcessIngressFrame(const input_v2::ingress::AssembledFactFrame& frame);
         void ResetState();
 
     private:
@@ -78,5 +80,6 @@ namespace dualpad::input
         backend::FrameActionPlanner _planner{};
         backend::FrameActionPlan _framePlan{};
         RecoveryBaseline _cleanRecoveryBaseline{};
+        bool _ingressRecoveryAuthoritative{ false };
     };
 }

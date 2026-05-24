@@ -136,6 +136,15 @@ namespace dualpad::input_v2::ingress
         _window.lastSeq = event.seq;
 
         if (event.kind == IngressKind::PadSnapshot) {
+            if (event.pad.legacySnapshot) {
+                _window.facts.legacySnapshot = event.pad.legacySnapshot;
+            }
+            _window.facts.health.coalescedSnapshot =
+                _window.facts.health.coalescedSnapshot || event.pad.coalesced;
+            _window.facts.health.crossContextMismatch =
+                _window.facts.health.crossContextMismatch || event.pad.crossContextMismatch;
+            _window.facts.health.queueOverflow =
+                _window.facts.health.queueOverflow || event.pad.overflowed;
             for (const auto& sample : event.pad.samples) {
                 if (IsPulse(sample)) {
                     _window.facts.pulseLedger.push_back(sample);
@@ -266,7 +275,9 @@ namespace dualpad::input_v2::ingress
         kernel.state.healthDegraded = frame.facts.health.boundaryMarkerMismatch ||
             frame.facts.health.pendingBoundaryMarkerPair ||
             frame.facts.health.queueOverflow ||
-            frame.facts.health.sequenceGap;
+            frame.facts.health.sequenceGap ||
+            frame.facts.health.coalescedSnapshot ||
+            frame.facts.health.crossContextMismatch;
         kernel.kernelRevision = frame.lastSeq;
         return kernel;
     }

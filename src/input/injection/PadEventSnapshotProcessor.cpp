@@ -17,6 +17,8 @@
 #include "input/injection/UnmanagedDigitalPublisher.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
+#include "input_v2/ingress/FrameAssembler.h"
+#include "input_v2/ingress/IngressRecovery.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace logger = SKSE::log;
@@ -642,7 +644,8 @@ namespace dualpad::input
         }
 
         bool didResync = false;
-        if (_lastProcessedSequence != 0 &&
+        if (!_ingressRecoveryAuthoritative &&
+            _lastProcessedSequence != 0 &&
             snapshot.firstSequence != (_lastProcessedSequence + 1)) {
             logger::warn(
                 "[DualPad][Snapshot] Sequence gap detected: expected {} got {}. Resynchronizing native input state.",
@@ -666,14 +669,16 @@ namespace dualpad::input
         auto effectiveEvents = snapshot.events;
         std::uint32_t recoveredPressHandledMask = 0;
         const bool degradedSnapshot =
-            didResync ||
-            snapshot.coalesced ||
-            snapshot.overflowed ||
-            snapshot.events.overflowed ||
-            snapshot.crossContextMismatch;
+            !_ingressRecoveryAuthoritative &&
+            (didResync ||
+                snapshot.coalesced ||
+                snapshot.overflowed ||
+                snapshot.events.overflowed ||
+                snapshot.crossContextMismatch);
         const bool hardResync =
-            snapshot.overflowed ||
-            snapshot.events.overflowed;
+            !_ingressRecoveryAuthoritative &&
+            (snapshot.overflowed ||
+                snapshot.events.overflowed);
         if (degradedSnapshot && !didResync) {
             logger::warn(
                 "[DualPad][Snapshot] Entering degraded recovery path seq={} firstSeq={} coalesced={} overflowed={} crossContextMismatch={}",
@@ -746,6 +751,69 @@ namespace dualpad::input
         if (!degradedSnapshot) {
             CommitCleanRecoveryBaseline(syntheticFrame, context, contextEpoch, snapshot.sequence);
         }
+    }
+
+    void PadEventSnapshotProcessor::ProcessIngressFrame(const input_v2::ingress::AssembledFactFrame& frame)
+    {
+        if (frame.kind == input_v2::ingress::AssembledFrameKind::Transition) {
+            const auto recovery = input_v2::ingress::ToGameplayRecoveryInput(frame);
+            if (recovery.hardResetRequested) {
+                logger::warn(
+                    "[DualPad][IngressRecovery] hard reset reason={} from=({}, {}, {}, {}) to=({}, {}, {}, {})",
+                    static_cast<std::uint32_t>(frame.transition.reason),
+                    frame.transition.from.manifestEpoch,
+                    frame.transition.from.contextRevision,
+                    frame.transition.from.menuStackRevision,
+                    frame.transition.from.deviceFamilyRevision,
+                    frame.transition.to.manifestEpoch,
+                    frame.transition.to.contextRevision,
+                    frame.transition.to.menuStackRevision,
+                    frame.transition.to.deviceFamilyRevision);
+                ResetAllState();
+            } else if (recovery.softResyncRequested || recovery.sequenceGapObserved) {
+                logger::warn(
+                    "[DualPad][IngressRecovery] soft resync reason={} boundary=({}, {}, {}, {})",
+                    static_cast<std::uint32_t>(frame.transition.reason),
+                    frame.transition.to.manifestEpoch,
+                    frame.transition.to.contextRevision,
+                    frame.transition.to.menuStackRevision,
+                    frame.transition.to.deviceFamilyRevision);
+                ResyncNativeState();
+            }
+            return;
+        }
+
+        const auto kernel = input_v2::ingress::BuildKernelFrame(frame);
+        if (!input_v2::ingress::ShouldDispatchToInteractionEngine(frame)) {
+            return;
+        }
+
+        if (frame.facts.legacySnapshot) {
+            auto snapshot = *frame.facts.legacySnapshot;
+#ifdef DUALPAD_REPLAY_HARNESS
+            InputModalityTracker::GetSingleton().SetReplayContext(snapshot.context, snapshot.contextEpoch);
+#endif
+            snapshot.firstSequence = snapshot.sequence;
+            if (snapshot.sequence != 0) {
+                _lastProcessedSequence = snapshot.sequence - 1;
+            }
+            _ingressRecoveryAuthoritative = true;
+            Process(snapshot);
+            _ingressRecoveryAuthoritative = false;
+            return;
+        }
+
+        input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessGameplayFrame(
+            input_v2::gameplay::DualPadRuntimeInput{
+                .kernel = kernel,
+                .resolved = input_v2::actions::ResolvedActionFrame{
+                    .manifestEpoch = kernel.facts.manifestEpoch,
+                    .contextRevision = kernel.facts.contextRevision
+                },
+                .policy = input_v2::gameplay::GameplayPolicy{},
+                .recovery = input_v2::gameplay::GameplayRecoveryInput{ .cleanFrame = true },
+                .outputTick = kernel.facts.monotonicUs
+            });
     }
 }
 

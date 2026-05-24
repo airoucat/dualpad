@@ -2,6 +2,8 @@
 
 #include "input_v2/ingress/IngressHub.h"
 
+#include "input_v2/ingress/LegacyIngressAdapter.h"
+
 #include <chrono>
 
 namespace dualpad::input_v2::ingress
@@ -64,18 +66,28 @@ namespace dualpad::input_v2::ingress
 
     bool IngressHub::PushPadSnapshot(const dualpad::input::PadEventSnapshot& snapshot)
     {
-        IngressEvent event{};
-        event.kind = snapshot.type == dualpad::input::PadEventSnapshotType::Reset ?
-            IngressKind::ExplicitReset :
-            IngressKind::PadSnapshot;
-        event.source = IngressSource::LegacyDispatcher;
-        event.monotonicUs = snapshot.sourceTimestampUs;
-        if (snapshot.overflowed) {
-            event.kind = IngressKind::QueueOverflow;
-        } else if (snapshot.firstSequence != 0 && snapshot.sequence != 0 && snapshot.firstSequence > snapshot.sequence) {
-            event.kind = IngressKind::SequenceGap;
+        const auto converted = ConvertLegacySnapshotToIngressEvents(snapshot, _lastLegacySequence);
+        bool accepted = true;
+        for (auto event : converted) {
+            accepted = PushEvent(std::move(event)) && accepted;
         }
-        return PushEvent(std::move(event));
+        if (snapshot.sequence != 0) {
+            _lastLegacySequence = snapshot.sequence;
+        }
+        {
+            std::scoped_lock lock(_mutex);
+            ++_pendingLegacySnapshots;
+        }
+        return accepted;
+    }
+
+    void IngressHub::PushManifestEpochChanged(std::uint64_t manifestEpoch)
+    {
+        IngressEvent event{};
+        event.kind = IngressKind::ManifestEpochChanged;
+        event.source = IngressSource::ManifestPublisher;
+        event.manifest.manifestEpoch = static_cast<std::uint32_t>(manifestEpoch);
+        (void)PushEvent(std::move(event));
     }
 
     void IngressHub::PushSequenceGap()
@@ -93,7 +105,20 @@ namespace dualpad::input_v2::ingress
         std::scoped_lock lock(_mutex);
         auto drained = std::move(_queue);
         _queue.clear();
+        _pendingLegacySnapshots = 0;
         return drained;
+    }
+
+    std::size_t IngressHub::PendingCount() const
+    {
+        std::scoped_lock lock(_mutex);
+        return _queue.size();
+    }
+
+    std::size_t IngressHub::PendingLegacySnapshotCount() const
+    {
+        std::scoped_lock lock(_mutex);
+        return _pendingLegacySnapshots;
     }
 
     void IngressHub::ResetForTests()
@@ -101,5 +126,7 @@ namespace dualpad::input_v2::ingress
         std::scoped_lock lock(_mutex);
         _queue.clear();
         _nextSeq = 1;
+        _lastLegacySequence = 0;
+        _pendingLegacySnapshots = 0;
     }
 }

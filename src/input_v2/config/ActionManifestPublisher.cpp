@@ -5,6 +5,7 @@
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/ingress/IngressHub.h"
 
 #include <format>
 
@@ -61,6 +62,7 @@ namespace dualpad::input_v2::config
         _lastPublishedEpoch = manifestEpoch;
         _activeEpochObservedAtLastPublish = activeEpochBeforePublish;
         ++_publishCount;
+        ingress::IngressHub::GetSingleton().PushManifestEpochChanged(manifestEpoch);
         logger::info("[DualPad][PH1][Publisher] Published manifest epoch {}", manifestEpoch);
         return true;
     }

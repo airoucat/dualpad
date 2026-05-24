@@ -2,7 +2,10 @@
 
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
+#include "input_v2/ingress/LegacyIngressAdapter.h"
 #include "input_v2/ingress/IngressRecovery.h"
+#include "input_v2/config/ActionManifestPublisher.h"
+#include "input_v2/config/AtomicConfigReloader.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -11,6 +14,7 @@
 namespace
 {
     using namespace dualpad::input_v2;
+    namespace input = dualpad::input;
 
     void Require(bool condition, const char* message)
     {
@@ -116,6 +120,123 @@ namespace
         Require(drained.size() == 1, "overflow must replace backlog with one marker");
         Require(drained[0].kind == ingress::IngressKind::QueueOverflow, "overflow marker must be formal event");
         Require(drained[0].seq == 3, "hub must assign monotonic seq to overflow marker");
+    }
+
+    void TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger()
+    {
+        input::PadEventSnapshot snapshot{};
+        snapshot.sequence = 10;
+        snapshot.firstSequence = 10;
+        snapshot.sourceTimestampUs = 1234;
+        snapshot.contextEpoch = 77;
+        snapshot.state.timestampUs = 1234;
+        snapshot.state.sequence = 10;
+        snapshot.state.buttons.digitalMask = 0x3;
+        snapshot.state.leftStick.x = 0.25f;
+        snapshot.state.leftStick.y = -0.5f;
+        snapshot.state.rightTrigger.normalized = 0.75f;
+
+        input::PadEvent press{};
+        press.type = input::PadEventType::ButtonPress;
+        press.code = 0x1;
+        press.timestampUs = 1200;
+        snapshot.events.Push(press);
+
+        input::PadEvent release{};
+        release.type = input::PadEventType::ButtonRelease;
+        release.code = 0x2;
+        release.timestampUs = 1210;
+        snapshot.events.Push(release);
+
+        input::PadEvent axis{};
+        axis.type = input::PadEventType::AxisChange;
+        axis.axis = input::PadAxisId::RightTrigger;
+        axis.value = 0.75f;
+        axis.timestampUs = 1220;
+        snapshot.events.Push(axis);
+
+        const auto converted = ingress::ConvertLegacySnapshotToIngressEvents(snapshot, 9);
+        Require(converted.size() == 2, "snapshot with continuous sequence must produce ui + pad ingress events");
+        Require(converted[1].kind == ingress::IngressKind::PadSnapshot, "legacy snapshot must become PadSnapshot");
+        Require(converted[1].pad.samples.size() >= 6, "digital down and analog values must become control samples");
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(AssignSeq({
+            Manifest(1),
+            DeviceMarker(presentation::DeviceFamily::Gamepad, 1),
+            SourceEvidence(1),
+            converted[0],
+            converted[1]
+        }));
+        const auto& stable = LastFrame(frames);
+        Require(stable.kind == ingress::AssembledFrameKind::Stable, "converted snapshot must reach stable frame");
+        Require(stable.facts.pulseLedger.size() == 2, "legacy press/release edges must enter pulse ledger");
+        Require(stable.facts.controlSamples.size() >= 6, "stable facts must retain non-empty control samples");
+    }
+
+    void TestLegacySequenceDiscontinuityProducesSequenceGap()
+    {
+        input::PadEventSnapshot snapshot{};
+        snapshot.sequence = 12;
+        snapshot.firstSequence = 12;
+        const auto converted = ingress::ConvertLegacySnapshotToIngressEvents(snapshot, 10);
+        Require(!converted.empty(), "converted events must not be empty");
+        Require(converted[0].kind == ingress::IngressKind::SequenceGap, "last observed 10 then first 12 must produce SequenceGap");
+    }
+
+    void TestManifestPublisherProducesIngressMarker()
+    {
+        ingress::IngressHub::GetSingleton().ResetForTests();
+        actions::CompiledActionManifest manifest{};
+        manifest.manifestEpoch = 42;
+        manifest.actions = {
+            actions::ActionDefinition{ .id = "Jump", .valueKind = actions::ActionValueKind::Digital }
+        };
+        manifest.bindings.push_back(actions::CompiledBinding{
+            .actionId = "Jump",
+            .baseSetId = "GameplayBase",
+            .legacyTrigger = input::Trigger{ .type = input::TriggerType::Button, .code = 10 }
+        });
+
+        config::CompiledConfigBundle bundle{};
+        bundle.manifestEpoch = 42;
+        bundle.catalog.manifestEpoch = 42;
+        bundle.manifest = manifest;
+        bundle.manifest.legacyBindingProjection.manifestEpoch = 42;
+
+        Require(
+            config::ActionManifestPublisher::GetSingleton().PublishPromotedBundle(bundle, 42),
+            "manifest publish must succeed");
+        const auto drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(!drained.empty(), "manifest publish seam must enqueue ingress marker");
+        Require(drained.back().kind == ingress::IngressKind::ManifestEpochChanged, "manifest publish marker kind required");
+        Require(drained.back().manifest.manifestEpoch == 42, "manifest marker payload is authoritative epoch");
+    }
+
+    void TestDeviceFamilyProducerProducesMarkerAndPairedSourceEvidence()
+    {
+        ingress::IngressHub::GetSingleton().ResetForTests();
+        presentation::DeviceFamilyIngressPublisher publisher;
+        presentation::SourceEvidenceCollector collector;
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 9;
+        contextSnapshot.menuStackRevision = 10;
+
+        const auto publication = publisher.Publish(
+            presentation::DeviceFamily::Gamepad,
+            presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+            100);
+        const auto frame = collector.CollectAfterDeviceFamilyIngress(publication, contextSnapshot, 100);
+        ingress::PublishSourceEvidenceFrameToIngressHub(frame);
+
+        const auto drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 2, "device family seam must enqueue marker plus source evidence");
+        Require(drained[0].kind == ingress::IngressKind::DeviceFamilyChanged, "device marker must be first");
+        Require(drained[1].kind == ingress::IngressKind::SourceEvidence, "source evidence must pair after marker");
+        Require(
+            drained[0].deviceFamily.deviceFamilyRevision ==
+                drained[1].sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision,
+            "source evidence revision must only pair/mirror marker payload");
     }
 
     void TestStableMergeKeepsPulseLedger()

@@ -24,6 +24,8 @@ namespace dualpad::input_v2::ingress
         bool boundaryMarkerMismatch{ false };
         bool queueOverflow{ false };
         bool sequenceGap{ false };
+        bool coalescedSnapshot{ false };
+        bool crossContextMismatch{ false };
     };
 
     struct FactFrame
@@ -35,6 +37,7 @@ namespace dualpad::input_v2::ingress
         std::vector<actions::ControlSample> controlSamples;
         std::vector<actions::ControlSample> pulseLedger;
         presentation::SourceEvidenceSnapshot sourceEvidence;
+        std::optional<dualpad::input::PadEventSnapshot> legacySnapshot;
         FactHealth health;
     };
 

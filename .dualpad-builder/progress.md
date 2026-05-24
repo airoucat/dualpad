@@ -1494,3 +1494,47 @@
   - `.dualpad-builder/feature_list.json`：`PH7` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH7` 已标为 `completed`，`current_sprint=null`。
   - `PH8` / `S-PH8`、`PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
+## 2026-05-24 22:28:18 CST
+
+- `PH7` runtime ingress cutover blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH7` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH7` 回退为 `active`，并将 `current_sprint` 设为 `S-PH7`。
+  - 根因范围：上一轮 `IngressHub` / `FrameAssembler` 已落地合同与 targeted tests，但 live runtime 仍以 `PadEventSnapshotDispatcher` pending queue、旧 coalescing 与 `PadEventSnapshotProcessor::Process(snapshot)` 为 authoritative path；legacy snapshot 未完整转出 `ControlSample` / pulse ledger，`SequenceGap` detection 也未基于上一条 observed/processed sequence。
+  - 本轮修复范围限定为 PH7 runtime ingress cutover、marker producer 接线、transition recovery 接线与 targeted tests。
+  - `PH8` / `09a` / `09b` 保持 `planned`，本轮不启动。
+
+## 2026-05-24 22:58:15 CST
+
+- `PH7` runtime ingress cutover blocker / fixed：
+  - `PadEventSnapshotDispatcher::SubmitSnapshot(...)` 已退为 legacy ingress adapter：不再把 snapshot 写入旧 pending queue 作为 authoritative drain source，而是经 `IngressHub::PushPadSnapshot(...)` 转成正式 ingress events。
+  - `DrainOnMainThread(...)` 已切到 `IngressHub::Drain -> FrameAssembler::Assemble -> PadEventSnapshotProcessor::ProcessIngressFrame(...)`。
+  - `DrainForReplay(...)` 也走同一 assembled frame path；dispatcher replay 不再通过 sink 直接绕到旧 `PadEventSnapshotProcessor::Process(snapshot)`。
+  - 新增 `LegacyIngressAdapter`：legacy snapshot 会转出 `UiSnapshot` + `PadSnapshot` ingress facts；digital down、press、release 和 analog values 均进入 `ControlSample`，press/release 进入 assembler pulse ledger。
+  - `SequenceGap` detection 已改为基于 `lastObservedSequence + 1 != current.firstSequence`，不再使用错误的 `firstSequence > sequence` 判定。
+  - `ActionManifestPublisher::PublishPromotedBundle(...)` 已接入 `ManifestEpochChanged` marker producer seam；marker payload 是 `manifestEpoch` 的唯一 ingress authority。
+  - `SourceEvidenceCollector` 产出的 `DeviceFamilyChanged` marker + `SourceEvidenceSnapshot` 可通过 `PublishSourceEvidenceFrameToIngressHub(...)` 成对进入 ingress；`SourceEvidence` 只做配对 / 校验 / mirror，不作为 `deviceFamilyRevision` authority。
+  - `PadEventSnapshotProcessor::ProcessIngressFrame(...)` 对 `Transition` frame 只执行 recovery，不进入 interaction / gameplay / prompt；对 `Stable` frame 先 `BuildKernelFrame(...)`，再桥接 legacy snapshot 兼容处理。
+  - 旧 processor 的 sequence/degraded recovery 判定在 ingress-authoritative stable frame 内被禁用，避免绕过 `Transition` frame 重复拥有 recovery truth；原始 snapshot metadata 仍保留用于 trace parity。
+  - 本轮没有启动 `PH8` / `09a` / `09b`，也没有改旧 SWF 返回 shape或恢复 `FavoritesMenu` workspace。
+  - bookkeeping correction：本地状态 patch 曾误触 `DP1a` / `S-DP1a`，已恢复为 `completed`。
+- RED / GREEN：
+  - RED：新增 blocker tests 后，`xmake build DualPadIngressTests` 初次 exit 1，原因是缺 `input_v2/ingress/LegacyIngressAdapter.h`，证明测试覆盖了 legacy snapshot -> ingress facts 缺口。
+  - GREEN：补齐 adapter、producer seam 与 runtime drain cutover 后，`DualPadIngressTests` / `DualPadReplayTests` 均通过。
+- 验证结果：
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `git diff --check`：exit 0；stdout 仅包含 Windows 换行提示。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null; python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1737 nodes, 3529 edges, 149 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH7` 保持 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH7` 保持 `completed`，`current_sprint=null`。
+  - `PH8` / `S-PH8`、`PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned`，未启动。

@@ -19,9 +19,12 @@ namespace dualpad::input_v2::ingress
 
         bool PushEvent(IngressEvent event);
         bool PushPadSnapshot(const dualpad::input::PadEventSnapshot& snapshot);
+        void PushManifestEpochChanged(std::uint64_t manifestEpoch);
         void PushSequenceGap();
         void PushExplicitReset();
         std::vector<IngressEvent> Drain();
+        std::size_t PendingCount() const;
+        std::size_t PendingLegacySnapshotCount() const;
         void ResetForTests();
 
     private:
@@ -32,7 +35,9 @@ namespace dualpad::input_v2::ingress
 
         std::size_t _capacity{ 256 };
         std::uint64_t _nextSeq{ 1 };
+        std::uint64_t _lastLegacySequence{ 0 };
+        std::size_t _pendingLegacySnapshots{ 0 };
         std::vector<IngressEvent> _queue;
-        std::mutex _mutex;
+        mutable std::mutex _mutex;
     };
 }

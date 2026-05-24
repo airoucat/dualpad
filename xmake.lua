@@ -190,7 +190,8 @@ local ph7_ingress_files = {
     "src/input_v2/ingress/FrameAssembler.cpp",
     "src/input_v2/ingress/IngressBoundaryKey.cpp",
     "src/input_v2/ingress/IngressMarkers.cpp",
-    "src/input_v2/ingress/IngressRecovery.cpp"
+    "src/input_v2/ingress/IngressRecovery.cpp",
+    "src/input_v2/ingress/LegacyIngressAdapter.cpp"
 }
 
 target("DualPadMenuContextPolicyTests")
@@ -204,6 +205,7 @@ target("DualPadMenuContextPolicyTests")
         "src/input/InputContextNames.cpp",
         "src/input/MenuContextPolicy.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_headerfiles("tests/**.h")
     add_includedirs("src")
@@ -217,7 +219,10 @@ target("DualPadManifestCompilerTests")
     add_files("tests/input_v2/**.cpp")
     remove_files("tests/input_v2/ContextResolverTests.cpp")
     remove_files("tests/input_v2/PresentationProjectionTests.cpp")
+    remove_files("tests/input_v2/IngressTests.cpp")
+    remove_files("tests/input_v2/ReplayTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(
         "src/input/BindingManager.cpp",
@@ -236,6 +241,7 @@ target("DualPadContextResolverTests")
 
     add_files("tests/input_v2/ContextResolverTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
     add_files("src/input/InputContext.cpp")
@@ -251,6 +257,7 @@ target("DualPadPresentationProjectionTests")
 
     add_files("tests/input_v2/PresentationProjectionTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
     add_files(
@@ -272,6 +279,7 @@ target("DualPadInputV2Tests")
     add_files("tests/input_v2/InputV2Tests.cpp")
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph7_ingress_files))
     add_files(
         "src/input/BindingManager.cpp",
         "src/input/BindingConfig.cpp",
@@ -306,6 +314,7 @@ target("DualPadPromptSnapshotTests")
 
     add_files("tests/input_v2/PromptSnapshotTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph6_prompt_files))
     add_files(table.unpack(ph6_scaleform_prompt_files))
@@ -322,6 +331,9 @@ target("DualPadIngressTests")
 
     add_files("tests/input_v2/IngressTests.cpp")
     add_files(table.unpack(ph7_ingress_files))
+    add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph4_action_graph_files))
+    add_files("src/input_v2/presentation/SourceEvidenceCollector.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
