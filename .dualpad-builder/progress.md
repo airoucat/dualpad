@@ -1093,3 +1093,36 @@
   - `.dualpad-builder/feature_list.json`：`PH3` 已重新标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH3` 已重新标为 `completed`，`current_sprint=null`。
   - `PH4` / `S-PH4` 保持 `planned`，未启动。
+
+## 2026-05-24 09:17:07 CST
+
+- `PH3` menu owner takeover blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH3` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH3` 回退为 `active`，并将 `current_sprint` 设为 `S-PH3`。
+  - `PH4` / `S-PH4` 保持 `planned`，本轮不启动。
+  - 根因：`PresentationProjection` 在 `HostMode::Menu` 下进入首帧后只保留 `_published.owner`，未消费 `SourceEvidenceSnapshot.keyboardEvidence / mouseButtonEvidence / mouseMoveEvidence / gamepadEvidence / gamepadLease` 来决定 menu owner，导致 menu 内 keyboard takeover / gamepad reclaim 不能稳定推进 `PublishedPresentationState.owner`、`dirty.Owner` 与 `epoch`。
+
+## 2026-05-24 09:19:20 CST
+
+- `PH3` menu owner takeover blocker / fixed：
+  - `PresentationProjection` 在 `HostMode::Menu` 下现在按 source evidence 更新 owner：
+    - `keyboardEvidence / mouseButtonEvidence / mouseMoveEvidence` -> `PresentationOwner::KeyboardMouse`
+    - `gamepadEvidence / gamepadLease` -> `PresentationOwner::Gamepad`
+  - `Gameplay -> Menu` 首帧仍继承 `PublishedGameplayPresentation.menuEntryOwner`。
+  - `Menu -> Gameplay` 仍重新消费 `PublishedGameplayPresentation.engineOwner`。
+  - owner 变化通过现有 dirty diff 机制设置 `PresentationDirtyFlags::Owner` 并推进 `epoch`；unchanged publish 不抖动 `epoch`。
+  - `SourceEvidenceCollector` 在显式键鼠证据进入时清理旧 gamepad lease，避免旧 lease 压过真实 keyboard / mouse takeover。
+  - 边界确认：未回退到 `InputModalityTracker` 旧字段作为 hook truth；未启动 `PH4`、`PH5`、`PH6`、`PH7`；未改变旧 SWF 返回 shape；未恢复 `FavoritesMenu` workspace。
+- 验证结果：
+  - `xmake build DualPadPresentationProjectionTests`：exit 0，输出包含 `build ok`。
+  - `xmake run DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出包含 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor`：exit 0，10 个 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1437 nodes, 2899 edges, 124 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH3` 已重新标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH3` 已重新标为 `completed`，`current_sprint=null`。
+  - `PH4` / `S-PH4` 保持 `planned`，未启动。

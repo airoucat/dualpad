@@ -100,6 +100,7 @@ namespace dualpad::input_v2::presentation
         _latest.keyboardEvidence = active && !syntheticSuppressed;
         if (_latest.keyboardEvidence) {
             _latest.gamepadEvidence = false;
+            ClearGamepadLease();
         }
         _latest.syntheticKeyboardWindow = IsSyntheticKeyboardWindowActive(tick);
         _latest.collectedTick = tick;
@@ -110,6 +111,7 @@ namespace dualpad::input_v2::presentation
         _latest.mouseButtonEvidence = active;
         if (active) {
             _latest.gamepadEvidence = false;
+            ClearGamepadLease();
             _latest.pointerSignal = PointerSignal::PointerActive;
         }
         _latest.collectedTick = tick;
@@ -132,6 +134,7 @@ namespace dualpad::input_v2::presentation
         _mouseMoveAccumulator.lastMoveAtMs = tick;
         _latest.mouseMoveEvidence = true;
         _latest.gamepadEvidence = false;
+        ClearGamepadLease();
         _latest.pointerSignal = PointerSignal::HoverOnly;
         _latest.collectedTick = tick;
     }

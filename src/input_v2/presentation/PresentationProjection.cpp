@@ -30,6 +30,13 @@ namespace dualpad::input_v2::presentation
                 return PointerIntent::None;
             }
         }
+
+        bool HasKeyboardMouseEvidence(const SourceEvidenceSnapshot& evidence)
+        {
+            return evidence.keyboardEvidence ||
+                evidence.mouseButtonEvidence ||
+                evidence.mouseMoveEvidence;
+        }
     }
 
     PresentationDirtyFlags operator|(PresentationDirtyFlags lhs, PresentationDirtyFlags rhs)
@@ -74,6 +81,12 @@ namespace dualpad::input_v2::presentation
         } else if (enteringMenu) {
             next.owner = gameplay.menuEntryOwner;
             next.reason = PresentationDecisionReason::GameplayMenuEntryOwner;
+        } else if (evidence.gamepadEvidence || evidence.gamepadLease) {
+            next.owner = PresentationOwner::Gamepad;
+            next.reason = PresentationDecisionReason::MenuSourceEvidence;
+        } else if (HasKeyboardMouseEvidence(evidence)) {
+            next.owner = PresentationOwner::KeyboardMouse;
+            next.reason = PresentationDecisionReason::MenuSourceEvidence;
         } else {
             next.owner = _published.owner;
             next.reason = PresentationDecisionReason::MenuSourceEvidence;

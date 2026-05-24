@@ -124,6 +124,45 @@ void RunPresentationProjectionTests()
             published.actionSetStack == MenuContext().actionSetStack,
             "PresentationProjection must forward PH2 action set stack");
         Require(published.epoch == 1, "dirty first publish must advance epoch");
+
+        auto keyboardTakeover = snapshot;
+        keyboardTakeover.keyboardEvidence = true;
+        keyboardTakeover.deviceFamilyEvidence.family = presentation::DeviceFamily::KeyboardMouse;
+        keyboardTakeover.deviceFamilyEvidence.deviceFamilyRevision = 2;
+        const auto keyboardPublished = projection.Project(keyboardTakeover, MenuContext(), gameplay);
+        Require(
+            keyboardPublished.owner == presentation::PresentationOwner::KeyboardMouse,
+            "menu keyboard evidence must take over owner from inherited gamepad");
+        Require(
+            presentation::HasDirtyFlag(keyboardPublished.dirty, presentation::PresentationDirtyFlags::Owner),
+            "menu keyboard takeover must set dirty.Owner");
+        Require(keyboardPublished.epoch == published.epoch + 1, "menu keyboard takeover must advance epoch");
+
+        const auto unchanged = projection.Project(keyboardTakeover, MenuContext(), gameplay);
+        Require(unchanged.owner == presentation::PresentationOwner::KeyboardMouse, "unchanged menu publish must keep owner");
+        Require(unchanged.dirty == presentation::PresentationDirtyFlags::None, "unchanged menu publish must not set dirty flags");
+        Require(unchanged.epoch == keyboardPublished.epoch, "unchanged menu publish must not jitter epoch");
+
+        auto gamepadReclaim = keyboardTakeover;
+        gamepadReclaim.keyboardEvidence = false;
+        gamepadReclaim.gamepadEvidence = true;
+        gamepadReclaim.gamepadLease = true;
+        gamepadReclaim.deviceFamilyEvidence.family = presentation::DeviceFamily::Gamepad;
+        gamepadReclaim.deviceFamilyEvidence.deviceFamilyRevision = 3;
+        const auto gamepadPublished = projection.Project(gamepadReclaim, MenuContext(), gameplay);
+        Require(
+            gamepadPublished.owner == presentation::PresentationOwner::Gamepad,
+            "menu gamepad evidence or lease must reclaim owner");
+        Require(
+            presentation::HasDirtyFlag(gamepadPublished.dirty, presentation::PresentationDirtyFlags::Owner),
+            "menu gamepad reclaim must set dirty.Owner");
+        Require(gamepadPublished.epoch == unchanged.epoch + 1, "menu gamepad reclaim must advance epoch");
+
+        gameplay.engineOwner = presentation::PresentationOwner::KeyboardMouse;
+        const auto gameplayPublished = projection.Project(gamepadReclaim, GameplayContext(), gameplay);
+        Require(
+            gameplayPublished.owner == presentation::PresentationOwner::KeyboardMouse,
+            "menu to gameplay must consume PublishedGameplayPresentation.engineOwner");
     }
 
     {
