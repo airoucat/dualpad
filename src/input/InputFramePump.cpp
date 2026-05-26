@@ -6,6 +6,8 @@
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input/injection/UpstreamGamepadHook.h"
+#include "input_v2/context/ContextResolver.h"
+#include "input_v2/ingress/LiveInputFactProducer.h"
 
 namespace logger = SKSE::log;
 
@@ -15,6 +17,54 @@ namespace dualpad::input
     {
         constexpr std::size_t kUpstreamAssistDrainBudget = 32;
         constexpr std::uint64_t kUpstreamPollAssistWindowMs = 250;
+
+        std::uint64_t NowMonotonicUs()
+        {
+            return ::GetTickCount64() * 1000;
+        }
+
+        void PublishKeyboardMouseEvidence(RE::InputEvent* const* events)
+        {
+            if (!events || !*events) {
+                return;
+            }
+
+            auto& producer = input_v2::ingress::LiveInputFactProducer::GetSingleton();
+            const auto& contextSnapshot =
+                input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+            for (auto* current = *events; current; current = current->next) {
+                const auto tick = NowMonotonicUs();
+                switch (current->GetEventType()) {
+                case RE::INPUT_EVENT_TYPE::kButton:
+                    if (const auto* button = current->AsButtonEvent()) {
+                        if (!(button->IsPressed() || button->IsUp())) {
+                            break;
+                        }
+
+                        if (button->GetDevice() == RE::INPUT_DEVICE::kKeyboard) {
+                            producer.PublishKeyboardSourceEvidence(
+                                contextSnapshot,
+                                button->GetIDCode(),
+                                tick);
+                        } else if (button->GetDevice() == RE::INPUT_DEVICE::kMouse) {
+                            producer.PublishMouseButtonSourceEvidence(contextSnapshot, tick);
+                        }
+                    }
+                    break;
+                case RE::INPUT_EVENT_TYPE::kMouseMove:
+                    if (const auto* move = current->AsMouseMoveEvent()) {
+                        producer.PublishMouseMoveSourceEvidence(
+                            contextSnapshot,
+                            move->mouseInputX,
+                            move->mouseInputY,
+                            tick);
+                    }
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
     }
 
     InputFramePump& InputFramePump::GetSingleton()
@@ -61,8 +111,9 @@ namespace dualpad::input
         RE::InputEvent* const* event,
         RE::BSTEventSource<RE::InputEvent*>* source)
     {
-        (void)event;
         (void)source;
+
+        PublishKeyboardMouseEvidence(event);
 
         auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
         if (RuntimeConfig::GetSingleton().UseUpstreamGamepadHook()) {

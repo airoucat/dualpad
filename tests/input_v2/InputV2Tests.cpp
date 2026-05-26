@@ -761,6 +761,100 @@ namespace
         Require(scope.promptScopeRevision > 0, "live-style presentation publish must advance prompt scope revision");
     }
 
+    void RunRuntimeLiveKeyboardMouseEvidenceProducerTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+        ingress::FrameAssembler assembler;
+
+        auto drive = [&]() {
+            const auto frames = assembler.Assemble(ingress::IngressHub::GetSingleton().Drain());
+            RecordingPollOutputExecutor executor;
+            for (const auto& frame : frames) {
+                (void)runtime.ProcessAssembledFrameForTests(frame, executor);
+            }
+        };
+
+        const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        RecordingPollOutputExecutor baselineExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                69,
+                SourceEvidence(
+                    presentation::DeviceFamily::KeyboardMouse,
+                    1,
+                    false,
+                    69'000)),
+            baselineExecutor);
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 70'000);
+        drive();
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
+            "gamepad input must publish IsUsingGamepadHook=true");
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
+                presentation::PresentationOwner::Gamepad,
+            "gamepad input must publish Gamepad presentation owner");
+
+        producer.PublishKeyboardSourceEvidence(contextSnapshot, 0x1E, 71'000);
+        drive();
+        Require(
+            !presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
+            "keyboard evidence must publish IsUsingGamepadHook=false");
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
+                presentation::PresentationOwner::KeyboardMouse,
+            "keyboard evidence must publish KeyboardMouse owner");
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 72'000);
+        drive();
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
+                presentation::PresentationOwner::Gamepad,
+            "gamepad reclaim must restore Gamepad owner");
+
+        producer.PublishMouseMoveSourceEvidence(contextSnapshot, 12, -4, 73'000);
+        drive();
+        const auto& afterMouseMove =
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
+        Require(
+            afterMouseMove.owner == presentation::PresentationOwner::KeyboardMouse,
+            "mouse move evidence must publish KeyboardMouse owner");
+        Require(
+            afterMouseMove.cursorOwner == presentation::CursorOwner::KeyboardMouse,
+            "mouse move evidence must publish KeyboardMouse cursor owner");
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 74'000);
+        drive();
+        producer.PublishMouseButtonSourceEvidence(contextSnapshot, 75'000);
+        drive();
+        const auto& afterMouseButton =
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
+        Require(
+            afterMouseButton.owner == presentation::PresentationOwner::KeyboardMouse,
+            "mouse button evidence must publish KeyboardMouse owner");
+        Require(
+            afterMouseButton.cursorOwner == presentation::CursorOwner::KeyboardMouse,
+            "mouse button evidence must publish KeyboardMouse cursor owner");
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 76'000);
+        drive();
+        producer.MarkSyntheticKeyboardScancode(0x64, 1, 250'000, 76'100);
+        producer.PublishKeyboardSourceEvidence(contextSnapshot, 0x64, 76'200);
+        drive();
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
+            "synthetic keyboard window must not publish IsUsingGamepadHook=false");
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
+                presentation::PresentationOwner::Gamepad,
+            "synthetic keyboard window must not take over presentation owner");
+    }
+
     void RunRuntimeTransitionRecoveryContractTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -818,6 +912,7 @@ int main()
         RunLegacyLifecycleBridgeTests();
         RunRuntimePublishedSurfacePipelineTests();
         RunRuntimeLiveStyleGamepadPublishTests();
+        RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
         RunRuntimeTransitionRecoveryContractTests();
         return 0;
     } catch (const std::exception& e) {

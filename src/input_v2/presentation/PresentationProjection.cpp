@@ -8,7 +8,7 @@ namespace dualpad::input_v2::presentation
         {
             if (evidence.pointerSignal == PointerSignal::PointerActive ||
                 evidence.pointerSignal == PointerSignal::HoverOnly) {
-                return CursorOwner::Gamepad;
+                return CursorOwner::KeyboardMouse;
             }
             return owner == PresentationOwner::Gamepad ? CursorOwner::Gamepad : CursorOwner::KeyboardMouse;
         }

@@ -365,6 +365,87 @@ namespace
         Require(drained[1].sourceEvidence.gamepadEvidence, "live SourceEvidence must record gamepad evidence");
     }
 
+    void TestLiveKeyboardMouseEvidencePublishesTakeoverAndReclaim()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 31;
+        contextSnapshot.menuStackRevision = 32;
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 100'000);
+        auto drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 2, "gamepad evidence must publish marker plus SourceEvidence");
+        Require(drained[1].sourceEvidence.gamepadEvidence, "gamepad evidence must set gamepadEvidence");
+        Require(drained[1].sourceEvidence.gamepadLease, "gamepad evidence must establish gamepad lease");
+
+        producer.PublishKeyboardSourceEvidence(contextSnapshot, 0x1E, 101'000);
+        drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 2, "keyboard evidence must publish takeover marker plus SourceEvidence");
+        Require(
+            drained[0].deviceFamily.family == presentation::DeviceFamily::KeyboardMouse,
+            "keyboard evidence must publish KeyboardMouse marker");
+        Require(drained[1].sourceEvidence.keyboardEvidence, "keyboard evidence must set keyboardEvidence");
+        Require(!drained[1].sourceEvidence.gamepadEvidence, "keyboard evidence must clear gamepad evidence");
+        Require(!drained[1].sourceEvidence.gamepadLease, "keyboard evidence must clear gamepad lease");
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 102'000);
+        drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 2, "gamepad reclaim must publish marker plus SourceEvidence");
+        Require(
+            drained[0].deviceFamily.family == presentation::DeviceFamily::Gamepad,
+            "gamepad reclaim must publish Gamepad marker");
+        Require(drained[1].sourceEvidence.gamepadEvidence, "gamepad reclaim must restore gamepadEvidence");
+        Require(!drained[1].sourceEvidence.keyboardEvidence, "gamepad reclaim must clear keyboardEvidence");
+
+        producer.PublishMouseMoveSourceEvidence(contextSnapshot, 5, -3, 103'000);
+        drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 2, "mouse move evidence must publish takeover marker plus SourceEvidence");
+        Require(drained[1].sourceEvidence.mouseMoveEvidence, "mouse move evidence must set mouseMoveEvidence");
+        Require(
+            drained[1].sourceEvidence.pointerSignal == presentation::PointerSignal::HoverOnly,
+            "mouse move evidence must publish hover pointer signal");
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 104'000);
+        (void)ingress::IngressHub::GetSingleton().Drain();
+        producer.PublishMouseButtonSourceEvidence(contextSnapshot, 105'000);
+        drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 2, "mouse button evidence must publish takeover marker plus SourceEvidence");
+        Require(drained[1].sourceEvidence.mouseButtonEvidence, "mouse button evidence must set mouseButtonEvidence");
+        Require(
+            drained[1].sourceEvidence.pointerSignal == presentation::PointerSignal::PointerActive,
+            "mouse button evidence must publish active pointer signal");
+    }
+
+    void TestSyntheticKeyboardWindowDoesNotPublishKeyboardMouseTakeover()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 41;
+        contextSnapshot.menuStackRevision = 42;
+
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 200'000);
+        (void)ingress::IngressHub::GetSingleton().Drain();
+
+        producer.MarkSyntheticKeyboardScancode(0x64, 1, 250'000, 201'000);
+        producer.PublishKeyboardSourceEvidence(contextSnapshot, 0x64, 201'100);
+
+        const auto drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 1, "synthetic keyboard evidence must not publish a device-family takeover marker");
+        Require(drained[0].kind == ingress::IngressKind::SourceEvidence, "synthetic keyboard evidence should only mirror SourceEvidence");
+        Require(
+            drained[0].sourceEvidence.deviceFamilyEvidence.family == presentation::DeviceFamily::Gamepad,
+            "synthetic keyboard evidence must keep the current Gamepad family");
+        Require(!drained[0].sourceEvidence.keyboardEvidence, "synthetic keyboard evidence must not set keyboardEvidence");
+        Require(drained[0].sourceEvidence.syntheticKeyboardWindow, "synthetic keyboard evidence must mark the synthetic window");
+        Require(drained[0].sourceEvidence.gamepadLease, "synthetic keyboard evidence must not clear the gamepad lease");
+    }
+
     void TestStableMergeKeepsPulseLedger()
     {
         ingress::FrameAssembler assembler;
@@ -479,6 +560,8 @@ int main()
     TestManifestPublisherProducesIngressMarker();
     TestDeviceFamilyProducerProducesMarkerAndPairedSourceEvidence();
     TestLiveGamepadInputPublishesSourceEvidence();
+    TestLiveKeyboardMouseEvidencePublishesTakeoverAndReclaim();
+    TestSyntheticKeyboardWindowDoesNotPublishKeyboardMouseTakeover();
     TestStableMergeKeepsPulseLedger();
     TestBoundaryChangeFlushesStableThenTransition();
     TestRecoveryMarkersMapFailClosed();

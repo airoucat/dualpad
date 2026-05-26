@@ -120,6 +120,81 @@ namespace dualpad::input_v2::ingress
         PublishSourceEvidenceFrameToIngressHub(frame);
     }
 
+    void LiveInputFactProducer::PublishKeyboardSourceEvidence(
+        const context::ResolvedContextSnapshot& contextSnapshot,
+        std::uint32_t scancode,
+        std::uint64_t tick)
+    {
+        const bool syntheticSuppressed =
+            _sourceEvidenceCollector.ConsumeSyntheticKeyboardScancode(scancode, tick);
+        _sourceEvidenceCollector.RecordKeyboardEvidence(true, syntheticSuppressed, tick);
+        if (syntheticSuppressed) {
+            PublishCurrentSourceEvidence(contextSnapshot, tick);
+            return;
+        }
+
+        PublishKeyboardMouseSourceEvidence(contextSnapshot, tick);
+    }
+
+    void LiveInputFactProducer::PublishMouseButtonSourceEvidence(
+        const context::ResolvedContextSnapshot& contextSnapshot,
+        std::uint64_t tick)
+    {
+        _sourceEvidenceCollector.RecordMouseButtonEvidence(true, tick);
+        PublishKeyboardMouseSourceEvidence(contextSnapshot, tick);
+    }
+
+    void LiveInputFactProducer::PublishMouseMoveSourceEvidence(
+        const context::ResolvedContextSnapshot& contextSnapshot,
+        std::int32_t dx,
+        std::int32_t dy,
+        std::uint64_t tick)
+    {
+        if (dx == 0 && dy == 0) {
+            return;
+        }
+
+        _sourceEvidenceCollector.RecordMouseMoveEvidence(dx, dy, tick);
+        PublishKeyboardMouseSourceEvidence(contextSnapshot, tick);
+    }
+
+    void LiveInputFactProducer::MarkSyntheticKeyboardScancode(
+        std::uint8_t scancode,
+        std::uint8_t pendingEvents,
+        std::uint64_t windowUs,
+        std::uint64_t nowUs)
+    {
+        _sourceEvidenceCollector.MarkSyntheticKeyboardScancode(scancode, pendingEvents, windowUs, nowUs);
+    }
+
+    void LiveInputFactProducer::PublishKeyboardMouseSourceEvidence(
+        const context::ResolvedContextSnapshot& contextSnapshot,
+        std::uint64_t tick)
+    {
+        const auto publication = _deviceFamilyPublisher.Publish(
+            presentation::DeviceFamily::KeyboardMouse,
+            presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+            tick);
+        const auto frame = _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
+            publication,
+            contextSnapshot,
+            tick);
+        PublishSourceEvidenceFrameToIngressHub(frame);
+    }
+
+    void LiveInputFactProducer::PublishCurrentSourceEvidence(
+        const context::ResolvedContextSnapshot& contextSnapshot,
+        std::uint64_t tick)
+    {
+        const auto frame = _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
+            presentation::DeviceFamilyIngressPublication{
+                .evidence = _deviceFamilyPublisher.GetPublished()
+            },
+            contextSnapshot,
+            tick);
+        PublishSourceEvidenceFrameToIngressHub(frame);
+    }
+
     void LiveInputFactProducer::Reset()
     {
         _previousDownMask = 0;

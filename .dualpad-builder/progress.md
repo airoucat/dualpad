@@ -1683,6 +1683,51 @@
   - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标回 `completed`，`current_sprint=null`。
   - `PH8b` / `S-PH8b` 保持 `planned`，未启动。
 
+## 2026-05-27 00:19:33 CST
+
+- `PH8a` keyboard/mouse evidence producer blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH8a` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH8a` 回退为 `active`，并将 `current_sprint` 设为 `S-PH8a`。
+  - 根因范围：PH8a 删除 `InputModalityTracker` 后，live `input_v2` mainline 只补了 gamepad `SourceEvidence` producer，keyboard / mouse takeover evidence 没有新的 live producer，可能破坏 PH3 presentation split 合同。
+  - 本轮修复范围限定为 PH8a keyboard/mouse evidence producer：补 `keyboardEvidence`、`mouseButtonEvidence`、`mouseMoveEvidence`、`syntheticKeyboardWindow`、gamepad lease clear / reclaim，并补 targeted tests。
+  - `PH8b` / `S-PH8b` 保持 `planned`，本轮不启动。
+
+## 2026-05-27 00:27:40 CST
+
+- `PH8a` keyboard/mouse evidence producer blocker / fixed：
+  - `LiveInputFactProducer` 已补 keyboard / mouse live evidence producer：真实 keyboard event 发布 `keyboardEvidence`，mouse button 发布 `mouseButtonEvidence`，mouse move 发布 `mouseMoveEvidence`。
+  - keyboard / mouse takeover 只写 `SourceEvidenceCollector` 与 `DeviceFamilyIngressPublisher`，`DeviceFamilyChanged` marker payload 仍是 `deviceFamilyRevision` authority；`SourceEvidence` 只 mirror / validate paired revision。
+  - gamepad evidence 继续建立 `gamepadLease`；真实 keyboard / mouse evidence 会 clear gamepad lease 并切到 `KeyboardMouse`，后续 gamepad evidence 可 reclaim 回 `Gamepad`。
+  - `KeyboardHelperBackend` 的 synthetic helper output 现在标记 synthetic keyboard suppression window；同 scancode 的 synthetic keyboard evidence 只发布 mirrored `SourceEvidence`，不发布 `KeyboardMouse` takeover marker，也不清 gamepad lease。
+  - `InputFramePump` 现在遍历 live `RE::InputEvent` 链，将 keyboard button、mouse button、mouse move 转成 input_v2 evidence producer 调用；未恢复 `InputModalityTracker` 或旧 owner authority。
+  - `PresentationProjection` 已按本轮合同将 mouse pointer evidence 的 cursor owner 一并发布为 `KeyboardMouse`。
+  - 已补 targeted tests：gamepad input 后 `IsUsingGamepadHook=true`、keyboard evidence 后 `IsUsingGamepadHook=false`、mouse move/button evidence 后 presentation/cursor owner 切 `KeyboardMouse`、gamepad reclaim 后 owner 回 `Gamepad`、synthetic keyboard window 不误切 `KeyboardMouse`。
+  - `PH8b` / `S-PH8b` 保持 `planned`，本轮未启动。
+- 验证结果：
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPadInputV2Tests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPadPropertyTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPropertyTests`：exit 0。
+  - `xmake build DualPadFuzzRegressionTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadFuzzRegressionTests`：exit 0。
+  - `xmake build DualPadPresentationProjectionTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build DualPadReplayHarness`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0，10 个 phase0 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1489 nodes, 2956 edges, 142 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH8a` 已标回 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标回 `completed`，`current_sprint=null`。
+  - `PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
 ## 2026-05-27 00:02:04 CST
 
 - `PH8a` live input fact producer blocker / rollback start：

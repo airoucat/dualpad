@@ -3,6 +3,7 @@
 
 #include "input/RuntimeConfig.h"
 #include "input/backend/KeyboardNativeBridge.h"
+#include "input_v2/ingress/LiveInputFactProducer.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 #include <cctype>
@@ -99,10 +100,18 @@ namespace dualpad::input::backend
             { "MEDIA_SELECT"sv, 0xED }
         };
 
+        std::uint64_t NowMonotonicUs()
+        {
+            return ::GetTickCount64() * 1000;
+        }
+
         void MarkSyntheticKeyboardCommand(std::uint8_t scancode, std::uint8_t pendingEvents)
         {
-            (void)scancode;
-            (void)pendingEvents;
+            input_v2::ingress::LiveInputFactProducer::GetSingleton().MarkSyntheticKeyboardScancode(
+                scancode,
+                pendingEvents,
+                kSyntheticHelperSuppressionWindowMs * 1000,
+                NowMonotonicUs());
         }
 
         bool EnqueueBridgePress(

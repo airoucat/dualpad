@@ -187,7 +187,7 @@ void RunPresentationProjectionTests()
         const auto published = projection.Project(snapshot, context, gameplay);
         compat.Commit(published);
         Require(!compat.IsUsingGamepadHook(), "compat hook must read committed published owner");
-        Require(compat.GamepadControlsCursorHook(), "pointer active KBM state should keep gamepad cursor compatibility enabled");
+        Require(!compat.GamepadControlsCursorHook(), "pointer active KBM state must publish KeyboardMouse cursor owner");
 
         compat.EnableRollback(
             presentation::LegacyCompatibilitySurface{
@@ -196,7 +196,7 @@ void RunPresentationProjectionTests()
                 .gamepadDeviceEnabled = true
             });
         Require(!compat.IsUsingGamepadHook(), "rollback helper must not override committed input_v2 owner");
-        Require(compat.GamepadControlsCursorHook(), "rollback helper must not override committed cursor output");
+        Require(!compat.GamepadControlsCursorHook(), "rollback helper must not override committed cursor output");
         Require(
             compat.GetCommittedState().contextRevision == 9,
             "rollback must not mutate PH2-derived context truth in committed presentation state");
@@ -205,7 +205,7 @@ void RunPresentationProjectionTests()
         const auto parity = compat.CompareShadowParity(
             presentation::LegacyCompatibilitySurface{
                 .isUsingGamepad = false,
-                .gamepadControlsCursor = true,
+                .gamepadControlsCursor = false,
                 .gamepadDeviceEnabled = false
             },
             true);
@@ -216,7 +216,7 @@ void RunPresentationProjectionTests()
         const auto diff = compat.CompareShadowParity(
             presentation::LegacyCompatibilitySurface{
                 .isUsingGamepad = true,
-                .gamepadControlsCursor = true,
+                .gamepadControlsCursor = false,
                 .gamepadDeviceEnabled = false
             },
             true);
