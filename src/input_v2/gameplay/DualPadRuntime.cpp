@@ -5,6 +5,8 @@
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/ingress/IngressRecovery.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+#include "input_v2/prompt/PromptRuntimeOwner.h"
 
 namespace dualpad::input_v2::gameplay
 {
@@ -16,6 +18,22 @@ namespace dualpad::input_v2::gameplay
                 recovery.hardResetRequested ||
                 recovery.sequenceGapObserved ||
                 recovery.explicitResetRequested;
+        }
+
+        bool HasRecoveryRequest(const GameplayRecoveryInput& recovery)
+        {
+            return recovery.softResyncRequested ||
+                recovery.hardResetRequested ||
+                recovery.sequenceGapObserved ||
+                recovery.explicitResetRequested;
+        }
+
+        void MergeRecovery(GameplayRecoveryInput& target, const GameplayRecoveryInput& source)
+        {
+            target.softResyncRequested = target.softResyncRequested || source.softResyncRequested;
+            target.hardResetRequested = target.hardResetRequested || source.hardResetRequested;
+            target.sequenceGapObserved = target.sequenceGapObserved || source.sequenceGapObserved;
+            target.explicitResetRequested = target.explicitResetRequested || source.explicitResetRequested;
         }
     }
 
@@ -37,24 +55,29 @@ namespace dualpad::input_v2::gameplay
         return ProcessGameplayFrameWithExecutor(input, executor);
     }
 
-    DualPadRuntimeResult DualPadRuntime::ProcessAssembledFrame(const ingress::AssembledFactFrame& frame)
+    DualPadRuntimeResult DualPadRuntime::ProcessAssembledFrameForTests(
+        const ingress::AssembledFactFrame& frame,
+        IPollOutputExecutor& executor)
     {
-        auto recovery = frame.kind == ingress::AssembledFrameKind::Transition ?
-            ingress::ToGameplayRecoveryInput(frame) :
-            GameplayRecoveryInput{ .cleanFrame = true };
-
-        if (recovery.hardResetRequested) {
-            _interactionState.Reset();
+        if (frame.kind == ingress::AssembledFrameKind::Transition) {
+            return ProcessTransitionFrame(frame);
         }
 
+        auto input = BuildStableRuntimeInput(frame);
+        auto result = ProcessGameplayFrameWithExecutor(input, executor);
+        PublishStablePresentationSurface(frame, result);
+        return result;
+    }
+
+    DualPadRuntimeInput DualPadRuntime::BuildStableRuntimeInput(const ingress::AssembledFactFrame& frame)
+    {
         auto kernel = ingress::BuildKernelFrame(frame);
         auto resolved = actions::ResolvedActionFrame{
             .manifestEpoch = kernel.facts.manifestEpoch,
             .contextRevision = kernel.facts.contextRevision
         };
 
-        if (frame.kind == ingress::AssembledFrameKind::Stable &&
-            ingress::ShouldDispatchToInteractionEngine(frame)) {
+        if (ingress::ShouldDispatchToInteractionEngine(frame)) {
             if (const auto graph = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveGraph()) {
                 const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
                 resolved = _interactionEngine.Resolve(
@@ -68,7 +91,14 @@ namespace dualpad::input_v2::gameplay
         }
 
         const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
-        return ProcessGameplayFrame(DualPadRuntimeInput{
+        GameplayRecoveryInput recovery{ .cleanFrame = true };
+        if (_hasPendingRecovery) {
+            MergeRecovery(recovery, _pendingRecovery);
+            _pendingRecovery = GameplayRecoveryInput{};
+            _hasPendingRecovery = false;
+        }
+
+        return DualPadRuntimeInput{
             .kernel = kernel,
             .resolved = std::move(resolved),
             .policy = GameplayPolicy{
@@ -83,7 +113,43 @@ namespace dualpad::input_v2::gameplay
             .recovery = recovery,
             .outputTick = kernel.facts.monotonicUs,
             .legacyContext = contextSnapshot.legacyInputContext
-        });
+        };
+    }
+
+    DualPadRuntimeResult DualPadRuntime::ProcessTransitionFrame(const ingress::AssembledFactFrame& frame)
+    {
+        const auto recovery = ingress::ToGameplayRecoveryInput(frame);
+        if (ShouldClearProjectionStickyOwners(recovery)) {
+            _interactionState.Reset();
+            _lastProjectionFrame = GameplayProjectionFrame{};
+        }
+        if (HasRecoveryRequest(recovery)) {
+            MergeRecovery(_pendingRecovery, recovery);
+            _hasPendingRecovery = true;
+        }
+
+        return DualPadRuntimeResult{
+            .projectionFrame = _lastProjectionFrame,
+            .output = PollOutputApplyResult{},
+            .gameplayPresentation = _presentationPublisher.GetPublished()
+        };
+    }
+
+    void DualPadRuntime::PublishStablePresentationSurface(
+        const ingress::AssembledFactFrame& frame,
+        const DualPadRuntimeResult& result)
+    {
+        if (frame.kind != ingress::AssembledFrameKind::Stable || !result.output.outputApplySucceeded) {
+            return;
+        }
+
+        const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        const auto published = _presentationProjection.Project(
+            frame.facts.sourceEvidence,
+            contextSnapshot,
+            result.gameplayPresentation);
+        presentation::SkyrimCompatibilitySurface::GetSingleton().Commit(published);
+        prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(published);
     }
 
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrameWithExecutor(
@@ -138,7 +204,10 @@ namespace dualpad::input_v2::gameplay
     void DualPadRuntime::ResetForTests()
     {
         _lastProjectionFrame = GameplayProjectionFrame{};
+        _pendingRecovery = GameplayRecoveryInput{};
+        _hasPendingRecovery = false;
         _interactionState.Reset();
         _presentationPublisher.ResetForTests();
+        _presentationProjection.ResetForTests();
     }
 }

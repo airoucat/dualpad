@@ -53,27 +53,20 @@ namespace dualpad::input_v2::presentation
 
     void SkyrimCompatibilitySurface::EnableRollback(const LegacyCompatibilitySurface& legacy)
     {
-        _rollback = legacy;
+        (void)legacy;
     }
 
     void SkyrimCompatibilitySurface::DisableRollback()
     {
-        _rollback.reset();
     }
 
     bool SkyrimCompatibilitySurface::IsUsingGamepadHook() const
     {
-        if (_rollback) {
-            return _rollback->isUsingGamepad;
-        }
         return _committed.owner == PresentationOwner::Gamepad;
     }
 
     bool SkyrimCompatibilitySurface::GamepadControlsCursorHook() const
     {
-        if (_rollback) {
-            return _rollback->gamepadControlsCursor;
-        }
         return _committed.cursorOwner == CursorOwner::Gamepad;
     }
 
@@ -81,9 +74,6 @@ namespace dualpad::input_v2::presentation
     {
         if (!remapMode) {
             return true;
-        }
-        if (_rollback) {
-            return _rollback->gamepadDeviceEnabled;
         }
         return _committed.owner == PresentationOwner::Gamepad;
     }

@@ -5,7 +5,6 @@
 #include "input_v2/presentation/PresentationProjection.h"
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -55,7 +54,6 @@ namespace dualpad::input_v2::presentation
         static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
 
         PublishedPresentationState _committed{};
-        std::optional<LegacyCompatibilitySurface> _rollback;
         std::uint32_t _lastRefreshEpoch{ 0 };
         bool _installed{ false };
     };

@@ -5,6 +5,7 @@
 #include "input_v2/ingress/IngressRecovery.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <vector>
 
@@ -72,6 +73,35 @@ namespace
         return nullptr;
     }
 
+    std::filesystem::path FindProjectRoot(std::filesystem::path from = std::filesystem::current_path())
+    {
+        while (!from.empty()) {
+            if (std::filesystem::is_regular_file(from / "xmake.lua")) {
+                return from;
+            }
+            const auto parent = from.parent_path();
+            if (parent == from) {
+                break;
+            }
+            from = parent;
+        }
+        std::cerr << "FAIL: could not find project root\n";
+        std::exit(1);
+    }
+
+    void TestPhase0MandatoryReplayCoverageRemainsTenScenarios()
+    {
+        const auto root = FindProjectRoot();
+        const auto phase0 = root / "tests" / "replay" / "golden" / "phase0";
+        std::size_t scenarioCount = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(phase0)) {
+            if (entry.is_directory()) {
+                ++scenarioCount;
+            }
+        }
+        Require(scenarioCount == 10, "phase0 mandatory replay coverage must remain 10 scenarios");
+    }
+
     void TestManifestReloadReplayProducesHardResetTransition()
     {
         ingress::FrameAssembler assembler;
@@ -115,6 +145,7 @@ namespace
 
 int main()
 {
+    TestPhase0MandatoryReplayCoverageRemainsTenScenarios();
     TestManifestReloadReplayProducesHardResetTransition();
     TestReplaySequenceGapDoesNotReachStableConsumer();
     std::cout << "DualPadReplayTests passed\n";

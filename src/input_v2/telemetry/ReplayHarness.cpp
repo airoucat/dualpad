@@ -9,6 +9,8 @@
 #include "input_v2/actions/ActionSetResolver.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/context/ContextCatalog.h"
+#include "input_v2/context/ContextResolver.h"
+#include "input_v2/menu/MenuInstanceRegistry.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 #include "input_v2/telemetry/TraceSchema.h"
@@ -141,12 +143,45 @@ namespace dualpad::input_v2::telemetry
                 input_v2::context::ContextCatalog::ResolveAlias(catalog, dualpad::input::ToString(context))
                     .value_or(input_v2::context::UiContextId::None);
 
+            input_v2::menu::ReconciledMenuStack stack{};
+            stack.menuStackRevision = epoch;
+            switch (context) {
+            case input::InputContext::Gameplay:
+            case input::InputContext::Combat:
+            case input::InputContext::Sneaking:
+            case input::InputContext::Riding:
+            case input::InputContext::Werewolf:
+            case input::InputContext::VampireLord:
+            case input::InputContext::Death:
+            case input::InputContext::Bleedout:
+            case input::InputContext::Ragdoll:
+            case input::InputContext::KillMove:
+                break;
+            default:
+                stack.trackedMenus.push_back(input_v2::menu::TrackedMenuInstance{
+                    .instanceId = 1,
+                    .menuName = std::string(dualpad::input::ToString(context)),
+                    .menuPtr = 0x100,
+                    .delegatePtr = 0x200,
+                    .moviePtr = 0x300,
+                    .observationOrder = 1,
+                    .identityQuality = input_v2::menu::MenuIdentityQuality::StablePointer,
+                    .observedInLastSnapshot = true
+                });
+                break;
+            }
+
+            const auto contextSnapshot = input_v2::context::ContextResolver::GetSingleton().ResolveAndPublish(
+                stack,
+                input_v2::context::ContextResolver::GameplaySubstateFromLegacy(context),
+                catalog);
+
             input_v2::presentation::PublishedPresentationState presentation{};
             presentation.family = input_v2::presentation::DeviceFamily::Gamepad;
             presentation.owner = input_v2::presentation::PresentationOwner::Gamepad;
             presentation.cursorOwner = input_v2::presentation::CursorOwner::Gamepad;
             presentation.uiContextId = resolvedContext;
-            presentation.actionSetStack = input_v2::actions::ActionSetResolver::Resolve(catalog, resolvedContext);
+            presentation.actionSetStack = contextSnapshot.actionSetStack;
             presentation.epoch = epoch == 0 ? 1 : epoch;
             input_v2::prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(presentation);
         }
@@ -489,6 +524,7 @@ namespace dualpad::input_v2::telemetry
         {
             input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(false);
             input::PadEventSnapshotProcessor::GetSingleton().ResetState();
+            input_v2::context::ContextResolver::GetSingleton().ResetForTests();
             input_v2::prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
             input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(true);
         }
@@ -704,8 +740,8 @@ namespace dualpad::input_v2::telemetry
             const std::filesystem::path& outputPath)
         {
             try {
-                LoadReplayRuntimeConfig(scenarioPath);
                 ResetProcessorRuntimeForReplay();
+                LoadReplayRuntimeConfig(scenarioPath);
                 ReplayRuntimeSession session(outputPath);
 
                 const auto processedFrames = ReadScenarioRows(scenarioPath, "processed_snapshot_frames.csv");
@@ -734,9 +770,9 @@ namespace dualpad::input_v2::telemetry
             const std::filesystem::path& outputPath)
         {
             try {
-                LoadReplayRuntimeConfig(scenarioPath);
-                input::PadEventSnapshotDispatcher::GetSingleton().ResetForReplay();
                 ResetProcessorRuntimeForReplay();
+                input::PadEventSnapshotDispatcher::GetSingleton().ResetForReplay();
+                LoadReplayRuntimeConfig(scenarioPath);
                 ReplayRuntimeSession session(outputPath);
 
                 const auto schedule = ReadScenarioRows(scenarioPath, "dispatcher_schedule.csv");

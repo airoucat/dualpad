@@ -8,6 +8,14 @@
 #include "input_v2/actions/LegacyLifecycleBridge.h"
 #include "input_v2/config/ActionManifestPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/context/ContextCatalog.h"
+#include "input_v2/context/ContextResolver.h"
+#include "input_v2/gameplay/DualPadRuntime.h"
+#include "input_v2/gameplay/PollOutputAdapter.h"
+#include "input_v2/ingress/FrameAssembler.h"
+#include "input_v2/menu/MenuInstanceRegistry.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+#include "input_v2/prompt/PromptRuntimeOwner.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -16,6 +24,12 @@
 namespace
 {
     namespace actions = dualpad::input_v2::actions;
+    namespace context = dualpad::input_v2::context;
+    namespace gameplay = dualpad::input_v2::gameplay;
+    namespace ingress = dualpad::input_v2::ingress;
+    namespace menu = dualpad::input_v2::menu;
+    namespace presentation = dualpad::input_v2::presentation;
+    namespace prompt = dualpad::input_v2::prompt;
 
     void Require(bool condition, std::string_view message)
     {
@@ -44,9 +58,175 @@ namespace
             actions::ActionDefinition{ .id = "Jump", .valueKind = actions::ActionValueKind::Digital },
             actions::ActionDefinition{ .id = "PowerAttack", .valueKind = actions::ActionValueKind::Digital },
             actions::ActionDefinition{ .id = "NativeCombo", .valueKind = actions::ActionValueKind::Digital },
-            actions::ActionDefinition{ .id = "LookX", .valueKind = actions::ActionValueKind::Axis1D }
+            actions::ActionDefinition{ .id = "LookX", .valueKind = actions::ActionValueKind::Axis1D },
+            actions::ActionDefinition{ .id = "RightTrigger", .valueKind = actions::ActionValueKind::Axis1D }
         };
         return manifest;
+    }
+
+    class RecordingPollOutputExecutor final : public gameplay::IPollOutputExecutor
+    {
+    public:
+        std::vector<gameplay::PollOutputApplyStep> steps;
+
+        bool ClearNativeOutput() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearNativeOutput);
+            return true;
+        }
+
+        bool ClearHelperOutput() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearHelperOutput);
+            return true;
+        }
+
+        bool ClearSustainedDigitalAggregator() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearSustainedDigitalAggregator);
+            return true;
+        }
+
+        bool ClearProjectionStickyOwners() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ClearProjectionStickyOwners);
+            return true;
+        }
+
+        bool ApplyGatePlan(const gameplay::GatePlan&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyGatePlan);
+            return true;
+        }
+
+        bool ApplySustainedDigital(const gameplay::NativeSustainedCommand&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplySustainedDigital);
+            return true;
+        }
+
+        bool ApplyTransientDigital(const gameplay::NativeTransientCommand&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyTransientDigital);
+            return true;
+        }
+
+        bool ApplyHelperCommand(const gameplay::HelperOutputCommand&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyHelperCommand);
+            return true;
+        }
+
+        bool PublishAnalogState(const gameplay::ProjectedAnalogState&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::PublishAnalogState);
+            return true;
+        }
+
+        bool CommitCleanRecoveryBaseline() override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline);
+            return true;
+        }
+    };
+
+    context::ResolvedContextSnapshot PublishJournalContext()
+    {
+        menu::ReconciledMenuStack stack{};
+        stack.menuStackRevision = 11;
+        stack.trackedMenus.push_back(menu::TrackedMenuInstance{
+            .instanceId = 1,
+            .menuName = "JournalMenu",
+            .menuPtr = 0x100,
+            .delegatePtr = 0x200,
+            .moviePtr = 0x300,
+            .observationOrder = 1,
+            .identityQuality = menu::MenuIdentityQuality::StablePointer,
+            .observedInLastSnapshot = true
+        });
+        return context::ContextResolver::GetSingleton().ResolveAndPublish(
+            stack,
+            context::GameplaySubstate::None,
+            context::ContextCatalog::BuiltInCatalog());
+    }
+
+    presentation::SourceEvidenceSnapshot SourceEvidence(
+        presentation::DeviceFamily family,
+        std::uint32_t deviceFamilyRevision,
+        bool gamepadEvidence,
+        std::uint64_t tick)
+    {
+        presentation::SourceEvidenceSnapshot snapshot{};
+        snapshot.deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{
+            .family = family,
+            .deviceFamilyRevision = deviceFamilyRevision,
+            .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+            .publishedTick = tick
+        };
+        snapshot.gamepadEvidence = gamepadEvidence;
+        snapshot.contextRevision = context::ContextResolver::GetSingleton().GetPublishedSnapshot().contextRevision;
+        snapshot.uiContextId = context::UiContextId::Journal;
+        snapshot.presentationPolicyId = "PolicyOnlyPH2MayChoose";
+        snapshot.collectedTick = tick;
+        return snapshot;
+    }
+
+    ingress::AssembledFactFrame StableMenuFrame(
+        std::uint64_t seq,
+        presentation::SourceEvidenceSnapshot evidence)
+    {
+        const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        ingress::AssembledFactFrame frame{};
+        frame.kind = ingress::AssembledFrameKind::Stable;
+        frame.firstSeq = seq;
+        frame.lastSeq = seq;
+        frame.boundaryKey = ingress::IngressBoundaryKey{
+            42,
+            contextSnapshot.contextRevision,
+            contextSnapshot.menuStackRevision,
+            evidence.deviceFamilyEvidence.deviceFamilyRevision
+        };
+        frame.facts.manifestEpoch = frame.boundaryKey.manifestEpoch;
+        frame.facts.contextRevision = frame.boundaryKey.contextRevision;
+        frame.facts.menuStackRevision = frame.boundaryKey.menuStackRevision;
+        frame.facts.deviceFamilyRevision = frame.boundaryKey.deviceFamilyRevision;
+        frame.facts.sourceEvidence = std::move(evidence);
+        return frame;
+    }
+
+    ingress::AssembledFactFrame HardTransitionFrame(std::uint64_t seq)
+    {
+        ingress::AssembledFactFrame frame{};
+        frame.kind = ingress::AssembledFrameKind::Transition;
+        frame.firstSeq = seq;
+        frame.lastSeq = seq;
+        frame.boundaryKey = ingress::IngressBoundaryKey{ 42, 1, 11, 2 };
+        frame.transition = ingress::TransitionFrameMeta{
+            .from = ingress::IngressBoundaryKey{ 42, 1, 11, 1 },
+            .to = frame.boundaryKey,
+            .reason = ingress::TransitionReason::QueueOverflow,
+            .requestHardResync = true,
+            .flushPendingPulseEdges = true
+        };
+        return frame;
+    }
+
+    void ResetRuntimeSurfaceState(gameplay::DualPadRuntime& runtime)
+    {
+        runtime.ResetForTests();
+        context::ContextResolver::GetSingleton().ResetForTests();
+        actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
+        prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+        auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
+        compat.DisableRollback();
+        compat.Commit(presentation::PublishedPresentationState{});
+
+        actions::CompiledActionGraph graph{};
+        graph.manifestEpoch = 42;
+        Require(
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(graph, 42).ok,
+            "runtime surface tests need an active manifest epoch for prompt scope publication");
+        (void)PublishJournalContext();
     }
 
     actions::CompiledBinding Binding(
@@ -76,6 +256,19 @@ namespace
             .released = released,
             .scalar = down ? 1.0f : 0.0f,
             .downAtUs = downAtUs,
+            .timestampUs = now
+        };
+    }
+
+    actions::ControlSample AxisSample(
+        std::uint32_t code,
+        float value,
+        std::uint64_t now)
+    {
+        return actions::ControlSample{
+            .path = actions::ControlPath{ .kind = actions::ControlPathKind::AnalogAxis1D, .code = code },
+            .down = value != 0.0f,
+            .scalar = value,
             .timestampUs = now
         };
     }
@@ -363,6 +556,37 @@ namespace
 
         state.Reset();
         {
+            auto analogManifest = ManifestWithActions();
+            analogManifest.bindings.push_back(Binding(
+                "LookX",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX))));
+            analogManifest.bindings.push_back(Binding(
+                "RightTrigger",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger))));
+            const auto analogCompiled = actions::ActionGraphCompiler::Compile(analogManifest);
+            Require(analogCompiled.ok, analogCompiled.message);
+
+            actions::LegacyInteractionInputFrame legacy{};
+            legacy.manifestEpoch = 42;
+            legacy.contextRevision = 7;
+            legacy.monotonicUs = 1'625;
+            legacy.samples = {
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 0.5f, 1'625),
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger), 1.0f, 1'625)
+            };
+            const auto frame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(legacy);
+
+            const auto resolved = engine.Resolve(analogCompiled.graph, stack, frame, state);
+            Require(resolved.values.size() == 2, "ExactOnly axis bindings must resolve independently when multiple axes are active");
+            Require(resolved.changes.size() == 2, "each active axis binding must emit a Value phase change");
+        }
+
+        state.Reset();
+        {
             auto fallbackManifest = ManifestWithActions();
             fallbackManifest.bindings.push_back(Binding("Jump", Trigger(dualpad::input::TriggerType::Button, 11)));
             const auto fallbackCompiled = actions::ActionGraphCompiler::Compile(fallbackManifest);
@@ -434,6 +658,92 @@ namespace
             Require(resolved.changes.empty(), "InteractionEngine must fail closed on manifest epoch mismatch");
         }
     }
+
+    void RunRuntimePublishedSurfacePipelineTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        RecordingPollOutputExecutor firstExecutor;
+        const auto first = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                100,
+                SourceEvidence(
+                    presentation::DeviceFamily::KeyboardMouse,
+                    1,
+                    false,
+                    1000)),
+            firstExecutor);
+        Require(first.output.outputApplySucceeded, "stable assembled frame must apply output before publishing surfaces");
+
+        const auto& committedAfterStable =
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
+        Require(committedAfterStable.epoch > 0, "stable assembled frame must update SkyrimCompatibilitySurface committed epoch");
+
+        const auto scopeAfterStable = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        Require(scopeAfterStable.state == prompt::PromptScopeState::Ready, "prompt scope must become ready after presentation publish");
+        Require(scopeAfterStable.promptScopeRevision > 0, "prompt scope revision must advance after presentation publish");
+
+        RecordingPollOutputExecutor gamepadExecutor;
+        runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                101,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    1010)),
+            gamepadExecutor);
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
+            "stable gamepad evidence must update IsUsingGamepadHook through committed input_v2 state");
+    }
+
+    void RunRuntimeTransitionRecoveryContractTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        const auto initialEpoch =
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().epoch;
+        RecordingPollOutputExecutor transitionExecutor;
+        const auto transition = runtime.ProcessAssembledFrameForTests(
+            HardTransitionFrame(200),
+            transitionExecutor);
+        Require(
+            transitionExecutor.steps.empty(),
+            "transition frame must not call gameplay projection or output executor");
+        Require(
+            !transition.output.outputApplySucceeded,
+            "transition frame must not report stable output apply");
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().epoch == initialEpoch,
+            "transition frame must not publish Skyrim compatibility state");
+
+        RecordingPollOutputExecutor stableExecutor;
+        const auto stable = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                201,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    2010)),
+            stableExecutor);
+        Require(stable.output.outputApplySucceeded, "next stable frame after transition must apply output");
+        Require(
+            std::find(
+                stableExecutor.steps.begin(),
+                stableExecutor.steps.end(),
+                gameplay::PollOutputApplyStep::ClearNativeOutput) != stableExecutor.steps.end(),
+            "next stable frame after hard transition must clear native output from pending recovery");
+        Require(
+            std::find(
+                stableExecutor.steps.begin(),
+                stableExecutor.steps.end(),
+                gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline) != stableExecutor.steps.end(),
+            "next stable frame after hard transition must commit recovery clean baseline after apply");
+    }
 }
 
 int main()
@@ -444,6 +754,8 @@ int main()
         RunLegacyInteractionInputAdapterTests();
         RunInteractionEngineTests();
         RunLegacyLifecycleBridgeTests();
+        RunRuntimePublishedSurfacePipelineTests();
+        RunRuntimeTransitionRecoveryContractTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

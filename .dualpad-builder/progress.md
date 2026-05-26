@@ -1640,3 +1640,45 @@
   - `.dualpad-builder/feature_list.json`：`PH8a` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标为 `completed`，`current_sprint=null`。
   - `PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
+## 2026-05-26 23:32:34 CST
+
+- `PH8a` runtime closeout blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH8a` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH8a` 回退为 `active`，并将 `current_sprint` 设为 `S-PH8a`。
+  - 根因范围：上一轮 `PH8a` 已标 completed，但 `DualPadRuntime::ProcessAssembledFrame(...)` 没有在 stable runtime mainline 中持续发布 `PresentationProjection -> SkyrimCompatibilitySurface -> PromptRuntimeOwner`；同时 transition frame 仍会继续进入 gameplay projection / output apply 路径，违反 `PH7` 冻结合同。
+  - 本轮修复范围限定为 `PH8a` blocker：补齐 published surface pipeline、修正 transition recovery contract、补 targeted tests，并解释或修复 phase0 replay coverage 从 10 变 9 的问题。
+  - `PH8b` / `S-PH8b` 保持 `planned`，本轮不启动。
+
+## 2026-05-26 23:49:26 CST
+
+- `PH8a` runtime closeout blocker / fixed：
+  - `DualPadRuntime` stable assembled-frame mainline 已补齐持续发布链：`PresentationProjection::Project(...) -> SkyrimCompatibilitySurface::Commit(...) -> PromptRuntimeOwner::PublishPresentationState(...)`。
+  - `IsUsingGamepad`、`GamepadControlsCursor`、`BSPCGamepadDeviceHandler::IsEnabled` 现在只读取 `SkyrimCompatibilitySurface` committed published state；rollback override 已收缩为 no-op，旧 surface 不再持有 authority。
+  - `DualPad_GetActionGlyphToken` / `DualPad_GetActionGlyph` 继续只经 `ScaleformGlyphBridge` shim 转发到 `ScaleformPromptAdapter` / `PromptRuntimeOwner`，prompt scope 由 stable presentation publish 驱动。
+  - transition frame 合同已修正：只消费 recovery、清空本地 state、记录 pending recovery；transition frame 不进入 `InteractionEngine`、`ResolveGameplayProjection` 或 `PollOutputAdapter`，下一份 stable frame 才应用 clean recovery baseline。
+  - 已补 targeted tests：stable frame 更新 committed epoch、gamepad evidence 更新 `IsUsingGamepadHook`、presentation publish 后 prompt scope 更新、transition frame 不调用 gameplay projection/output executor、hard transition 后下一份 stable frame 应用 recovery clean baseline。
+  - phase0 replay coverage 变 9 的根因不是 golden 场景可删，而是 runtime replay 在 `11_config_reload_success_failure` 暴露两个缺口：processor shim 未发布 authoritative poll frame metadata，且 replay setup reset 顺序清掉 `ManifestEpochChanged` marker；随后 `RightStickX + RightTrigger` 多轴同帧 active 又暴露 `InteractionEngine` 将 exact-only axis binding 错当成数字 exact-only 额外路径排除。已修复 metadata publication、replay reset/load 顺序、replay context publication，并让 `InteractionKind::Value` 轴 binding 独立解析。
+  - `DualPadReplayTests` 新增 phase0 mandatory coverage guard，要求 `tests/replay/golden/phase0` 保持 10 个场景；本轮没有减少 mandatory replay coverage。
+- 验证结果：
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPadInputV2Tests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPadPropertyTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPropertyTests`：exit 0。
+  - `xmake build DualPadFuzzRegressionTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadFuzzRegressionTests`：exit 0。
+  - `xmake build DualPadReplayHarness`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0，10 个 phase0 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1461 nodes, 2829 edges, 139 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH8a` 已标回 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标回 `completed`，`current_sprint=null`。
+  - `PH8b` / `S-PH8b` 保持 `planned`，未启动。

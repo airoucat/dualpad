@@ -281,4 +281,16 @@ namespace dualpad::input_v2::gameplay
             input.kernel.facts.monotonicUs);
         return ProcessGameplayFrameWithExecutor(input, executor);
     }
+
+    DualPadRuntimeResult DualPadRuntime::ProcessAssembledFrame(const ingress::AssembledFactFrame& frame)
+    {
+        if (frame.kind == ingress::AssembledFrameKind::Transition) {
+            return ProcessTransitionFrame(frame);
+        }
+
+        auto input = BuildStableRuntimeInput(frame);
+        auto result = ProcessGameplayFrame(input);
+        PublishStablePresentationSurface(frame, result);
+        return result;
+    }
 }

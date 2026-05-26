@@ -62,11 +62,18 @@ namespace dualpad::input
         (void)input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessAssembledFrame(frame);
         if (frame.kind == input_v2::ingress::AssembledFrameKind::Stable && frame.facts.legacySnapshot) {
             const auto& snapshot = *frame.facts.legacySnapshot;
+            auto& pollState = AuthoritativePollState::GetSingleton();
+            pollState.PublishFrameMetadata(
+                snapshot.sourceTimestampUs,
+                snapshot.overflowed,
+                snapshot.coalesced);
+            pollState.PublishUnmanagedDigitalEdges(0, 0, 0);
+
             const auto gameplayPresentation =
                 input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();
             input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordProcessedSnapshot(
                 snapshot,
-                AuthoritativePollState::GetSingleton().ReadSnapshot(),
+                pollState.ReadSnapshot(),
                 input_v2::telemetry::ReplayCompatibilitySurface{
                     .context = snapshot.context,
                     .contextEpoch = snapshot.contextEpoch,

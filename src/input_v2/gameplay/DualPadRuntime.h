@@ -6,6 +6,7 @@
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
 #include "input_v2/ingress/FrameAssembler.h"
+#include "input_v2/presentation/PresentationProjection.h"
 
 #include <cstdint>
 
@@ -35,6 +36,9 @@ namespace dualpad::input_v2::gameplay
         static bool LiveCoordinatorPresentationAuthorityReachable();
 
         DualPadRuntimeResult ProcessAssembledFrame(const ingress::AssembledFactFrame& frame);
+        DualPadRuntimeResult ProcessAssembledFrameForTests(
+            const ingress::AssembledFactFrame& frame,
+            IPollOutputExecutor& executor);
         DualPadRuntimeResult ProcessGameplayFrame(const DualPadRuntimeInput& input);
         DualPadRuntimeResult ProcessGameplayFrameForTests(
             const DualPadRuntimeInput& input,
@@ -50,14 +54,23 @@ namespace dualpad::input_v2::gameplay
         void ResetForTests();
 
     private:
+        DualPadRuntimeInput BuildStableRuntimeInput(const ingress::AssembledFactFrame& frame);
+        DualPadRuntimeResult ProcessTransitionFrame(const ingress::AssembledFactFrame& frame);
+        void PublishStablePresentationSurface(
+            const ingress::AssembledFactFrame& frame,
+            const DualPadRuntimeResult& result);
+
         DualPadRuntimeResult ProcessGameplayFrameWithExecutor(
             const DualPadRuntimeInput& input,
             IPollOutputExecutor& executor);
 
         GameplayProjectionFrame _lastProjectionFrame{};
+        GameplayRecoveryInput _pendingRecovery{};
+        bool _hasPendingRecovery{ false };
         actions::InteractionStateStore _interactionState{};
         actions::InteractionEngine _interactionEngine{};
         GameplayPresentationPublisher _presentationPublisher{};
+        presentation::PresentationProjection _presentationProjection{};
         PollOutputAdapter _pollOutputAdapter{};
     };
 }

@@ -195,8 +195,8 @@ void RunPresentationProjectionTests()
                 .gamepadControlsCursor = false,
                 .gamepadDeviceEnabled = true
             });
-        Require(compat.IsUsingGamepadHook(), "rollback must return legacy compatibility output");
-        Require(!compat.GamepadControlsCursorHook(), "rollback must not use projected cursor output");
+        Require(!compat.IsUsingGamepadHook(), "rollback helper must not override committed input_v2 owner");
+        Require(compat.GamepadControlsCursorHook(), "rollback helper must not override committed cursor output");
         Require(
             compat.GetCommittedState().contextRevision == 9,
             "rollback must not mutate PH2-derived context truth in committed presentation state");

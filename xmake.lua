@@ -257,7 +257,17 @@ target("DualPadInputV2Tests")
     add_files("tests/input_v2/InputV2Tests.cpp")
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph2_context_resolver_files))
+    add_files(table.unpack(ph5_gameplay_projection_files))
+    add_files(table.unpack(ph6_prompt_files))
     add_files(table.unpack(ph7_ingress_files))
+    add_files(
+        "src/input_v2/presentation/PresentationProjection.cpp",
+        "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
+        "src/input_v2/presentation/SourceEvidenceCollector.cpp",
+        "src/input/backend/ActionBackendPolicy.cpp",
+        "src/input/backend/NativeActionDescriptor.cpp",
+        "src/input/RuntimeConfig.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -428,6 +438,9 @@ end
 for _, file in ipairs(ph6_prompt_files) do
     table.insert(replay_runtime_files, file)
 end
+
+table.insert(replay_runtime_files, "src/input_v2/presentation/PresentationProjection.cpp")
+table.insert(replay_runtime_files, "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp")
 
 for _, file in ipairs(ph7_ingress_files) do
     table.insert(replay_runtime_files, file)

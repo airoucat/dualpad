@@ -111,6 +111,10 @@ namespace dualpad::input_v2::actions
                 }
             }
 
+            if (binding.interaction.kind == InteractionKind::Value) {
+                return BindingMatchStrength::Exact;
+            }
+
             const auto& primaryPath = binding.paths[binding.interaction.primaryPathIndex];
             const auto activePaths = ActivePathsForPrimaryKind(frame, primaryPath);
             bool hasExtraActivePath = false;
