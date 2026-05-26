@@ -5,6 +5,7 @@
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/PadEventSnapshot.h"
 #include "input_v2/context/ContextResolver.h"
+#include "input_v2/ingress/LiveInputFactProducer.h"
 #include "input/protocol/DualSenseProtocol.h"
 #include "input/state/PadStateDebugger.h"
 #include "input/state/PadStateNormalizer.h"
@@ -42,6 +43,7 @@ namespace
                 }
 
                 dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitReset();
+                dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().Reset();
                 dualpad::haptics::HidOutput::GetSingleton().SetDevice(device.GetNativeHandle());
             }
 
@@ -54,6 +56,7 @@ namespace
                 case dualpad::input::ReadStatus::Error:
                     logger::warn("[DualPad] HID device disconnected, reconnecting...");
                     dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitReset();
+                    dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().Reset();
                     dualpad::haptics::HidOutput::GetSingleton().SetDevice(nullptr);
                     device.Close();
                     std::this_thread::sleep_for(500ms);
@@ -81,6 +84,9 @@ namespace
             const auto snapshotContextEpoch = contextSnapshot.legacyContextEpoch;
 
             dualpad::input::PadEventBuffer events{};
+            dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().PublishGamepadSourceEvidence(
+                contextSnapshot,
+                currentState.timestampUs);
 
             dualpad::input::PadEventSnapshot snapshot{};
             snapshot.type = dualpad::input::PadEventSnapshotType::Input;

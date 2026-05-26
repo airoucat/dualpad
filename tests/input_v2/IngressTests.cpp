@@ -3,7 +3,10 @@
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
 #include "input_v2/ingress/LegacyIngressAdapter.h"
+#include "input_v2/ingress/LiveInputFactProducer.h"
 #include "input_v2/ingress/IngressRecovery.h"
+#include "input_v2/actions/CompiledActionGraph.h"
+#include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/config/ActionManifestPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 
@@ -80,6 +83,22 @@ namespace
         return event;
     }
 
+    input::PadEventSnapshot LiveHidSnapshot(
+        std::uint64_t sequence,
+        std::uint32_t mask,
+        std::uint64_t timestampUs)
+    {
+        input::PadEventSnapshot snapshot{};
+        snapshot.sequence = sequence;
+        snapshot.firstSequence = sequence;
+        snapshot.sourceTimestampUs = timestampUs;
+        snapshot.contextEpoch = 7;
+        snapshot.state.sequence = sequence;
+        snapshot.state.timestampUs = timestampUs;
+        snapshot.state.buttons.digitalMask = mask;
+        return snapshot;
+    }
+
     std::vector<ingress::IngressEvent> AssignSeq(std::vector<ingress::IngressEvent> events)
     {
         std::uint64_t seq = 1;
@@ -107,6 +126,23 @@ namespace
     {
         Require(!frames.empty(), "frames must not be empty");
         return frames.back();
+    }
+
+    const actions::ControlSample* FindPulse(
+        const ingress::FactFrame& facts,
+        std::uint32_t code,
+        bool pressed,
+        bool released)
+    {
+        for (const auto& sample : facts.pulseLedger) {
+            if (sample.path.kind == actions::ControlPathKind::DigitalButton &&
+                sample.path.code == code &&
+                sample.pressed == pressed &&
+                sample.released == released) {
+                return &sample;
+            }
+        }
+        return nullptr;
     }
 
     void TestHubAssignsSeqAndEmitsOverflowMarker()
@@ -184,6 +220,71 @@ namespace
         Require(converted[0].kind == ingress::IngressKind::SequenceGap, "last observed 10 then first 12 must produce SequenceGap");
     }
 
+    void TestLiveHidMaskEdgesProducePulseLedger()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        (void)hub.PushEvent(Manifest(42));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(1, 0x0, 1'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(2, 0x1, 2'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(3, 0x0, 3'000));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        const auto& stable = LastFrame(frames);
+        const auto* press = FindPulse(stable.facts, 0x1, true, false);
+        const auto* release = FindPulse(stable.facts, 0x1, false, true);
+        Require(press != nullptr, "HID mask 0 -> 1 must produce a press pulse");
+        Require(release != nullptr, "HID mask 1 -> 0 must produce a release pulse");
+        Require(press->down, "press sample must be down");
+        Require(press->downAtUs == 2'000, "press sample must carry press downAtUs");
+        Require(!release->down, "release sample must not be down");
+        Require(release->downAtUs == 2'000, "release sample must retain the original press downAtUs");
+    }
+
+    void TestLiveHidPressSampleTriggersInteractionEngine()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        (void)hub.PushEvent(Manifest(42));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(10, 0x0, 10'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(11, 0x1, 11'000));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        const auto& stable = LastFrame(frames);
+        const auto kernel = ingress::BuildKernelFrame(stable);
+
+        actions::CompiledActionManifest manifest{};
+        manifest.manifestEpoch = 42;
+        manifest.actions = {
+            actions::ActionDefinition{ .id = "Jump", .valueKind = actions::ActionValueKind::Digital }
+        };
+        manifest.bindings.push_back(actions::CompiledBinding{
+            .actionId = "Jump",
+            .baseSetId = "GameplayBase",
+            .legacyTrigger = input::Trigger{ .type = input::TriggerType::Button, .code = 0x1 }
+        });
+
+        const auto compiled = actions::ActionGraphCompiler::Compile(manifest);
+        Require(compiled.ok, compiled.message.c_str());
+
+        actions::ActionSetStack stack{};
+        stack.baseSetId = "GameplayBase";
+        actions::InteractionEngine engine;
+        actions::InteractionStateStore state;
+        const auto resolved = engine.Resolve(compiled.graph, stack, kernel, state);
+        Require(resolved.changes.size() == 1, "live HID press sample must trigger an action phase");
+        Require(resolved.changes[0].actionId == "Jump", "live HID press must resolve the bound action");
+        Require(resolved.changes[0].phase == actions::ActionPhase::Press, "live HID press must emit Press");
+    }
+
     void TestManifestPublisherProducesIngressMarker()
     {
         ingress::IngressHub::GetSingleton().ResetForTests();
@@ -237,6 +338,31 @@ namespace
             drained[0].deviceFamily.deviceFamilyRevision ==
                 drained[1].sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision,
             "source evidence revision must only pair/mirror marker payload");
+    }
+
+    void TestLiveGamepadInputPublishesSourceEvidence()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 21;
+        contextSnapshot.menuStackRevision = 22;
+        producer.PublishGamepadSourceEvidence(contextSnapshot, 44'000);
+
+        const auto drained = ingress::IngressHub::GetSingleton().Drain();
+        Require(drained.size() == 2, "live gamepad evidence must enqueue marker plus source evidence");
+        Require(drained[0].kind == ingress::IngressKind::DeviceFamilyChanged, "live gamepad evidence marker must be first");
+        Require(drained[1].kind == ingress::IngressKind::SourceEvidence, "live gamepad source evidence must pair after marker");
+        Require(
+            drained[0].deviceFamily.deviceFamilyRevision ==
+                drained[1].sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision,
+            "live SourceEvidence must mirror the marker deviceFamilyRevision");
+        Require(
+            drained[1].sourceEvidence.deviceFamilyEvidence.family == presentation::DeviceFamily::Gamepad,
+            "live SourceEvidence must publish gamepad family");
+        Require(drained[1].sourceEvidence.gamepadEvidence, "live SourceEvidence must record gamepad evidence");
     }
 
     void TestStableMergeKeepsPulseLedger()
@@ -348,8 +474,11 @@ int main()
     TestHubAssignsSeqAndEmitsOverflowMarker();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
     TestLegacySequenceDiscontinuityProducesSequenceGap();
+    TestLiveHidMaskEdgesProducePulseLedger();
+    TestLiveHidPressSampleTriggersInteractionEngine();
     TestManifestPublisherProducesIngressMarker();
     TestDeviceFamilyProducerProducesMarkerAndPairedSourceEvidence();
+    TestLiveGamepadInputPublishesSourceEvidence();
     TestStableMergeKeepsPulseLedger();
     TestBoundaryChangeFlushesStableThenTransition();
     TestRecoveryMarkersMapFailClosed();

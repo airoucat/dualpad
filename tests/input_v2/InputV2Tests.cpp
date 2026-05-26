@@ -1,5 +1,6 @@
 #include "pch.h"
 
+#include "input/injection/PadEventSnapshot.h"
 #include "input/Trigger.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
@@ -13,6 +14,8 @@
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
 #include "input_v2/ingress/FrameAssembler.h"
+#include "input_v2/ingress/IngressHub.h"
+#include "input_v2/ingress/LiveInputFactProducer.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
@@ -192,6 +195,23 @@ namespace
         frame.facts.deviceFamilyRevision = frame.boundaryKey.deviceFamilyRevision;
         frame.facts.sourceEvidence = std::move(evidence);
         return frame;
+    }
+
+    dualpad::input::PadEventSnapshot LiveHidSnapshot(
+        std::uint64_t sequence,
+        std::uint32_t mask,
+        std::uint64_t timestampUs)
+    {
+        dualpad::input::PadEventSnapshot snapshot{};
+        snapshot.sequence = sequence;
+        snapshot.firstSequence = sequence;
+        snapshot.sourceTimestampUs = timestampUs;
+        snapshot.context = dualpad::input::InputContext::JournalMenu;
+        snapshot.contextEpoch = 7;
+        snapshot.state.sequence = sequence;
+        snapshot.state.timestampUs = timestampUs;
+        snapshot.state.buttons.digitalMask = mask;
+        return snapshot;
     }
 
     ingress::AssembledFactFrame HardTransitionFrame(std::uint64_t seq)
@@ -699,6 +719,48 @@ namespace
             "stable gamepad evidence must update IsUsingGamepadHook through committed input_v2 state");
     }
 
+    void RunRuntimeLiveStyleGamepadPublishTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        RecordingPollOutputExecutor baselineExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                50,
+                SourceEvidence(
+                    presentation::DeviceFamily::KeyboardMouse,
+                    1,
+                    false,
+                    500)),
+            baselineExecutor);
+
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+        producer.PublishGamepadSourceEvidence(
+            context::ContextResolver::GetSingleton().GetPublishedSnapshot(),
+            60'000);
+        (void)ingress::IngressHub::GetSingleton().PushPadSnapshot(LiveHidSnapshot(60, 0x0, 60'000));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(ingress::IngressHub::GetSingleton().Drain());
+        RecordingPollOutputExecutor executor;
+        for (const auto& frame : frames) {
+            (void)runtime.ProcessAssembledFrameForTests(frame, executor);
+        }
+
+        const auto& committed = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
+        Require(committed.owner == presentation::PresentationOwner::Gamepad, "live-style gamepad evidence must publish Gamepad owner");
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
+            "live-style gamepad evidence must update IsUsingGamepadHook through committed state");
+
+        const auto scope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        Require(scope.state == prompt::PromptScopeState::Ready, "live-style presentation publish must update prompt scope");
+        Require(scope.promptScopeRevision > 0, "live-style presentation publish must advance prompt scope revision");
+    }
+
     void RunRuntimeTransitionRecoveryContractTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -755,6 +817,7 @@ int main()
         RunInteractionEngineTests();
         RunLegacyLifecycleBridgeTests();
         RunRuntimePublishedSurfacePipelineTests();
+        RunRuntimeLiveStyleGamepadPublishTests();
         RunRuntimeTransitionRecoveryContractTests();
         return 0;
     } catch (const std::exception& e) {

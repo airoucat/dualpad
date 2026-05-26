@@ -3,6 +3,7 @@
 #include "input_v2/ingress/IngressHub.h"
 
 #include "input_v2/ingress/LegacyIngressAdapter.h"
+#include "input_v2/ingress/LiveInputFactProducer.h"
 
 #include <chrono>
 
@@ -128,5 +129,6 @@ namespace dualpad::input_v2::ingress
         _nextSeq = 1;
         _lastLegacySequence = 0;
         _pendingLegacySnapshots = 0;
+        LiveInputFactProducer::GetSingleton().ResetForTests();
     }
 }

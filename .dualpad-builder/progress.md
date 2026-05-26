@@ -1682,3 +1682,44 @@
   - `.dualpad-builder/feature_list.json`：`PH8a` 已标回 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标回 `completed`，`current_sprint=null`。
   - `PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
+## 2026-05-27 00:02:04 CST
+
+- `PH8a` live input fact producer blocker / rollback start：
+  - 按本轮 blocker 要求，先将 `.dualpad-builder/feature_list.json` 中 `PH8a` 回退为 `active` / `passes=false`。
+  - 同步将 `.dualpad-builder/sprint_plan.json` 中 `S-PH8a` 回退为 `active`，并将 `current_sprint` 设为 `S-PH8a`。
+  - 根因范围：PH8a closeout 后 live input_v2 mainline 仍缺少从连续 `PadState` 计算 button edge / pulse ledger 的事实 producer；同时 HID/gamepad raw input 的 `DeviceFamilyChanged` marker + `SourceEvidence` pairing producer 需要重新接入 live path。
+  - 本轮修复范围限定为 PH8a live fact producer：恢复 button pressed/released/downAtUs、pulse ledger press/release edge、live SourceEvidence / DeviceFamily marker producer，并补 targeted tests。
+  - `PH8b` / `S-PH8b` 保持 `planned`，本轮不启动。
+
+## 2026-05-27 00:12:33 CST
+
+- `PH8a` live input fact producer blocker / fixed：
+  - 新增 `input_v2/ingress/LiveInputFactProducer.*`，从连续 live `PadState` 计算 digital `pressed` / `released`，并给 `ControlSample` 写入 `downAtUs`；release sample 保留原始 press `downAtUs`。
+  - `FrameAssembler` 继续用 `pressed` / `released` 判定 pulse，live HID `0 -> 1 -> 0` 会保留 press/release pulse ledger；未恢复 `src/input/mapping/*`。
+  - HID raw input 路径在解析 `PadState` 后调用 live producer 发布 gamepad `DeviceFamilyChanged` marker + paired `SourceEvidence`；`SourceEvidence` 仍只做配对、校验和 mirror，`deviceFamilyRevision` authority 仍只来自 marker payload。
+  - `IngressHub` / replay reset 会重置 live producer，避免跨场景或跨设备继承 held button / source evidence 状态。
+  - 已补 targeted tests：HID mask `0 -> 1 -> 0` 产生 press/release、press sample 进入 `InteractionEngine` 后触发 action phase、live-style gamepad input 发布 `SourceEvidence`、stable frame 后 `SkyrimCompatibilitySurface` / `PromptRuntimeOwner` 更新。
+  - `PH8b` / `S-PH8b` 保持 `planned`，本轮未启动。
+- 验证结果：
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPadInputV2Tests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPadPropertyTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPropertyTests`：exit 0。
+  - `xmake build DualPadFuzzRegressionTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadFuzzRegressionTests`：exit 0。
+  - `xmake build DualPadReplayHarness`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay`：exit 0，输出 `batch processor runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0，10 个 phase0 mandatory 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1477 nodes, 2892 edges, 142 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH8a` 已标回 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标回 `completed`，`current_sprint=null`。
+  - `PH8b` / `S-PH8b` 保持 `planned`，未启动。

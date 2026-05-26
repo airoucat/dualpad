@@ -191,7 +191,9 @@ local ph7_ingress_files = {
     "src/input_v2/ingress/IngressBoundaryKey.cpp",
     "src/input_v2/ingress/IngressMarkers.cpp",
     "src/input_v2/ingress/IngressRecovery.cpp",
-    "src/input_v2/ingress/LegacyIngressAdapter.cpp"
+    "src/input_v2/ingress/LegacyIngressAdapter.cpp",
+    "src/input_v2/ingress/LiveInputFactProducer.cpp",
+    "src/input_v2/presentation/SourceEvidenceCollector.cpp"
 }
 
 target("DualPadManifestCompilerTests")
@@ -240,7 +242,6 @@ target("DualPadPresentationProjectionTests")
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
     add_files(
-        "src/input_v2/presentation/SourceEvidenceCollector.cpp",
         "src/input_v2/presentation/GameplayPresentationAdapter.cpp",
         "src/input_v2/presentation/PresentationProjection.cpp",
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp")
@@ -264,7 +265,6 @@ target("DualPadInputV2Tests")
     add_files(
         "src/input_v2/presentation/PresentationProjection.cpp",
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
-        "src/input_v2/presentation/SourceEvidenceCollector.cpp",
         "src/input/backend/ActionBackendPolicy.cpp",
         "src/input/backend/NativeActionDescriptor.cpp",
         "src/input/RuntimeConfig.cpp")
@@ -316,7 +316,6 @@ target("DualPadIngressTests")
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(table.unpack(ph4_action_graph_files))
-    add_files("src/input_v2/presentation/SourceEvidenceCollector.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")

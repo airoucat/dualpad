@@ -3,8 +3,7 @@
 #include "input_v2/ingress/LegacyIngressAdapter.h"
 
 #include "input_v2/ingress/IngressHub.h"
-
-#include <bit>
+#include "input_v2/ingress/LiveInputFactProducer.h"
 
 namespace dualpad::input_v2::ingress
 {
@@ -26,7 +25,7 @@ namespace dualpad::input_v2::ingress
                 .pressed = pressed,
                 .released = released,
                 .scalar = down ? 1.0f : 0.0f,
-                .downAtUs = down ? timestampUs : 0,
+                .downAtUs = (down || pressed || released) ? timestampUs : 0,
                 .timestampUs = timestampUs
             };
         }
@@ -50,31 +49,6 @@ namespace dualpad::input_v2::ingress
         std::uint64_t FirstSequenceOrSequence(const dualpad::input::PadEventSnapshot& snapshot)
         {
             return snapshot.firstSequence != 0 ? snapshot.firstSequence : snapshot.sequence;
-        }
-
-        void AppendStateSamples(
-            const dualpad::input::PadEventSnapshot& snapshot,
-            std::vector<actions::ControlSample>& samples)
-        {
-            const auto timestampUs = snapshot.sourceTimestampUs != 0 ?
-                snapshot.sourceTimestampUs :
-                snapshot.state.timestampUs;
-
-            for (std::uint32_t bit = 1; bit != 0; bit <<= 1) {
-                if ((snapshot.state.buttons.digitalMask & bit) != 0) {
-                    samples.push_back(DigitalSample(bit, true, false, false, timestampUs));
-                }
-                if (bit == 0x80000000u) {
-                    break;
-                }
-            }
-
-            samples.push_back(AxisSample(dualpad::input::PadAxisId::LeftStickX, snapshot.state.leftStick.x, timestampUs));
-            samples.push_back(AxisSample(dualpad::input::PadAxisId::LeftStickY, snapshot.state.leftStick.y, timestampUs));
-            samples.push_back(AxisSample(dualpad::input::PadAxisId::RightStickX, snapshot.state.rightStick.x, timestampUs));
-            samples.push_back(AxisSample(dualpad::input::PadAxisId::RightStickY, snapshot.state.rightStick.y, timestampUs));
-            samples.push_back(AxisSample(dualpad::input::PadAxisId::LeftTrigger, snapshot.state.leftTrigger.normalized, timestampUs));
-            samples.push_back(AxisSample(dualpad::input::PadAxisId::RightTrigger, snapshot.state.rightTrigger.normalized, timestampUs));
         }
 
         void AppendEventSamples(
@@ -121,6 +95,7 @@ namespace dualpad::input_v2::ingress
         if (snapshot.type == dualpad::input::PadEventSnapshotType::Reset) {
             auto reset = MakeExplicitResetEvent();
             reset.monotonicUs = snapshot.sourceTimestampUs;
+            LiveInputFactProducer::GetSingleton().Reset();
             events.push_back(reset);
             return events;
         }
@@ -157,7 +132,9 @@ namespace dualpad::input_v2::ingress
         pad.pad.overflowed = snapshot.overflowed || snapshot.events.overflowed;
         pad.pad.coalesced = snapshot.coalesced;
         pad.pad.crossContextMismatch = snapshot.crossContextMismatch;
-        AppendStateSamples(snapshot, pad.pad.samples);
+        pad.pad.samples = LiveInputFactProducer::GetSingleton().BuildControlSamples(
+            snapshot,
+            snapshot.events.count == 0);
         AppendEventSamples(snapshot, pad.pad.samples);
         events.push_back(std::move(pad));
         return events;
