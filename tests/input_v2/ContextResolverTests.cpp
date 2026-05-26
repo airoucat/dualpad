@@ -1,6 +1,6 @@
 #include "pch.h"
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"
@@ -216,10 +216,7 @@ void RunContextResolverTests()
             InputContext::Gameplay,
             catalog);
         Require(combat.uiContextId == ctx::UiContextId::Combat, "combat event fact must publish through ContextResolver");
-        Require(combat.legacyInputContext == InputContext::Combat, "combat fact must mirror via ApplyResolvedContext");
-        Require(
-            dualpad::input::ContextManager::GetSingleton().GetCurrentContext() == InputContext::Combat,
-            "legacy ContextManager should only mirror resolved combat context");
+        Require(combat.legacyInputContext == InputContext::Combat, "combat fact must mirror resolved combat context");
 
         const auto skipped = tick.RefreshObservedForTests(
             frame,

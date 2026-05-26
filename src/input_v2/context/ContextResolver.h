@@ -1,6 +1,6 @@
 #pragma once
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input_v2/actions/ActionSetResolver.h"
 #include "input_v2/context/ContextCatalog.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"

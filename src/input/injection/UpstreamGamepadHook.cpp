@@ -7,7 +7,6 @@
 #include <array>
 
 #include "input/HidReader.h"
-#include "input/InputModalityTracker.h"
 #include "input/XInputStateBridge.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"

@@ -1593,3 +1593,50 @@
   - `.dualpad-builder/feature_list.json`：`PH8` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH8` 已标为 `completed`，`current_sprint=null`。
   - `PH8a` / `S-PH8a`、`PH8b` / `S-PH8b` 保持 `planned` / 未启动。
+
+## 2026-05-26 00:00:00 CST
+
+- `PH8a` runtime closeout / start：
+  - 已将 `.dualpad-builder/feature_list.json` 中 `PH8a` 从 `planned` 晋升为 `active`，`passes=false`。
+  - 已将 `.dualpad-builder/sprint_plan.json` 中 `S-PH8a` 从 `planned` 晋升为 `active`，并将 `current_sprint` 设为 `S-PH8a`。
+  - 本轮范围限定为 `SingleAuthorityAssembly -> PublicSurfaceSwap -> LegacyDeletion / ShimShrink`。
+  - 本轮必须把默认 runtime mainline 收口到 `src/input_v2/`，旧 runtime 只能删除或缩成无 authority shim。
+  - 本轮只允许保留 `src/input/injection/PadEventSnapshotProcessor.*` 与 `src/input/glyph/ScaleformGlyphBridge.*` 两组 legacy-named shim；若保留，只能做参数打包、注册、转发和 error boundary。
+  - `LegacyInputContextCompat` 是唯一允许残留的 legacy context compatibility type。
+  - 本轮 canonical prove-out targets 固定为 `DualPadReplayTests`、`DualPadInputV2Tests`、`DualPadIngressTests`、`DualPadPromptSnapshotTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests`，replay root 继续固定为 `tests/replay/golden/`。
+  - 本轮不启动 `PH8b` / `09b`，不做 docgen provenance、reviewed docs 去重或默认 CI 接线，不恢复 `FavoritesMenu` workspace，不改旧 SWF 返回 shape，不新增长期 runtime 开关。
+
+## 2026-05-26 23:20:00 CST
+
+- `PH8a` runtime closeout / done：
+  - `SingleAuthorityAssembly` 已完成：`DualPadRuntime` 新增 `ProcessAssembledFrame(...)`，assembled ingress frame 的 interaction resolve、recovery 消费与 gameplay projection 统一收口到 `src/input_v2/gameplay/DualPadRuntime.*`。
+  - `PublicSurfaceSwap` 已完成：`IsUsingGamepad`、`GamepadControlsCursor` 与 `BSPCGamepadDeviceHandler::IsEnabled` 的 hook 安装点切到 `src/input_v2/presentation/SkyrimCompatibilitySurface.*`；`DualPad_GetActionGlyphToken` / `DualPad_GetActionGlyph` 保持经 `ScaleformGlyphBridge` shim 转发到 `ScaleformPromptAdapter` / `PromptRuntimeOwner`。
+  - `LegacyDeletion / ShimShrink` 已按本轮顺序完成：已物理删除 `GameplayOwnershipCoordinator.*`、`InputModalityTracker.*`、`InputContext.*`、`InputContextNames.*`、`MenuContextPolicy.*`、`BindingManager.*` 与 `src/input/mapping/*`。
+  - 保留的 legacy-named shim 只有 `src/input/injection/PadEventSnapshotProcessor.*` 与 `src/input/glyph/ScaleformGlyphBridge.*`；processor 只负责 snapshot / frame 转发、reset/error boundary 与 replay trace emission，glyph bridge 只负责 Scaleform 注册和 prompt adapter 转发。
+  - `LegacyInputContextCompat` 已落到 `src/input_v2/compat/LegacyInputContextCompat.h`，旧 `InputContext.*` owning files 不再存在。
+  - `xmake.lua` 已补齐 6 个 canonical prove-out targets：`DualPadReplayTests`、`DualPadInputV2Tests`、`DualPadIngressTests`、`DualPadPromptSnapshotTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests`。
+  - replay root 继续固定为 `tests/replay/golden/`；本轮未启动 `PH8b` / `09b`，未做 docgen provenance、reviewed docs 去重或默认 CI 接线，未恢复 `FavoritesMenu` workspace，未改旧 SWF 返回 shape，未新增长期 runtime 开关。
+- RED / GREEN：
+  - RED：`xmake build DualPad` 首轮 exit 1，原因是 `LegacyInputContextCompat` alias 引入 `ToString` ADL 歧义；修复为 compat 内部 `ToLegacyInputContextString(...)` + `dualpad::input::ToString(...)` 单一外层入口。
+  - RED：`xmake build DualPadPropertyTests` 首轮 exit 1，原因是测试引用不存在的 `IngressSource::HidReader`；修复为现有 `IngressSource::LegacyDispatcher`。
+  - RED：`xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay` 暴露 replay context publication 与 trace emission 缺口；已改为 input_v2 replay helper 发布 context，并把 processed snapshot trace emission 挂到 stable legacy snapshot frame。
+- 验证结果：
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPadInputV2Tests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程仍按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPadPropertyTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPropertyTests`：exit 0。
+  - `xmake build DualPadFuzzRegressionTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadFuzzRegressionTests`：exit 0。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0，9 个 phase0 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1443 nodes, 2764 edges, 137 communities`。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH8a` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标为 `completed`，`current_sprint=null`。
+  - `PH8b` / `S-PH8b` 保持 `planned`，未启动。

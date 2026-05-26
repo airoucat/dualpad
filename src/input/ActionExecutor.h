@@ -1,5 +1,5 @@
 #pragma once
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include <string_view>
 
 namespace dualpad::input

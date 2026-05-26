@@ -1,7 +1,7 @@
 #include "pch.h"
 
 #include "input/Action.h"
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input_v2/actions/ActionManifest.h"
 #include "input_v2/config/LegacyIniImporter.h"
 #include "input_v2/context/ContextCatalog.h"

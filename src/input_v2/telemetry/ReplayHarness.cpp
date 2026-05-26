@@ -1,14 +1,15 @@
 #include "pch.h"
 #include "input_v2/telemetry/ReplayHarness.h"
 
-#include "input/BindingConfig.h"
-#include "input/InputContextNames.h"
-#include "input/InputModalityTracker.h"
 #include "input/RuntimeConfig.h"
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
+#include "input_v2/actions/ActionSetResolver.h"
+#include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/context/ContextCatalog.h"
+#include "input_v2/prompt/PromptRuntimeOwner.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 #include "input_v2/telemetry/TraceSchema.h"
 
@@ -115,11 +116,39 @@ namespace dualpad::input_v2::telemetry
 
         input::InputContext ParseContext(const std::string& value)
         {
-            const auto parsed = input::ParseInputContextName(value);
-            if (!parsed) {
-                throw std::runtime_error("invalid context: " + value);
-            }
-            return *parsed;
+            if (value == "Gameplay") return input::InputContext::Gameplay;
+            if (value == "Menu") return input::InputContext::Menu;
+            if (value == "InventoryMenu") return input::InputContext::InventoryMenu;
+            if (value == "MagicMenu") return input::InputContext::MagicMenu;
+            if (value == "MapMenu") return input::InputContext::MapMenu;
+            if (value == "JournalMenu") return input::InputContext::JournalMenu;
+            if (value == "DialogueMenu") return input::InputContext::DialogueMenu;
+            if (value == "FavoritesMenu") return input::InputContext::FavoritesMenu;
+            if (value == "BookMenu") return input::InputContext::BookMenu;
+            if (value == "Book") return input::InputContext::Book;
+            if (value == "Console") return input::InputContext::Console;
+            if (value == "Lockpicking") return input::InputContext::Lockpicking;
+            if (value == "Combat") return input::InputContext::Combat;
+            if (value == "Sneaking") return input::InputContext::Sneaking;
+            throw std::runtime_error("invalid context: " + value);
+        }
+
+        void PublishReplayContext(input::InputContext context, std::uint32_t epoch)
+        {
+            const auto bundle = input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+            const auto& catalog = bundle ? bundle->catalog : input_v2::context::ContextCatalog::BuiltInCatalog();
+            const auto resolvedContext =
+                input_v2::context::ContextCatalog::ResolveAlias(catalog, dualpad::input::ToString(context))
+                    .value_or(input_v2::context::UiContextId::None);
+
+            input_v2::presentation::PublishedPresentationState presentation{};
+            presentation.family = input_v2::presentation::DeviceFamily::Gamepad;
+            presentation.owner = input_v2::presentation::PresentationOwner::Gamepad;
+            presentation.cursorOwner = input_v2::presentation::CursorOwner::Gamepad;
+            presentation.uiContextId = resolvedContext;
+            presentation.actionSetStack = input_v2::actions::ActionSetResolver::Resolve(catalog, resolvedContext);
+            presentation.epoch = epoch == 0 ? 1 : epoch;
+            input_v2::prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(presentation);
         }
 
         input::PadEventType ParsePadEventType(const std::string& value)
@@ -420,7 +449,9 @@ namespace dualpad::input_v2::telemetry
         {
             const auto projectRoot = FindProjectRoot(scenarioPath);
             input::RuntimeConfig::GetSingleton().Load(projectRoot / "config" / "DualPadDebug.ini");
-            input::BindingConfig::GetSingleton().Load(projectRoot / "config" / "DualPadBindings.ini");
+            (void)input_v2::config::AtomicConfigReloader::GetSingleton().LoadOrRecover(
+                projectRoot / "config" / "DualPadBindings.ini",
+                projectRoot / "config" / "DualPadMenuPolicy.ini");
         }
 
         struct ReplayRuntimeSession
@@ -457,14 +488,14 @@ namespace dualpad::input_v2::telemetry
         void ResetProcessorRuntimeForReplay()
         {
             input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(false);
-            input::InputModalityTracker::GetSingleton().ResetForReplayCapture();
             input::PadEventSnapshotProcessor::GetSingleton().ResetState();
+            input_v2::prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
             input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(true);
         }
 
         void ProcessSnapshotThroughRuntime(const input::PadEventSnapshot& snapshot)
         {
-            input::InputModalityTracker::GetSingleton().SetReplayContext(snapshot.context, snapshot.contextEpoch);
+            PublishReplayContext(snapshot.context, snapshot.contextEpoch);
             input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(snapshot.sequence);
             input::PadEventSnapshotProcessor::GetSingleton().Process(snapshot);
         }
@@ -484,7 +515,7 @@ namespace dualpad::input_v2::telemetry
 
                 input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(
                     ParseU64(row[1], "glyph sequence"));
-                input::InputModalityTracker::GetSingleton().SetReplayContext(ParseContext(row[3]), 0);
+                PublishReplayContext(ParseContext(row[3]), 0);
                 (void)input::glyph::ScaleformGlyphBridge::GetSingleton().ReplayResolveActionGlyph(row[2], row[3]);
             }
         }

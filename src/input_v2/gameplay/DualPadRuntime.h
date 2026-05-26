@@ -1,9 +1,11 @@
 #pragma once
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
+#include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
+#include "input_v2/ingress/FrameAssembler.h"
 
 #include <cstdint>
 
@@ -32,6 +34,7 @@ namespace dualpad::input_v2::gameplay
         static DualPadRuntime& GetSingleton();
         static bool LiveCoordinatorPresentationAuthorityReachable();
 
+        DualPadRuntimeResult ProcessAssembledFrame(const ingress::AssembledFactFrame& frame);
         DualPadRuntimeResult ProcessGameplayFrame(const DualPadRuntimeInput& input);
         DualPadRuntimeResult ProcessGameplayFrameForTests(
             const DualPadRuntimeInput& input,
@@ -52,6 +55,8 @@ namespace dualpad::input_v2::gameplay
             IPollOutputExecutor& executor);
 
         GameplayProjectionFrame _lastProjectionFrame{};
+        actions::InteractionStateStore _interactionState{};
+        actions::InteractionEngine _interactionEngine{};
         GameplayPresentationPublisher _presentationPublisher{};
         PollOutputAdapter _pollOutputAdapter{};
     };

@@ -194,23 +194,6 @@ local ph7_ingress_files = {
     "src/input_v2/ingress/LegacyIngressAdapter.cpp"
 }
 
-target("DualPadMenuContextPolicyTests")
-    set_kind("binary")
-    add_deps("commonlibsse-ng")
-    add_syslinks("ole32", "user32")
-    add_defines("DUALPAD_ENABLE_TEST_ONLY_MENU_POLICY_PARSE")
-
-    add_files(
-        "tests/MenuContextPolicyTests.cpp",
-        "src/input/InputContextNames.cpp",
-        "src/input/MenuContextPolicy.cpp")
-    add_files(table.unpack(ph1_manifest_compiler_files))
-    add_files(table.unpack(ph7_ingress_files))
-    add_files(table.unpack(ph4_action_graph_files))
-    add_headerfiles("tests/**.h")
-    add_includedirs("src")
-    set_pcxxheader("src/pch.h")
-
 target("DualPadManifestCompilerTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -221,14 +204,11 @@ target("DualPadManifestCompilerTests")
     remove_files("tests/input_v2/PresentationProjectionTests.cpp")
     remove_files("tests/input_v2/IngressTests.cpp")
     remove_files("tests/input_v2/ReplayTests.cpp")
+    remove_files("tests/input_v2/PropertyTests.cpp")
+    remove_files("tests/input_v2/FuzzRegressionTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
-    add_files(
-        "src/input/BindingManager.cpp",
-        "src/input/BindingConfig.cpp",
-        "src/input/InputContextNames.cpp",
-        "src/input/MenuContextPolicy.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -244,7 +224,6 @@ target("DualPadContextResolverTests")
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
-    add_files("src/input/InputContext.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -264,8 +243,7 @@ target("DualPadPresentationProjectionTests")
         "src/input_v2/presentation/SourceEvidenceCollector.cpp",
         "src/input_v2/presentation/GameplayPresentationAdapter.cpp",
         "src/input_v2/presentation/PresentationProjection.cpp",
-        "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
-        "src/input/InputContext.cpp")
+        "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -280,11 +258,6 @@ target("DualPadInputV2Tests")
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(table.unpack(ph7_ingress_files))
-    add_files(
-        "src/input/BindingManager.cpp",
-        "src/input/BindingConfig.cpp",
-        "src/input/InputContextNames.cpp",
-        "src/input/MenuContextPolicy.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")
@@ -351,6 +324,32 @@ target("DualPadReplayTests")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
+target("DualPadPropertyTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/PropertyTests.cpp")
+    add_files(table.unpack(ph7_ingress_files))
+    add_files(table.unpack(ph4_action_graph_files))
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadFuzzRegressionTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/input_v2/FuzzRegressionTests.cpp")
+    add_files(table.unpack(ph7_ingress_files))
+    add_files(table.unpack(ph4_action_graph_files))
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
 target("DualPadRouteHealthContractTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
@@ -384,17 +383,12 @@ local replay_runtime_files = {
     "src/input_v2/telemetry/InputTraceRecorder.cpp",
     "src/input_v2/telemetry/ReplayHarness.cpp",
     "src/input_v2/telemetry/ActionExecutorReplayStub.cpp",
-    "src/input_v2/telemetry/ContextManagerReplayStub.cpp",
     "src/input_v2/telemetry/GameplayKbmFactTrackerReplayStub.cpp",
-    "src/input_v2/telemetry/InputModalityTrackerReplayStub.cpp",
     "src/input_v2/telemetry/NativeButtonCommitBackendReplayStub.cpp",
     "src/input_v2/telemetry/ScaleformGlyphBridgeReplayStub.cpp",
     "src/input_v2/telemetry/UpstreamGamepadHookReplayStub.cpp",
     "src/input/ActionDispatcher.cpp",
     "src/input/AuthoritativePollState.cpp",
-    "src/input/BindingConfig.cpp",
-    "src/input/BindingManager.cpp",
-    "src/input/InputContextNames.cpp",
     "src/input/RuntimeConfig.cpp",
     "src/input/XInputButtonSerialization.cpp",
     "src/input/backend/ActionBackendPolicy.cpp",
@@ -406,7 +400,6 @@ local replay_runtime_files = {
     "src/input/backend/NativeActionDescriptor.cpp",
     "src/input/glyph/GlyphResolutionCompat.cpp",
     "src/input/injection/AxisProjection.cpp",
-    "src/input/injection/GameplayOwnershipCoordinator.cpp",
     "src/input/injection/PadEventSnapshotDispatcher.cpp",
     "src/input/injection/PadEventSnapshotProcessor.cpp",
     "src/input/injection/RouteHealthContract.cpp",
@@ -414,8 +407,6 @@ local replay_runtime_files = {
     "src/input/injection/SyntheticStateDebugLogger.cpp",
     "src/input/injection/SyntheticStateReducer.cpp",
     "src/input/injection/UnmanagedDigitalPublisher.cpp",
-    "src/input/mapping/BindingResolver.cpp",
-    "src/input/mapping/TriggerMapper.cpp"
 }
 
 for _, file in ipairs(ph1_manifest_compiler_files) do

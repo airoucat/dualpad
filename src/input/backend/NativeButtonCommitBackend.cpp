@@ -4,13 +4,14 @@
 #include "input/Action.h"
 #include "input/AuthoritativePollState.h"
 #include "input/GameplayKbmFactTracker.h"
-#include "input/InputContext.h"
-#include "input/InputModalityTracker.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/PadProfile.h"
 #include "input/RuntimeConfig.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/NativeActionDescriptor.h"
 #include "input/injection/UpstreamGamepadHook.h"
+#include "input_v2/context/ContextResolver.h"
+#include "input_v2/gameplay/DualPadRuntime.h"
 
 #include <chrono>
 
@@ -174,7 +175,7 @@ namespace dualpad::input::backend
                 ToString(action.digitalPolicy),
                 ToString(action.lifecyclePolicy),
                 action.gateAware,
-                ToString(action.context),
+                dualpad::input::ToString(action.context),
                 action.contextEpoch);
         }
 
@@ -200,8 +201,9 @@ namespace dualpad::input::backend
         std::scoped_lock lock(_lock);
 
         const auto nowUs = NowUs();
-        const auto context = ContextManager::GetSingleton().GetCurrentContext();
-        const auto contextEpoch = ContextManager::GetSingleton().GetCurrentEpoch();
+        const auto& contextSnapshot = dualpad::input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        const auto context = contextSnapshot.legacyInputContext;
+        const auto contextEpoch = contextSnapshot.legacyContextEpoch;
         _frameContext = context;
         _frameContextEpoch = contextEpoch;
 
@@ -216,7 +218,8 @@ namespace dualpad::input::backend
             context == InputContext::Gameplay &&
             GameplayKbmFactTracker::GetSingleton().GetFacts().IsKeyboardMouseSprintActive();
         sprintSnapshot.gameplayOwnerGamepad =
-            InputModalityTracker::GetSingleton().IsGameplayUsingGamepad();
+            dualpad::input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation().engineOwner ==
+            dualpad::input_v2::presentation::PresentationOwner::Gamepad;
         sprintSnapshot.context = context;
         sprintSnapshot.contextEpoch = contextEpoch;
 
@@ -251,7 +254,7 @@ namespace dualpad::input::backend
                 logger::info(
                     "[DualPad][NativeButtonCommit] poll={} context={} action={} code={} execState={} commitMode={} managed={} down={} epoch={} token={} nextPulse={} desiredHeld={} downCount={} upCount={}",
                     result.pollSequence,
-                    ToString(slot.context),
+                    dualpad::input::ToString(slot.context),
                     slot.actionId.c_str(),
                     ToString(slot.outputCode),
                     ToString(slot.state),
@@ -307,7 +310,7 @@ namespace dualpad::input::backend
                 logger::info(
                     "[DualPad][SprintProbe] snapshot poll={} ctx={} epoch={} kbmHeld={} gpContributor={} kbmContributor={} effectiveHeld={} actionDown={} managed={} activeEmitter={} gameplayOwnerGamepad={} state={}",
                     result.pollSequence,
-                    ToString(sprintSnapshot.context),
+                    dualpad::input::ToString(sprintSnapshot.context),
                     sprintSnapshot.contextEpoch,
                     sprintSnapshot.kbmHeld,
                     sprintSnapshot.gamepadContributor,
@@ -336,7 +339,7 @@ namespace dualpad::input::backend
                 logger::info(
                     "[DualPad][SneakProbe] snapshot poll={} ctx={} epoch={} actionDown={} managed={} gateAware={} mode={} state={}",
                     sneakSnapshot.pollSequence,
-                    ToString(sneakSnapshot.context),
+                    dualpad::input::ToString(sneakSnapshot.context),
                     sneakSnapshot.contextEpoch,
                     sneakSnapshot.actionDown,
                     sneakSnapshot.managed,
@@ -380,7 +383,7 @@ namespace dualpad::input::backend
                 request.edge == EmitEdge::Down ? "Down" : "Up",
                 request.epoch,
                 request.tokenId,
-                ToString(request.context),
+                dualpad::input::ToString(request.context),
                 request.heldSeconds);
         }
 
@@ -522,7 +525,7 @@ namespace dualpad::input::backend
             logger::info(
                 "[DualPad][SprintProbe] SyncExternalHeldContributors kbmSprintHeld={} ctx={}",
                 kbmSprintHeld,
-                ToString(context));
+                dualpad::input::ToString(context));
         }
         _pollCommit.SyncHeldContributor(
             RE::BSFixedString(actions::Sprint.data()),

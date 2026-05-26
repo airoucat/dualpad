@@ -1,7 +1,7 @@
 #pragma once
 
-#include "input/InputContext.h"
-#include "input/mapping/PadEvent.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
+#include "input/PadEvent.h"
 #include "input/state/PadState.h"
 
 #include <cstdint>

@@ -65,9 +65,7 @@ namespace dualpad::input_v2::context
     {
         const auto stack = menu::MenuInstanceRegistry::GetSingleton().ReconcileAndPublish(observed, catalog);
         const auto gameplaySubstate = ResolveGameplaySubstate(detectedGameplayContext);
-        const auto resolved = ContextResolver::GetSingleton().ResolveAndPublish(stack, gameplaySubstate, catalog);
-        dualpad::input::ContextManager::GetSingleton().ApplyResolvedContext(ContextResolver::ToLegacyMirror(resolved));
-        return resolved;
+        return ContextResolver::GetSingleton().ResolveAndPublish(stack, gameplaySubstate, catalog);
     }
 
     ResolvedContextSnapshot ContextRefreshTick::RefreshOnMainThread(std::uint64_t frameToken)
@@ -86,8 +84,7 @@ namespace dualpad::input_v2::context
             observer.Publish(observed);
         }
 
-        const auto detectedGameplayContext =
-            dualpad::input::ContextManager::GetSingleton().DetectGameplayContext();
+        const auto detectedGameplayContext = dualpad::input::InputContext::Gameplay;
         return ResolveAndMirror(observed, detectedGameplayContext, ActiveCatalog());
     }
 
@@ -119,10 +116,5 @@ namespace dualpad::input_v2::context
         menu::UiMenuObserver::GetSingleton().ResetForTests();
         menu::MenuInstanceRegistry::GetSingleton().ResetForTests();
         ContextResolver::GetSingleton().ResetForTests();
-        dualpad::input::ContextManager::GetSingleton().ApplyResolvedContext(
-            LegacyContextMirrorState{
-                .context = dualpad::input::InputContext::Gameplay,
-                .epoch = 1
-            });
     }
 }

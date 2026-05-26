@@ -1,15 +1,21 @@
 #pragma once
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/FrameActionPlan.h"
-#include "input/mapping/BindingResolver.h"
-#include "input/mapping/PadEvent.h"
+#include "input/PadEvent.h"
 
 #include <string_view>
 
 namespace dualpad::input::backend
 {
+    struct ResolvedBinding
+    {
+        std::string actionId;
+        Trigger trigger{};
+        bool ambiguous{ false };
+    };
+
     class FrameActionPlanner
     {
     public:

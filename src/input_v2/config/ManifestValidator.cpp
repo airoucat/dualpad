@@ -3,7 +3,7 @@
 #include "input_v2/config/ManifestValidator.h"
 
 #include "input/IniParseHelpers.h"
-#include "input/mapping/PadEvent.h"
+#include "input/PadEvent.h"
 #include "input_v2/actions/ActionManifest.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/config/LegacyIniImporter.h"

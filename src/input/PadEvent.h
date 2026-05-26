@@ -29,9 +29,6 @@ namespace dualpad::input
     enum class PadAxisId : std::uint8_t
     {
         None,
-        // Keep axis event codes outside the synthetic digital pad-bit space so
-        // generic helpers such as IsSyntheticPadBitCode() cannot mistake an
-        // AxisChange event for a button bitmask.
         LeftStickX = 0x91,
         LeftStickY = 0x92,
         RightStickX = 0x93,
@@ -70,6 +67,14 @@ namespace dualpad::input
         Right
     };
 
+    struct TouchpadConfig
+    {
+        TouchpadMode mode{ TouchpadMode::LeftCenterRight };
+        float edgeThreshold{ 0.15f };
+        float leftRightBoundary{ 1.0f / 3.0f };
+        float slideThreshold{ 0.18f };
+    };
+
     namespace mapping_codes
     {
         inline constexpr std::uint32_t kTpLeftPress = 0x01000000;
@@ -79,9 +84,6 @@ namespace dualpad::input
         inline constexpr std::uint32_t kTpSwipeDown = 0x10000000;
         inline constexpr std::uint32_t kTpSwipeLeft = 0x20000000;
         inline constexpr std::uint32_t kTpSwipeRight = 0x40000000;
-
-        // These identifiers live only in the mapping layer and are not forwarded
-        // through the runtime gamepad poll-state contract.
         inline constexpr std::uint32_t kTpEdgeTopPress = 0x81000001;
         inline constexpr std::uint32_t kTpEdgeBottomPress = 0x81000002;
         inline constexpr std::uint32_t kTpEdgeLeftPress = 0x81000003;
@@ -170,11 +172,9 @@ namespace dualpad::input
         std::uint32_t code{ 0 };
         std::uint64_t timestampUs{ 0 };
         std::uint32_t modifierMask{ 0 };
-
         PadAxisId axis{ PadAxisId::None };
         float value{ 0.0f };
         float previousValue{ 0.0f };
-
         std::uint8_t touchId{ 0 };
         std::uint16_t touchX{ 0 };
         std::uint16_t touchY{ 0 };
@@ -206,7 +206,6 @@ namespace dualpad::input
                 ++droppedCount;
                 return false;
             }
-
             events[count++] = event;
             return true;
         }

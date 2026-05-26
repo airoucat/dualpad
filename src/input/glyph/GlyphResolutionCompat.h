@@ -2,7 +2,7 @@
 
 
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 
 #include "input/Trigger.h"
 

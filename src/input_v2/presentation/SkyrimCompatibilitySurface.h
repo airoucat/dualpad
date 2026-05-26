@@ -1,5 +1,7 @@
 #pragma once
 
+#include <RE/Skyrim.h>
+
 #include "input_v2/presentation/PresentationProjection.h"
 
 #include <cstdint>
@@ -30,6 +32,9 @@ namespace dualpad::input_v2::presentation
     class SkyrimCompatibilitySurface
     {
     public:
+        static SkyrimCompatibilitySurface& GetSingleton();
+
+        void Install();
         void Commit(const PublishedPresentationState& state);
         void EnableRollback(const LegacyCompatibilitySurface& legacy);
         void DisableRollback();
@@ -45,8 +50,13 @@ namespace dualpad::input_v2::presentation
         const PublishedPresentationState& GetCommittedState() const;
 
     private:
+        static bool StaticIsUsingGamepadHook();
+        static bool StaticIsGamepadCursorHook();
+        static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
+
         PublishedPresentationState _committed{};
         std::optional<LegacyCompatibilitySurface> _rollback;
         std::uint32_t _lastRefreshEpoch{ 0 };
+        bool _installed{ false };
     };
 }

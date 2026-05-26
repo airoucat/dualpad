@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-24T23:38:32+08:00",
+  "updated_at": "2026-05-26T23:20:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -299,8 +299,8 @@
       "depends_on": [
         "PH8"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "runtime public surface swap、legacy deletion 和 shim shrink 完成",
         "6 类 canonical runtime prove-out targets 已存在并通过",

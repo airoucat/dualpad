@@ -1,7 +1,5 @@
 #include "pch.h"
 
-#include "input/BindingConfig.h"
-#include "input/MenuContextPolicy.h"
 #include "input_v2/config/ActionManifestPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 
@@ -173,48 +171,4 @@ void RunAtomicConfigReloaderTests()
         Require(res.ok, "startup should succeed when config files are missing (built-in defaults)");
     }
 
-    // BindingConfig::Reload must report reloader failure while retaining old active bundle.
-    {
-        const auto temp4 = std::filesystem::temp_directory_path() / "dualpad-inputv2-binding-facade-reload";
-        std::filesystem::remove_all(temp4);
-        std::filesystem::create_directories(temp4);
-        const auto bindings4 = temp4 / "DualPadBindings.ini";
-        const auto policy4 = temp4 / "DualPadMenuPolicy.ini";
-        WriteFile(bindings4, ReadFile(fixtureBindings));
-        WriteFile(policy4, ReadFile(fixturePolicy));
-
-        cfg::AtomicConfigReloader::GetSingleton().ResetForTests();
-        cfg::ActionManifestPublisher::GetSingleton().ResetForTests();
-        Require(dualpad::input::BindingConfig::GetSingleton().Load(bindings4), "BindingConfig load should succeed");
-        const auto epochBefore = cfg::AtomicConfigReloader::GetSingleton().GetActiveEpoch();
-        Require(epochBefore.has_value(), "BindingConfig load should promote active bundle");
-
-        WriteFile(bindings4, "[Gameplay]\nButton:Cross=Game.NotARealAction\n");
-        Require(!dualpad::input::BindingConfig::GetSingleton().Reload(), "BindingConfig reload should report failure");
-        const auto epochAfter = cfg::AtomicConfigReloader::GetSingleton().GetActiveEpoch();
-        Require(epochAfter == epochBefore, "BindingConfig failed reload should keep old active bundle");
-    }
-
-    // MenuContextPolicy::Reload must report reloader failure while retaining old active bundle.
-    {
-        const auto temp5 = std::filesystem::temp_directory_path() / "dualpad-inputv2-menu-facade-reload";
-        std::filesystem::remove_all(temp5);
-        std::filesystem::create_directories(temp5);
-        const auto bindings5 = temp5 / "DualPadBindings.ini";
-        const auto policy5 = temp5 / "DualPadMenuPolicy.ini";
-        WriteFile(bindings5, ReadFile(fixtureBindings));
-        WriteFile(policy5, ReadFile(fixturePolicy));
-
-        cfg::AtomicConfigReloader::GetSingleton().ResetForTests();
-        cfg::ActionManifestPublisher::GetSingleton().ResetForTests();
-        const auto res = cfg::AtomicConfigReloader::GetSingleton().LoadOrRecover(bindings5, policy5);
-        Require(res.ok, res.message);
-        Require(dualpad::input::MenuContextPolicy::GetSingleton().Load(policy5), "MenuContextPolicy load should sync active bundle");
-        const auto epochBefore = cfg::AtomicConfigReloader::GetSingleton().GetActiveEpoch();
-
-        WriteFile(policy5, "[Track]\nBrokenMenu=NotAContext\n");
-        Require(!dualpad::input::MenuContextPolicy::GetSingleton().Reload(), "MenuContextPolicy reload should report failure");
-        const auto epochAfter = cfg::AtomicConfigReloader::GetSingleton().GetActiveEpoch();
-        Require(epochAfter == epochBefore, "MenuContextPolicy failed reload should keep old active bundle");
-    }
 }

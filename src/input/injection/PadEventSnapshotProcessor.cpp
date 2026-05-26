@@ -1,265 +1,24 @@
 #include "pch.h"
+
 #include "input/injection/PadEventSnapshotProcessor.h"
 
-#include "input/Action.h"
-#include "input/backend/ActionBackendPolicy.h"
-#include "input/backend/NativeButtonCommitBackend.h"
-#include "input/backend/FrameActionPlanDebugLogger.h"
-#include "input/backend/KeyboardHelperBackend.h"
 #include "input/AuthoritativePollState.h"
-#include "input/BindingManager.h"
-#include "input/GameplayKbmFactTracker.h"
-#include "input/InputModalityTracker.h"
-#include "input/InputContext.h"
-#include "input/RuntimeConfig.h"
-#include "input/injection/AxisProjection.h"
-#include "input/injection/SyntheticStateDebugLogger.h"
-#include "input/injection/UnmanagedDigitalPublisher.h"
+#include "input/backend/KeyboardHelperBackend.h"
+#include "input/backend/NativeButtonCommitBackend.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
-#include "input_v2/gameplay/GameplayProjectionFrame.h"
-#include "input_v2/ingress/FrameAssembler.h"
-#include "input_v2/ingress/IngressRecovery.h"
+#include "input_v2/ingress/IngressHub.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
-
-namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
     namespace
     {
-        enum class ResyncRecoveryKind : std::uint8_t
+        input_v2::ingress::FrameAssembler& DirectProcessorAssembler()
         {
-            SameContextGap,
-            CrossContextBoundary,
-            HardResync
-        };
-
-        enum class ResyncRecoveryDisposition : std::uint8_t
-        {
-            ReplayPress,
-            RecoverOwnerOnly,
-            SuppressUntilRelease
-        };
-
-        bool ShouldLogMappingActivity()
-        {
-            return RuntimeConfig::GetSingleton().LogMappingEvents();
+            static input_v2::ingress::FrameAssembler assembler;
+            return assembler;
         }
-
-        bool ShouldLogHandledButtons()
-        {
-            const auto& config = RuntimeConfig::GetSingleton();
-            return config.LogMappingEvents() || config.LogNativeInjection();
-        }
-
-        bool IsLifecycleAction(const backend::ActionRoutingDecision& decision)
-        {
-            return decision.ownsLifecycle;
-        }
-
-        bool ShouldBlockPhysicalButton(const PadEvent& event)
-        {
-            switch (event.type) {
-            case PadEventType::ButtonPress:
-            case PadEventType::Hold:
-            case PadEventType::Tap:
-                return IsSyntheticPadBitCode(event.code);
-            default:
-                return false;
-            }
-        }
-
-        std::uint32_t CollectResolvedChordMask(
-            const PadEventBuffer& events,
-            InputContext context,
-            const BindingResolver& bindingResolver)
-        {
-            std::uint32_t resolvedChordMask = 0;
-            for (std::size_t i = 0; i < events.count; ++i) {
-                const auto& event = events[i];
-                if ((event.type != PadEventType::Combo && event.type != PadEventType::Layer) ||
-                    !IsSyntheticPadBitCode(event.code)) {
-                    continue;
-                }
-
-                if (bindingResolver.Resolve(event, context)) {
-                    resolvedChordMask |= event.code;
-                }
-            }
-
-            return resolvedChordMask;
-        }
-
-        std::uint32_t CollectObservedButtonPressMask(const PadEventBuffer& events)
-        {
-            std::uint32_t observedPressMask = 0;
-            for (std::size_t i = 0; i < events.count; ++i) {
-                const auto& event = events[i];
-                if (event.type == PadEventType::ButtonPress &&
-                    IsSyntheticPadBitCode(event.code)) {
-                    observedPressMask |= event.code;
-                }
-            }
-
-            return observedPressMask;
-        }
-
-        void BlockSourceMask(SourceBlockCoordinator& coordinator, std::uint32_t mask)
-        {
-            for (int bitIndex = 0; bitIndex < 32; ++bitIndex) {
-                const auto bit = (1u << bitIndex);
-                if ((mask & bit) != 0) {
-                    coordinator.Block(bit);
-                }
-            }
-        }
-
-        void SynthesizeMissingButtonEdges(
-            const SyntheticPadFrame& frame,
-            InputContext context,
-            const PadState& state,
-            PadEventBuffer& events)
-        {
-            const auto observedPressMask = CollectObservedButtonPressMask(events);
-            const auto comboParticipantMask = BindingManager::GetSingleton().GetComboParticipantMask(context);
-
-            const auto missingPressMask =
-                frame.pressedMask &
-                ~observedPressMask &
-                ~comboParticipantMask;
-
-            for (int bitIndex = 0; bitIndex < 32; ++bitIndex) {
-                const auto bit = (1u << bitIndex);
-                if ((missingPressMask & bit) == 0) {
-                    continue;
-                }
-
-                PadEvent synthesized{};
-                synthesized.type = PadEventType::ButtonPress;
-                synthesized.triggerType = TriggerType::Button;
-                synthesized.code = bit;
-                synthesized.timestampUs = frame.sourceTimestampUs != 0 ? frame.sourceTimestampUs : state.timestampUs;
-                synthesized.modifierMask = state.buttons.digitalMask & ~bit;
-                if (events.Push(synthesized)) {
-                    logger::warn(
-                        "[DualPad][Snapshot] Synthesized missing press edge for source=0x{:08X} context={} seq={} firstSeq={}",
-                        bit,
-                        ToString(context),
-                        frame.sequence,
-                        frame.firstSequence);
-                } else {
-                    logger::warn(
-                        "[DualPad][Snapshot] Failed to synthesize missing press edge for source=0x{:08X}; frame event buffer full",
-                        bit);
-                }
-            }
-        }
-
-        constexpr std::string_view ToString(ResyncRecoveryKind kind)
-        {
-            switch (kind) {
-            case ResyncRecoveryKind::SameContextGap:
-                return "SameContextGap";
-            case ResyncRecoveryKind::CrossContextBoundary:
-                return "CrossContextBoundary";
-            case ResyncRecoveryKind::HardResync:
-            default:
-                return "HardResync";
-            }
-        }
-
-        constexpr std::string_view ToString(ResyncRecoveryDisposition disposition)
-        {
-            switch (disposition) {
-            case ResyncRecoveryDisposition::ReplayPress:
-                return "ReplayPress";
-            case ResyncRecoveryDisposition::RecoverOwnerOnly:
-                return "RecoverOwnerOnly";
-            case ResyncRecoveryDisposition::SuppressUntilRelease:
-            default:
-                return "SuppressUntilRelease";
-            }
-        }
-
-        input_v2::actions::ActionPhase ToResolvedActionPhase(backend::PlannedActionPhase phase)
-        {
-            switch (phase) {
-            case backend::PlannedActionPhase::Pulse:
-                return input_v2::actions::ActionPhase::Pulse;
-            case backend::PlannedActionPhase::Press:
-                return input_v2::actions::ActionPhase::Press;
-            case backend::PlannedActionPhase::Hold:
-                return input_v2::actions::ActionPhase::Hold;
-            case backend::PlannedActionPhase::Release:
-                return input_v2::actions::ActionPhase::Release;
-            case backend::PlannedActionPhase::Value:
-                return input_v2::actions::ActionPhase::Value;
-            case backend::PlannedActionPhase::None:
-            default:
-                return input_v2::actions::ActionPhase::Press;
-            }
-        }
-
-        input_v2::actions::ResolvedActionFrame BuildResolvedActionFrame(
-            const backend::FrameActionPlan& framePlan,
-            const ProjectedAnalogState& analog,
-            std::uint32_t contextEpoch)
-        {
-            input_v2::actions::ResolvedActionFrame resolved{};
-            resolved.contextRevision = contextEpoch;
-            for (const auto& action : framePlan) {
-                resolved.changes.push_back(input_v2::actions::ActionPhaseChange{
-                    .actionId = action.actionId,
-                    .bindingId = action.sourceCode,
-                    .phase = ToResolvedActionPhase(action.phase),
-                    .timestampUs = action.timestampUs
-                });
-            }
-
-            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
-                .actionId = "Game.Move",
-                .kind = input_v2::actions::ActionValueKind::Axis2D,
-                .x = analog.moveX,
-                .y = analog.moveY
-            });
-            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
-                .actionId = "Game.Look",
-                .kind = input_v2::actions::ActionValueKind::Axis2D,
-                .x = analog.lookX,
-                .y = analog.lookY
-            });
-            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
-                .actionId = "Game.LeftTrigger",
-                .kind = input_v2::actions::ActionValueKind::Axis1D,
-                .scalar = analog.leftTrigger
-            });
-            resolved.values.push_back(input_v2::actions::ActionValueSnapshot{
-                .actionId = "Game.RightTrigger",
-                .kind = input_v2::actions::ActionValueKind::Axis1D,
-                .scalar = analog.rightTrigger
-            });
-            return resolved;
-        }
-
-        input_v2::gameplay::GameplayPolicy BuildGameplayPolicy(InputContext context)
-        {
-            const auto contextValue = static_cast<std::uint16_t>(context);
-            const bool menuOwnedContext = contextValue >= 100 && contextValue < 2000;
-            const auto facts = GameplayKbmFactTracker::GetSingleton().GetFacts();
-            return input_v2::gameplay::GameplayPolicy{
-                .gameplayContext = !menuOwnedContext && context != InputContext::Console,
-                .mouseLookActive = facts.mouseLookActive,
-                .keyboardMoveActive = facts.IsKeyboardMoveActive(),
-                .keyboardMouseCombatActive = facts.IsKeyboardMouseCombatActive(),
-                .keyboardMouseDigitalActive = facts.IsKeyboardMouseDigitalActive(),
-                .keyboardPhysicalSustainedActive = facts.IsKeyboardMouseSprintActive(),
-                .mousePhysicalSustainedActive = facts.IsKeyboardMouseSprintActive()
-            };
-        }
-
     }
-
-    PadEventSnapshotProcessor::PadEventSnapshotProcessor() = default;
 
     PadEventSnapshotProcessor& PadEventSnapshotProcessor::GetSingleton()
     {
@@ -269,551 +28,60 @@ namespace dualpad::input
 
     void PadEventSnapshotProcessor::ResetState()
     {
-        ResetAllState();
-    }
-
-    void PadEventSnapshotProcessor::ResetAllState()
-    {
-        _lastProcessedSequence = 0;
-        ResetRecoveryBaseline();
-        _stateReducer.Reset();
         AuthoritativePollState::GetSingleton().Reset();
-        _lifecycleCoordinator.Reset();
-        _sourceBlockCoordinator.Reset();
         backend::NativeButtonCommitBackend::GetSingleton().Reset();
         backend::KeyboardHelperBackend::GetSingleton().Reset();
         input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
-        ResetFramePlanning();
-    }
-
-    void PadEventSnapshotProcessor::ResyncNativeState()
-    {
-        _lastProcessedSequence = 0;
-        _stateReducer.Reset();
-        AuthoritativePollState::GetSingleton().Reset();
-        _lifecycleCoordinator.Reset();
-        _sourceBlockCoordinator.Reset();
-        backend::NativeButtonCommitBackend::GetSingleton().Reset();
-        input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
-        ResetFramePlanning();
-    }
-
-    void PadEventSnapshotProcessor::ResetRecoveryBaseline()
-    {
-        _cleanRecoveryBaseline = {};
-    }
-
-    void PadEventSnapshotProcessor::CommitCleanRecoveryBaseline(
-        const SyntheticPadFrame& frame,
-        InputContext context,
-        std::uint32_t contextEpoch,
-        std::uint64_t sequence)
-    {
-        _cleanRecoveryBaseline.valid = true;
-        _cleanRecoveryBaseline.context = context;
-        _cleanRecoveryBaseline.contextEpoch = contextEpoch;
-        _cleanRecoveryBaseline.downMask = frame.downMask;
-        _cleanRecoveryBaseline.sequence = sequence;
-    }
-
-    std::uint32_t PadEventSnapshotProcessor::CollectPlannedActions(
-        const PadEventBuffer& events,
-        InputContext context,
-        std::uint32_t contextEpoch)
-    {
-        std::uint32_t handledButtons = _sourceBlockCoordinator.CurrentMask();
-        const auto resolvedChordMask = CollectResolvedChordMask(events, context, _bindingResolver);
-        for (std::size_t i = 0; i < events.count; ++i) {
-            const auto& event = events[i];
-            if (event.type == PadEventType::ButtonRelease &&
-                IsSyntheticPadBitCode(event.code) &&
-                _sourceBlockCoordinator.IsBlocked(event.code)) {
-                handledButtons |= event.code;
-                _sourceBlockCoordinator.Release(event.code);
-            }
-
-            if (event.type == PadEventType::ButtonRelease &&
-                IsSyntheticPadBitCode(event.code)) {
-                const auto released = _lifecycleCoordinator.ReleaseOwningAction(
-                    event.code,
-                    event.timestampUs,
-                    context,
-                    contextEpoch,
-                    _framePlan);
-                if (released) {
-                    handledButtons |= event.code;
-                    if (ShouldLogMappingActivity()) {
-                        logger::info(
-                            "[DualPad][Mapping] Planned lifecycle release source=0x{:08X} context={}",
-                            event.code,
-                            ToString(context));
-                    }
-                    continue;
-                }
-            }
-
-            const auto resolved = _bindingResolver.Resolve(event, context);
-            if (!resolved) {
-                continue;
-            }
-
-            if (event.type == PadEventType::ButtonPress &&
-                IsSyntheticPadBitCode(event.code) &&
-                (resolvedChordMask & event.code) != 0) {
-                _sourceBlockCoordinator.Block(event.code);
-                handledButtons |= event.code;
-                if (ShouldLogMappingActivity()) {
-                    logger::info(
-                        "[DualPad][Mapping] Suppressing ButtonPress source=0x{:08X} because same-frame Layer/Combo resolved",
-                        event.code);
-                }
-                continue;
-            }
-
-            const auto routingDecision = backend::ActionBackendPolicy::Decide(resolved->actionId);
-
-            if (event.type == PadEventType::ButtonPress &&
-                IsSyntheticPadBitCode(event.code) &&
-                IsLifecycleAction(routingDecision)) {
-                if (_lifecycleCoordinator.RegisterOwningAction(event.code, resolved->actionId, routingDecision)) {
-                    if (ShouldLogMappingActivity() &&
-                        resolved->actionId == actions::Sneak) {
-                        logger::info(
-                            "[DualPad][SneakProbe] register lifecycle owner source=0x{:08X} event={} context={} action={}",
-                            event.code,
-                            ToString(event.type),
-                            ToString(context),
-                            resolved->actionId);
-                    }
-                    _sourceBlockCoordinator.Block(event.code);
-                    handledButtons |= event.code;
-                    continue;
-                }
-            }
-
-            if (!_planner.PlanResolvedEvent(*resolved, event, context, contextEpoch, _framePlan)) {
-                continue;
-            }
-
-            if (ShouldLogMappingActivity()) {
-                logger::info("[DualPad][Mapping] Planned event {} source=0x{:08X} context={} action={}",
-                    ToString(event.type),
-                    event.code,
-                    ToString(context),
-                    resolved->actionId);
-                if (resolved->actionId == actions::Sneak) {
-                    logger::info(
-                        "[DualPad][SneakProbe] planned resolved event={} source=0x{:08X} context={} action={}",
-                        ToString(event.type),
-                        event.code,
-                        ToString(context),
-                        resolved->actionId);
-                }
-            }
-
-            if (event.type == PadEventType::ButtonPress &&
-                IsSyntheticPadBitCode(event.code)) {
-                _sourceBlockCoordinator.Block(event.code);
-                handledButtons |= event.code;
-            }
-
-            if (ShouldBlockPhysicalButton(event)) {
-                handledButtons |= event.code;
-            }
-        }
-
-        if (handledButtons != 0 && ShouldLogHandledButtons()) {
-            logger::info("[DualPad] Blocked buttons from Skyrim: {:08X}", handledButtons);
-        }
-
-        return handledButtons;
-    }
-
-    void PadEventSnapshotProcessor::CollectLifecycleActions(
-        const SyntheticPadFrame& frame,
-        InputContext context,
-        std::uint32_t contextEpoch)
-    {
-        _sourceBlockCoordinator.ReleaseMask(
-            _lifecycleCoordinator.PlanFrame(frame, context, contextEpoch, _framePlan));
-    }
-
-    std::uint32_t PadEventSnapshotProcessor::RecoverMissingPressStateAfterResync(
-        const SyntheticPadFrame& frame,
-        InputContext context,
-        std::uint32_t contextEpoch,
-        bool crossContextMismatch,
-        bool hardResync,
-        const PadState& state,
-        PadEventBuffer& events)
-    {
-        ResyncRecoveryKind recoveryKind = ResyncRecoveryKind::SameContextGap;
-        if (hardResync) {
-            recoveryKind = ResyncRecoveryKind::HardResync;
-        } else if (!_cleanRecoveryBaseline.valid ||
-            crossContextMismatch ||
-            context != _cleanRecoveryBaseline.context ||
-            contextEpoch != _cleanRecoveryBaseline.contextEpoch) {
-            recoveryKind = ResyncRecoveryKind::CrossContextBoundary;
-        }
-
-        std::uint32_t handledButtons = 0;
-
-        const auto observedPressMask = CollectObservedButtonPressMask(events);
-        const auto comboParticipantMask = BindingManager::GetSingleton().GetComboParticipantMask(context);
-        const auto missingPressMask =
-            frame.pressedMask &
-            ~observedPressMask &
-            ~comboParticipantMask;
-
-        for (int bitIndex = 0; bitIndex < 32; ++bitIndex) {
-            const auto bit = (1u << bitIndex);
-            if ((missingPressMask & bit) == 0) {
-                continue;
-            }
-
-            PadEvent synthesized{};
-            synthesized.type = PadEventType::ButtonPress;
-            synthesized.triggerType = TriggerType::Button;
-            synthesized.code = bit;
-            synthesized.timestampUs = frame.sourceTimestampUs != 0 ? frame.sourceTimestampUs : state.timestampUs;
-            synthesized.modifierMask = state.buttons.digitalMask & ~bit;
-
-            const bool preGapDown =
-                _cleanRecoveryBaseline.valid &&
-                context == _cleanRecoveryBaseline.context &&
-                contextEpoch == _cleanRecoveryBaseline.contextEpoch &&
-                (_cleanRecoveryBaseline.downMask & bit) != 0;
-
-            const auto resolved = _bindingResolver.Resolve(synthesized, context);
-            if (resolved) {
-                const auto routingDecision = backend::ActionBackendPolicy::Decide(resolved->actionId);
-                switch (routingDecision.contract) {
-                case backend::ActionOutputContract::Hold:
-                case backend::ActionOutputContract::Repeat:
-                    if (routingDecision.ownsLifecycle) {
-                        if (_lifecycleCoordinator.RegisterRecoveredOwningAction(bit, resolved->actionId, routingDecision)) {
-                            _sourceBlockCoordinator.Block(bit);
-                            handledButtons |= bit;
-                            logger::warn(
-                                "[DualPad][Snapshot] Resync recovery source=0x{:08X} context={} action={} contract={} kind={} baselineSeq={} preGapDown={} decision={}",
-                                bit,
-                                ToString(context),
-                                resolved->actionId,
-                                backend::ToString(routingDecision.contract),
-                                ToString(recoveryKind),
-                                _cleanRecoveryBaseline.sequence,
-                                preGapDown,
-                                ToString(ResyncRecoveryDisposition::RecoverOwnerOnly));
-                            continue;
-                        }
-                    }
-                    break;
-
-                case backend::ActionOutputContract::Pulse:
-                case backend::ActionOutputContract::Toggle:
-                    if (recoveryKind == ResyncRecoveryKind::SameContextGap &&
-                        !preGapDown) {
-                        if (events.Push(synthesized)) {
-                            logger::warn(
-                                "[DualPad][Snapshot] Resync recovery source=0x{:08X} context={} action={} contract={} kind={} baselineSeq={} preGapDown={} decision={}",
-                                bit,
-                                ToString(context),
-                                resolved->actionId,
-                                backend::ToString(routingDecision.contract),
-                                ToString(recoveryKind),
-                                _cleanRecoveryBaseline.sequence,
-                                preGapDown,
-                                ToString(ResyncRecoveryDisposition::ReplayPress));
-                            continue;
-                        }
-                    }
-
-                    _sourceBlockCoordinator.Block(bit);
-                    handledButtons |= bit;
-                    logger::warn(
-                        "[DualPad][Snapshot] Resync recovery source=0x{:08X} context={} action={} contract={} kind={} baselineSeq={} preGapDown={} decision={}",
-                        bit,
-                        ToString(context),
-                        resolved->actionId,
-                        backend::ToString(routingDecision.contract),
-                        ToString(recoveryKind),
-                        _cleanRecoveryBaseline.sequence,
-                        preGapDown,
-                        ToString(ResyncRecoveryDisposition::SuppressUntilRelease));
-                    continue;
-
-                case backend::ActionOutputContract::Axis:
-                case backend::ActionOutputContract::None:
-                default:
-                    break;
-                }
-            }
-
-            if (recoveryKind == ResyncRecoveryKind::SameContextGap &&
-                !preGapDown) {
-                if (events.Push(synthesized)) {
-                    logger::warn(
-                        "[DualPad][Snapshot] Resync recovery source=0x{:08X} context={} resolvedAction={} kind={} baselineSeq={} preGapDown={} decision={}",
-                        bit,
-                        ToString(context),
-                        resolved ? resolved->actionId : std::string_view("None"),
-                        ToString(recoveryKind),
-                        _cleanRecoveryBaseline.sequence,
-                        preGapDown,
-                        ToString(ResyncRecoveryDisposition::ReplayPress));
-                    continue;
-                }
-            }
-
-            _sourceBlockCoordinator.Block(bit);
-            handledButtons |= bit;
-            logger::warn(
-                "[DualPad][Snapshot] Resync recovery source=0x{:08X} context={} resolvedAction={} kind={} baselineSeq={} preGapDown={} decision={}",
-                bit,
-                ToString(context),
-                resolved ? resolved->actionId : std::string_view("None"),
-                ToString(recoveryKind),
-                _cleanRecoveryBaseline.sequence,
-                preGapDown,
-                ToString(ResyncRecoveryDisposition::SuppressUntilRelease));
-        }
-
-        return handledButtons;
-    }
-
-    void PadEventSnapshotProcessor::ResetFramePlanning()
-    {
-        _framePlan.Clear();
-    }
-
-    void PadEventSnapshotProcessor::BeginFramePlanning(InputContext context, std::uint32_t contextEpoch)
-    {
-        (void)context;
-        (void)contextEpoch;
-        _framePlan.Clear();
-    }
-
-    void PadEventSnapshotProcessor::FinishFramePlanning(
-        const SyntheticPadFrame& frame,
-        InputContext context,
-        std::uint32_t contextEpoch,
-        bool degradedSnapshot,
-        bool hardResync)
-    {
-        const auto analog = CollectBoundAnalogState(frame, context);
-        input_v2::actions::KernelFrame kernel{};
-        kernel.facts.contextRevision = contextEpoch;
-        kernel.facts.monotonicUs = frame.sourceTimestampUs;
-        kernel.state.cleanBoundaryBaseline = !degradedSnapshot;
-        kernel.state.healthDegraded = degradedSnapshot;
-
-        input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessGameplayFrame(
-            input_v2::gameplay::DualPadRuntimeInput{
-                .kernel = kernel,
-                .resolved = BuildResolvedActionFrame(_framePlan, analog, contextEpoch),
-                .policy = BuildGameplayPolicy(context),
-                .recovery = input_v2::gameplay::GameplayRecoveryInput{
-                    .softResyncRequested = degradedSnapshot && !hardResync,
-                    .hardResetRequested = hardResync,
-                    .sequenceGapObserved = degradedSnapshot && !hardResync,
-                    .explicitResetRequested = false,
-                    .cleanFrame = !degradedSnapshot
-                },
-                .outputTick = frame.sourceTimestampUs,
-                .legacyContext = context
-            });
-        backend::LogFrameActionPlan(_framePlan);
+        input_v2::ingress::IngressHub::GetSingleton().ResetForTests();
+        DirectProcessorAssembler().Reset();
     }
 
     void PadEventSnapshotProcessor::Process(const PadEventSnapshot& snapshot)
     {
         if (snapshot.type == PadEventSnapshotType::Reset) {
-            logger::info("[DualPad][Snapshot] Resetting injected state");
-            ResetAllState();
+            ResetState();
             return;
         }
 
-        if (snapshot.overflowed || snapshot.events.overflowed) {
-            logger::warn(
-                "[DualPad][Snapshot] Processing overflowed event snapshot seq={} firstSeq={} droppedEvents={} coalesced={}",
-                snapshot.sequence,
-                snapshot.firstSequence,
-                snapshot.events.droppedCount,
-                snapshot.coalesced);
-        }
-
-        bool didResync = false;
-        if (!_ingressRecoveryAuthoritative &&
-            _lastProcessedSequence != 0 &&
-            snapshot.firstSequence != (_lastProcessedSequence + 1)) {
-            logger::warn(
-                "[DualPad][Snapshot] Sequence gap detected: expected {} got {}. Resynchronizing native input state.",
-                _lastProcessedSequence + 1,
-                snapshot.firstSequence);
-            ResyncNativeState();
-            didResync = true;
-        }
-
-        const auto context = snapshot.context;
-        const auto contextEpoch = snapshot.contextEpoch;
-        input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(snapshot.sequence);
-        const auto& syntheticFrame = _stateReducer.Reduce(snapshot, context);
-        AuthoritativePollState::GetSingleton().PublishFrameMetadata(
-            syntheticFrame.sourceTimestampUs,
-            syntheticFrame.overflowed,
-            syntheticFrame.coalesced);
-        LogSyntheticPadFrame(syntheticFrame);
-        BeginFramePlanning(context, contextEpoch);
-
-        auto effectiveEvents = snapshot.events;
-        std::uint32_t recoveredPressHandledMask = 0;
-        const bool degradedSnapshot =
-            !_ingressRecoveryAuthoritative &&
-            (didResync ||
-                snapshot.coalesced ||
-                snapshot.overflowed ||
-                snapshot.events.overflowed ||
-                snapshot.crossContextMismatch);
-        const bool hardResync =
-            !_ingressRecoveryAuthoritative &&
-            (snapshot.overflowed ||
-                snapshot.events.overflowed);
-        if (degradedSnapshot && !didResync) {
-            logger::warn(
-                "[DualPad][Snapshot] Entering degraded recovery path seq={} firstSeq={} coalesced={} overflowed={} crossContextMismatch={}",
-                snapshot.sequence,
-                snapshot.firstSequence,
-                snapshot.coalesced,
-                hardResync,
-                snapshot.crossContextMismatch);
-        }
-
-        if (degradedSnapshot) {
-            recoveredPressHandledMask = RecoverMissingPressStateAfterResync(
-                syntheticFrame,
-                context,
-                contextEpoch,
-                snapshot.crossContextMismatch,
-                hardResync,
-                snapshot.state,
-                effectiveEvents);
-        } else {
-            SynthesizeMissingButtonEdges(syntheticFrame, context, snapshot.state, effectiveEvents);
-        }
-
-        auto handledButtons = recoveredPressHandledMask | CollectPlannedActions(effectiveEvents, context, contextEpoch);
-        if (degradedSnapshot) {
-            const auto observedPressMask = CollectObservedButtonPressMask(effectiveEvents);
-            const auto recoveredPressedMask =
-                syntheticFrame.pressedMask & ~observedPressMask & ~handledButtons;
-            if (recoveredPressedMask != 0) {
-                BlockSourceMask(_sourceBlockCoordinator, recoveredPressedMask);
-                handledButtons |= recoveredPressedMask;
-                logger::warn(
-                    "[DualPad][Snapshot] Applied degraded-snapshot source-block compensation for pressed bits 0x{:08X}",
-                    recoveredPressedMask);
-            }
-        }
-
-        const auto contextValue = static_cast<std::uint16_t>(context);
-        const bool menuOwnedContext = contextValue >= 100 && contextValue < 2000;
-        if (menuOwnedContext &&
-            handledButtons != 0 &&
-            _framePlan.Empty()) {
-            logger::warn(
-                "[DualPad][MenuProbe] handledWithoutPlan seq={} firstSeq={} degraded={} coalesced={} overflowed={} crossContextMismatch={} handled=0x{:08X} recoveredHandled=0x{:08X} sourceBlockMask=0x{:08X} framePressed=0x{:08X} observedPress=0x{:08X} eventCount={}",
-                snapshot.sequence,
-                snapshot.firstSequence,
-                degradedSnapshot,
-                snapshot.coalesced,
-                snapshot.overflowed || snapshot.events.overflowed,
-                snapshot.crossContextMismatch,
-                handledButtons,
-                recoveredPressHandledMask,
-                _sourceBlockCoordinator.CurrentMask(),
-                syntheticFrame.pressedMask,
-                CollectObservedButtonPressMask(effectiveEvents),
-                effectiveEvents.count);
-        }
-        CollectLifecycleActions(syntheticFrame, context, contextEpoch);
-        // Poll-owned digital actions now commit through NativeButtonCommitBackend.
-        // Reduced raw edges still publish unmanaged digital facts here so the
-        // authoritative poll state remains the single output contract.
-        PublishUnmanagedDigitalState(syntheticFrame, handledButtons);
-        FinishFramePlanning(syntheticFrame, context, contextEpoch, degradedSnapshot, hardResync);
-        input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordProcessedSnapshot(
-            snapshot,
-            AuthoritativePollState::GetSingleton().ReadSnapshot(),
-            InputModalityTracker::GetSingleton().CaptureCompatibilitySurfaceForReplay());
-
-        _lastProcessedSequence = snapshot.sequence;
-        if (!degradedSnapshot) {
-            CommitCleanRecoveryBaseline(syntheticFrame, context, contextEpoch, snapshot.sequence);
+        auto& hub = input_v2::ingress::IngressHub::GetSingleton();
+        (void)hub.PushPadSnapshot(snapshot);
+        const auto events = hub.Drain();
+        const auto frames = DirectProcessorAssembler().Assemble(events);
+        for (const auto& frame : frames) {
+            ProcessIngressFrame(frame);
         }
     }
 
     void PadEventSnapshotProcessor::ProcessIngressFrame(const input_v2::ingress::AssembledFactFrame& frame)
     {
-        if (frame.kind == input_v2::ingress::AssembledFrameKind::Transition) {
-            const auto recovery = input_v2::ingress::ToGameplayRecoveryInput(frame);
-            if (recovery.hardResetRequested) {
-                logger::warn(
-                    "[DualPad][IngressRecovery] hard reset reason={} from=({}, {}, {}, {}) to=({}, {}, {}, {})",
-                    static_cast<std::uint32_t>(frame.transition.reason),
-                    frame.transition.from.manifestEpoch,
-                    frame.transition.from.contextRevision,
-                    frame.transition.from.menuStackRevision,
-                    frame.transition.from.deviceFamilyRevision,
-                    frame.transition.to.manifestEpoch,
-                    frame.transition.to.contextRevision,
-                    frame.transition.to.menuStackRevision,
-                    frame.transition.to.deviceFamilyRevision);
-                ResetAllState();
-            } else if (recovery.softResyncRequested || recovery.sequenceGapObserved) {
-                logger::warn(
-                    "[DualPad][IngressRecovery] soft resync reason={} boundary=({}, {}, {}, {})",
-                    static_cast<std::uint32_t>(frame.transition.reason),
-                    frame.transition.to.manifestEpoch,
-                    frame.transition.to.contextRevision,
-                    frame.transition.to.menuStackRevision,
-                    frame.transition.to.deviceFamilyRevision);
-                ResyncNativeState();
-            }
-            return;
+        if (frame.kind == input_v2::ingress::AssembledFrameKind::Transition &&
+            frame.transition.requestHardResync) {
+            AuthoritativePollState::GetSingleton().Reset();
         }
 
-        const auto kernel = input_v2::ingress::BuildKernelFrame(frame);
-        if (!input_v2::ingress::ShouldDispatchToInteractionEngine(frame)) {
-            return;
+        (void)input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessAssembledFrame(frame);
+        if (frame.kind == input_v2::ingress::AssembledFrameKind::Stable && frame.facts.legacySnapshot) {
+            const auto& snapshot = *frame.facts.legacySnapshot;
+            const auto gameplayPresentation =
+                input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordProcessedSnapshot(
+                snapshot,
+                AuthoritativePollState::GetSingleton().ReadSnapshot(),
+                input_v2::telemetry::ReplayCompatibilitySurface{
+                    .context = snapshot.context,
+                    .contextEpoch = snapshot.contextEpoch,
+                    .isUsingGamepad = false,
+                    .gamepadControlsCursor = false,
+                    .gamepadDeviceEnabled = false,
+                    .presentationOwner = "KeyboardMouse",
+                    .cursorOwner = "KeyboardMouse",
+                    .gameplayEngineOwner = gameplayPresentation.engineOwner == input_v2::presentation::PresentationOwner::Gamepad ?
+                        "Gamepad" :
+                        "KeyboardMouse",
+                    .gameplayMenuEntryOwner = gameplayPresentation.menuEntryOwner == input_v2::presentation::PresentationOwner::Gamepad ?
+                        "Gamepad" :
+                        "KeyboardMouse"
+                });
         }
-
-        if (frame.facts.legacySnapshot) {
-            auto snapshot = *frame.facts.legacySnapshot;
-#ifdef DUALPAD_REPLAY_HARNESS
-            InputModalityTracker::GetSingleton().SetReplayContext(snapshot.context, snapshot.contextEpoch);
-#endif
-            snapshot.firstSequence = snapshot.sequence;
-            if (snapshot.sequence != 0) {
-                _lastProcessedSequence = snapshot.sequence - 1;
-            }
-            _ingressRecoveryAuthoritative = true;
-            Process(snapshot);
-            _ingressRecoveryAuthoritative = false;
-            return;
-        }
-
-        input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessGameplayFrame(
-            input_v2::gameplay::DualPadRuntimeInput{
-                .kernel = kernel,
-                .resolved = input_v2::actions::ResolvedActionFrame{
-                    .manifestEpoch = kernel.facts.manifestEpoch,
-                    .contextRevision = kernel.facts.contextRevision
-                },
-                .policy = input_v2::gameplay::GameplayPolicy{},
-                .recovery = input_v2::gameplay::GameplayRecoveryInput{ .cleanFrame = true },
-                .outputTick = kernel.facts.monotonicUs
-            });
     }
 }
-

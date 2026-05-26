@@ -2,7 +2,7 @@
 #include "input/backend/FrameActionPlanner.h"
 
 #include "input/Action.h"
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 
 namespace dualpad::input::backend
 {

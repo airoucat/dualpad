@@ -54,7 +54,7 @@ namespace dualpad::input_v2::actions
 
     // Temporary PH4 adapter while Phase 7 InputKernel is not the runtime producer yet.
     // It only copies existing control samples and boundary revisions; it does not run
-    // TapHoldEvaluator, ComboEvaluator, BindingResolver, owner inference, prompt logic,
+    // legacy tap/hold, combo, binding resolution, owner inference, prompt logic,
     // or recovery logic. Delete once InputKernel::BuildKernelFrame consumes
     // AssembledFactFrame directly.
     class LegacyInteractionInputAdapter

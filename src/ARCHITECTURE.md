@@ -5,34 +5,23 @@
 ```text
 HidReader
   -> PadState
-  -> PadEventGenerator
   -> PadEventSnapshotDispatcher
-  -> PadEventSnapshotProcessor
-      -> SyntheticStateReducer
-      -> BindingResolver / TriggerMapper / TouchpadMapper
-      -> FrameActionPlan
-      -> ActionLifecycleCoordinator
-      -> ActionLifecycleTransaction
-      -> ActionDispatcher
+  -> IngressHub
+  -> FrameAssembler
+  -> DualPadRuntime
+      -> InteractionEngine
+      -> GameplayProjectionFrame
+      -> PollOutputAdapter
           -> NativeButtonCommitBackend
               -> PollCommitCoordinator
-      -> AxisProjection
-      -> UnmanagedDigitalPublisher
-      -> AuthoritativePollState
+      -> GameplayPresentationPublisher
   -> UpstreamGamepadHook
       -> XInputStateBridge
       -> XInputButtonSerialization
       -> Skyrim Poll producer
 ```
 
-这条链里真正的数字主线是：
-
-- `PadEventSnapshotProcessor`
-- `FrameActionPlan`
-- `ActionLifecycleCoordinator`
-- `NativeButtonCommitBackend`
-- `PollCommitCoordinator`
-- `XInputStateBridge`
+这条链里真正的 runtime 主线是 `src/input_v2/`：`IngressHub`、`FrameAssembler`、`DualPadRuntime`、`InteractionEngine`、`PollOutputAdapter`、`PromptService` 与 `SkyrimCompatibilitySurface`。
 
 ## 模块分层
 
@@ -49,14 +38,15 @@ HidReader
 - 解出 `PadState`
 - 保留 raw 与 normalized 数据
 
-### 2. 映射层
+### 2. Action graph / interaction
 
-- `src/input/mapping/*`
+- `src/input_v2/actions/*`
 
 职责：
 
-- 生成一份与单个 HID snapshot 对齐的 `PadEventBuffer`
-- 输出 `ButtonPress / ButtonRelease / AxisChange / Hold / Tap / Combo / Gesture`
+- 使用 compiled action graph 解析 control samples
+- 输出 `ResolvedActionFrame`
+- 维护 interaction state
 
 ### 3. Snapshot 与 reduction
 
@@ -164,16 +154,14 @@ HidReader
 - 正式设计名称采用 `KeyboardHelperBackend`
 - 当前代码类名已统一为 `KeyboardHelperBackend`
 
-### Input modality
+### Skyrim compatibility surface
 
-- `src/input/InputModalityTracker.*`
+- `src/input_v2/presentation/SkyrimCompatibilitySurface.*`
 
 当前定位：
 
-- 参考 AutoInputSwitch 的模式层
-- 放开键盘/鼠标与手柄同时生效
 - 驱动 `IsUsingGamepad / GamepadControlsCursor / remap-mode` 的平台判断
-- 忽略 `KeyboardHelperBackend` 自发的 simulated keyboard 事件，避免 helper 输出把平台误切到 KBM
+- 只读取 input_v2 published presentation state，不保留旧 owner authority
 
 ## 关键契约
 

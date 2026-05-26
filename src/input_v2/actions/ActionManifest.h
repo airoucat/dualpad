@@ -1,8 +1,8 @@
 #pragma once
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
+#include "input/PadEvent.h"
 #include "input/Trigger.h"
-#include "input/mapping/TouchpadMapper.h"
 
 #include <cstdint>
 #include <optional>
@@ -74,7 +74,7 @@ namespace dualpad::input_v2::actions
         std::string interaction;
         std::vector<std::string> requiredChordPaths; // for Layer semantics
 
-        // Phase 1 compatibility: normalized legacy Trigger used by BindingManager.
+        // Phase 1 compatibility: normalized legacy Trigger used by import/export tools.
         dualpad::input::Trigger legacyTrigger{};
         dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Unknown };
     };

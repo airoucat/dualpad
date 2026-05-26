@@ -1,13 +1,10 @@
 #include "pch.h"
 #include "input/HidReader.h"
 
-#include "input/BindingConfig.h"
 #include "input/hid/DualSenseDevice.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/PadEventSnapshot.h"
-#include "input/InputContext.h"
-#include "input/mapping/PadEvent.h"
-#include "input/mapping/PadEventGenerator.h"
+#include "input_v2/context/ContextResolver.h"
 #include "input/protocol/DualSenseProtocol.h"
 #include "input/state/PadStateDebugger.h"
 #include "input/state/PadStateNormalizer.h"
@@ -37,11 +34,6 @@ namespace
         }
 
         dualpad::input::DualSenseDevice device;
-        dualpad::input::PadState previousState{};
-        dualpad::input::PadEventGenerator eventGenerator;
-        eventGenerator.GetTouchpadMapper().SetConfig(
-            dualpad::input::BindingConfig::GetSingleton().GetTouchpadConfig());
-
         while (g_running.load(std::memory_order_acquire)) {
             if (!device.IsOpen()) {
                 if (!device.Open()) {
@@ -49,8 +41,6 @@ namespace
                     continue;
                 }
 
-                previousState = {};
-                eventGenerator.Reset();
                 dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitReset();
                 dualpad::haptics::HidOutput::GetSingleton().SetDevice(device.GetNativeHandle());
             }
@@ -85,12 +75,12 @@ namespace
             dualpad::input::NormalizePadState(currentState);
             dualpad::input::LogStateSummary(currentState);
 
-            const auto& contextManager = dualpad::input::ContextManager::GetSingleton();
-            const auto snapshotContext = contextManager.GetCurrentContext();
-            const auto snapshotContextEpoch = contextManager.GetCurrentEpoch();
+            const auto& contextSnapshot =
+                dualpad::input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+            const auto snapshotContext = contextSnapshot.legacyInputContext;
+            const auto snapshotContextEpoch = contextSnapshot.legacyContextEpoch;
 
             dualpad::input::PadEventBuffer events{};
-            eventGenerator.Generate(previousState, currentState, snapshotContext, events);
 
             dualpad::input::PadEventSnapshot snapshot{};
             snapshot.type = dualpad::input::PadEventSnapshotType::Input;
@@ -104,7 +94,6 @@ namespace
             snapshot.overflowed = events.overflowed;
             dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitSnapshot(snapshot);
 
-            previousState = currentState;
         }
 
         dualpad::haptics::HidOutput::GetSingleton().SetDevice(nullptr);

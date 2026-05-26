@@ -5,7 +5,7 @@
 #include "input/Action.h"
 #include "input/IniParseHelpers.h"
 #include "input/PadProfile.h"
-#include "input/mapping/PadEvent.h"
+#include "input/PadEvent.h"
 #include "input_v2/context/ContextCatalog.h"
 #include "input_v2/config/LegacyIniImporter.h"
 
@@ -647,7 +647,7 @@ namespace dualpad::input_v2::actions
             return {
                 OutputDescriptor{ .id = "out.native-digital", .kind = "NativeDigital", .target = "AuthoritativePollState" },
                 OutputDescriptor{ .id = "out.native-axis", .kind = "NativeAxis", .target = "AuthoritativePollState" },
-                OutputDescriptor{ .id = "out.menu-digital", .kind = "MenuDigital", .target = "BindingManagerCompat" },
+                OutputDescriptor{ .id = "out.menu-digital", .kind = "MenuDigital", .target = "InputV2InteractionEngine" },
                 OutputDescriptor{ .id = "out.keyboard-helper", .kind = "KeyboardHelper", .target = "KeyboardHelperBackend" },
                 OutputDescriptor{ .id = "out.utility", .kind = "Utility", .target = "ActionDispatcher" },
             };

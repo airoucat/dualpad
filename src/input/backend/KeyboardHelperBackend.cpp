@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "input/backend/KeyboardHelperBackend.h"
 
-#include "input/InputModalityTracker.h"
 #include "input/RuntimeConfig.h"
 #include "input/backend/KeyboardNativeBridge.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
@@ -102,10 +101,8 @@ namespace dualpad::input::backend
 
         void MarkSyntheticKeyboardCommand(std::uint8_t scancode, std::uint8_t pendingEvents)
         {
-            input::InputModalityTracker::GetSingleton().MarkSyntheticKeyboardScancode(
-                scancode,
-                pendingEvents,
-                kSyntheticHelperSuppressionWindowMs);
+            (void)scancode;
+            (void)pendingEvents;
         }
 
         bool EnqueueBridgePress(
@@ -374,7 +371,7 @@ namespace dualpad::input::backend
                     actionId,
                     ToString(contract),
                     *scancode,
-                    ToString(context));
+                    dualpad::input::ToString(context));
             }
             return false;
         }
@@ -385,7 +382,7 @@ namespace dualpad::input::backend
                 actionId,
                 ToString(contract),
                 *scancode,
-                ToString(context));
+                dualpad::input::ToString(context));
         }
         return true;
     }
@@ -436,7 +433,7 @@ namespace dualpad::input::backend
                         actionId,
                         ToString(contract),
                         *scancode,
-                        ToString(context));
+                        dualpad::input::ToString(context));
                 }
                 return false;
             }
@@ -481,7 +478,7 @@ namespace dualpad::input::backend
                     actionId,
                     *scancode,
                     _bridgeDesiredRefCounts[*scancode],
-                    ToString(context));
+                    dualpad::input::ToString(context));
             }
             return true;
         }
@@ -515,7 +512,7 @@ namespace dualpad::input::backend
                 actionId,
                 releasedScancode,
                 remainingRefCount,
-                ToString(context));
+                dualpad::input::ToString(context));
         }
         return true;
     }
@@ -600,7 +597,7 @@ namespace dualpad::input::backend
                 queuedPulse,
                 heldSeconds,
                 action.nextRepeatAtHeldSeconds,
-                ToString(context));
+                dualpad::input::ToString(context));
         }
         return true;
     }

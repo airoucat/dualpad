@@ -1,7 +1,6 @@
 #pragma once
 
 #include "input/AuthoritativePollState.h"
-#include "input/InputModalityTracker.h"
 #include "input/backend/ActionOutputContract.h"
 #include "input/backend/KeyboardNativeBridge.h"
 #include "input/glyph/GlyphResolutionCompat.h"
@@ -15,6 +14,19 @@
 
 namespace dualpad::input_v2::telemetry
 {
+    struct ReplayCompatibilitySurface
+    {
+        input::InputContext context{ input::InputContext::Gameplay };
+        std::uint32_t contextEpoch{ 0 };
+        bool isUsingGamepad{ false };
+        bool gamepadControlsCursor{ false };
+        bool gamepadDeviceEnabled{ false };
+        std::string presentationOwner;
+        std::string cursorOwner;
+        std::string gameplayEngineOwner;
+        std::string gameplayMenuEntryOwner;
+    };
+
     class InputTraceRecorder
     {
     public:
@@ -37,7 +49,7 @@ namespace dualpad::input_v2::telemetry
         void RecordProcessedSnapshot(
             const input::PadEventSnapshot& snapshot,
             const input::AuthoritativePollFrame& pollFrame,
-            const input::InputModalityTracker::ReplayCompatibilitySurface& presentationSurface);
+            const ReplayCompatibilitySurface& presentationSurface);
         void RecordKeyboardCommand(
             input::backend::KeyboardBridgeCommandType type,
             std::uint8_t scancode,

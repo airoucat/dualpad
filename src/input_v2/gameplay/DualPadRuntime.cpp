@@ -2,6 +2,10 @@
 
 #include "input_v2/gameplay/DualPadRuntime.h"
 
+#include "input_v2/actions/CompiledActionGraphPublisher.h"
+#include "input_v2/context/ContextResolver.h"
+#include "input_v2/ingress/IngressRecovery.h"
+
 namespace dualpad::input_v2::gameplay
 {
     namespace
@@ -31,6 +35,55 @@ namespace dualpad::input_v2::gameplay
         IPollOutputExecutor& executor)
     {
         return ProcessGameplayFrameWithExecutor(input, executor);
+    }
+
+    DualPadRuntimeResult DualPadRuntime::ProcessAssembledFrame(const ingress::AssembledFactFrame& frame)
+    {
+        auto recovery = frame.kind == ingress::AssembledFrameKind::Transition ?
+            ingress::ToGameplayRecoveryInput(frame) :
+            GameplayRecoveryInput{ .cleanFrame = true };
+
+        if (recovery.hardResetRequested) {
+            _interactionState.Reset();
+        }
+
+        auto kernel = ingress::BuildKernelFrame(frame);
+        auto resolved = actions::ResolvedActionFrame{
+            .manifestEpoch = kernel.facts.manifestEpoch,
+            .contextRevision = kernel.facts.contextRevision
+        };
+
+        if (frame.kind == ingress::AssembledFrameKind::Stable &&
+            ingress::ShouldDispatchToInteractionEngine(frame)) {
+            if (const auto graph = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveGraph()) {
+                const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+                resolved = _interactionEngine.Resolve(
+                    *graph,
+                    contextSnapshot.actionSetStack,
+                    kernel,
+                    _interactionState);
+                resolved.manifestEpoch = kernel.facts.manifestEpoch;
+                resolved.contextRevision = kernel.facts.contextRevision;
+            }
+        }
+
+        const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        return ProcessGameplayFrame(DualPadRuntimeInput{
+            .kernel = kernel,
+            .resolved = std::move(resolved),
+            .policy = GameplayPolicy{
+                .gameplayContext = contextSnapshot.hostMode == context::HostMode::Gameplay,
+                .mouseLookActive = false,
+                .keyboardMoveActive = false,
+                .keyboardMouseCombatActive = false,
+                .keyboardMouseDigitalActive = false,
+                .keyboardPhysicalSustainedActive = false,
+                .mousePhysicalSustainedActive = false
+            },
+            .recovery = recovery,
+            .outputTick = kernel.facts.monotonicUs,
+            .legacyContext = contextSnapshot.legacyInputContext
+        });
     }
 
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrameWithExecutor(
@@ -85,6 +138,7 @@ namespace dualpad::input_v2::gameplay
     void DualPadRuntime::ResetForTests()
     {
         _lastProjectionFrame = GameplayProjectionFrame{};
+        _interactionState.Reset();
         _presentationPublisher.ResetForTests();
     }
 }

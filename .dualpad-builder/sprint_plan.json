@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-24T23:38:32+08:00",
+  "updated_at": "2026-05-26T23:20:00+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -422,7 +422,7 @@
       "requirements": [
         "B5"
       ],
-      "status": "planned",
+      "status": "completed",
       "exit_criteria": [
         "runtime closeout 完成且旧 authority / fallback 被删除或收缩为明确 shim",
         "DualPadReplayTests、DualPadInputV2Tests、DualPadIngressTests、DualPadPromptSnapshotTests、DualPadPropertyTests、DualPadFuzzRegressionTests 均可执行",

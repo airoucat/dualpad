@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
 #include "input/injection/UpstreamGamepadHook.h"

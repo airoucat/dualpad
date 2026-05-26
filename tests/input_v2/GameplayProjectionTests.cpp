@@ -395,7 +395,7 @@ namespace
     {
         Require(
             !gameplay::DualPadRuntime::LiveCoordinatorPresentationAuthorityReachable(),
-            "GameplayOwnershipCoordinator presentation authority must not be reachable from live PH5 runtime");
+            "legacy gameplay ownership authority must not be reachable from live runtime");
     }
 }
 

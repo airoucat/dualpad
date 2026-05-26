@@ -8,17 +8,15 @@
 
 #include "input/ContextEventSink.h"
 
-#include "input/BindingConfig.h"
 #include "input/ControlMapOverlay.h"
 
 #include "input/InputFramePump.h"
-#include "input/InputModalityTracker.h"
 
-#include "input/MenuContextPolicy.h"
 #include "input/RuntimeConfig.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 
 #include "input/injection/UpstreamGamepadHook.h"
 
@@ -66,7 +64,6 @@ namespace
         }
 
         if (msg->type == SKSE::MessagingInterface::kInputLoaded) {
-            dualpad::input::InputModalityTracker::GetSingleton().Register();
             return;
         }
 
@@ -86,8 +83,6 @@ namespace
                 logger::warn("[DualPad][PH1] AtomicConfigReloader recovered from last-known-good bundle");
             }
 
-            dualpad::input::MenuContextPolicy::GetSingleton().Load();
-            dualpad::input::BindingConfig::GetSingleton().Load();
             dualpad::input::ContextEventSink::GetSingleton().Register();
 
             dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton().RegisterInitialMenus();
@@ -178,7 +173,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
 
     SKSE::Init(skse);
     SKSE::AllocTrampoline(1 << 10);
-    dualpad::input::InputModalityTracker::GetSingleton().Install();
+    dualpad::input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton().Install();
 
     logger::info("DualPad v1.0.0 loaded");
 

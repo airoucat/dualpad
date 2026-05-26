@@ -1,7 +1,7 @@
 #pragma once
 
 #include "input/backend/ActionLifecycleTransaction.h"
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/FrameActionPlan.h"
 #include "input/injection/SyntheticPadFrame.h"

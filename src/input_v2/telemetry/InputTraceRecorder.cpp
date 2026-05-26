@@ -313,7 +313,7 @@ namespace dualpad::input_v2::telemetry
     void InputTraceRecorder::RecordProcessedSnapshot(
         const input::PadEventSnapshot& snapshot,
         const input::AuthoritativePollFrame& pollFrame,
-        const input::InputModalityTracker::ReplayCompatibilitySurface& presentationSurface)
+        const ReplayCompatibilitySurface& presentationSurface)
     {
         std::scoped_lock lock(_mutex);
         if (!EnsureSessionLocked()) {

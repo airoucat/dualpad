@@ -35,7 +35,7 @@ namespace dualpad::input_v2::context
             auto entry = [](ContextSeed seed) { return seed; };
 
             // NOTE: The Phase 1 plan requires we move all legacy context aliases/menu names into this seed,
-            //       so InputContextNames.cpp and MenuContextPolicy::KnownMenuNameToContext() do not maintain
+            //       so compatibility aliases do not maintain
             //       a second hand-written table.
             auto seed = std::vector<ContextSeed>{
                 entry({ UiContextId::None, "Gameplay", Legacy::Gameplay, kGameplayBase, {}, { kGameplayBase },
