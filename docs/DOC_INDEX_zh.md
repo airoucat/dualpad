@@ -4,9 +4,10 @@
 
 ## 当前活跃 Sprint
 
-- `S-PH8b`：active
-- 范围：governance closeout / docgen provenance / reviewed docs 去重 / default CI canonical target 接线
-- runtime closeout：`PH8a` 已完成，`PH8b` 不重开 runtime 主线归属
+- 无
+- `PH8b` 已完成；`PH0` - `PH8b` closeout 已收口。
+- runtime closeout：`PH8a` 已完成，`PH8b` 不重开 runtime 主线归属。
+- 不新增后续 runtime phase。
 
 ## 工作流入口
 

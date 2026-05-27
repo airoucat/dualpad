@@ -1846,3 +1846,17 @@
   - `.dualpad-builder/feature_list.json`：`PH8b` 保持 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH8b` 保持 `completed`，`current_sprint=null`。
   - `docs/authoritative-baseline/README.md` 与 `docs/authoritative-baseline/work-packages/README.md` 已与 builder memory closeout 口径一致。
+
+## 2026-05-28 00:25:18 CST
+
+- `PH8b` governance drift / DOC_INDEX correction：
+  - 修正 `docs/DOC_INDEX_zh.md` 中残留的 `S-PH8b active` 口径。
+  - 当前活跃 Sprint 改为无，并明确 `PH8b` 已完成、`PH0` - `PH8b` closeout 已收口。
+  - 明确不新增后续 runtime phase。
+  - 本轮未改 runtime、CI target 名称、replay root 或旧 SWF 返回 shape。
+  - `.dualpad-builder/feature_list.json` 中 `PH8b` 保持 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 保持 `completed`，`current_sprint=null`。
+- 验证结果：
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
