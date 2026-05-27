@@ -24,9 +24,9 @@
    - 不允许在本 slice 里为了让 CI 过关而把旧 authority 暂时接回来。
 
 2. **replay 资产根路径统一固定为 `tests/replay/golden/`。**
-   - `tests/golden/replay/` 从本轮起视为无效路径。
+   - retired replay root spelling 从本轮起视为无效路径。
    - `09b` 若发现脚本、target、workflow、文档或测试仍引用旧路径，必须在同一轮中统一改回 `tests/replay/golden/`。
-   - 若仓库中曾经临时生成过 `tests/golden/replay/`，必须在本 slice 中清理并停止继续引用。
+   - 若仓库中曾经临时生成过第二 replay 根路径，必须在本 slice 中清理并停止继续引用。
 
 3. **prompt snapshot / CI 契约固定消费 `Phase 6` 的 `PromptSnapshotRecord`。**
    - snapshot / CI 固定消费 `Phase 6` 发布的 `PromptSnapshotRecord`。
@@ -126,7 +126,7 @@
 ## 实施步骤
 
 1. **先统一 replay 路径和 snapshot 契约，再接 CI。**
-   - 全仓搜索并移除 `tests/golden/replay/` 引用。
+   - 全仓搜索并移除第二 replay 根路径引用。
    - 统一改成 `tests/replay/golden/`。
    - prompt snapshot 的归一化字段统一改成 `PromptSnapshotRecord` 的 11 个字段：
      - `actionId`
@@ -218,7 +218,7 @@ git diff --exit-code -- docs/generated
 
 ### 必须观测到的成功信号
 
-- 仓库里不再出现 `tests/golden/replay/` 引用。
+- 仓库里不再出现第二 replay 根路径引用。
 - `DualPadDocGen` 在不同机器上只要基于同一 worktree 和同一 checked-in 输入，就能生成同一组 `docs/generated/*.md`。
 - prompt snapshot 不再依赖 `origin` 或 `contextRevision`。
 - `PromptSnapshotRecord.status` 已进入 snapshot diff 与 CI 报告，失败语义可直接验证。
@@ -235,7 +235,7 @@ git diff --exit-code -- docs/generated
 
 ## 退出条件
 
-- `tests/replay/golden/` 是唯一 replay 根路径；`tests/golden/replay/` 不再被任何脚本、文档、workflow 或测试引用。
+- `tests/replay/golden/` 是唯一 replay 根路径；第二 replay 根路径不再被任何脚本、文档、workflow 或测试引用。
 - `DualPadDocGen` 已按 `DocGen Provenance` 规则运行，并把 provenance 写入 generated docs。
 - `docs/generated/context_catalog_zh.md`
 - `docs/generated/action_sets_zh.md`

@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-27T00:27:40+08:00",
+  "updated_at": "2026-05-28T00:02:40+08:00",
   "features": [
     {
       "id": "WF0",
@@ -317,8 +317,8 @@
       "depends_on": [
         "PH8a"
       ],
-      "status": "planned",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
         "docgen provenance、reviewed docs 去重和默认 CI 接线完成",
         "generated facts 与 reviewed narrative 不再争夺 authority",

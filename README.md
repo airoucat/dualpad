@@ -1,134 +1,63 @@
-﻿# DualPad
+# DualPad
 
 Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 
-当前项目已经从早期的 `keyboard-native` 与旧 `native button splice` 实验，收口到一条更明确的默认主线：
+## 当前状态
 
-- 输入采集：`HidReader -> PadState`
-- 映射快照：`PadEventGenerator -> PadEventSnapshot`
-- 主线程规划：`SyntheticStateReducer -> FrameActionPlan -> ActionLifecycleCoordinator`
-- 状态提交：`NativeButtonCommitBackend + AxisProjection + UnmanagedDigitalPublisher -> AuthoritativePollState`
-- 最终桥接：`UpstreamGamepadHook -> XInputStateBridge -> XInputButtonSerialization`
+当前默认 runtime mainline 已由 `PH8a` 收口到 `src/input_v2/`。对外黑盒面继续通过 Skyrim 兼容层和保留的 legacy-named shim 暴露，但运行时归属不在 `PH8b` 重新裁决。
 
-对当前仅支持的 `Skyrim SE 1.5.97` 而言，`UpstreamGamepadHook` 已被视为正式主路线。运行时里的
-`use_upstream_gamepad_hook=false` 目前只作为开发/排障期的回退闸门保留，不再代表长期并列的正式实现。
+`PH8b` 当前只负责治理收口：DocGen provenance、`docs/generated/` generated facts、reviewed docs 去重、默认 CI canonical target 接线，以及 builder memory / baseline / graphify close-out 口径一致。
 
-`Gameplay presentation owner` 的 Phase 2 也已正式并入主路线：
-- gameplay `IsUsingGamepad()`
-- `IsGamepadDeviceEnabledHook()` 的 remap/menu enable 路径
-- `Gameplay -> Menu` 初始继承
+## 事实与叙述边界
 
-现在都固定走已验证通过的实现，不再通过 `DualPadDebug.ini` 暴露 Phase 2 回退开关。
+Generated facts 只放在 `docs/generated/`，由 `DualPadDocGen` 基于 repo 内 checked-in 输入生成：
 
-当前默认运行时不再依赖：
+- [docs/generated/context_catalog_zh.md](docs/generated/context_catalog_zh.md)
+- [docs/generated/action_sets_zh.md](docs/generated/action_sets_zh.md)
+- [docs/generated/prompt_matrix_zh.md](docs/generated/prompt_matrix_zh.md)
+- [docs/generated/policies_zh.md](docs/generated/policies_zh.md)
 
-- `XInputGetState` IAT 输入 fallback
-- `keyboard-native` 作为 Skyrim PC 原生事件主线
-- consumer-side `ButtonEvent` 队列拼接作为默认实现
-
-当前仍保留的内部补写步骤：
-
-- `PadEventSnapshotProcessor` 内部的 unmanaged raw digital 发布步骤
+本 README、`src/ARCHITECTURE.md`、`docs/DOC_INDEX_zh.md`、`docs/current_input_pipeline_zh.md` 和 `docs/authoritative-baseline/README.md` 只保留入口、架构解释和状态说明，不再手写 context table、action table、prompt matrix 或 policy matrix 的第二份副本。
 
 ## 当前主线原则
 
-- `FrameActionPlan` 是运行时合同，不是影子日志。
-- 数字主线采用 `Poll-owned current-state ownership`。
-- `NativeButtonCommitBackend` 只做 `PlannedAction -> PollCommitRequest` 翻译。
-- `PollCommitCoordinator` 只负责 Poll 可见性 materialization。
-- `PadEventSnapshotProcessor` 直接把规划后的模拟量与 unmanaged raw digital 事实写入 `AuthoritativePollState`。
-- native routing / axis projection / button materialization 当前由统一 `NativeActionDescriptor` 主表驱动。
-- `AuthoritativePollState` 的正式口径是“虚拟 XInput 手柄硬件状态”，不是插件侧游戏动作状态表。
-- `XInputStateBridge` 只负责把统一状态序列化成 `wButtons / bLeftTrigger / bRightTrigger / thumbsticks`，不在 bridge 层补做 gameplay 语义；XInput 按钮字由 `XInputButtonSerialization` 在 transport 侧按需计算。
-- `KeyboardHelperBackend` 是正式 helper backend 名称。
-- `KeyboardHelperBackend` 统一负责 `ModEvent / VirtualKey / FKey / 虚拟键池` 的模拟键盘输出。
-- `KeyboardHelperBackend` 当前只走 `dinput8` 代理桥接的 simulated keyboard path，不再走本地原生 keyboard hook。
-- `InputModalityTracker` 参考 AutoInputSwitch 的模式层思路，只负责“键盘/鼠标与手柄可并存”以及 UI 平台切换，不接管动作 routing。
-- `KeyboardHelperBackend` 自发的 simulated keyboard 事件会被 `InputModalityTracker` 抑制，不会把平台误切到 KBM。
-- 插件动作通过 `ActionDispatcher -> ActionExecutor` 执行，不再保留独立的 `PluginActionBackend` 壳层。
-- `Wait / Journal` 已回归手柄原生 current-state 路由，分别走 `Create / Options`。
-- 通用 `Menu.PageUp / Menu.PageDown` 不再作为默认 native 菜单绑定；当前默认按 `controlmap` 分拆到具体上下文：
-  - `BookMenu` 走 `Book.PreviousPage / Book.NextPage -> D-pad Left / Right`
-  - `JournalMenu` 走 `LT / RT` trigger current-state 翻标签
-  - `MapMenu` 走独立的 `Map.Click / Map.OpenJournal / Map.PlayerPosition / Map.LocalMap` 与原生摇杆/扳机硬件位
-- `Pause / NativeScreenshot / Hotkey3-8` 这批 PC 键盘独占原生事件，当前已作为独立 action surface 接入，并由 DualPad 在运行时覆盖 gamepad `ControlMap` 到固定 combo ABI；它们仍不默认占用现有手柄键位。
-- 当前这批 combo-native 事件按“第一拍直接 materialize 完整组合”运行；`Pause / NativeScreenshot` 已实机验证可用。
-- `Hotkey3-8` 代码与 overlay ABI 已接入，但当前默认受 runtime gate 保护，需在 `Data/SKSE/Plugins/DualPadDebug.ini` 里显式开启 `enable_combo_native_hotkeys3_to_8=true` 后再做补测。
-- `OpenInventory / OpenMagic / OpenMap / OpenSkills` 当前已撤出正式支持面；这四个动作所属的 `MenuOpenHandler` 家族在当前 mod 栈下不稳定，不再继续作为 combo-native 默认能力推进。
-- `OpenFavorites` 仍不在这批 `controlmap combo` 正式支持面里。
-- DualPad 当前会在 `kDataLoaded` 后读取 `Data/SKSE/Plugins/DualPadControlMap.txt`，直接调用游戏自己的 `ControlMap` parser/rebuild 链重载这份配置，并故意跳过 `ControlMap_Custom.txt`；玩家或其它 mod 的 remap 不再属于兼容目标。
-- `ControlMapOverlay` 当前已补运行时版本与 overlay 文件存在性护栏；非 SSE 1.5.97 或 overlay 文件缺失时，会明确跳过并记录原因，而不是静默进入不确定状态。
-- 配套 overlay 源文件当前仓库路径是 `config/controlmap_profiles/DualPadNativeCombo/Interface/Controls/PC/controlmap.txt`。
-- `Game.Attack / Game.Block` 这类旧 action-routed compatibility 路径也已退出正式支持面；原生战斗输入应通过虚拟 `LT / RT` current-state 交给 Skyrim 自己的 `AttackBlockHandler` 推导。
-- `ModEvent` 当前不再规划独立 transport backend，而是作为逻辑槽位，经 `KeyboardHelperBackend` materialize 为固定虚拟键。
-- 正式输出口径现在只保留两条：手柄原生 `current-state` 与 mod 键盘事件。
-- 原生线后续的统一方向是：只 materialize 标准手柄硬件位/轴，尽量不在插件侧重做 Skyrim 原生 user event 语义。
-- 对已经确认存在独立原生身份的 UI 动作，当前策略是“保持上下文专属 action，再 materialize 对应硬件位”，而不是继续压扁成通用 `Menu.*` 事件。
-- 对键盘独占但仍属于 Skyrim 原生 user event 的少量高价值动作，当前策略是“保持独立 action 身份，再 materialize 固定 combo ABI”；物理按键选择仍交给映射层，`actionId -> combo` 则由 DualPad 自维护的 gamepad `ControlMap` overlay 固定。
+- runtime 主线归属由 `PH8a` 完成，`PH8b` 不重开 runtime 决策。
+- replay root 固定为 `tests/replay/golden/`。
+- 默认 CI 只接同名 canonical targets，不使用 wrapper target 替代。
+- 旧 SWF 返回 shape、`FavoritesMenu` workspace、legacy authority 和 replay root 都不在 `PH8b` 范围内恢复或迁移。
 
 ## 文档入口
 
 - [docs/authoritative-baseline/README.md](docs/authoritative-baseline/README.md)
-  - 当前 workflow current truth 入口；先看默认阅读顺序、工作包和 builder memory
+  - workflow current truth 入口；先看默认阅读顺序、当前 Sprint 和 close-out 规则
 - [docs/harness/dualpad-builder.md](docs/harness/dualpad-builder.md)
   - `harness + ce + graphify` 在本仓库的默认执行协议
 - [docs/DOC_INDEX_zh.md](docs/DOC_INDEX_zh.md)
-  - 当前文档总索引；已经按“当前事实 / 进行中设计 / 历史资料”重新分层
+  - 当前文档总索引
 - [docs/current_input_pipeline_zh.md](docs/current_input_pipeline_zh.md)
-  - 从 `HID -> PadState -> PadEventSnapshot -> AuthoritativePollState -> XInput/Mod` 的当前运行时主链路，以及菜单/表现层侧支
-- [docs/menu_context_policy_current_status_zh.md](docs/menu_context_policy_current_status_zh.md)
-  - `MenuContextPolicy + InputContextNames + DualPadMenuPolicy.ini` 的当前实现状态
-- [docs/backend_routing_decisions.md](docs/backend_routing_decisions.md)
-  - 当前 backend ownership 与 routing 规则
-- [docs/unified_action_lifecycle_model_zh.md](docs/unified_action_lifecycle_model_zh.md)
-  - 统一动作生命周期模型
-- [docs/main_menu_glyph_current_status_zh.md](docs/main_menu_glyph_current_status_zh.md)
-  - 当前主菜单动态图标的真实落地状态，以及当前仓库对 `FavoritesMenu` 的边界
-- [docs/dynamic_glyph_svg_system_plan_zh.md](docs/dynamic_glyph_svg_system_plan_zh.md)
-  - 动态图标的长期统一方案；不是当前主菜单已经落地的实现
-- [docs/mod_event_keyboard_helper_backend_zh.md](docs/mod_event_keyboard_helper_backend_zh.md)
-  - `ModEvent` 固定槽位、虚拟键池 ABI、`KeyboardHelperBackend` 开发约定
-- [docs/current_cleanup_risk_review_zh.md](docs/current_cleanup_risk_review_zh.md)
-  - 当前主线代码的冗余点、风险复查点，以及外部 GPT 深度研究提示词
+  - 当前 input_v2 运行时主链解释
 - [src/ARCHITECTURE.md](src/ARCHITECTURE.md)
   - 当前代码模块与主链路总览
 
-更早的方案、审查、验证矩阵和研究材料不再直接堆在这里，统一放到 [docs/DOC_INDEX_zh.md](docs/DOC_INDEX_zh.md) 的对应分组里查阅。
+## 验证入口
 
-## 已知后续点
+`PH8b` 默认 CI 脚本入口固定为：
 
-- `JournalMenu` / 某些 menu 内部确认状态在 `KeyboardMouse -> Gamepad` handoff 后，第一下面键经常只表现为“抢回手柄平台”，不会按预期直接执行 `Confirm/Cancel`。
-  - 当前已排除 backlog、`held/up` 抢平台、简单 replay/pulse 前移、以及 `JournalMenu` 的临时 KBM 语义桥接实验。
-  - 后续应把主菜单内部确认状态（`StartMenu` SWF 内部状态）和 `JournalMenu`/通用菜单链分开调查，不再混成同一个问题推进。
-- `Menu.Scroll* -> Menu.Confirm` 这类跨按钮微小时序，当前仍是 future work。
-- 少数顺序敏感 UI 场景，未来可能需要 `direct native event`，但当前不作为主线。
-- 游戏侧 `transition/readiness` 机制仍只记录为后续逆向点，不在当前窗口继续硬推。
-- 基于 MCP/IDA 重新核对后，`BSWin32KeyboardDevice::Poll` 本地原生 hook 对少量离散 PC action 仍有后续逆向价值，但当前没有闭环，不纳入默认运行时。
-- 基于 MCP/IDA 重新核对后，扳机原生链路确认是“`LT/RT byte -> 阈值归一化 -> trigger producer -> AttackBlockHandler`”；因此当前主线继续按“虚拟手柄硬件状态优先”推进，而不是在插件里重写战斗 handler 语义。
-- HID 硬件序列号 gap 检测已记 TODO，等待后续协议/状态层升级时再接入。
-- 调度层未来可考虑做 `snapshot coalescing` 优化：
-  - 目标应是“一个 Poll 尽量反映 latest state，同时保留中间的瞬时边沿事实”。
-  - 不建议走“每个 Poll 只处理一个旧 snapshot”的方向，以免放大 backlog 与输入延迟。
-- `ModEvent` 目前建议走虚拟键池：
-  - 当前公开槽位已扩充为 `ModEvent1-24`
-  - 主推荐 `1-8` 是 `DIK_F13 / DIK_F14 / DIK_F15 / DIK_KANA / DIK_ABNT_C1 / DIK_CONVERT / DIK_NOCONVERT / DIK_ABNT_C2`
-  - 扩展 `9-24` 是 `NumPadEqual / L-Windows / R-Windows / Apps / Power / Sleep / Wake / WebSearch / WebFavorites / WebRefresh / WebStop / WebForward / WebBack / MyComputer / Mail / MediaSelect`
-  - 当前 simulated keyboard bridge 实际发出的 raw DirectInput/DIK 十进制键码依次是 `100 / 101 / 102 / 112 / 115 / 121 / 123 / 126 / 141 / 219 / 220 / 221 / 222 / 223 / 227 / 229 / 230 / 231 / 232 / 233 / 234 / 235 / 236 / 237`
-  - 当前对外只认 raw DIK / DirectInput 键码，不再维护额外兼容码口径
-  - 范围按 PC `keyboard_english.txt` 与 `controlmap.txt` 收敛；`PrintSrc` 因为已被 `Screenshot` 占用，不纳入 mod 虚拟键池
-  - 当前合同只做 `Pulse`
-  - `Hold / Toggle / Repeat / 更多 mod 键位类型` 记为未来扩展项，待后续版本再设计
-  - 已补 `dinput8.dll` 代理检测接口：
-    - `HasProxyDllInGameRoot()`
-    - `HasActiveBridgeConsumer()`
-    - `ShouldExposeModEventConfiguration()`
-    - `IsModEventTransportReady()`
-  - TODO: 未来 MCM 应基于 `ShouldExposeModEventConfiguration()` 决定是否显示 `ModEvent` 相关内容
+- [scripts/ci/run_phase8_ci.ps1](scripts/ci/run_phase8_ci.ps1)
 
-## 历史路线现状
+该脚本直接构建和运行以下 canonical targets：
 
-- 旧 `keyboard-native` 主线实验：已归档，不再作为默认设计。
-- 旧 consumer-side native-button experiment：代码入口已移除，仅保留历史复盘文档。
-- 旧 `action-contract-output` 过渡实验：已被 `FrameActionPlan + PollCommitCoordinator` 替代。
-- 旧 `native input reverse targets` / `upstream XInput experiment` 文档：已被当前架构文档与 review 吸收。
+- `DualPadReplayTests`
+- `DualPadInputV2Tests`
+- `DualPadIngressTests`
+- `DualPadPromptSnapshotTests`
+- `DualPadPropertyTests`
+- `DualPadFuzzRegressionTests`
+- `DualPadDocGen`
 
+DocGen 可单独执行：
+
+```powershell
+xmake build DualPadDocGen
+xmake run DualPadDocGen
+```

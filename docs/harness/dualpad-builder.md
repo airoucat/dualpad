@@ -87,6 +87,23 @@
 - 计划或 progress 明确声明的本机 Skyrim / MO2 手工验证
 - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
 
+`PH8b` governance closeout 的默认 CI 入口固定为：
+
+- `scripts/ci/run_phase8_ci.ps1`
+- `.github/workflows/dualpad-ci.yml`
+
+默认 CI 必须直接引用同名 canonical targets：
+
+- `DualPadReplayTests`
+- `DualPadInputV2Tests`
+- `DualPadIngressTests`
+- `DualPadPromptSnapshotTests`
+- `DualPadPropertyTests`
+- `DualPadFuzzRegressionTests`
+- `DualPadDocGen`
+
+`docs/generated/*.md` 只能由 `DualPadDocGen` 生成；reviewed docs 只允许引用或解释这些 generated facts。
+
 默认 `xmake build DualPad` 与 `xmake build DualPadDInput8Proxy` 只产出 repo-local artifact，不写入本机 Skyrim / MO2 目录。本机部署必须显式启用 `dualpad_deploy=true` 并提供本机路径；这些路径只写入 `AGENTS.win.md` / `AGENTS.mac.md` 或本机配置，不进入共享 current truth。
 
 当前 builder-promoted focused prove-out 不再只写成 `focused validation`：

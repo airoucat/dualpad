@@ -87,7 +87,7 @@
   - 这 6 个 canonical targets 的定义、可运行命令与 prove-out 入口必须先由 `09a` 落地到当前 repo reality 的 `xmake.lua`
   - `09a` prove-out 与 `09b` 默认 CI 只能直接运行这 6 个 canonical targets，不得再跑另一套临时 target 名称
   - `09b` 只允许复用这 6 个同名 targets 接默认 CI / docgen / governance；若发现当前 code reality 中 target 缺失或命名漂移，必须退回 `09a` 修正，不能在 `09b` 临时发明新 target
-- `tests/golden/replay/` 不是合法根路径。若仓库内任何脚本、文档或 target 仍引用它，必须在 `09b` 中统一改回 `tests/replay/golden/`。
+- retired replay root spelling 不是合法根路径。若仓库内任何脚本、文档或 target 仍引用第二 replay 根路径，必须在 `09b` 中统一改回 `tests/replay/golden/`。
 
 ## 共享前置依赖
 

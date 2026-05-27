@@ -1768,3 +1768,49 @@
   - `.dualpad-builder/feature_list.json`：`PH8a` 已标回 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH8a` 已标回 `completed`，`current_sprint=null`。
   - `PH8b` / `S-PH8b` 保持 `planned`，未启动。
+
+## 2026-05-27 23:54:03 CST
+
+- `PH8b` governance closeout / start：
+  - 已将 `.dualpad-builder/feature_list.json` 中 `PH8b` 从 `planned` 晋升为 `active`，`passes=false`。
+  - 已将 `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 从 `planned` 晋升为 `active`，并将 `current_sprint` 设为 `S-PH8b`。
+  - 本轮范围限定为 docgen provenance、`docs/generated` generated facts、reviewed docs narrative-only 去重、默认 CI canonical target 接线、builder memory / baseline / CI / graphify close-out 口径统一，以及 Phase 0-8 closeout 状态核对。
+  - 本轮不改 runtime mainline，不改 input_v2 runtime 合同，不恢复 legacy authority，不改旧 SWF 返回 shape，不恢复 `FavoritesMenu` workspace，不重命名 canonical test targets，不迁移 replay root，不把 09a runtime deletion 移到 09b。
+  - 09b 不负责决定 runtime 主线归属；`PH8a` 已完成 runtime closeout。`docs/generated/` 是 generated facts 唯一归宿，reviewed docs 只能引用和解释。
+
+## 2026-05-28 00:02:40 CST
+
+- `PH8b` governance closeout / done：
+  - 已新增 `DualPadDocGen` xmake target，入口为 `tools/docgen/DualPadDocGenMain.cpp`。
+  - 已新增 `scripts/dev/generate_dualpad_docs.py`，仅负责运行 `DualPadDocGen` 与校验生成物完整性，不做第二套事实推导。
+  - 已生成 `docs/generated/context_catalog_zh.md`、`docs/generated/action_sets_zh.md`、`docs/generated/prompt_matrix_zh.md`、`docs/generated/policies_zh.md`；生成物头部包含 source config root、manifest hash、trace schema version、generator version / command。
+  - reviewed docs 已改成 narrative-only 入口与解释层：`README.md`、`src/ARCHITECTURE.md`、`docs/DOC_INDEX_zh.md`、`docs/current_input_pipeline_zh.md`、`docs/authoritative-baseline/README.md` 均改为引用 `docs/generated/*.md`，不再复制 context/action/prompt/policy 表。
+  - 默认 CI 已接入 `scripts/ci/run_phase8_ci.ps1` 与 `.github/workflows/dualpad-ci.yml`，并直接引用同名 canonical targets：`DualPadReplayTests`、`DualPadInputV2Tests`、`DualPadIngressTests`、`DualPadPromptSnapshotTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests`、`DualPadDocGen`。
+  - builder memory、baseline、harness 和 CI close-out 口径已同步：`PH8a` 负责 runtime closeout，`PH8b` 只负责 governance closeout；replay root 固定为 `tests/replay/golden/`。
+  - Phase 0-8 closeout 状态已核对：`PH0` - `PH8a` 保持 `completed` / `passes=true`，本轮未新增后续 runtime slice。
+  - 本轮没有改 runtime mainline、没有改 input_v2 runtime 合同、没有恢复 legacy authority、没有改旧 SWF 返回 shape、没有恢复 `FavoritesMenu` workspace、没有重命名 canonical test targets、没有迁移 replay root、没有把 09a runtime deletion 移到 09b。
+- 验证结果：
+  - `xmake build DualPadDocGen`：exit 0，输出 `build ok`。
+  - `xmake run DualPadDocGen`：exit 0，输出 `DualPadDocGen wrote docs/generated with manifest hash 5109f45d55c0dcf8`。
+  - `python scripts/dev/generate_dualpad_docs.py`：exit 0，输出 `generated docs verified`。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPadInputV2Tests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPadPropertyTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPropertyTests`：exit 0。
+  - `xmake build DualPadFuzzRegressionTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadFuzzRegressionTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署目标不写入共享 truth。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0，10 个 phase0 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1516 nodes, 3019 edges, 143 communities`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH8b` 已标为 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH8b` 已标为 `completed`，`current_sprint=null`。

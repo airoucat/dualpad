@@ -372,7 +372,7 @@
 
 ## Replay Extension Governance
 
-- replay 资产的唯一 canonical root 固定为 `tests/replay/golden/`；后续 slice 不得另起 `tests/golden/replay/`、`replay_golden/` 或其他平行根目录。
+- replay 资产的唯一 canonical root 固定为 `tests/replay/golden/`；后续 slice 不得另起 retired replay root spelling、`replay_golden/` 或其他平行根目录。
 - `Phase 0` 只拥有 `tests/replay/golden/phase0/` 命名空间；后续能够扩 replay 的 slice 只允许是：
   - `Phase 6`
     - 新增 `tests/replay/golden/phase6_prompt/<scenario>/`

@@ -359,6 +359,11 @@ target("DualPadFuzzRegressionTests")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
+target("DualPadDocGen")
+    set_kind("binary")
+    add_files("tools/docgen/DualPadDocGenMain.cpp")
+    add_cxflags("/utf-8", {tools = "cl"})
+
 target("DualPadRouteHealthContractTests")
     set_kind("binary")
     add_deps("commonlibsse-ng")
