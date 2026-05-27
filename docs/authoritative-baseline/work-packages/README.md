@@ -11,10 +11,9 @@
 - `DP3`：`in_progress`
 - `DP4`：`in_progress`
 - `DP4a`：`completed`
-- `PH0` - `PH8a`：`completed`
-- `PH8b`：`active`
+- `PH0` - `PH8b`：`completed`
 - `DP5`：`planned`
-- 当前活跃 Sprint：`S-PH8b`
+- 当前活跃 Sprint：无
 
 ## PH8b Governance Closeout
 
@@ -25,6 +24,13 @@
 - reviewed docs 去重，只保留 narrative。
 - 默认 CI 直接接同名 canonical targets。
 - builder memory、baseline、CI 和 graphify close-out 口径一致。
+
+当前结论：
+
+- `PH8b` / `S-PH8b` 已完成。
+- `.dualpad-builder/feature_list.json` 中 `PH8b` 为 `completed` / `passes=true`。
+- `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 为 `completed`，`current_sprint=null`。
+- 本 closeout 不新增后续 runtime phase。
 
 首读：
 

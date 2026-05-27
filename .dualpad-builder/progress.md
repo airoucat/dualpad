@@ -1814,3 +1814,35 @@
 - 状态同步：
   - `.dualpad-builder/feature_list.json`：`PH8b` 已标为 `completed` / `passes=true`。
   - `.dualpad-builder/sprint_plan.json`：`S-PH8b` 已标为 `completed`，`current_sprint=null`。
+
+## 2026-05-28 00:11:41 CST
+
+- `PH8b` governance closeout / baseline drift correction：
+  - 复核发现 `.dualpad-builder/feature_list.json` 与 `.dualpad-builder/sprint_plan.json` 已将 `PH8b` / `S-PH8b` 记录为 completed，但 `docs/authoritative-baseline/README.md` 与 `docs/authoritative-baseline/work-packages/README.md` 仍残留 active 入口口径。
+  - 本轮只修正 baseline / work-package 入口状态漂移：当前活跃 Sprint 改为无，`PH0` - `PH8b` 统一为 completed，并补写 `PH8b` 不新增后续 runtime phase。
+  - 本轮未改 runtime mainline，未改 input_v2 runtime 合同，未恢复 legacy authority，未改旧 SWF 返回 shape，未恢复 `FavoritesMenu` workspace，未重命名 canonical targets，未迁移 replay root，未新增 runtime slice。
+- 重新验证结果：
+  - `xmake build DualPadDocGen`：exit 0，输出 `build ok`。
+  - `xmake run DualPadDocGen`：exit 0，输出 `DualPadDocGen wrote docs/generated with manifest hash 5109f45d55c0dcf8`。
+  - `xmake build DualPadReplayTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadReplayTests`：exit 0，输出 `DualPadReplayTests passed`。
+  - `xmake build DualPadInputV2Tests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build DualPadPropertyTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadPropertyTests`：exit 0。
+  - `xmake build DualPadFuzzRegressionTests`：exit 0，输出 `build ok`。
+  - `xmake run DualPadFuzzRegressionTests`：exit 0。
+  - `xmake build DualPad`：exit 0，输出 `build ok`；本机当前 xmake 配置启用了 local deploy，部署输出不写入共享 truth。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0，10 个 phase0 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1516 nodes, 3019 edges, 143 communities`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 状态同步：
+  - `.dualpad-builder/feature_list.json`：`PH8b` 保持 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json`：`S-PH8b` 保持 `completed`，`current_sprint=null`。
+  - `docs/authoritative-baseline/README.md` 与 `docs/authoritative-baseline/work-packages/README.md` 已与 builder memory closeout 口径一致。

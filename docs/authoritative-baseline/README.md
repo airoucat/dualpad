@@ -11,17 +11,18 @@
 
 它不替代 `README.md`、`src/ARCHITECTURE.md`、`docs/DOC_INDEX_zh.md` 或 generated facts。
 
-## 当前工作路（2026-05-27）
+## 当前工作路（2026-05-28）
 
-- 当前活跃 Sprint：`S-PH8b`
-- 当前直接焦点：`PH8b Phase 8B governance closeout`
-- 已完成前置：`PH0` - `PH8a`
+- 当前活跃 Sprint：无
+- 当前直接焦点：`PH8b Phase 8B governance closeout` 已完成核对
+- 已完成阶段：`PH0` - `PH8b`
 - 当前边界：
   - `PH8a` 已完成 runtime closeout；`PH8b` 不负责 runtime 主线裁决。
   - generated facts 只能放在 `docs/generated/`。
   - reviewed docs 只保留 narrative。
   - 默认 CI 必须直接引用同名 canonical targets。
   - replay root 固定为 `tests/replay/golden/`。
+  - 不新增后续 runtime phase。
 
 ## 默认阅读顺序
 
