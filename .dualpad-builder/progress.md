@@ -1879,3 +1879,22 @@
   - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+
+## 2026-05-28 19:10:16 CST
+
+- `PH8b` governance review / builder memory drift fixed：
+  - 验证 review finding 成立：`docs/harness/dualpad-builder.md` 与 `.dualpad-builder/spec.md` 仍残留 retired pre-input_v2 mainline、旧 focused prove-out 当前默认验证口径，以及 `AuthoritativePollState` 被写成当前主线语义的风险。
+  - 已将 `docs/harness/dualpad-builder.md` 改为当前 truth：`src/input_v2/` 是唯一正式 runtime mainline；`PadEventSnapshotDispatcher / Processor` 只允许作为 shim / adapter；`AuthoritativePollState` 仅保留 legacy poll compatibility / XInput bridge 侧职责；PH8b 之后默认验证入口固定为 Phase 8 canonical CI。
+  - 已将 `.dualpad-builder/spec.md` 改为当前 builder memory：PH0-PH8b closeout 后稳定基线、当前无活跃 Sprint、不新增 runtime phase、DP5 仅为 post-closeout validation / governance hardening。
+  - 已扩展 `scripts/ci/check_reviewed_docs_consistency.py`，把 `docs/harness/dualpad-builder.md` 与 `.dualpad-builder/spec.md` 纳入同级治理 lint，并拦截旧主线、旧 PH backlog、旧 glyph authority、旧 focused targets 当前默认证明。
+  - 本轮未改 runtime、canonical CI target 名称、replay root 或旧 SWF 返回 shape。
+  - `.dualpad-builder/feature_list.json` 中 `PH8b` 保持 `completed` / `passes=true`。
+  - `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 保持 `completed`，`current_sprint=null`。
+- 验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadDocGen`，并通过 docgen、reviewed-doc consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `xmake run DualPadInputV2Tests` stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPad` 受本机 xmake 配置影响输出 local deploy 路径；该部署输出不写入共享 truth。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。

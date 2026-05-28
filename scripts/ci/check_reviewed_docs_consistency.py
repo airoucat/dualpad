@@ -10,6 +10,13 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
+ENTRY_DOCS = [
+    pathlib.Path("AGENTS.md"),
+    pathlib.Path("docs/harness/dualpad-builder.md"),
+    pathlib.Path(".dualpad-builder/spec.md"),
+]
+
+
 CHECKS: list[tuple[pathlib.Path, str, str, int]] = [
     (
         pathlib.Path("AGENTS.md"),
@@ -57,6 +64,21 @@ def main() -> int:
         text = path.read_text(encoding="utf-8")
         if re.search(pattern, text, flags=flags):
             failures.append(f"{relative}: {message}")
+
+    for relative in ENTRY_DOCS:
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        if re.search(r"FrameActionPlan\s*->\s*ActionLifecycleCoordinator", text, flags=re.IGNORECASE | re.DOTALL):
+            failures.append(f"{relative}: must not publish the retired pre-input_v2 mainline as current truth.")
+        if re.search(r"AuthoritativePollState[^。\n]*(保持|保留|作为)[^。\n]*当前主线|当前主线[^。\n]*AuthoritativePollState", text, flags=re.IGNORECASE):
+            failures.append(f"{relative}: must not describe AuthoritativePollState as current mainline authority.")
+        if re.search(r"PH1[`'\s-]*PH8B.*planned backlog|PH1.*尚未启动", text, flags=re.IGNORECASE | re.DOTALL):
+            failures.append(f"{relative}: must not say PH1-PH8B are still planned/not started.")
+        if re.search(r"ScaleformGlyphBridge\s*\+\s*BindingManager|继续沿\s*`?ScaleformGlyphBridge\s*\+\s*BindingManager", text, flags=re.IGNORECASE):
+            failures.append(f"{relative}: must not route current glyph work through BindingManager authority.")
+
+    harness = (ROOT / "docs/harness/dualpad-builder.md").read_text(encoding="utf-8")
+    if re.search(r"当前仓库的验证入口[\s\S]*(DualPadMenuContextPolicyTests|DualPadRouteHealthContractTests|DualPadGlyphResolutionCompatTests)", harness, flags=re.IGNORECASE):
+        failures.append("docs/harness/dualpad-builder.md: old focused targets must not be listed as current default proof.")
 
     if failures:
         print("reviewed doc consistency check failed:")

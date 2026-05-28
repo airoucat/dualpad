@@ -66,28 +66,21 @@
 
 - current truth 入口根目录始终是 `docs/authoritative-baseline/`
 - 详细代码 reality 仍以 `README.md`、`src/ARCHITECTURE.md`、`docs/DOC_INDEX_zh.md` 和当前事实文档为准
-- 当前正式运行时主线是：
-  - `HidReader -> PadState -> PadEventSnapshot -> FrameActionPlan -> ActionLifecycleCoordinator -> NativeButtonCommitBackend -> AuthoritativePollState -> UpstreamGamepadHook -> XInputStateBridge`
-- 当前 repo-owned 动态图标 surface 仍以主菜单和共享 glyph bridge 为准；
-  `FavoritesMenu` 页面级改造必须先恢复 workspace，再谈实现
+- 当前正式 runtime mainline 是：
+  - `HidReader -> PadState -> PadEventSnapshotDispatcher / PadEventSnapshotProcessor shim -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner -> SkyrimCompatibilitySurface / ScaleformPromptAdapter -> UpstreamGamepadHook -> XInputStateBridge`
+- `src/input_v2/` 是唯一正式 runtime mainline；`PadEventSnapshotDispatcher / PadEventSnapshotProcessor` 只允许作为 shim / adapter。
+- `AuthoritativePollState` 仅保留 legacy poll compatibility / XInput bridge 侧职责，不再作为 current mainline authority 描述。
+- 当前 repo-owned 动态图标 surface 固定为 `ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService` 兼容路径；
+  `ScaleformGlyphBridge` 与 `GlyphResolutionCompat` 不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority。
+- `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，不新增后续 runtime phase。
+- `DP5` / `S-DP5` 是 planned post-closeout validation / governance hardening，不是新的 runtime phase。
+- `FavoritesMenu` 页面级改造必须先恢复 workspace，再谈实现。
 - 机器私有路径、Skyrim 实例路径和外部 live artifact 路径只写到 `AGENTS.win.md` / `AGENTS.mac.md`
 - 共享文档一律使用 repo-relative 路径，不写机器私有绝对路径
 
 ## Validation Expectations
 
-当前仓库的验证入口按任务范围选择最小充分证明：
-
-- `xmake build DualPad`
-- `xmake build DualPadMenuContextPolicyTests`
-- `xmake run DualPadMenuContextPolicyTests`
-- `xmake build DualPadRouteHealthContractTests`
-- `xmake run DualPadRouteHealthContractTests`
-- `xmake build DualPadGlyphResolutionCompatTests`
-- `xmake run DualPadGlyphResolutionCompatTests`
-- 计划或 progress 明确声明的本机 Skyrim / MO2 手工验证
-- `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
-
-`PH8b` governance closeout 的默认 CI 入口固定为：
+PH8b 之后的默认验证入口固定为：
 
 - `scripts/ci/run_phase8_ci.ps1`
 - `.github/workflows/dualpad-ci.yml`
@@ -104,12 +97,16 @@
 
 `docs/generated/*.md` 只能由 `DualPadDocGen` 生成；reviewed docs 只允许引用或解释这些 generated facts。
 
+默认 close-out 还必须执行：
+
+- `python -m json.tool .dualpad-builder/feature_list.json > $null`
+- `python -m json.tool .dualpad-builder/sprint_plan.json > $null`
+- `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+- `git diff --check`
+
+旧 focused prove-out 只作为对应历史 slice 或专项 regression 的支持性入口保留；它们不是 PH8b 之后默认最小证明，也不得替代同名 canonical targets。
+
 默认 `xmake build DualPad` 与 `xmake build DualPadDInput8Proxy` 只产出 repo-local artifact，不写入本机 Skyrim / MO2 目录。本机部署必须显式启用 `dualpad_deploy=true` 并提供本机路径；这些路径只写入 `AGENTS.win.md` / `AGENTS.mac.md` 或本机配置，不进入共享 current truth。
-
-当前 builder-promoted focused prove-out 不再只写成 `focused validation`：
-
-- `DP1a` 固定到 `DualPadRouteHealthContractTests`
-- `DP4a` 固定到 `DualPadGlyphResolutionCompatTests`
 
 `passes` 只能在对应验证实际执行并通过后改成 `true`。
 
