@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-28T00:02:40+08:00",
+  "updated_at": "2026-05-28T20:04:22+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -29,23 +29,24 @@
       "id": "S-DP1",
       "unit_id": "DP1",
       "title": "Runtime input pipeline truth alignment",
-      "goal": "把当前正式输入主链、owner 边界和 AuthoritativePollState 口径继续收口到同一套 truth。",
+      "goal": "记录 PH8b baseline 下的 runtime input pipeline truth：src/input_v2/ 是唯一正式 runtime mainline。",
       "depends_on": [
         "S-WF0"
       ],
       "requirements": [
         "B1"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "exit_criteria": [
-        "README、ARCHITECTURE、baseline 与当前事实文档对正式主链的描述一致",
-        "涉及输入主链的 slice 有清晰的代码入口、验证入口和 close-out 口径",
-        "builder memory 能诚实反映当前 input pipeline 的推进状态"
+        "README、ARCHITECTURE、AGENTS、DOC_INDEX、harness、spec 与 current input pipeline 对 src/input_v2/ 单主线描述一致",
+        "AuthoritativePollState 仅保留 legacy poll compatibility / XInput bridge 侧职责，不再作为 current mainline authority",
+        "reviewed-doc consistency lint 会拦截 retired pre-input_v2 mainline 回流"
       ],
       "verification": [
-        "xmake build DualPad",
-        "当前 slice 指定的 focused test / targeted runtime validation",
-        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py",
+        "python -m json.tool .dualpad-builder/feature_list.json > $null",
+        "python -m json.tool .dualpad-builder/sprint_plan.json > $null"
       ]
     },
     {
@@ -78,69 +79,66 @@
       "id": "S-DP2",
       "unit_id": "DP2",
       "title": "Menu context policy and ownership follow-up",
-      "goal": "把菜单上下文策略、Gameplay/Menu ownership 和剩余 handoff 异常按当前 truth 分开推进。",
+      "goal": "记录 PH8b baseline 下的 menu / presentation ownership truth，避免旧 MenuContextPolicy / InputContextNames 回流为 authority。",
       "depends_on": [
         "S-DP1"
       ],
       "requirements": [
         "B2"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "exit_criteria": [
-        "MenuContextPolicy 与 InputContextNames 的当前 truth 能直接路由到代码和验证入口",
-        "Gameplay/Menu ownership 的已知异常不会再和动态 glyph 或历史 fallback 混成同一问题",
-        "验证矩阵和 builder memory 状态同步"
+        "menu / presentation ownership 当前由 input_v2 context、menu、presentation 与 published state 口径解释",
+        "旧 MenuContextPolicy / InputContextNames 不再作为 current runtime authority",
+        "builder memory 不再把 gameplay-menu ownership 写成仍待启动 runtime phase"
       ],
       "verification": [
-        "xmake build DualPadMenuContextPolicyTests",
-        "xmake run DualPadMenuContextPolicyTests",
-        "当前 slice 声明的手工验证或 targeted regression"
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py"
       ]
     },
     {
       "id": "S-DP3",
       "unit_id": "DP3",
       "title": "Native routing and controlmap overlay follow-up",
-      "goal": "继续把 native routing、controlmap combo overlay 和 ModEvent helper backend 的正式支持面说清楚并做最小充分验证。",
+      "goal": "记录 PH8b baseline 下的 native routing / controlmap / helper backend 支持面，避免形成第二 runtime mainline。",
       "depends_on": [
         "S-DP2"
       ],
       "requirements": [
         "B3"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "exit_criteria": [
-        "overlay、helper backend 和 runtime gate 的当前 truth 不再互相冲突",
-        "相关 slice 有清晰的验证入口和本机验证要求",
-        "builder memory 能记录剩余 gate 和风险"
+        "native routing、controlmap overlay 和 ModEvent helper backend 只作为支持 surface 记录",
+        "默认验证不再依赖旧 focused targets 替代 canonical Phase 8 CI",
+        "状态文件不再把 DP3 表示为未完成 current runtime work"
       ],
       "verification": [
-        "xmake build DualPad",
-        "当前 slice 指定的 combo/controlmap/helper focused validation",
-        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py"
       ]
     },
     {
       "id": "S-DP4",
       "unit_id": "DP4",
       "title": "Dynamic glyph current surface handoff",
-      "goal": "围绕 repo 当前真实拥有的 glyph bridge 和页面 surface 推进动态 glyph，不再把缺失的 FavoritesMenu workspace 包装成现状。",
+      "goal": "记录 PH8b baseline 下的 glyph / prompt compat truth：ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService。",
       "depends_on": [
         "S-DP1"
       ],
       "requirements": [
         "B4"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "exit_criteria": [
-        "主菜单 glyph 当前 truth 和页面边界在 AGENTS、baseline、当前事实文档之间一致",
-        "任何新的 glyph slice 都能先判断是否只触及 repo-owned surface",
-        "涉及 FavoritesMenu 的任务会先恢复 workspace，再继续实现或修复"
+        "BindingManager、trigger reverse lookup 与 menu fallback 不再作为 current glyph authority",
+        "旧 SWF token / descriptor shape 保持兼容，不在 governance closeout 中变更",
+        "FavoritesMenu workspace 缺失仍被记录为边界，不写成当前 repo truth"
       ],
       "verification": [
-        "xmake build DualPad",
-        "当前 glyph slice 指定的 focused validation",
-        "必要时记录本机 SWF / Skyrim 手工验证结果"
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py"
       ]
     },
     {
@@ -474,8 +472,8 @@
     {
       "id": "S-DP5",
       "unit_id": "DP5",
-      "title": "Validation, cleanup, and workflow honesty",
-      "goal": "把验证、cleanup 风险、handoff 和 workflow honesty 收成一条可复述的 close-out 链。",
+      "title": "Post-closeout validation, cleanup, and workflow honesty hardening",
+      "goal": "PH0-PH8b closeout 后的验证、cleanup、reporting 与 workflow honesty hardening；不是新的 runtime phase。",
       "depends_on": [
         "S-WF0"
       ],
@@ -486,12 +484,12 @@
       ],
       "status": "planned",
       "exit_criteria": [
-        "验证入口、cleanup 风险和 handoff 规则形成统一 close-out 口径",
-        "builder memory、shared docs 和 graphify close-out 能保持同步",
-        "passes 不再早于真实验证"
+        "只做 post-closeout governance / validation / reporting hardening，不重开 runtime mainline",
+        "不改 canonical target 名称、replay root、旧 SWF 返回 shape或 input_v2 runtime 合同",
+        "启动前必须单独 promotion，并记录 progress start / verification / closeout"
       ],
       "verification": [
-        "待当前 package / slice 确认"
+        "待具体 hardening slice 确认；默认至少包含 scripts/ci/run_phase8_ci.ps1、builder JSON 校验、graphify rebuild 和 git diff --check"
       ]
     }
   ]

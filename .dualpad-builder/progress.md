@@ -1898,3 +1898,23 @@
   - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+
+## 2026-05-28 20:06:28 CST
+
+- `PH8b` governance review / builder status reconcile：
+  - 本轮复核：当前本地 HEAD 为 `f55d9fa`，harness / spec / reviewed-doc lint 已不再发布 retired pre-input_v2 mainline；`git ls-remote origin refs/heads/codex/dynamic-glyph-widget` 因 GitHub 连接超时未能完成远端实时核对。
+  - 验证 review finding 中的状态冲突成立：`DP1` - `DP4` 仍为 `in_progress` / `passes=false`，`S-DP1` - `S-DP4` 仍为 `in_progress`，而 `PH0` - `PH8b` 已完成，容易形成 builder memory 第二状态口径。
+  - 已将 `.dualpad-builder/feature_list.json` 中 `DP1` - `DP4` 结算为 `completed` / `passes=true`，并把 acceptance 改为 PH8b baseline 下的 current truth。
+  - 已将 `.dualpad-builder/sprint_plan.json` 中 `S-DP1` - `S-DP4` 结算为 `completed`，`current_sprint` 保持 `null`。
+  - `DP5` / `S-DP5` 保持 `planned` / `passes=false`，但已明确为 PH0-PH8b 之后的 post-closeout validation / governance / reporting hardening，不是新的 runtime phase。
+  - `docs/authoritative-baseline/work-packages/README.md` 已同步当前状态模型：`PH0` - `PH8b` 与 `DP1` - `DP4` completed；`DP5` planned 但仅为 post-closeout hardening。
+  - `scripts/ci/check_reviewed_docs_consistency.py` 已新增 builder status consistency check，解析 feature list、sprint plan 和 work-packages，防止 `DP1` - `DP4` 或 `S-DP1` - `S-DP4` 回到 in-progress 假闭环。
+  - 本轮未改 runtime、canonical CI target 名称、replay root 或旧 SWF 返回 shape。
+- 验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadDocGen`，并通过 docgen、reviewed-doc / builder-status consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `xmake run DualPadInputV2Tests` stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPad` 受本机 xmake 配置影响输出 local deploy 路径；该部署输出不写入共享 truth。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。

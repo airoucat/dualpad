@@ -5,15 +5,21 @@
 ## 当前推进状态
 
 - `WF0`：`completed`
-- `DP1`：`in_progress`
+- `DP1`：`completed`
 - `DP1a`：`completed`
-- `DP2`：`in_progress`
-- `DP3`：`in_progress`
-- `DP4`：`in_progress`
+- `DP2`：`completed`
+- `DP3`：`completed`
+- `DP4`：`completed`
 - `DP4a`：`completed`
 - `PH0` - `PH8b`：`completed`
-- `DP5`：`planned`
+- `DP5`：`planned`（post-closeout hardening；不是新的 runtime phase）
 - 当前活跃 Sprint：无
+
+状态模型：
+
+- `PH0` - `PH8b` 是已完成的 rearchitecture / closeout 链。
+- `DP1` - `DP4` 已按 PH8b baseline 结算为 completed，不再代表未完成 current runtime work。
+- `DP5` / `S-DP5` 只表示后续 governance / validation / reporting hardening backlog；它不阻塞 PH8b closeout，也不能重开 runtime mainline。
 
 ## PH8b Governance Closeout
 
@@ -28,6 +34,8 @@
 当前结论：
 
 - `PH8b` / `S-PH8b` 已完成。
+- `DP1` - `DP4` 已同步结算为 `completed` / `passes=true`，避免与 `PH0` - `PH8b` closeout 形成第二状态口径。
+- `DP5` / `S-DP5` 保持 `planned`，但仅作为 post-closeout hardening，不是 active sprint 或后续 runtime phase。
 - `.dualpad-builder/feature_list.json` 中 `PH8b` 为 `completed` / `passes=true`。
 - `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 为 `completed`，`current_sprint=null`。
 - 本 closeout 不新增后续 runtime phase。

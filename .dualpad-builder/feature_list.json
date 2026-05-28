@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-28T00:02:40+08:00",
+  "updated_at": "2026-05-28T20:04:22+08:00",
   "features": [
     {
       "id": "WF0",
@@ -32,12 +32,12 @@
       "depends_on": [
         "WF0"
       ],
-      "status": "in_progress",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
-        "当前正式输入主链在 README、ARCHITECTURE 和 baseline 文档里保持一致",
-        "Action lifecycle、poll commit、XInput bridge 的 owner 边界有统一口径",
-        "builder memory 能诚实指向该主线的当前 slice 和验证入口"
+        "src/input_v2/ 是唯一正式 runtime mainline；legacy dispatcher / processor 只允许作为 shim / adapter",
+        "AuthoritativePollState 仅保留 legacy poll compatibility / XInput bridge 侧职责，不再作为 current mainline authority",
+        "builder memory、baseline、reviewed docs 与 CI lint 对当前 runtime mainline 口径一致"
       ]
     },
     {
@@ -66,12 +66,12 @@
       "depends_on": [
         "DP1"
       ],
-      "status": "in_progress",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
-        "MenuContextPolicy、InputContextNames 与 menu runtime truth 有统一入口",
-        "Gameplay/Menu ownership 的当前实现和已知 handoff 异常被分开记录",
-        "相关验证矩阵和 builder memory 状态保持一致"
+        "menu / presentation ownership 已收口到 input_v2 menu、presentation 与 published state 口径",
+        "旧 MenuContextPolicy / InputContextNames 不再作为 current runtime authority",
+        "builder memory 不再把 gameplay-menu ownership 写成仍待启动的 runtime phase"
       ]
     },
     {
@@ -83,12 +83,12 @@
       "depends_on": [
         "DP2"
       ],
-      "status": "in_progress",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
-        "Native routing、controlmap overlay 和 ModEvent helper backend 的正式支持面有统一口径",
-        "runtime gate、overlay 路径和 helper backend 约束在文档与代码 reality 之间不冲突",
-        "相关 slice 的验证结果能写回 builder memory"
+        "native routing、controlmap overlay 和 ModEvent helper backend 只作为支持 surface 记录，不形成第二 runtime mainline",
+        "canonical Phase 8 CI 直接验证当前 runtime / replay / ingress / prompt / property / fuzz targets",
+        "相关治理口径不再依赖旧 focused validation 作为默认最小证明"
       ]
     },
     {
@@ -100,12 +100,12 @@
       "depends_on": [
         "DP1"
       ],
-      "status": "in_progress",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "acceptance": [
-        "主菜单和共享 glyph bridge 的当前 truth 被明确收口",
-        "repo 当前不拥有的 FavoritesMenu workspace 不再被误写成已存在实现",
-        "页面级 glyph 工作的验证入口、边界和当前焦点能被 builder memory 追踪"
+        "当前 glyph / prompt compat surface 固定为 ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService",
+        "BindingManager、trigger reverse lookup 与 menu fallback 不再是 current glyph authority",
+        "repo 不拥有的 FavoritesMenu workspace 仍不是当前 truth，若恢复该页面必须先恢复 workspace"
       ]
     },
     {
@@ -327,7 +327,7 @@
     },
     {
       "id": "DP5",
-      "title": "Validation, cleanup, and workflow honesty",
+      "title": "Post-closeout validation, cleanup, and workflow honesty hardening",
       "requirements": [
         "B5",
         "B6",
@@ -339,9 +339,9 @@
       "status": "planned",
       "passes": false,
       "acceptance": [
-        "验证入口、cleanup 风险和 handoff 规则形成可复述的 close-out 链",
-        "builder memory、shared docs 和 graphify close-out 规则不再脱节",
-        "passes 只在真实验证完成后更新"
+        "DP5 / S-DP5 是 PH0-PH8b 之后的 post-closeout hardening，不是新的 runtime phase",
+        "任何 DP5 slice 都不得重开 input_v2 runtime mainline、canonical target 名称、replay root 或旧 SWF 返回 shape",
+        "启动 DP5 前必须单独 promotion，并继续通过 Phase 8 canonical CI、builder JSON、graphify 与 diff hygiene"
       ]
     }
   ]
