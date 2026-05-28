@@ -1,0 +1,498 @@
+{
+  "project": "DualPad Authoritative Baseline",
+  "status": "active",
+  "current_sprint": null,
+  "updated_at": "2026-05-28T20:04:22+08:00",
+  "sprints": [
+    {
+      "id": "S-WF0",
+      "unit_id": "WF0",
+      "title": "Bootstrap harness + ce + graphify default workflow",
+      "goal": "把仓库入口、harness 文档、记忆层和 graphify 本地自动化收口成默认工作流。",
+      "depends_on": [],
+      "requirements": [
+        "WF0"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "AGENTS.md、docs/harness/dualpad-builder.md 和 .dualpad-builder/ 已落地",
+        "graphify setup 可在 repo root 一次完成 hooks、.codex/hooks.json 和首轮 graph build",
+        "默认 close-out 命令已经固定到 workflow 文档和入口规则里"
+      ],
+      "verification": [
+        "python3 scripts/dev/setup_graphify_local.py",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout",
+        "python3 -m graphify query \"show the main flow\""
+      ]
+    },
+    {
+      "id": "S-DP1",
+      "unit_id": "DP1",
+      "title": "Runtime input pipeline truth alignment",
+      "goal": "记录 PH8b baseline 下的 runtime input pipeline truth：src/input_v2/ 是唯一正式 runtime mainline。",
+      "depends_on": [
+        "S-WF0"
+      ],
+      "requirements": [
+        "B1"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "README、ARCHITECTURE、AGENTS、DOC_INDEX、harness、spec 与 current input pipeline 对 src/input_v2/ 单主线描述一致",
+        "AuthoritativePollState 仅保留 legacy poll compatibility / XInput bridge 侧职责，不再作为 current mainline authority",
+        "reviewed-doc consistency lint 会拦截 retired pre-input_v2 mainline 回流"
+      ],
+      "verification": [
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py",
+        "python -m json.tool .dualpad-builder/feature_list.json > $null",
+        "python -m json.tool .dualpad-builder/sprint_plan.json > $null"
+      ]
+    },
+    {
+      "id": "S-DP1a",
+      "unit_id": "DP1a",
+      "title": "Route-health contract freeze",
+      "goal": "先冻结当前输入兼容态的 route_state / drain_reason / last_poll_age_ms / hook_installed 合同与验证面，不提前删掉 rollback gate 或 stale assist drain。",
+      "depends_on": [
+        "S-DP1"
+      ],
+      "requirements": [
+        "B1"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "route_state 继续固定为 active_fresh / active_stale / disabled",
+        "drain_reason、last_poll_age_ms 与 hook_installed 的当前兼容态合同在 current truth、Phase 0 与 builder memory 之间一致",
+        "本 slice 的 Do Not Do Yet 已写死：不删除 rollback gate / stale assist drain，不发明新的 route hierarchy"
+      ],
+      "verification": [
+        "docs/current_input_pipeline_zh.md 与 docs/plans/dualpad_rearchitecture/01_slice_phase0_freeze_and_replay_barrier_zh.md 的合同文本一致",
+        "builder memory 明确把 DP1a 登记为当前 gate，并把 hook_installed 纳入当前冻结字段",
+        "xmake build DualPadRouteHealthContractTests",
+        "xmake run DualPadRouteHealthContractTests",
+        "xmake build DualPad",
+        "若本轮改动涉及代码文件，执行 python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-DP2",
+      "unit_id": "DP2",
+      "title": "Menu context policy and ownership follow-up",
+      "goal": "记录 PH8b baseline 下的 menu / presentation ownership truth，避免旧 MenuContextPolicy / InputContextNames 回流为 authority。",
+      "depends_on": [
+        "S-DP1"
+      ],
+      "requirements": [
+        "B2"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "menu / presentation ownership 当前由 input_v2 context、menu、presentation 与 published state 口径解释",
+        "旧 MenuContextPolicy / InputContextNames 不再作为 current runtime authority",
+        "builder memory 不再把 gameplay-menu ownership 写成仍待启动 runtime phase"
+      ],
+      "verification": [
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py"
+      ]
+    },
+    {
+      "id": "S-DP3",
+      "unit_id": "DP3",
+      "title": "Native routing and controlmap overlay follow-up",
+      "goal": "记录 PH8b baseline 下的 native routing / controlmap / helper backend 支持面，避免形成第二 runtime mainline。",
+      "depends_on": [
+        "S-DP2"
+      ],
+      "requirements": [
+        "B3"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "native routing、controlmap overlay 和 ModEvent helper backend 只作为支持 surface 记录",
+        "默认验证不再依赖旧 focused targets 替代 canonical Phase 8 CI",
+        "状态文件不再把 DP3 表示为未完成 current runtime work"
+      ],
+      "verification": [
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py"
+      ]
+    },
+    {
+      "id": "S-DP4",
+      "unit_id": "DP4",
+      "title": "Dynamic glyph current surface handoff",
+      "goal": "记录 PH8b baseline 下的 glyph / prompt compat truth：ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService。",
+      "depends_on": [
+        "S-DP1"
+      ],
+      "requirements": [
+        "B4"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "BindingManager、trigger reverse lookup 与 menu fallback 不再作为 current glyph authority",
+        "旧 SWF token / descriptor shape 保持兼容，不在 governance closeout 中变更",
+        "FavoritesMenu workspace 缺失仍被记录为边界，不写成当前 repo truth"
+      ],
+      "verification": [
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "python scripts/ci/check_reviewed_docs_consistency.py"
+      ]
+    },
+    {
+      "id": "S-DP4a",
+      "unit_id": "DP4a",
+      "title": "Glyph compat diagnostics freeze",
+      "goal": "先把 glyph compat 链中的 status / fallback / ambiguity 收成内部诊断面，保持旧 SWF / delegate 返回 shape 不变，不提前跳到 PromptService。",
+      "depends_on": [
+        "S-DP1a"
+      ],
+      "requirements": [
+        "B4"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "status / fallback / ambiguity 的当前归宿被正式写成内部诊断面，而不是旧 UI 对外 contract",
+        "旧 DualPad_GetActionGlyphToken 继续返回单个 token string；旧 DualPad_GetActionGlyph descriptor 继续保持 ok / buttonArtToken / semanticId / contextName",
+        "任何旧返回对象字段扩展都被明确延后到 Phase 6 prompt contract"
+      ],
+      "verification": [
+        "docs/main_menu_glyph_current_status_zh.md、work-packages README 与 builder memory 对旧外层 shape 的描述一致：token API 返回单个 token string；descriptor API 保持 ok / buttonArtToken / semanticId / contextName",
+        "xmake build DualPadGlyphResolutionCompatTests",
+        "xmake run DualPadGlyphResolutionCompatTests",
+        "xmake build DualPad",
+        "若本轮改到 ScaleformGlyphBridge 或 SWF surface，补记录本机 SWF / Skyrim 手工验证结果",
+        "若本轮改动涉及代码文件，执行 python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout",
+        "计划文本没有把 PromptService / PromptDescriptor / PromptProjection 误写成当前下一步"
+      ]
+    },
+    {
+      "id": "S-PH0",
+      "unit_id": "PH0",
+      "title": "Phase 0 replay barrier",
+      "goal": "在 DP1a / DP4a 完成后建立 repo-owned replay / diff / golden trace barrier，并把 FavoritesMenu 条件场景从默认退出条件中拆出。",
+      "depends_on": [
+        "S-DP4a"
+      ],
+      "requirements": [
+        "B1",
+        "B4",
+        "B5"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "trace schema、recorder、replay harness、diff runner 和 Phase 0 mandatory scenarios 落地",
+        "validate-schema / materialize-fixture 与 dispatcher / processor runtime replay mode 有明确边界",
+        "dispatcher / processor runtime replay proof 通过后，candidate bundle 对 Phase 0 golden batch diff 为 0",
+        "10 个 repo-owned mandatory scenario bundle 齐全，phase0_scenarios.json 把 FavoritesMenu 标成 mandatory=false / conditional_live",
+        ".dualpad-builder/progress.md 记录 Phase 0 start / done / blocked 与验证结果"
+      ],
+      "verification": [
+        "xmake build DualPadReplayHarness",
+        "xmake build DualPadReplayHarnessTests",
+        "xmake run DualPadReplayHarnessTests",
+        "xmake build DualPad",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH1",
+      "unit_id": "PH1",
+      "title": "Phase 1 catalog and manifest compiler",
+      "goal": "落地 ContextCatalog / ActionManifest / LegacyIniImporter / ManifestValidator，并冻结 manifest publication handoff。",
+      "depends_on": [
+        "S-PH0"
+      ],
+      "requirements": [
+        "B1",
+        "B3",
+        "B4"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "catalog 与 manifest schema 有固定字段、版本和 validation 规则",
+        "AtomicConfigReloader::Promote() 只负责 active bundle / epoch / LKG；ActionManifestPublisher::PublishPromotedBundle(...) 是唯一 ManifestEpochChanged producer seam",
+        "legacy ini import 不再由 runtime path 临场解释"
+      ],
+      "verification": [
+        "xmake build DualPadManifestCompilerTests",
+        "xmake run DualPadManifestCompilerTests",
+        "xmake build DualPadMenuContextPolicyTests",
+        "xmake run DualPadMenuContextPolicyTests",
+        "xmake build DualPad",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher",
+        "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode processor --output-root build/replay-processor",
+        "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-processor --report-root build/replay-diff-processor",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH2",
+      "unit_id": "PH2",
+      "title": "Phase 2 menu instance truth",
+      "goal": "重建菜单实例真相源、ContextResolver 和 ActionSetResolver，冻结 contextRevision / menuStackRevision / presentationPolicyId。",
+      "depends_on": [
+        "S-PH1"
+      ],
+      "requirements": [
+        "B2"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "UiMenuObserver、MenuInstanceRegistry、ContextResolver、ActionSetResolver 的 owner 边界落地",
+        "Shadow compare 覆盖 stable pointer、same-name duplicate、partial snapshot 与 presentationPolicyId publish parity",
+        "legacy context adapter 只剩兼容输出，不再是 menu instance truth"
+      ],
+      "verification": [
+        "xmake build DualPadContextResolverTests",
+        "xmake run DualPadContextResolverTests",
+        "xmake build DualPad",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH3",
+      "unit_id": "PH3",
+      "title": "Phase 3 presentation split",
+      "goal": "拆分 InputModalityTracker，落地 SourceEvidenceCollector / PresentationProjection / SkyrimCompatibilitySurface。",
+      "depends_on": [
+        "S-PH2"
+      ],
+      "requirements": [
+        "B2",
+        "B5"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "SourceEvidenceCollector 发布 DeviceFamilyChanged marker 与配对 SourceEvidence snapshot",
+        "DeviceFamilyChangedPayload.newRevision 与紧随其后的 SourceEvidenceSnapshot.deviceFamilyEvidence.deviceFamilyRevision 有 targeted test 覆盖",
+        "PresentationProjection 与 SkyrimCompatibilitySurface 分层清楚，rollback 边界固定",
+        "gameplay -> menu 首帧平台、menu reclaim 与 remap mode 有 shadow parity 或手工验证记录"
+      ],
+      "verification": [
+        "xmake build DualPadPresentationProjectionTests",
+        "xmake run DualPadPresentationProjectionTests",
+        "xmake build DualPad",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH4",
+      "unit_id": "PH4",
+      "title": "Phase 4 action graph and interaction engine",
+      "goal": "把 trigger 语义迁移到 Action Graph / InteractionEngine，并冻结 compiled graph publication 与 runtime swap 入口。",
+      "depends_on": [
+        "S-PH3"
+      ],
+      "requirements": [
+        "B1",
+        "B3",
+        "B4"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "ControlPath、BindingModifier、InteractionSpec、DisplayBinding、CompiledActionGraph 合同落地",
+        "CompiledActionGraphPublisher::Publish(...) 是 compiled graph publication 与 hot-swap 的唯一入口，Phase 7 不再另造 publish 点",
+        "layer / combo / fail-closed / display binding 场景有 targeted tests"
+      ],
+      "verification": [
+        "xmake build DualPadInputV2Tests",
+        "xmake run DualPadInputV2Tests",
+        "xmake build DualPad",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH5",
+      "unit_id": "PH5",
+      "title": "Phase 5 gameplay projection",
+      "goal": "用 GameplayProjectionFrame / RecoveryPlan / GameplayPresentationPublisher 取代 coordinator feedback loop。",
+      "depends_on": [
+        "S-PH4"
+      ],
+      "requirements": [
+        "B1",
+        "B2"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "GameplayProjectionFrame 与 RecoveryPlan 的结构和执行顺序冻结",
+        "HardReset / SoftResync / clean baseline 的 native、helper、presentation 输出同步验证写成 targeted tests，不只依赖 replay diff",
+        "legacy coordinator feedback loop 不再是 gameplay projection authority"
+      ],
+      "verification": [
+        "xmake build DualPadGameplayProjectionTests",
+        "xmake run DualPadGameplayProjectionTests",
+        "xmake build DualPad",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH6",
+      "unit_id": "PH6",
+      "title": "Phase 6 prompt projection",
+      "goal": "用 PromptProjection / PromptService 取代 glyph reverse lookup，并冻结旧 SWF API 兼容策略。",
+      "depends_on": [
+        "S-PH5"
+      ],
+      "requirements": [
+        "B4"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "PromptSnapshotRecord、PromptScope、PromptService 和 fail-closed 矩阵落地",
+        "旧 DualPad_GetActionGlyphToken / DualPad_GetActionGlyph 的兼容策略与 repo-owned startmenu.swf smoke gate 已验证",
+        "DP4a compat tests 不再阻止 Phase 6 fail-closed prompt contract"
+      ],
+      "verification": [
+        "xmake build DualPadPromptSnapshotTests",
+        "xmake run DualPadPromptSnapshotTests",
+        "xmake build DualPad",
+        "记录 repo-owned Interface/startmenu.swf smoke 结果",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH7",
+      "unit_id": "PH7",
+      "title": "Phase 7 ingress and resync",
+      "goal": "重做 dispatcher / coalescing / resync，并以 ingress marker payload 作为 manifestEpoch / deviceFamilyRevision 的唯一边界来源。",
+      "depends_on": [
+        "S-PH6"
+      ],
+      "requirements": [
+        "B1",
+        "B5"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "boundary key 四字段与 marker authoritative source 在正文和最终合同汇总中一致",
+        "SequenceGap / QueueOverflow / ManifestEpochChanged / DeviceFamilyChanged 的 recovery 规则有 targeted tests",
+        "legacy dispatcher / processor 只剩 adapter 角色，Phase 8 可删除残余 authority"
+      ],
+      "verification": [
+        "xmake build DualPadIngressTests",
+        "xmake run DualPadIngressTests",
+        "xmake build DualPadReplayTests",
+        "xmake run DualPadReplayTests",
+        "xmake build DualPad",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH8",
+      "unit_id": "PH8",
+      "title": "Phase 8 cutover entry gate",
+      "goal": "确认 runtime closeout 与 governance closeout 的职责边界，再进入 09a / 09b。",
+      "depends_on": [
+        "S-PH7"
+      ],
+      "requirements": [
+        "B5",
+        "B6"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "09a 只负责 runtime closeout，09b 只负责 governance / docgen / CI closeout",
+        "6 类 canonical prove-out targets 的创建责任不推迟给 09b 首次补建",
+        "Phase 8 不重新设计 Phase 0-7 已冻结 runtime 合同"
+      ],
+      "verification": [
+        "审查 09_slice_phase8_cutover_cleanup_and_ci_zh.md、09a、09b 的职责边界",
+        "确认 S-PH7 已通过并写回 builder memory"
+      ]
+    },
+    {
+      "id": "S-PH8a",
+      "unit_id": "PH8a",
+      "title": "Phase 8A runtime closeout",
+      "goal": "完成 runtime public surface swap、legacy deletion 和 shim shrink。",
+      "depends_on": [
+        "S-PH8"
+      ],
+      "requirements": [
+        "B5"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "runtime closeout 完成且旧 authority / fallback 被删除或收缩为明确 shim",
+        "DualPadReplayTests、DualPadInputV2Tests、DualPadIngressTests、DualPadPromptSnapshotTests、DualPadPropertyTests、DualPadFuzzRegressionTests 均可执行",
+        "replay root 仍固定为 tests/replay/golden/"
+      ],
+      "verification": [
+        "xmake build DualPadReplayTests",
+        "xmake run DualPadReplayTests",
+        "xmake build DualPadInputV2Tests",
+        "xmake run DualPadInputV2Tests",
+        "xmake build DualPadIngressTests",
+        "xmake run DualPadIngressTests",
+        "xmake build DualPadPromptSnapshotTests",
+        "xmake run DualPadPromptSnapshotTests",
+        "xmake build DualPadPropertyTests",
+        "xmake run DualPadPropertyTests",
+        "xmake build DualPadFuzzRegressionTests",
+        "xmake run DualPadFuzzRegressionTests",
+        "xmake build DualPad",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-PH8b",
+      "unit_id": "PH8b",
+      "title": "Phase 8B governance closeout",
+      "goal": "收口 docgen provenance、reviewed docs 去重、canonical test targets、public-surface support proof 与默认 CI 接线。",
+      "depends_on": [
+        "S-PH8a"
+      ],
+      "requirements": [
+        "B6",
+        "B7"
+      ],
+      "status": "completed",
+      "exit_criteria": [
+        "generated facts 固定在 docs/generated，reviewed docs 只保留 narrative",
+        "canonical tests 接入默认 CI，且不改名、不换 wrapper target；DualPadPresentationProjectionTests 作为 public-surface support proof 接入默认 CI，但不属于 canonical target",
+        "builder memory、baseline、CI 和 graphify close-out 口径一致"
+      ],
+      "verification": [
+        "xmake build DualPadDocGen",
+        "xmake run DualPadDocGen",
+        "运行 09a 固定的 6 类 canonical tests",
+        "xmake build DualPadPresentationProjectionTests",
+        "xmake run DualPadPresentationProjectionTests",
+        "验证默认 CI 脚本引用同名 targets",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
+      ]
+    },
+    {
+      "id": "S-DP5",
+      "unit_id": "DP5",
+      "title": "Post-closeout validation, cleanup, and workflow honesty hardening",
+      "goal": "PH0-PH8b closeout 后的验证、cleanup、reporting 与 workflow honesty hardening；不是新的 runtime phase。",
+      "depends_on": [
+        "S-WF0"
+      ],
+      "requirements": [
+        "B5",
+        "B6",
+        "B7"
+      ],
+      "status": "planned",
+      "exit_criteria": [
+        "只做 post-closeout governance / validation / reporting hardening，不重开 runtime mainline",
+        "不改 canonical target 名称、replay root、旧 SWF 返回 shape或 input_v2 runtime 合同",
+        "启动前必须单独 promotion，并记录 progress start / verification / closeout"
+      ],
+      "verification": [
+        "待具体 hardening slice 确认；默认至少包含 scripts/ci/run_phase8_ci.ps1、builder JSON 校验、graphify rebuild 和 git diff --check"
+      ]
+    }
+  ]
+}

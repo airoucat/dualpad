@@ -1,14 +1,14 @@
-# 基于提交 9403e73 的定制化后续方案
+﻿# 基于提交 9403e73 的定制化后续方案
 
 更新日期：2026-03-24
 
-这份文档用于把新版 [agents5.md](/C:/Users/xuany/Documents/dualPad/agents5.md) 的审查意见，按当前项目实际重新裁剪成可执行方案。
+这份文档用于把新版 [agents5.md](../agents5.md) 的审查意见，按当前项目实际重新裁剪成可执行方案。
 
 适用前提：
 
-- 当前主线见 [current_input_pipeline_zh.md](/C:/Users/xuany/Documents/dualPad/docs/current_input_pipeline_zh.md)
-- 当前 backend ownership 见 [backend_routing_decisions.md](/C:/Users/xuany/Documents/dualPad/docs/backend_routing_decisions.md)
-- 当前清理与风险复查见 [current_cleanup_risk_review_zh.md](/C:/Users/xuany/Documents/dualPad/docs/current_cleanup_risk_review_zh.md)
+- 当前主线见 [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
+- 当前 backend ownership 见 [backend_routing_decisions.md](backend_routing_decisions.md)
+- 当前清理与风险复查见 [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
 
 ## 当前结论
 

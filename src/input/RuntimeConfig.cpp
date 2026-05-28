@@ -150,6 +150,9 @@ namespace dualpad::input
             if (auto it = values.find("log_keyboard_injection"); it != values.end()) {
                 _logKeyboardInjection = ini::ParseBool(it->second, _logKeyboardInjection);
             }
+            if (auto it = values.find("log_route_health"); it != values.end()) {
+                _logRouteHealth = ini::ParseBool(it->second, _logRouteHealth);
+            }
         };
 
         const auto parseInjection = [&](const auto& values) {
@@ -165,6 +168,10 @@ namespace dualpad::input
                 }
                 _upstreamGamepadHookMode = ParseUpstreamGamepadHookMode(it->second, _upstreamGamepadHookMode);
             }
+            if (auto it = values.find("enable_force_cross_context_recovery_probe"); it != values.end()) {
+                _enableForceCrossContextRecoveryProbe =
+                    ini::ParseBool(it->second, _enableForceCrossContextRecoveryProbe);
+            }
         };
 
         const auto parseFeatures = [&](const auto& values) {
@@ -172,8 +179,31 @@ namespace dualpad::input
                 _enableComboNativeHotkeys3To8 =
                     ini::ParseBool(it->second, _enableComboNativeHotkeys3To8);
             }
+            if (auto it = values.find("enable_gameplay_ownership"); it != values.end()) {
+                logger::warn(
+                    "[DualPad][RuntimeConfig] enable_gameplay_ownership is retired and ignored; gameplay ownership now always uses the mainline path");
+            }
         };
-
+        const auto parseReplay = [&](const auto& values) {
+            if (auto it = values.find("enable_trace_recording"); it != values.end()) {
+                _enableTraceRecording = ini::ParseBool(it->second, _enableTraceRecording);
+            }
+            if (auto it = values.find("trace_output_dir"); it != values.end()) {
+                const auto value = ini::Trim(it->second);
+                if (!value.empty()) {
+                    _traceOutputDir = value;
+                }
+            }
+            if (auto it = values.find("trace_session"); it != values.end()) {
+                const auto value = ini::Trim(it->second);
+                if (!value.empty()) {
+                    _traceSession = value;
+                }
+            }
+            if (auto it = values.find("trace_record_glyph_queries"); it != values.end()) {
+                _traceRecordGlyphQueries = ini::ParseBool(it->second, _traceRecordGlyphQueries);
+            }
+        };
         try {
             if (auto it = sections.find("Logging"); it != sections.end()) {
                 parseLogging(it->second);
@@ -184,13 +214,16 @@ namespace dualpad::input
             if (auto it = sections.find("Features"); it != sections.end()) {
                 parseFeatures(it->second);
             }
+            if (auto it = sections.find("Replay"); it != sections.end()) {
+                parseReplay(it->second);
+            }
         }
         catch (const std::exception& e) {
             logger::warn("[DualPad][RuntimeConfig] Parse error: {}", e.what());
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} injection upstreamGamepad={} upstreamMode={} features comboHotkeys3to8={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} routeHealth={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={} replay trace={} outputDir={} session={} glyphQueries={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -199,13 +232,23 @@ namespace dualpad::input
             _logActionPlan,
             _logNativeInjection,
             _logKeyboardInjection,
+            _logRouteHealth,
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
-            _enableComboNativeHotkeys3To8);
+            _enableForceCrossContextRecoveryProbe,
+            _enableComboNativeHotkeys3To8,
+            _enableTraceRecording,
+            _traceOutputDir.string(),
+            _traceSession,
+            _traceRecordGlyphQueries);
         if (_useUpstreamGamepadHook) {
             logger::warn(
                 "[DualPad][RuntimeConfig] use_upstream_gamepad_hook enables the official upstream XInput route; rollback remains use_upstream_gamepad_hook=false (mode={})",
                 ToString(_upstreamGamepadHookMode));
+        }
+        if (_enableForceCrossContextRecoveryProbe) {
+            logger::warn(
+                "[DualPad][RuntimeConfig] enable_force_cross_context_recovery_probe is active; cross-context pending snapshots will be force-coalesced for Phase 4 validation");
         }
         return true;
     }
@@ -220,9 +263,16 @@ namespace dualpad::input
         _logActionPlan = false;
         _logNativeInjection = false;
         _logKeyboardInjection = false;
+        _logRouteHealth = false;
+
+        _enableTraceRecording = false;
+        _traceOutputDir = "build/replay-captures";
+        _traceSession = "default";
+        _traceRecordGlyphQueries = true;
 
         _useUpstreamGamepadHook = true;
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
+        _enableForceCrossContextRecoveryProbe = false;
         _enableComboNativeHotkeys3To8 = false;
     }
 }

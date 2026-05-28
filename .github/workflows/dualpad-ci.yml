@@ -1,0 +1,16 @@
+name: DualPad CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  phase8:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+      - name: Run Phase 8 canonical CI
+        shell: pwsh
+        run: scripts/ci/run_phase8_ci.ps1

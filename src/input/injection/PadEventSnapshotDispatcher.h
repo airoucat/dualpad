@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/injection/PadEventSnapshot.h"
+#include "input/injection/RouteHealthContract.h"
 
 #include <array>
 #include <atomic>
@@ -11,21 +12,36 @@ namespace dualpad::input
     class PadEventSnapshotDispatcher
     {
     public:
+        using ReplayDrainSink = void(*)(const PadEventSnapshot& snapshot, void* context);
+
         static PadEventSnapshotDispatcher& GetSingleton();
 
         void SubmitSnapshot(const PadEventSnapshot& snapshot);
         void SubmitReset();
-        std::size_t DrainOnMainThread(std::size_t maxSnapshots = kDefaultDrainBudget);
+        static constexpr std::size_t DefaultDrainBudget() { return kDefaultDrainBudget; }
+        std::size_t DrainOnMainThread(
+            std::size_t maxSnapshots = kDefaultDrainBudget,
+            const DrainTelemetryContext* telemetryContext = nullptr);
+        std::size_t DrainForReplay(
+            std::size_t maxSnapshots,
+            const DrainTelemetryContext* telemetryContext,
+            ReplayDrainSink sink,
+            void* context);
+        void ResetForReplay();
         void SetFramePumpEnabled(bool enabled);
         bool IsFramePumpEnabled() const;
 
     private:
         static constexpr std::size_t kPendingSnapshotCapacity = 256;
         static constexpr std::size_t kDefaultDrainBudget = 16;
+        static constexpr std::size_t kTaskDrainBudget = 64;
+        static constexpr std::size_t kUpstreamTaskFallbackHighWatermark = 128;
+        static constexpr std::uint64_t kUpstreamTaskFallbackPollStaleMs = 250;
 
         PadEventSnapshotDispatcher() = default;
         void ScheduleDrainTask();
         bool HasResetInPendingLocked() const;
+        bool HasCrossContextPendingLocked() const;
         void CoalescePendingLocked();
 
         std::array<PadEventSnapshot, kPendingSnapshotCapacity> _pending{};
@@ -35,5 +51,6 @@ namespace dualpad::input
         std::mutex _mutex;
         std::atomic_bool _drainTaskQueued{ false };
         std::atomic_bool _framePumpEnabled{ false };
+        std::atomic_bool _replayManualDrainActive{ false };
     };
 }

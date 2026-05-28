@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 namespace dualpad::input
 {
@@ -27,9 +29,15 @@ namespace dualpad::input
         bool LogActionPlan() const { return _logActionPlan; }
         bool LogNativeInjection() const { return _logNativeInjection; }
         bool LogKeyboardInjection() const { return _logKeyboardInjection; }
+        bool LogRouteHealth() const { return _logRouteHealth; }
+        bool EnableTraceRecording() const { return _enableTraceRecording; }
+        const std::filesystem::path& TraceOutputDir() const { return _traceOutputDir; }
+        std::string_view TraceSession() const { return _traceSession; }
+        bool TraceRecordGlyphQueries() const { return _traceRecordGlyphQueries; }
 
         bool UseUpstreamGamepadHook() const { return _useUpstreamGamepadHook; }
         UpstreamGamepadHookMode GetUpstreamGamepadHookMode() const { return _upstreamGamepadHookMode; }
+        bool EnableForceCrossContextRecoveryProbe() const { return _enableForceCrossContextRecoveryProbe; }
         bool EnableComboNativeHotkeys3To8() const { return _enableComboNativeHotkeys3To8; }
 
     private:
@@ -48,9 +56,16 @@ namespace dualpad::input
         bool _logActionPlan{ false };
         bool _logNativeInjection{ false };
         bool _logKeyboardInjection{ false };
+        bool _logRouteHealth{ false };
+
+        bool _enableTraceRecording{ false };
+        std::filesystem::path _traceOutputDir{ "build/replay-captures" };
+        std::string _traceSession{ "default" };
+        bool _traceRecordGlyphQueries{ true };
 
         bool _useUpstreamGamepadHook{ true };
         UpstreamGamepadHookMode _upstreamGamepadHookMode{ UpstreamGamepadHookMode::PollXInputCall };
+        bool _enableForceCrossContextRecoveryProbe{ false };
         bool _enableComboNativeHotkeys3To8{ false };
     };
 }

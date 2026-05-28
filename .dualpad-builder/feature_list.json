@@ -1,0 +1,348 @@
+{
+  "project": "DualPad Authoritative Baseline",
+  "source_docs": [
+    "docs/authoritative-baseline/README.md",
+    "docs/authoritative-baseline/2026-04-18-dualpad-authoritative-baseline.md",
+    "README.md",
+    "src/ARCHITECTURE.md"
+  ],
+  "updated_at": "2026-05-28T20:04:22+08:00",
+  "features": [
+    {
+      "id": "WF0",
+      "title": "Harness + CE + Graphify workflow bootstrap",
+      "requirements": [
+        "WF0"
+      ],
+      "depends_on": [],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "AGENTS.md 明确采用 harness + ce + graphify 默认工作流",
+        "docs/harness/dualpad-builder.md 与 .dualpad-builder/ 记忆层已落地",
+        "repo-local graphify 自动化已配置并完成初始化"
+      ]
+    },
+    {
+      "id": "DP1",
+      "title": "Runtime input pipeline truth",
+      "requirements": [
+        "B1"
+      ],
+      "depends_on": [
+        "WF0"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "src/input_v2/ 是唯一正式 runtime mainline；legacy dispatcher / processor 只允许作为 shim / adapter",
+        "AuthoritativePollState 仅保留 legacy poll compatibility / XInput bridge 侧职责，不再作为 current mainline authority",
+        "builder memory、baseline、reviewed docs 与 CI lint 对当前 runtime mainline 口径一致"
+      ]
+    },
+    {
+      "id": "DP1a",
+      "title": "Route-health contract freeze",
+      "requirements": [
+        "B1"
+      ],
+      "depends_on": [
+        "WF0"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "顶层 route_state 继续固定为 active_fresh / active_stale / disabled",
+        "drain_reason、last_poll_age_ms、hook_installed 被收口为 secondary diagnostics，而不是新的主状态体系",
+        "本 slice 只冻结当前兼容态合同与验证面，不删除 rollback gate / stale assist drain，也不引入新的 owner 抽象"
+      ]
+    },
+    {
+      "id": "DP2",
+      "title": "Menu context policy and gameplay/menu ownership",
+      "requirements": [
+        "B2"
+      ],
+      "depends_on": [
+        "DP1"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "menu / presentation ownership 已收口到 input_v2 menu、presentation 与 published state 口径",
+        "旧 MenuContextPolicy / InputContextNames 不再作为 current runtime authority",
+        "builder memory 不再把 gameplay-menu ownership 写成仍待启动的 runtime phase"
+      ]
+    },
+    {
+      "id": "DP3",
+      "title": "Native routing, controlmap combo overlay, and mod-event helper",
+      "requirements": [
+        "B3"
+      ],
+      "depends_on": [
+        "DP2"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "native routing、controlmap overlay 和 ModEvent helper backend 只作为支持 surface 记录，不形成第二 runtime mainline",
+        "canonical Phase 8 CI 直接验证当前 runtime / replay / ingress / prompt / property / fuzz targets",
+        "相关治理口径不再依赖旧 focused validation 作为默认最小证明"
+      ]
+    },
+    {
+      "id": "DP4",
+      "title": "Dynamic glyph and menu presentation surfaces",
+      "requirements": [
+        "B4"
+      ],
+      "depends_on": [
+        "DP1"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "当前 glyph / prompt compat surface 固定为 ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService",
+        "BindingManager、trigger reverse lookup 与 menu fallback 不再是 current glyph authority",
+        "repo 不拥有的 FavoritesMenu workspace 仍不是当前 truth，若恢复该页面必须先恢复 workspace"
+      ]
+    },
+    {
+      "id": "DP4a",
+      "title": "Glyph compat diagnostics freeze",
+      "requirements": [
+        "B4"
+      ],
+      "depends_on": [
+        "DP1a"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "status / fallback / ambiguity 只先进入内部诊断面、日志、trace 与 targeted tests",
+        "旧 DualPad_GetActionGlyphToken 继续返回单个 token string；旧 DualPad_GetActionGlyph descriptor 继续保持 ok / buttonArtToken / semanticId / contextName",
+        "任何旧返回对象字段扩展都延后到 Phase 6 的 prompt contract 明确之后再决定"
+      ]
+    },
+    {
+      "id": "PH0",
+      "title": "Phase 0 replay barrier",
+      "requirements": [
+        "B1",
+        "B4",
+        "B5"
+      ],
+      "depends_on": [
+        "DP4a"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "schema / harness bootstrap、diff runner 与 repo-owned mandatory scenario bundle 已落地",
+        "dispatcher / processor runtime replay seam 已分别驱动 PadEventSnapshotDispatcher / PadEventSnapshotProcessor，并通过 Phase 0 batch diff",
+        "CSV simulator / materialize-fixture 不得作为 PH0 runtime proof",
+        "phase0_scenarios.json 以 mandatory=false / conditional_live 标记 FavoritesMenu 条件场景，workspace 未恢复时不会成为退出条件",
+        "Phase 0 target、trace schema、runtime replay tests、batch diff runner 和 progress close-out 可追踪"
+      ]
+    },
+    {
+      "id": "PH1",
+      "title": "Phase 1 catalog and manifest compiler",
+      "requirements": [
+        "B1",
+        "B3",
+        "B4"
+      ],
+      "depends_on": [
+        "PH0"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "ContextCatalog、ActionManifest、LegacyIniImporter 和 ManifestValidator 有固定代码落点",
+        "AtomicConfigReloader::Promote() 与 ActionManifestPublisher::PublishPromotedBundle(...) 的 manifest marker handoff 不再留到实现阶段决定",
+        "manifest compiler prove-out target 可执行并写回 builder memory"
+      ]
+    },
+    {
+      "id": "PH2",
+      "title": "Phase 2 menu instance truth",
+      "requirements": [
+        "B2"
+      ],
+      "depends_on": [
+        "PH1"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "UiMenuObserver、MenuInstanceRegistry、ContextResolver 和 ActionSetResolver 的 owner 边界落地",
+        "contextRevision、menuStackRevision 和 presentationPolicyId 有 shadow compare gate",
+        "legacy context adapter 不再承担 menu instance truth"
+      ]
+    },
+    {
+      "id": "PH3",
+      "title": "Phase 3 presentation split",
+      "requirements": [
+        "B2",
+        "B5"
+      ],
+      "depends_on": [
+        "PH2"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "SourceEvidenceCollector、PresentationProjection 和 SkyrimCompatibilitySurface 分层落地",
+        "DeviceFamilyChanged marker 与 SourceEvidence 配对合同进入已发布 seam，且 revision 一致性有 exit gate",
+        "presentation rollback 和 shadow parity 有固定验证入口"
+      ]
+    },
+    {
+      "id": "PH4",
+      "title": "Phase 4 action graph and interaction engine",
+      "requirements": [
+        "B1",
+        "B3",
+        "B4"
+      ],
+      "depends_on": [
+        "PH3"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "ControlPath、BindingModifier、InteractionSpec、DisplayBinding 与 CompiledActionGraph 合同落地",
+        "CompiledActionGraphPublisher::Publish(...) 作为 compiled graph publication owner 与 runtime swap 入口已冻结",
+        "Action Graph prove-out 覆盖 layer/combo/fail-closed 场景"
+      ]
+    },
+    {
+      "id": "PH5",
+      "title": "Phase 5 gameplay projection",
+      "requirements": [
+        "B1",
+        "B2"
+      ],
+      "depends_on": [
+        "PH4"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "GameplayProjectionFrame、RecoveryPlan 和 GameplayPresentationPublisher 落地",
+        "HardReset / SoftResync / clean baseline 的 native、helper、presentation 同步顺序有 targeted tests",
+        "legacy coordinator feedback loop 不再是 gameplay projection authority"
+      ]
+    },
+    {
+      "id": "PH6",
+      "title": "Phase 6 prompt projection",
+      "requirements": [
+        "B4"
+      ],
+      "depends_on": [
+        "PH5"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "PromptProjection / PromptService 取代 glyph reverse lookup authority",
+        "旧 SWF API 兼容策略与 repo-owned startmenu.swf smoke gate 已冻结",
+        "DP4a compat tests 不会在 Phase 6 后继续钉死旧 fallback 语义"
+      ]
+    },
+    {
+      "id": "PH7",
+      "title": "Phase 7 ingress and resync",
+      "requirements": [
+        "B1",
+        "B5"
+      ],
+      "depends_on": [
+        "PH6"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "manifestEpoch 与 deviceFamilyRevision 的 authoritative 来源固定为 ingress marker payload",
+        "boundary key、transition frame、HardReset / SoftResync 规则无第二 authority",
+        "Ingress recovery prove-out 覆盖 marker mismatch、queue overflow 和 manifest reload"
+      ]
+    },
+    {
+      "id": "PH8",
+      "title": "Phase 8 cutover entry gate",
+      "requirements": [
+        "B5",
+        "B6"
+      ],
+      "depends_on": [
+        "PH7"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "Phase 8 只作为 closeout 入口，不重新设计 runtime 合同",
+        "09a runtime closeout 与 09b governance closeout 的职责边界清晰",
+        "canonical prove-out targets 的归属不再在 09b 首次补建"
+      ]
+    },
+    {
+      "id": "PH8a",
+      "title": "Phase 8A runtime closeout",
+      "requirements": [
+        "B5"
+      ],
+      "depends_on": [
+        "PH8"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "runtime public surface swap、legacy deletion 和 shim shrink 完成",
+        "6 类 canonical runtime prove-out targets 已存在并通过",
+        "replay root 仍固定为 tests/replay/golden/"
+      ]
+    },
+    {
+      "id": "PH8b",
+      "title": "Phase 8B governance closeout",
+      "requirements": [
+        "B6",
+        "B7"
+      ],
+      "depends_on": [
+        "PH8a"
+      ],
+      "status": "completed",
+      "passes": true,
+      "acceptance": [
+        "docgen provenance、reviewed docs 去重和默认 CI 接线完成；默认 CI 直接运行 6 个 canonical runtime targets，并额外运行 DualPadPresentationProjectionTests 作为 public-surface support proof",
+        "generated facts 与 reviewed narrative 不再争夺 authority",
+        "builder memory、baseline、CI 和 graphify close-out 口径一致"
+      ]
+    },
+    {
+      "id": "DP5",
+      "title": "Post-closeout validation, cleanup, and workflow honesty hardening",
+      "requirements": [
+        "B5",
+        "B6",
+        "B7"
+      ],
+      "depends_on": [
+        "WF0"
+      ],
+      "status": "planned",
+      "passes": false,
+      "acceptance": [
+        "DP5 / S-DP5 是 PH0-PH8b 之后的 post-closeout hardening，不是新的 runtime phase",
+        "任何 DP5 slice 都不得重开 input_v2 runtime mainline、canonical target 名称、replay root 或旧 SWF 返回 shape",
+        "启动 DP5 前必须单独 promotion，并继续通过 Phase 8 canonical CI、builder JSON、graphify 与 diff hygiene"
+      ]
+    }
+  ]
+}

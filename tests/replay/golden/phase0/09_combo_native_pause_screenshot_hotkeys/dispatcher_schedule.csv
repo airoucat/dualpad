@@ -1,0 +1,3 @@
+step_index,op,sequence,budget,reason,route_state,last_poll_age_ms,hook_installed,pending_before,pending_after,drained_count
+0,submit,9,0,frame_pump_disabled,disabled,none,false,0,1,0
+1,drain,0,1,upstream_poll,active_fresh,4,true,1,0,1

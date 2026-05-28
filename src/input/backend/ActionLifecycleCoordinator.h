@@ -1,7 +1,7 @@
 #pragma once
 
 #include "input/backend/ActionLifecycleTransaction.h"
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/FrameActionPlan.h"
 #include "input/injection/SyntheticPadFrame.h"
@@ -19,6 +19,11 @@ namespace dualpad::input::backend
         void Reset();
 
         bool RegisterOwningAction(
+            std::uint32_t sourceCode,
+            std::string_view actionId,
+            const ActionRoutingDecision& routingDecision);
+
+        bool RegisterRecoveredOwningAction(
             std::uint32_t sourceCode,
             std::string_view actionId,
             const ActionRoutingDecision& routingDecision);
@@ -43,6 +48,7 @@ namespace dualpad::input::backend
         struct ActiveSourceAction
         {
             bool active{ false };
+            bool suppressNextPress{ false };
             std::string actionId{};
             ActionRoutingDecision routingDecision{};
         };
@@ -51,7 +57,7 @@ namespace dualpad::input::backend
 
         static std::size_t BitIndex(std::uint32_t sourceCode);
         static bool BuildLifecycleTransaction(
-            const ActiveSourceAction& activeAction,
+            ActiveSourceAction& activeAction,
             const SyntheticButtonState& button,
             std::uint32_t sourceCode,
             std::uint64_t timestampUs,

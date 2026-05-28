@@ -4,12 +4,57 @@
 #include "input/protocol/DualSenseCommonFields.h"
 #include "input/protocol/DualSenseButtons.h"
 #include "input/protocol/DualSenseReportIds.h"
+#include "input/RuntimeConfig.h"
 #include "input/state/PadStateDebugger.h"
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
     namespace
     {
+        constexpr std::uint32_t kInterestingMenuBits =
+            protocol::buttons::kCross |
+            protocol::buttons::kCircle |
+            protocol::buttons::kTriangle |
+            protocol::buttons::kDpadUp |
+            protocol::buttons::kDpadDown |
+            protocol::buttons::kDpadLeft |
+            protocol::buttons::kDpadRight;
+
+        void MaybeLogRawButtons(
+            const RawInputPacket& packet,
+            std::uint8_t buttons0,
+            std::uint8_t buttons1,
+            std::uint8_t buttons2,
+            std::uint8_t buttons3,
+            std::uint32_t digitalMask)
+        {
+            if (!RuntimeConfig::GetSingleton().LogMappingEvents()) {
+                return;
+            }
+
+            const auto dpadNibble = static_cast<std::uint8_t>(buttons0 & 0x0F);
+            const bool interesting =
+                (digitalMask & kInterestingMenuBits) != 0 ||
+                dpadNibble != 0x08;
+            if (!interesting) {
+                return;
+            }
+
+            logger::debug(
+                "[DualPad][MenuProbe] raw-buttons transport={} report=0x{:02X} seq={} buttons0=0x{:02X} buttons1=0x{:02X} buttons2=0x{:02X} buttons3=0x{:02X} dpadNibble=0x{:X} mask=0x{:08X}",
+                ToString(packet.transport),
+                packet.reportId,
+                packet.sequence,
+                buttons0,
+                buttons1,
+                buttons2,
+                buttons3,
+                dpadNibble,
+                digitalMask);
+        }
+
         namespace raw
         {
             inline constexpr std::size_t kMinPacketSize = 11;
@@ -76,11 +121,15 @@ namespace dualpad::input
             // be treated as fully verified.
             // TODO(protocol verification): validate the 0x01 Windows Bluetooth layout
             // with real hardware logs before promoting this parser beyond partial support.
+            const auto buttons0 = packet.data[raw::kBt01Buttons0];
+            const auto buttons1 = packet.data[raw::kBt01Buttons1];
+            const auto buttons2 = packet.data[raw::kBt01Buttons2];
             state.buttons = protocol::common::BuildPadButtons(
-                packet.data[raw::kBt01Buttons0],
-                packet.data[raw::kBt01Buttons1],
-                packet.data[raw::kBt01Buttons2],
+                buttons0,
+                buttons1,
+                buttons2,
                 0);
+            MaybeLogRawButtons(packet, buttons0, buttons1, buttons2, 0, state.buttons.digitalMask);
 
             outState = state;
             return true;
@@ -107,11 +156,16 @@ namespace dualpad::input
             state.leftTrigger.raw = packet.data[raw::kBt31LeftTrigger];
             state.rightTrigger.raw = packet.data[raw::kBt31RightTrigger];
 
+            const auto buttons0 = packet.data[raw::kBt31Buttons0];
+            const auto buttons1 = packet.data[raw::kBt31Buttons1];
+            const auto buttons2 = packet.data[raw::kBt31Buttons2];
+            const auto buttons3 = packet.data[raw::kBt31Buttons3];
             state.buttons = protocol::common::BuildPadButtons(
-                packet.data[raw::kBt31Buttons0],
-                packet.data[raw::kBt31Buttons1],
-                packet.data[raw::kBt31Buttons2],
-                packet.data[raw::kBt31Buttons3]);
+                buttons0,
+                buttons1,
+                buttons2,
+                buttons3);
+            MaybeLogRawButtons(packet, buttons0, buttons1, buttons2, buttons3, state.buttons.digitalMask);
 
             state.imu.gyroX = protocol::common::ReadI16LE(packet.data + raw::kBt31GyroX);
             state.imu.gyroY = protocol::common::ReadI16LE(packet.data + raw::kBt31GyroY);

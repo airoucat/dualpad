@@ -1,8 +1,8 @@
 #pragma once
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/backend/FrameActionPlan.h"
-#include "input/mapping/PadEvent.h"
+#include "input/PadEvent.h"
 
 #include <cstdint>
 #include <string_view>

@@ -1,0 +1,2 @@
+sequence,event_index,type,trigger_type,code,modifier_mask,axis,previous_value,value,timestamp_us,touch_id,touch_x,touch_y,touchpad_mode,touch_region,slide_direction
+200,0,ButtonPress,Button,4,0,None,0,0,200000,0,0,0,Disabled,None,None

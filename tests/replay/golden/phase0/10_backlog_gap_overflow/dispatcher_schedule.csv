@@ -1,0 +1,4 @@
+step_index,op,sequence,budget,reason,route_state,last_poll_age_ms,hook_installed,pending_before,pending_after,drained_count
+0,submit,100,0,frame_pump_disabled,disabled,none,false,0,1,0
+1,submit,101,0,frame_pump_disabled,disabled,none,false,1,2,0
+2,drain,0,16,frame_pump_assist_stale,active_stale,300,true,2,0,2

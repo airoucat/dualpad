@@ -1,15 +1,34 @@
 #pragma once
 
 #include "input/backend/FrameActionPlan.h"
-#include "input/backend/IPollCommitEmitter.h"
 #include "input/backend/NativeControlCode.h"
+
+#ifndef DUALPAD_REPLAY_HARNESS
 #include "input/backend/PollCommitCoordinator.h"
+#endif
 
 #include <cstdint>
 #include <mutex>
+#include <string_view>
 
 namespace dualpad::input::backend
 {
+#ifdef DUALPAD_REPLAY_HARNESS
+    enum class HeldContributor : std::uint8_t
+    {
+        None = 0,
+        Gamepad = 1u << 0,
+        KeyboardMouse = 1u << 1
+    };
+
+    enum class HeldEmitterSource : std::uint8_t
+    {
+        None = 0,
+        Gamepad,
+        KeyboardMouse
+    };
+#endif
+
     struct CommittedButtonState
     {
         std::uint32_t buttonDownMask{ 0 };
@@ -21,7 +40,10 @@ namespace dualpad::input::backend
         std::uint64_t pollSequence{ 0 };
     };
 
-    class NativeButtonCommitBackend final : public IPollCommitEmitter
+    class NativeButtonCommitBackend final
+#ifndef DUALPAD_REPLAY_HARNESS
+        : public IPollCommitEmitter
+#endif
     {
     public:
         static NativeButtonCommitBackend& GetSingleton();
@@ -29,18 +51,57 @@ namespace dualpad::input::backend
         void Reset();
         bool IsRouteActive() const;
         bool CanHandleAction(std::string_view actionId) const;
+        bool IsActionDown(std::string_view actionId) const;
+        bool HasHeldContributor(std::string_view actionId, HeldContributor contributor) const;
+        HeldEmitterSource GetHeldEmitter(std::string_view actionId) const;
 
         void BeginFrame(
             InputContext context,
             std::uint32_t contextEpoch,
             std::uint64_t nowUs = 0);
 
+        void SetGameplayDigitalGatePlan(bool suppressNewTransientActions);
         bool ApplyPlannedAction(const PlannedAction& action);
+        void ForceCancelGateAwareGameplayTransientActions();
         [[nodiscard]] CommittedButtonState CommitPollState();
 
+#ifndef DUALPAD_REPLAY_HARNESS
         EmitResult Emit(const EmitRequest& request) override;
+#endif
 
     private:
+#ifdef DUALPAD_REPLAY_HARNESS
+        NativeButtonCommitBackend() = default;
+#else
+        struct SprintProbeSnapshot
+        {
+            bool valid{ false };
+            bool kbmHeld{ false };
+            bool gamepadContributor{ false };
+            bool keyboardMouseContributor{ false };
+            bool effectiveHeld{ false };
+            bool actionDown{ false };
+            bool managed{ false };
+            bool gameplayOwnerGamepad{ false };
+            ExecState state{ ExecState::Idle };
+            HeldEmitterSource activeEmitter{ HeldEmitterSource::None };
+            InputContext context{ InputContext::Gameplay };
+            std::uint32_t contextEpoch{ 0 };
+        };
+
+        struct SneakProbeSnapshot
+        {
+            bool valid{ false };
+            bool actionDown{ false };
+            bool managed{ false };
+            bool gateAware{ false };
+            ExecState state{ ExecState::Idle };
+            PollCommitMode mode{ PollCommitMode::None };
+            InputContext context{ InputContext::Gameplay };
+            std::uint32_t contextEpoch{ 0 };
+            std::uint64_t pollSequence{ 0 };
+        };
+
         NativeButtonCommitBackend() = default;
 
         static bool TranslatePlannedActionToCommitRequest(
@@ -53,12 +114,17 @@ namespace dualpad::input::backend
         static bool IsGameplayGateOpen(InputContext context);
         static bool SlotIsDown(const PollCommitSlot& slot);
         static bool SlotIsManaged(const PollCommitSlot& slot);
+        void SyncExternalHeldContributors(InputContext context, std::uint32_t contextEpoch);
 
         PollCommitCoordinator _pollCommit{};
         InputContext _frameContext{ InputContext::Gameplay };
         std::uint32_t _frameContextEpoch{ 0 };
         std::uint64_t _pollSequence{ 0 };
         std::uint32_t _lastCommittedButtonDownMask{ 0 };
+        SprintProbeSnapshot _lastSprintProbeSnapshot{};
+        SneakProbeSnapshot _lastSneakProbeSnapshot{};
+        bool _suppressGameplayDigitalTransientActions{ false };
         mutable std::mutex _lock;
+#endif
     };
 }

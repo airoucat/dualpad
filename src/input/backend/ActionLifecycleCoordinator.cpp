@@ -2,8 +2,8 @@
 #include "input/backend/ActionLifecycleCoordinator.h"
 
 #include "input/Action.h"
-#include "input/InputContext.h"
-#include "input/mapping/PadEvent.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
+#include "input/PadEvent.h"
 
 #include <bit>
 
@@ -106,6 +106,25 @@ namespace dualpad::input::backend
 
         auto& activeAction = _activeActions[BitIndex(sourceCode)];
         activeAction.active = true;
+        activeAction.suppressNextPress = false;
+        activeAction.actionId = actionId;
+        activeAction.routingDecision = routingDecision;
+        return true;
+    }
+
+    bool ActionLifecycleCoordinator::RegisterRecoveredOwningAction(
+        std::uint32_t sourceCode,
+        std::string_view actionId,
+        const ActionRoutingDecision& routingDecision)
+    {
+        if (!IsSyntheticPadBitCode(sourceCode) ||
+            !routingDecision.ownsLifecycle) {
+            return false;
+        }
+
+        auto& activeAction = _activeActions[BitIndex(sourceCode)];
+        activeAction.active = true;
+        activeAction.suppressNextPress = true;
         activeAction.actionId = actionId;
         activeAction.routingDecision = routingDecision;
         return true;
@@ -189,7 +208,7 @@ namespace dualpad::input::backend
     }
 
     bool ActionLifecycleCoordinator::BuildLifecycleTransaction(
-        const ActiveSourceAction& activeAction,
+        ActiveSourceAction& activeAction,
         const SyntheticButtonState& button,
         std::uint32_t sourceCode,
         std::uint64_t timestampUs,
@@ -206,7 +225,12 @@ namespace dualpad::input::backend
         transaction.contextEpoch = contextEpoch;
 
         if (button.down) {
-            transaction.phase = SawPressEdge(button) ? PlannedActionPhase::Press : PlannedActionPhase::Hold;
+            const bool suppressNextPress = activeAction.suppressNextPress;
+            activeAction.suppressNextPress = false;
+            transaction.phase =
+                (SawPressEdge(button) && !suppressNextPress) ?
+                    PlannedActionPhase::Press :
+                    PlannedActionPhase::Hold;
             transaction.heldSeconds = transaction.phase == PlannedActionPhase::Press ? 0.0f : button.heldSeconds;
             return outTransactions.Push(transaction);
         }

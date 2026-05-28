@@ -1,0 +1,2 @@
+sequence,command_index,command_type,scancode,action_id,contract,context
+200,0,pulse,100,VirtualKey.DIK_F13,Pulse,Gameplay

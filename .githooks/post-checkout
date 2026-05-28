@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+PREV_HEAD=${1:-}
+NEW_HEAD=${2:-}
+BRANCH_SWITCH=${3:-0}
+
+if [ "$BRANCH_SWITCH" != "1" ]; then
+    exit 0
+fi
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/graphify-common.sh"
+
+graphify_run_rebuild "post-checkout"

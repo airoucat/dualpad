@@ -1,9 +1,10 @@
 #include "pch.h"
 #include "input/backend/KeyboardHelperBackend.h"
 
-#include "input/InputModalityTracker.h"
 #include "input/RuntimeConfig.h"
 #include "input/backend/KeyboardNativeBridge.h"
+#include "input_v2/ingress/LiveInputFactProducer.h"
+#include "input_v2/telemetry/InputTraceRecorder.h"
 
 #include <cctype>
 #include <filesystem>
@@ -99,40 +100,76 @@ namespace dualpad::input::backend
             { "MEDIA_SELECT"sv, 0xED }
         };
 
-        void MarkSyntheticKeyboardCommand(std::uint8_t scancode, std::uint8_t pendingEvents)
+        std::uint64_t NowMonotonicUs()
         {
-            input::InputModalityTracker::GetSingleton().MarkSyntheticKeyboardScancode(
-                scancode,
-                pendingEvents,
-                kSyntheticHelperSuppressionWindowMs);
+            return ::GetTickCount64() * 1000;
         }
 
-        bool EnqueueBridgePress(std::uint8_t scancode)
+        void MarkSyntheticKeyboardCommand(std::uint8_t scancode, std::uint8_t pendingEvents)
+        {
+            input_v2::ingress::LiveInputFactProducer::GetSingleton().MarkSyntheticKeyboardScancode(
+                scancode,
+                pendingEvents,
+                kSyntheticHelperSuppressionWindowMs * 1000,
+                NowMonotonicUs());
+        }
+
+        bool EnqueueBridgePress(
+            std::uint8_t scancode,
+            std::string_view actionId,
+            ActionOutputContract contract,
+            InputContext context)
         {
             if (!KeyboardNativeBridge::GetSingleton().EnqueuePress(scancode)) {
                 return false;
             }
 
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
+                KeyboardBridgeCommandType::Press,
+                scancode,
+                actionId,
+                contract,
+                context);
             MarkSyntheticKeyboardCommand(scancode, kSyntheticPressPendingEvents);
             return true;
         }
 
-        bool EnqueueBridgeRelease(std::uint8_t scancode)
+        bool EnqueueBridgeRelease(
+            std::uint8_t scancode,
+            std::string_view actionId,
+            ActionOutputContract contract,
+            InputContext context)
         {
             if (!KeyboardNativeBridge::GetSingleton().EnqueueRelease(scancode)) {
                 return false;
             }
 
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
+                KeyboardBridgeCommandType::Release,
+                scancode,
+                actionId,
+                contract,
+                context);
             MarkSyntheticKeyboardCommand(scancode, kSyntheticReleasePendingEvents);
             return true;
         }
 
-        bool EnqueueBridgePulse(std::uint8_t scancode)
+        bool EnqueueBridgePulse(
+            std::uint8_t scancode,
+            std::string_view actionId,
+            ActionOutputContract contract,
+            InputContext context)
         {
             if (!KeyboardNativeBridge::GetSingleton().EnqueuePulse(scancode)) {
                 return false;
             }
 
+            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
+                KeyboardBridgeCommandType::Pulse,
+                scancode,
+                actionId,
+                contract,
+                context);
             MarkSyntheticKeyboardCommand(scancode, kSyntheticPulsePendingEvents);
             return true;
         }
@@ -278,21 +315,42 @@ namespace dualpad::input::backend
             HasActiveBridgeConsumer();
     }
 
+    void KeyboardHelperBackend::SetReplayRouteActive(bool active)
+    {
+        _replayRouteActive.store(active, std::memory_order_release);
+    }
+
     bool KeyboardHelperBackend::IsRouteActive() const
     {
-        return _installed && HasProxyDllInGameRoot();
+        return _replayRouteActive.load(std::memory_order_acquire) ||
+            (_installed && HasProxyDllInGameRoot());
     }
 
     void KeyboardHelperBackend::Reset()
     {
+        bool hadActiveOutput = false;
         {
             std::scoped_lock lock(_mutex);
+            hadActiveOutput = !_activeActions.empty();
+            for (const auto refCount : _bridgeDesiredRefCounts) {
+                if (refCount != 0) {
+                    hadActiveOutput = true;
+                    break;
+                }
+            }
             _bridgeDesiredRefCounts.fill(0);
             _activeActions.clear();
         }
 
-        if (IsRouteActive()) {
-            (void)KeyboardNativeBridge::GetSingleton().EnqueueReset();
+        if (hadActiveOutput && IsRouteActive()) {
+            if (KeyboardNativeBridge::GetSingleton().EnqueueReset()) {
+                input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
+                    KeyboardBridgeCommandType::Reset,
+                    0,
+                    "",
+                    ActionOutputContract::None,
+                    InputContext::Gameplay);
+            }
         }
     }
 
@@ -315,14 +373,14 @@ namespace dualpad::input::backend
             return false;
         }
 
-        if (!EnqueueBridgePulse(*scancode)) {
+        if (!EnqueueBridgePulse(*scancode, actionId, contract, context)) {
             if (IsDebugLoggingEnabled()) {
                 logger::warn(
                     "[DualPad][KeyboardHelper] failed pulse action={} contract={} scancode=0x{:02X} context={}",
                     actionId,
                     ToString(contract),
                     *scancode,
-                    ToString(context));
+                    dualpad::input::ToString(context));
             }
             return false;
         }
@@ -333,7 +391,7 @@ namespace dualpad::input::backend
                 actionId,
                 ToString(contract),
                 *scancode,
-                ToString(context));
+                dualpad::input::ToString(context));
         }
         return true;
     }
@@ -377,14 +435,14 @@ namespace dualpad::input::backend
                 return false;
             }
 
-            if (!EnqueueBridgePulse(*scancode)) {
+            if (!EnqueueBridgePulse(*scancode, actionId, contract, context)) {
                 if (IsDebugLoggingEnabled()) {
                     logger::warn(
                         "[DualPad][KeyboardHelper] failed source pulse action={} contract={} scancode=0x{:02X} context={}",
                         actionId,
                         ToString(contract),
                         *scancode,
-                        ToString(context));
+                        dualpad::input::ToString(context));
                 }
                 return false;
             }
@@ -415,7 +473,7 @@ namespace dualpad::input::backend
             }
 
             const auto needsPress = previousRefCount == 0;
-            if (needsPress && !EnqueueBridgePress(*scancode)) {
+            if (needsPress && !EnqueueBridgePress(*scancode, actionId, contract, context)) {
                 if (_bridgeDesiredRefCounts[*scancode] > 0) {
                     --_bridgeDesiredRefCounts[*scancode];
                 }
@@ -429,7 +487,7 @@ namespace dualpad::input::backend
                     actionId,
                     *scancode,
                     _bridgeDesiredRefCounts[*scancode],
-                    ToString(context));
+                    dualpad::input::ToString(context));
             }
             return true;
         }
@@ -443,7 +501,7 @@ namespace dualpad::input::backend
         if (_bridgeDesiredRefCounts[it->second.scancode] > 0) {
             --_bridgeDesiredRefCounts[it->second.scancode];
             if (_bridgeDesiredRefCounts[it->second.scancode] == 0) {
-                released = EnqueueBridgeRelease(it->second.scancode);
+                released = EnqueueBridgeRelease(it->second.scancode, actionId, contract, context);
                 if (!released) {
                     ++_bridgeDesiredRefCounts[it->second.scancode];
                 }
@@ -463,7 +521,7 @@ namespace dualpad::input::backend
                 actionId,
                 releasedScancode,
                 remainingRefCount,
-                ToString(context));
+                dualpad::input::ToString(context));
         }
         return true;
     }
@@ -515,21 +573,21 @@ namespace dualpad::input::backend
         bool queuedPulse = false;
         if (contract == ActionOutputContract::Toggle) {
             if (pressEdge) {
-                queuedPulse = EnqueueBridgePulse(*scancode);
+                queuedPulse = EnqueueBridgePulse(*scancode, actionId, contract, context);
                 if (!queuedPulse) {
                     return false;
                 }
             }
         } else if (contract == ActionOutputContract::Repeat) {
             if (pressEdge) {
-                queuedPulse = EnqueueBridgePulse(*scancode);
+                queuedPulse = EnqueueBridgePulse(*scancode, actionId, contract, context);
                 if (!queuedPulse) {
                     return false;
                 }
                 action.nextRepeatAtHeldSeconds = kRepeatInitialDelaySeconds;
             } else {
                 while ((heldSeconds + kRepeatScheduleEpsilon) >= action.nextRepeatAtHeldSeconds) {
-                    if (!EnqueueBridgePulse(*scancode)) {
+                    if (!EnqueueBridgePulse(*scancode, actionId, contract, context)) {
                         return false;
                     }
                     queuedPulse = true;
@@ -548,7 +606,7 @@ namespace dualpad::input::backend
                 queuedPulse,
                 heldSeconds,
                 action.nextRepeatAtHeldSeconds,
-                ToString(context));
+                dualpad::input::ToString(context));
         }
         return true;
     }

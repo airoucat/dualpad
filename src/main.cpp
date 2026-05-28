@@ -8,14 +8,15 @@
 
 #include "input/ContextEventSink.h"
 
-#include "input/BindingConfig.h"
 #include "input/ControlMapOverlay.h"
 
 #include "input/InputFramePump.h"
-#include "input/InputModalityTracker.h"
 
 #include "input/RuntimeConfig.h"
+#include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/backend/KeyboardHelperBackend.h"
+#include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 
 #include "input/injection/UpstreamGamepadHook.h"
 
@@ -63,7 +64,6 @@ namespace
         }
 
         if (msg->type == SKSE::MessagingInterface::kInputLoaded) {
-            dualpad::input::InputModalityTracker::GetSingleton().Register();
             return;
         }
 
@@ -72,11 +72,20 @@ namespace
             logger::info("[DualPad] Initializing systems");
             LogReverseProbeAddresses();
 
-            dualpad::input::ContextEventSink::GetSingleton().Register();
-
             dualpad::input::RuntimeConfig::GetSingleton().Load();
 
-            dualpad::input::BindingConfig::GetSingleton().Load();
+            const auto compiledConfig = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().LoadOrRecover();
+            if (!compiledConfig.ok) {
+                logger::error(
+                    "[DualPad][PH1] AtomicConfigReloader startup load failed: {}",
+                    compiledConfig.message);
+            } else if (compiledConfig.recoveredFromDiskLkg) {
+                logger::warn("[DualPad][PH1] AtomicConfigReloader recovered from last-known-good bundle");
+            }
+
+            dualpad::input::ContextEventSink::GetSingleton().Register();
+
+            dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton().RegisterInitialMenus();
             if (!dualpad::input::ControlMapOverlay::GetSingleton().Apply()) {
                 logger::warn(
                     "[DualPad] Runtime gamepad controlmap overlay inactive; combo-native actions may be unavailable");
@@ -106,7 +115,19 @@ namespace
 
             }
 
-            dualpad::input::StartHidReader();
+            bool deferHidReaderStart = false;
+            if (dualpad::input::RuntimeConfig::GetSingleton().UseUpstreamGamepadHook()) {
+                auto& upstreamHook = dualpad::input::UpstreamGamepadHook::GetSingleton();
+                if (upstreamHook.IsRouteActive()) {
+                    deferHidReaderStart = true;
+                    logger::info(
+                        "[DualPad] Deferring HID reader start until first upstream poll or input-pump activity");
+                }
+            }
+
+            if (!deferHidReaderStart) {
+                dualpad::input::StartHidReader();
+            }
 
             auto& hapticsSystem = dualpad::haptics::HapticsSystem::GetSingleton();
 
@@ -152,7 +173,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
 
     SKSE::Init(skse);
     SKSE::AllocTrampoline(1 << 10);
-    dualpad::input::InputModalityTracker::GetSingleton().Install();
+    dualpad::input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton().Install();
 
     logger::info("DualPad v1.0.0 loaded");
 

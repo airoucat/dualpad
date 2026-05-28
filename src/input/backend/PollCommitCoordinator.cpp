@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "input/backend/PollCommitCoordinator.h"
 
+#include "input/Action.h"
 #include "input/RuntimeConfig.h"
 
 #include <SKSE/SKSE.h>
@@ -11,6 +12,16 @@ namespace dualpad::input::backend
 {
     namespace
     {
+        constexpr std::uint8_t ToMask(HeldContributor contributor)
+        {
+            return static_cast<std::uint8_t>(contributor);
+        }
+
+        bool IsSprintAction(RE::BSFixedString actionId)
+        {
+            return actionId == actions::Sprint;
+        }
+
         bool ShouldLogCoordinator()
         {
             const auto& config = RuntimeConfig::GetSingleton();
@@ -72,6 +83,9 @@ namespace dualpad::input::backend
         switch (request.kind) {
         case PollCommitRequestKind::Pulse:
             QueuePulse(*slot, request);
+            return true;
+        case PollCommitRequestKind::ToggleFire:
+            QueueToggle(*slot, request);
             return true;
         case PollCommitRequestKind::HoldSet:
             QueueHoldSet(*slot, request);
@@ -161,6 +175,33 @@ namespace dualpad::input::backend
         }
     }
 
+    void PollCommitCoordinator::ForceCancelGateAwareTransientSlots()
+    {
+        for (auto& slot : _slots) {
+            const auto contextValue = static_cast<std::uint16_t>(slot.context);
+            const bool isGameplayContext = !(contextValue >= 100 && contextValue < 2000) && slot.context != InputContext::Console;
+            const bool isTransientMode = slot.mode == PollCommitMode::Pulse || slot.mode == PollCommitMode::Toggle;
+            if (slot.actionId.empty() || !slot.gateAware || !isGameplayContext || !isTransientMode) {
+                continue;
+            }
+
+            QueueForceCancel(slot);
+        }
+    }
+
+    void PollCommitCoordinator::SyncHeldContributor(
+        RE::BSFixedString actionId,
+        HeldContributor contributor,
+        bool held)
+    {
+        auto* slot = FindSlot(actionId);
+        if (!slot) {
+            return;
+        }
+
+        SetHeldContributor(*slot, contributor, held);
+    }
+
     void PollCommitCoordinator::DumpState() const
     {
         if (!ShouldLogCoordinator()) {
@@ -173,7 +214,7 @@ namespace dualpad::input::backend
             }
 
             logger::info(
-                "[DualPad][PollCommit] action={} state={} epoch={} token={} mode={} pending={} nextPulse={} desiredHeld={} downSubmitted={} releaseSubmitted={} downCount={} upCount={} coalesced={} dropped={}",
+                "[DualPad][PollCommit] action={} state={} epoch={} token={} mode={} pending={} nextPulse={} desiredHeld={} activeEmitter={} downSubmitted={} releaseSubmitted={} downCount={} upCount={} coalesced={} dropped={}",
                 slot.actionId.c_str(),
                 ToString(slot.state),
                 slot.epoch,
@@ -181,7 +222,8 @@ namespace dualpad::input::backend
                 ToString(slot.mode),
                 ToString(slot.pending.kind),
                 slot.pending.pendingNextPulse,
-                slot.desiredHeld,
+                HasSyntheticHoldDemand(slot),
+                ToString(slot.activeHeldEmitter),
                 slot.token.downSubmitted,
                 slot.token.releaseSubmitted,
                 slot.emittedDownCount,
@@ -255,7 +297,7 @@ namespace dualpad::input::backend
     void PollCommitCoordinator::QueueHoldSet(PollCommitSlot& slot, const PollCommitRequest& request)
     {
         slot.context = request.context;
-        slot.desiredHeld = true;
+        SetHeldContributor(slot, request.contributor, true);
         if (slot.state == ExecState::Idle) {
             slot.pending.kind = PendingKind::HoldStart;
             slot.pending.queuedAtUs = request.timestampUs != 0 ? request.timestampUs : _nowUs;
@@ -265,14 +307,31 @@ namespace dualpad::input::backend
 
     void PollCommitCoordinator::QueueHoldClear(PollCommitSlot& slot)
     {
-        slot.desiredHeld = false;
-        slot.pending.kind = PendingKind::HoldEnd;
+        SetHeldContributor(slot, HeldContributor::Gamepad, false);
+        if (!IsSingleEmitterHoldAction(slot.actionId)) {
+            slot.pending.kind = PendingKind::HoldEnd;
+        }
+    }
+
+    void PollCommitCoordinator::QueueToggle(PollCommitSlot& slot, const PollCommitRequest& request)
+    {
+        slot.context = request.context;
+
+        if (!CanStartNewTransaction(slot)) {
+            ++slot.droppedPulseCount;
+            return;
+        }
+
+        slot.pending.pendingNextPulse = false;
+        slot.pending.kind = PendingKind::Toggle;
+        slot.pending.epoch = slot.epoch;
+        slot.pending.queuedAtUs = request.timestampUs != 0 ? request.timestampUs : _nowUs;
     }
 
     void PollCommitCoordinator::QueueRepeatSet(PollCommitSlot& slot, const PollCommitRequest& request)
     {
         slot.context = request.context;
-        slot.desiredHeld = true;
+        SetHeldContributor(slot, request.contributor, true);
         if (slot.state == ExecState::Idle &&
             slot.pending.kind == PendingKind::None) {
             slot.pending.kind = PendingKind::RepeatStart;
@@ -285,13 +344,14 @@ namespace dualpad::input::backend
     {
         // Keep the first repeat edge visible for one Poll even when release
         // arrives before the next Poll, but clear sustained held intent.
-        slot.desiredHeld = false;
+        SetHeldContributor(slot, HeldContributor::Gamepad, false);
     }
 
     void PollCommitCoordinator::QueueForceCancel(PollCommitSlot& slot)
     {
         slot.pending.kind = PendingKind::ForceCancel;
-        slot.desiredHeld = false;
+        slot.heldContributorMask = 0;
+        slot.activeHeldEmitter = HeldEmitterSource::None;
     }
 
     void PollCommitCoordinator::TickSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen)
@@ -299,6 +359,9 @@ namespace dualpad::input::backend
         switch (slot.mode) {
         case PollCommitMode::Pulse:
             TickPulseSlot(slot, nowUs, gateOpen);
+            break;
+        case PollCommitMode::Toggle:
+            TickToggleSlot(slot, nowUs, gateOpen);
             break;
         case PollCommitMode::Hold:
             TickHoldSlot(slot, nowUs, gateOpen);
@@ -372,32 +435,64 @@ namespace dualpad::input::backend
     void PollCommitCoordinator::TickHoldSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen)
     {
         const auto canOpen = ShouldOpenGateForSlot(slot, gateOpen);
+        const auto desiredEmitter = ResolveHeldEmitter(slot);
+        const bool syntheticHoldDemand = HasSyntheticHoldDemand(slot);
 
         switch (slot.state) {
         case ExecState::Idle:
             if (slot.pending.kind == PendingKind::ForceCancel) {
                 slot.pending = {};
+                slot.activeHeldEmitter = HeldEmitterSource::None;
+                slot.pendingGamepadHandoff = false;
                 break;
             }
-            if (slot.desiredHeld) {
+            if (syntheticHoldDemand) {
+                if (slot.activeHeldEmitter == HeldEmitterSource::KeyboardMouse &&
+                    desiredEmitter == HeldEmitterSource::Gamepad) {
+                    if (!slot.pendingGamepadHandoff) {
+                        slot.pendingGamepadHandoff = true;
+                        slot.activeHeldEmitter = HeldEmitterSource::Gamepad;
+                        if (ShouldLogCoordinator()) {
+                            logger::info(
+                                "[DualPad][SprintProbe] Queue KeyboardMouse -> Gamepad handoff gap (state={}, pending={})",
+                                ToString(slot.state),
+                                ToString(slot.pending.kind));
+                        }
+                        break;
+                    }
+
+                    slot.pendingGamepadHandoff = false;
+                } else {
+                    slot.pendingGamepadHandoff = false;
+                }
+
                 if (canOpen) {
                     StartHoldTransaction(slot, nowUs);
                 } else {
+                    slot.activeHeldEmitter = HeldEmitterSource::Gamepad;
                     TransitionState(slot, ExecState::WaitingForGate, nowUs);
                 }
-            } else if (slot.pending.kind != PendingKind::None) {
-                slot.pending.kind = PendingKind::None;
+            } else {
+                slot.pendingGamepadHandoff = false;
+                slot.activeHeldEmitter = desiredEmitter;
+                if (slot.pending.kind != PendingKind::None) {
+                    slot.pending.kind = PendingKind::None;
+                }
             }
             break;
 
         case ExecState::WaitingForGate:
             if (slot.pending.kind == PendingKind::ForceCancel) {
                 slot.pending = {};
+                slot.activeHeldEmitter = HeldEmitterSource::None;
+                slot.pendingGamepadHandoff = false;
                 TransitionState(slot, ExecState::Idle, nowUs);
                 break;
             }
-            if (!slot.desiredHeld) {
+            if (!syntheticHoldDemand) {
                 slot.pending.kind = PendingKind::None;
+                slot.pendingGamepadHandoff = false;
+                slot.activeHeldEmitter = desiredEmitter;
                 TransitionState(slot, ExecState::Idle, nowUs);
                 break;
             }
@@ -408,7 +503,7 @@ namespace dualpad::input::backend
             break;
 
         case ExecState::HoldDownVisible:
-            if (slot.pending.kind == PendingKind::ForceCancel || !slot.desiredHeld) {
+            if (slot.pending.kind == PendingKind::ForceCancel || !syntheticHoldDemand) {
                 TransitionState(slot, ExecState::ReleaseGap, nowUs);
             }
             break;
@@ -462,7 +557,7 @@ namespace dualpad::input::backend
                 TransitionState(slot, ExecState::ReleaseGap, nowUs);
                 break;
             }
-            if (!slot.desiredHeld &&
+            if (!HasHeldContributors(slot) &&
                 slot.token.active &&
                 slot.token.downSubmitted) {
                 TransitionState(slot, ExecState::ReleaseGap, nowUs);
@@ -479,7 +574,9 @@ namespace dualpad::input::backend
     void PollCommitCoordinator::InvalidateStaleState(PollCommitSlot& slot)
     {
         slot.pending = {};
-        slot.desiredHeld = false;
+        slot.heldContributorMask = 0;
+        slot.activeHeldEmitter = HeldEmitterSource::None;
+        slot.pendingGamepadHandoff = false;
         ++slot.cancelledCount;
 
         if (slot.token.active && slot.token.downSubmitted && !slot.token.releaseSubmitted) {
@@ -521,6 +618,7 @@ namespace dualpad::input::backend
         slot.token.downAtUs = nowUs;
         slot.token.earliestReleaseAtUs = nowUs;
         slot.pending.kind = PendingKind::None;
+        slot.activeHeldEmitter = HeldEmitterSource::Gamepad;
         TransitionState(slot, ExecState::HoldDownVisible, nowUs);
     }
 
@@ -537,7 +635,7 @@ namespace dualpad::input::backend
         const auto mode = slot.mode;
         ClearToken(slot);
 
-        if (mode == PollCommitMode::Pulse) {
+        if (mode == PollCommitMode::Pulse || mode == PollCommitMode::Toggle) {
             if (slot.pending.pendingNextPulse) {
                 slot.pending.pendingNextPulse = false;
                 slot.pending.kind = PendingKind::Pulse;
@@ -558,7 +656,7 @@ namespace dualpad::input::backend
             return;
         }
 
-        if (slot.desiredHeld) {
+        if (HasSyntheticHoldDemand(slot)) {
             if (ShouldOpenGateForSlot(slot, _lastGameplayGateOpen)) {
                 if (mode == PollCommitMode::Repeat) {
                     StartRepeatTransaction(slot, nowUs);
@@ -569,11 +667,14 @@ namespace dualpad::input::backend
                 slot.pending.kind = mode == PollCommitMode::Repeat ?
                     PendingKind::RepeatStart :
                     PendingKind::HoldStart;
+                slot.activeHeldEmitter = HeldEmitterSource::Gamepad;
                 TransitionState(slot, ExecState::WaitingForGate, nowUs);
             }
             return;
         }
 
+        slot.pendingGamepadHandoff = false;
+        slot.activeHeldEmitter = ResolveHeldEmitter(slot);
         slot.pending.kind = PendingKind::None;
         TransitionState(slot, ExecState::Idle, nowUs);
     }
@@ -623,7 +724,163 @@ namespace dualpad::input::backend
             (slot.token.active ||
              slot.pending.kind != PendingKind::None ||
              slot.pending.pendingNextPulse ||
-             slot.desiredHeld ||
+             HasHeldContributors(slot) ||
              slot.state != ExecState::Idle);
+    }
+
+    bool PollCommitCoordinator::IsSingleEmitterHoldAction(RE::BSFixedString actionId) const
+    {
+        return actionId == actions::Sprint;
+    }
+
+    HeldEmitterSource PollCommitCoordinator::ResolveHeldEmitter(const PollCommitSlot& slot) const
+    {
+        if (IsSingleEmitterHoldAction(slot.actionId)) {
+            const bool hasGamepad = HasHeldContributor(slot, HeldContributor::Gamepad);
+            const bool hasKeyboardMouse = HasHeldContributor(slot, HeldContributor::KeyboardMouse);
+
+            switch (slot.activeHeldEmitter) {
+            case HeldEmitterSource::Gamepad:
+                if (hasGamepad) {
+                    return HeldEmitterSource::Gamepad;
+                }
+                if (hasKeyboardMouse) {
+                    return HeldEmitterSource::KeyboardMouse;
+                }
+                return HeldEmitterSource::None;
+
+            case HeldEmitterSource::KeyboardMouse:
+                if (hasKeyboardMouse) {
+                    return HeldEmitterSource::KeyboardMouse;
+                }
+                if (hasGamepad) {
+                    return HeldEmitterSource::Gamepad;
+                }
+                return HeldEmitterSource::None;
+
+            case HeldEmitterSource::None:
+            default:
+                if (hasKeyboardMouse) {
+                    return HeldEmitterSource::KeyboardMouse;
+                }
+                if (hasGamepad) {
+                    return HeldEmitterSource::Gamepad;
+                }
+                return HeldEmitterSource::None;
+            }
+        }
+
+        if (HasHeldContributor(slot, HeldContributor::Gamepad)) {
+            return HeldEmitterSource::Gamepad;
+        }
+        if (HasHeldContributor(slot, HeldContributor::KeyboardMouse)) {
+            return HeldEmitterSource::KeyboardMouse;
+        }
+        return HeldEmitterSource::None;
+    }
+
+    bool PollCommitCoordinator::HasSyntheticHoldDemand(const PollCommitSlot& slot) const
+    {
+        if (slot.mode != PollCommitMode::Hold && slot.mode != PollCommitMode::Repeat) {
+            return HasHeldContributors(slot);
+        }
+
+        if (!IsSingleEmitterHoldAction(slot.actionId)) {
+            return HasHeldContributors(slot);
+        }
+
+        return ResolveHeldEmitter(slot) == HeldEmitterSource::Gamepad;
+    }
+
+    bool PollCommitCoordinator::HasHeldContributors(const PollCommitSlot& slot) const
+    {
+        return slot.heldContributorMask != 0;
+    }
+
+    bool PollCommitCoordinator::HasHeldContributor(const PollCommitSlot& slot, HeldContributor contributor) const
+    {
+        const auto mask = ToMask(contributor);
+        return mask != 0 && (slot.heldContributorMask & mask) != 0;
+    }
+
+    void PollCommitCoordinator::SetHeldContributor(PollCommitSlot& slot, HeldContributor contributor, bool held)
+    {
+        const auto mask = ToMask(contributor);
+        if (mask == 0) {
+            return;
+        }
+
+        const auto previousMask = slot.heldContributorMask;
+        if (held) {
+            slot.heldContributorMask |= mask;
+        } else {
+            slot.heldContributorMask &= static_cast<std::uint8_t>(~mask);
+        }
+
+        if (ShouldLogCoordinator() &&
+            IsSprintAction(slot.actionId) &&
+            previousMask != slot.heldContributorMask) {
+            logger::info(
+                "[DualPad][SprintProbe] contributor {} -> {} (mask {:02X} -> {:02X}, state={}, pending={}, tokenActive={})",
+                ToString(contributor),
+                held,
+                previousMask,
+                slot.heldContributorMask,
+                ToString(slot.state),
+                ToString(slot.pending.kind),
+                slot.token.active);
+        }
+    }
+
+    void PollCommitCoordinator::TickToggleSlot(PollCommitSlot& slot, std::uint64_t nowUs, bool gateOpen)
+    {
+        const auto canOpen = ShouldOpenGateForSlot(slot, gateOpen);
+
+        switch (slot.state) {
+        case ExecState::Idle:
+            if (slot.pending.kind == PendingKind::ForceCancel) {
+                slot.pending = {};
+                break;
+            }
+            if (slot.pending.kind == PendingKind::Toggle && CanStartNewTransaction(slot)) {
+                if (canOpen) {
+                    StartPulseTransaction(slot, nowUs);
+                    slot.pending.kind = PendingKind::None;
+                } else {
+                    TransitionState(slot, ExecState::WaitingForGate, nowUs);
+                }
+            }
+            break;
+
+        case ExecState::WaitingForGate:
+            if (slot.pending.kind == PendingKind::ForceCancel) {
+                slot.pending = {};
+                TransitionState(slot, ExecState::Idle, nowUs);
+                break;
+            }
+            if (slot.pending.kind != PendingKind::Toggle) {
+                TransitionState(slot, ExecState::Idle, nowUs);
+                break;
+            }
+
+            if (canOpen && CanStartNewTransaction(slot)) {
+                StartPulseTransaction(slot, nowUs);
+                slot.pending.kind = PendingKind::None;
+            }
+            break;
+
+        case ExecState::PulseDownVisible:
+            if (slot.token.active &&
+                slot.token.downSubmitted &&
+                nowUs >= slot.token.earliestReleaseAtUs) {
+                TransitionState(slot, ExecState::ReleaseGap, nowUs);
+            }
+            break;
+
+        case ExecState::ReleaseGap:
+        case ExecState::HoldDownVisible:
+        default:
+            break;
+        }
     }
 }

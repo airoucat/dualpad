@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "input/ContextEventSink.h"
-#include "input/InputContext.h"
+#include "input_v2/context/ContextRefreshTick.h"
+#include "input_v2/menu/UiMenuObserver.h"
 
 namespace logger = SKSE::log;
 
@@ -55,7 +56,7 @@ namespace dualpad::input
         logger::info("[DualPad][ContextSink] All event listeners unregistered");
     }
 
-    // Menu events own the authoritative UI context transitions.
+    // Menu events mark UI truth dirty; PH2 samples RE::UI and publishes the legacy mirror.
     RE::BSEventNotifyControl ContextEventSink::ProcessEvent(
         const RE::MenuOpenCloseEvent* event,
         RE::BSTEventSource<RE::MenuOpenCloseEvent>*)
@@ -64,14 +65,8 @@ namespace dualpad::input
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        auto& contextMgr = ContextManager::GetSingleton();
-
-        if (event->opening) {
-            contextMgr.OnMenuOpen(event->menuName.c_str());
-        }
-        else {
-            contextMgr.OnMenuClose(event->menuName.c_str());
-        }
+        auto& observer = dualpad::input_v2::menu::UiMenuObserver::GetSingleton();
+        observer.MarkMenuEvent(event->menuName.c_str(), event->opening);
 
         return RE::BSEventNotifyControl::kContinue;
     }
@@ -95,17 +90,15 @@ namespace dualpad::input
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        auto& contextMgr = ContextManager::GetSingleton();
-
         if (event->newState == RE::ACTOR_COMBAT_STATE::kCombat) {
 
             logger::info("[DualPad][ContextSink] Player entered combat");
-            contextMgr.SetContext(InputContext::Combat);
+            dualpad::input_v2::context::ContextRefreshTick::GetSingleton().MarkCombatEvent(true);
         }
         else if (event->newState == RE::ACTOR_COMBAT_STATE::kNone) {
 
             logger::info("[DualPad][ContextSink] Player left combat");
-            contextMgr.SetContext(InputContext::Gameplay);
+            dualpad::input_v2::context::ContextRefreshTick::GetSingleton().MarkCombatEvent(false);
         }
 
         return RE::BSEventNotifyControl::kContinue;

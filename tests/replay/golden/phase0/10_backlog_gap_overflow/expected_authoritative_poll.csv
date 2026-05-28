@@ -1,0 +1,3 @@
+poll_sequence,context,context_epoch,source_timestamp_us,down_mask,pressed_mask,released_mask,pulse_mask,unmanaged_down_mask,unmanaged_pressed_mask,unmanaged_released_mask,unmanaged_pulse_mask,managed_mask,committed_down_mask,committed_pressed_mask,committed_released_mask,move_x,move_y,look_x,look_y,left_trigger,right_trigger,has_digital,has_analog,overflowed,coalesced
+0,Gameplay,0,100000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,true,true,false,false
+0,Gameplay,0,100016,0,0,0,0,0,0,0,0,0,0,0,0,0.25,0,0,0,0,0,true,true,true,false

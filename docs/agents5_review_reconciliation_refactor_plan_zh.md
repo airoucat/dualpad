@@ -1,15 +1,15 @@
-# agents5 审核意见对齐与下一轮重构计划
+﻿# agents5 审核意见对齐与下一轮重构计划
 
 更新日期：2026-03-24
 
-这份文档用于把最新一版 [agents5.md](/C:/Users/xuany/Documents/dualPad/agents5.md) 的深度研究建议，与当前仓库实际状态重新对齐，并据此给出下一轮重构计划。
+这份文档用于把最新一版 [agents5.md](../agents5.md) 的深度研究建议，与当前仓库实际状态重新对齐，并据此给出下一轮重构计划。
 
 本文只讨论当前正式主线，不再回到已经退役的实验路线。
 
 适用前提：
-- 当前正式架构见 [current_input_pipeline_zh.md](/C:/Users/xuany/Documents/dualPad/docs/current_input_pipeline_zh.md)
-- 当前 backend ownership 见 [backend_routing_decisions.md](/C:/Users/xuany/Documents/dualPad/docs/backend_routing_decisions.md)
-- 当前清理观察点见 [current_cleanup_risk_review_zh.md](/C:/Users/xuany/Documents/dualPad/docs/current_cleanup_risk_review_zh.md)
+- 当前正式架构见 [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
+- 当前 backend ownership 见 [backend_routing_decisions.md](backend_routing_decisions.md)
+- 当前清理观察点见 [current_cleanup_risk_review_zh.md](current_cleanup_risk_review_zh.md)
 
 本轮结论主要基于当前代码与现行文档交叉核对即可完成，不需要额外新开 IDA 取证；只有在后续进入运行时语义或更底层 producer 行为调整时，才建议再做 MCP/IDA 验证。
 
@@ -43,24 +43,24 @@
 ### 1. native action 元数据分散
 
 当前 native action 的主元数据已经集中到：
-- [NativeActionDescriptor.h](/C:/Users/xuany/Documents/dualPad/src/input/backend/NativeActionDescriptor.h)
-- [NativeActionDescriptor.cpp](/C:/Users/xuany/Documents/dualPad/src/input/backend/NativeActionDescriptor.cpp)
+- [NativeActionDescriptor.h](../src/input/backend/NativeActionDescriptor.h)
+- [NativeActionDescriptor.cpp](../src/input/backend/NativeActionDescriptor.cpp)
 
 `ActionBackendPolicy`、native button materialization、axis projection 当前都共享这张主表。
 
 ### 2. `PadEventSnapshotProcessor` 仍是完全未拆分的 God object
 
 当前已经拆出：
-- [AxisProjection.h](/C:/Users/xuany/Documents/dualPad/src/input/injection/AxisProjection.h)
-- [AxisProjection.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/AxisProjection.cpp)
-- [UnmanagedDigitalPublisher.h](/C:/Users/xuany/Documents/dualPad/src/input/injection/UnmanagedDigitalPublisher.h)
-- [UnmanagedDigitalPublisher.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/UnmanagedDigitalPublisher.cpp)
+- [AxisProjection.h](../src/input/injection/AxisProjection.h)
+- [AxisProjection.cpp](../src/input/injection/AxisProjection.cpp)
+- [UnmanagedDigitalPublisher.h](../src/input/injection/UnmanagedDigitalPublisher.h)
+- [UnmanagedDigitalPublisher.cpp](../src/input/injection/UnmanagedDigitalPublisher.cpp)
 
 所以它已经不是旧版那种“所有事情都塞在一个文件里”的状态，但 orchestration 责任仍然偏重，后续仍值得继续收口。
 
 ### 3. `NativeButtonCommitBackend` 仍保留旧 lifecycle bridge 入口
 
-当前 [NativeButtonCommitBackend.h](/C:/Users/xuany/Documents/dualPad/src/input/backend/NativeButtonCommitBackend.h) 已只保留：
+当前 [NativeButtonCommitBackend.h](../src/input/backend/NativeButtonCommitBackend.h) 已只保留：
 - `BeginFrame()`
 - `ApplyPlannedAction()`
 - `CommitPollState()`
@@ -70,20 +70,20 @@
 
 ### 4. `ActionDispatcher` 对 `KeyboardHelper` 仍有多层厚包装
 
-当前 [ActionDispatcher.cpp](/C:/Users/xuany/Documents/dualPad/src/input/ActionDispatcher.cpp) 已压平成单一 helper dispatch 路径，不再是旧版多层 lifecycle wrapper 结构。
+当前 [ActionDispatcher.cpp](../src/input/ActionDispatcher.cpp) 已压平成单一 helper dispatch 路径，不再是旧版多层 lifecycle wrapper 结构。
 
 ### 5. `AuthoritativePollState` 仍预存 XInput transport 派生字段
 
 当前 transport 派生字段已经移到：
-- [XInputButtonSerialization.h](/C:/Users/xuany/Documents/dualPad/src/input/XInputButtonSerialization.h)
-- [XInputButtonSerialization.cpp](/C:/Users/xuany/Documents/dualPad/src/input/XInputButtonSerialization.cpp)
-- [XInputStateBridge.cpp](/C:/Users/xuany/Documents/dualPad/src/input/XInputStateBridge.cpp)
+- [XInputButtonSerialization.h](../src/input/XInputButtonSerialization.h)
+- [XInputButtonSerialization.cpp](../src/input/XInputButtonSerialization.cpp)
+- [XInputStateBridge.cpp](../src/input/XInputStateBridge.cpp)
 
 `AuthoritativePollState` 已回到“虚拟手柄硬件状态”这一角色。
 
 ### 6. `KeyboardHelperBackend` 的 helper-key 解析仍是长 if 链
 
-当前 [KeyboardHelperBackend.cpp](/C:/Users/xuany/Documents/dualPad/src/input/backend/KeyboardHelperBackend.cpp) 已使用：
+当前 [KeyboardHelperBackend.cpp](../src/input/backend/KeyboardHelperBackend.cpp) 已使用：
 - `kFunctionKeyPoolEntries`
 - `kVirtualKeyPoolEntries`
 - `FindHelperKeyScancode()`
@@ -94,7 +94,7 @@
 
 ### 1. `BindingResolver` 的 subset fallback 仍需继续观察
 
-当前 [BindingResolver.cpp](/C:/Users/xuany/Documents/dualPad/src/input/mapping/BindingResolver.cpp) 里仍有：
+当前 [BindingResolver.cpp](../src/input/mapping/BindingResolver.cpp) 里仍有：
 - `kAllowFallbackWithoutModifiers = true`
 
 这不是当前必须立刻动手的 correctness 问题，但随着组合键面继续扩大，后续需要再次评估。
@@ -108,26 +108,26 @@
 完成内容：
 
 1. 修 `ItemYButton`
-- [NativeActionDescriptor.cpp](/C:/Users/xuany/Documents/dualPad/src/input/backend/NativeActionDescriptor.cpp)
+- [NativeActionDescriptor.cpp](../src/input/backend/NativeActionDescriptor.cpp)
   - `ItemYButton` 已改为 `VirtualPadButtonRoleTriangle`
-- [BindingManager.cpp](/C:/Users/xuany/Documents/dualPad/src/input/BindingManager.cpp)
+- [BindingManager.cpp](../src/input/BindingManager.cpp)
   - `ItemYButton` fallback 已改为 `bits.triangle`
   - `ItemZoom` 继续保留 `bits.r3`
 
 2. 修 `KeyboardNativeBridge` 初始化重试
-- [KeyboardNativeBridge.h](/C:/Users/xuany/Documents/dualPad/src/input/backend/KeyboardNativeBridge.h)
-- [KeyboardNativeBridge.cpp](/C:/Users/xuany/Documents/dualPad/src/input/backend/KeyboardNativeBridge.cpp)
+- [KeyboardNativeBridge.h](../src/input/backend/KeyboardNativeBridge.h)
+- [KeyboardNativeBridge.cpp](../src/input/backend/KeyboardNativeBridge.cpp)
   - 去掉一次失败后永久锁死的 `_initAttempted` 路径
   - 加入 `ReleaseResources()`，允许后续重试
 
 3. 把热路径 info 日志纳入 `RuntimeConfig` gate
-- [PadEventSnapshotProcessor.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/PadEventSnapshotProcessor.cpp)
+- [PadEventSnapshotProcessor.cpp](../src/input/injection/PadEventSnapshotProcessor.cpp)
   - mapping/disptach/blocked-buttons 日志改为按开关输出
-- [UnmanagedDigitalPublisher.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/UnmanagedDigitalPublisher.cpp)
+- [UnmanagedDigitalPublisher.cpp](../src/input/injection/UnmanagedDigitalPublisher.cpp)
   - raw digital pulse 日志改为按开关输出
 
 4. 收紧 `ModEvent` action surface
-- [ActionBackendPolicy.cpp](/C:/Users/xuany/Documents/dualPad/src/input/backend/ActionBackendPolicy.cpp)
+- [ActionBackendPolicy.cpp](../src/input/backend/ActionBackendPolicy.cpp)
   - `IsModEventActionId()` 现在只接受 `ModEventKeyPool` 中实际存在的固定槽位
   - `Mod.*` 已不再被当作正式 mod action 路由
 
@@ -164,11 +164,11 @@
 3. 降低 Poll 单次最坏工作量
 
 具体动作：
-- [PadEventSnapshotDispatcher.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/PadEventSnapshotDispatcher.cpp)
+- [PadEventSnapshotDispatcher.cpp](../src/input/injection/PadEventSnapshotDispatcher.cpp)
   - 增加 bounded drain 版本
   - 每个 Poll 最多处理固定数量 snapshot
   - 剩余 snapshot 采用“保最新 + 标 coalesced”方式处理
-- [PadEventSnapshotProcessor.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/PadEventSnapshotProcessor.cpp)
+- [PadEventSnapshotProcessor.cpp](../src/input/injection/PadEventSnapshotProcessor.cpp)
   - 保持现有 `overflowed / coalesced / sourceTimestampUs` 发布语义
 
 ### Phase 3：gap 处理改成分域 resync
@@ -180,7 +180,7 @@
 2. native gap 不再默认重置 keyboard helper 域
 
 具体动作：
-- [PadEventSnapshotProcessor.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/PadEventSnapshotProcessor.cpp)
+- [PadEventSnapshotProcessor.cpp](../src/input/injection/PadEventSnapshotProcessor.cpp)
   - 用更窄的 native-domain resync 替代全局 `ResetState()`
 
 ### Phase 4：bridge 纯序列化
@@ -192,9 +192,9 @@
 2. 让 `XInputStateBridge` 只做 transport 序列化
 
 具体动作：
-- [UpstreamGamepadHook.cpp](/C:/Users/xuany/Documents/dualPad/src/input/injection/UpstreamGamepadHook.cpp)
+- [UpstreamGamepadHook.cpp](../src/input/injection/UpstreamGamepadHook.cpp)
   - 显式组织 drain / commit / fill synthetic state 的顺序
-- [XInputStateBridge.cpp](/C:/Users/xuany/Documents/dualPad/src/input/XInputStateBridge.cpp)
+- [XInputStateBridge.cpp](../src/input/XInputStateBridge.cpp)
   - 移除 bridge 内部 `CommitPollState()` 调用
 
 ### Phase 5：低风险精简

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "input/InputContext.h"
+#include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/backend/ActionLifecyclePolicy.h"
 #include "input/backend/ActionOutputContract.h"
 

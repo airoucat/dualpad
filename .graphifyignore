@@ -1,0 +1,22 @@
+# Code-centric graph for repo-local workflow automation
+docs
+build
+bin
+lib
+.xmake
+.codex
+.codex_xmake
+.vs
+.vscode
+.idea
+.history
+.dualpad-builder
+.learnings
+graphify-out
+Interface
+backup.patch
+
+# Exclude repo-local agent docs from the graph so hooks stay code-focused
+AGENTS.md
+AGENTS.win.md
+AGENTS.mac.md
