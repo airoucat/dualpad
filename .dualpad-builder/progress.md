@@ -1938,3 +1938,22 @@
   - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+
+## 2026-05-28 23:07:44 CST
+
+- `PH8b` Conditional Go follow-up / public-surface proof wiring：
+  - 复核 Conditional Go 反馈：governance old-truth blocker 已解除；剩余主要风险是 public-surface proof 未进入默认 CI，以及 work-packages 中默认 CI 自动化与人工 close-out 项 wording 边界不够清楚。
+  - 已将 `DualPadPresentationProjectionTests` 接入 `scripts/ci/run_phase8_ci.ps1`，默认 CI 现在 build/run 6 个 canonical runtime targets，并额外 build/run public-surface support proof target。
+  - `DualPadPresentationProjectionTests` 明确只作为 `SkyrimCompatibilitySurface` / presentation projection / shadow parity support proof；它不是 canonical target，不替代也不重命名 6 个 canonical runtime targets。
+  - 已更新 `README.md`、`docs/harness/dualpad-builder.md`、`docs/authoritative-baseline/work-packages/README.md`、`.dualpad-builder/feature_list.json` 与 `.dualpad-builder/sprint_plan.json`，把默认 CI 自动项与人工 close-out 必做项拆开，并把 6 个 canonical runtime targets、public-surface support proof 与 DocGen target 分开表述。
+  - 已扩展 `scripts/ci/check_reviewed_docs_consistency.py`，要求 Phase 8 CI 继续包含 6 个 canonical targets 与 `DualPadPresentationProjectionTests`，并要求 work-packages 保留自动 CI / 人工 close-out 边界 marker。
+  - 本轮未改 runtime、canonical CI target 名称、replay root 或旧 SWF 返回 shape。
+- 验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 docgen、reviewed-doc / builder-status consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `xmake run DualPadInputV2Tests` stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPad` 受本机 xmake 配置影响输出 local deploy 路径；该部署输出不写入共享 truth。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。

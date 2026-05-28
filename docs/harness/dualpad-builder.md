@@ -85,7 +85,7 @@ PH8b 之后的默认验证入口固定为：
 - `scripts/ci/run_phase8_ci.ps1`
 - `.github/workflows/dualpad-ci.yml`
 
-默认 CI 必须直接引用同名 canonical targets：
+默认 CI 必须直接引用同名 canonical runtime targets：
 
 - `DualPadReplayTests`
 - `DualPadInputV2Tests`
@@ -93,7 +93,16 @@ PH8b 之后的默认验证入口固定为：
 - `DualPadPromptSnapshotTests`
 - `DualPadPropertyTests`
 - `DualPadFuzzRegressionTests`
+
+默认 CI 必须运行 DocGen target：
+
 - `DualPadDocGen`
+
+默认 CI 还必须运行 public-surface support proof：
+
+- `DualPadPresentationProjectionTests`
+
+该 target 只负责验证 `SkyrimCompatibilitySurface` / presentation projection / shadow parity 等 public-surface 合同；它不是 canonical target，不得替代上面 6 个 runtime canonical targets，也不得触发 canonical target 重命名。
 
 `docs/generated/*.md` 只能由 `DualPadDocGen` 生成；reviewed docs 只允许引用或解释这些 generated facts。
 

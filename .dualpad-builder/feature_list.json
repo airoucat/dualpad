@@ -320,7 +320,7 @@
       "status": "completed",
       "passes": true,
       "acceptance": [
-        "docgen provenance、reviewed docs 去重和默认 CI 接线完成",
+        "docgen provenance、reviewed docs 去重和默认 CI 接线完成；默认 CI 直接运行 6 个 canonical runtime targets，并额外运行 DualPadPresentationProjectionTests 作为 public-surface support proof",
         "generated facts 与 reviewed narrative 不再争夺 authority",
         "builder memory、baseline、CI 和 graphify close-out 口径一致"
       ]

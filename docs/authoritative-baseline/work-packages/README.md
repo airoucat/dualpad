@@ -28,7 +28,7 @@
 - 固定 `DualPadDocGen` provenance。
 - 把 generated facts 固定到 `docs/generated/`。
 - reviewed docs 去重，只保留 narrative。
-- 默认 CI 直接接同名 canonical targets。
+- 默认 CI 直接接同名 canonical runtime targets，并额外运行 public-surface support proof target。
 - builder memory、baseline、CI 和 graphify close-out 口径一致。
 
 当前结论：
@@ -61,12 +61,19 @@
 - 不迁移 replay root。
 - 不把 `09a` runtime deletion 移到 `09b`。
 
-固定验证入口：
+默认 CI 自动执行：
 
+- `xmake build DualPad`
+- `xmake build/run` 六个 canonical test targets
+- `xmake build/run DualPadPresentationProjectionTests`（public-surface support proof；不是 canonical target）
 - `xmake build DualPadDocGen`
 - `xmake run DualPadDocGen`
-- `xmake build/run` 六个 canonical test targets
-- `xmake build DualPad`
+- `python scripts/dev/generate_dualpad_docs.py`
+- `python scripts/ci/check_reviewed_docs_consistency.py`
+- `git diff --exit-code -- docs/generated`
+
+人工 close-out 必做：
+
 - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
 - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
 - JSON / diff hygiene checks

@@ -447,7 +447,7 @@
       "id": "S-PH8b",
       "unit_id": "PH8b",
       "title": "Phase 8B governance closeout",
-      "goal": "收口 docgen provenance、reviewed docs 去重、测试 target 与默认 CI 接线。",
+      "goal": "收口 docgen provenance、reviewed docs 去重、canonical test targets、public-surface support proof 与默认 CI 接线。",
       "depends_on": [
         "S-PH8a"
       ],
@@ -458,13 +458,15 @@
       "status": "completed",
       "exit_criteria": [
         "generated facts 固定在 docs/generated，reviewed docs 只保留 narrative",
-        "canonical tests 接入默认 CI，且不改名、不换 wrapper target",
+        "canonical tests 接入默认 CI，且不改名、不换 wrapper target；DualPadPresentationProjectionTests 作为 public-surface support proof 接入默认 CI，但不属于 canonical target",
         "builder memory、baseline、CI 和 graphify close-out 口径一致"
       ],
       "verification": [
         "xmake build DualPadDocGen",
         "xmake run DualPadDocGen",
         "运行 09a 固定的 6 类 canonical tests",
+        "xmake build DualPadPresentationProjectionTests",
+        "xmake run DualPadPresentationProjectionTests",
         "验证默认 CI 脚本引用同名 targets",
         "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout"
       ]

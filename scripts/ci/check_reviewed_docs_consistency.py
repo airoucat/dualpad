@@ -91,6 +91,19 @@ def main() -> int:
     if re.search(r"当前仓库的验证入口[\s\S]*(DualPadMenuContextPolicyTests|DualPadRouteHealthContractTests|DualPadGlyphResolutionCompatTests)", harness, flags=re.IGNORECASE):
         failures.append("docs/harness/dualpad-builder.md: old focused targets must not be listed as current default proof.")
 
+    phase8_ci = (ROOT / "scripts/ci/run_phase8_ci.ps1").read_text(encoding="utf-8")
+    for target in [
+        "DualPadReplayTests",
+        "DualPadInputV2Tests",
+        "DualPadIngressTests",
+        "DualPadPromptSnapshotTests",
+        "DualPadPropertyTests",
+        "DualPadFuzzRegressionTests",
+        "DualPadPresentationProjectionTests",
+    ]:
+        if target not in phase8_ci:
+            failures.append(f"scripts/ci/run_phase8_ci.ps1: default CI must build/run {target}.")
+
     feature_data = json.loads((ROOT / ".dualpad-builder/feature_list.json").read_text(encoding="utf-8"))
     features = {item["id"]: item for item in feature_data["features"]}
     for feature_id in ["DP1", "DP2", "DP3", "DP4", "PH0", "PH1", "PH2", "PH3", "PH4", "PH5", "PH6", "PH7", "PH8", "PH8a", "PH8b"]:
@@ -123,6 +136,9 @@ def main() -> int:
             failures.append(f"docs/authoritative-baseline/work-packages/README.md: missing current status marker {marker}.")
     if "`DP5`：`planned`（post-closeout hardening；不是新的 runtime phase）" not in work_packages:
         failures.append("docs/authoritative-baseline/work-packages/README.md: DP5 must be marked as post-closeout hardening, not a runtime phase.")
+    for marker in ["默认 CI 自动执行", "人工 close-out 必做", "DualPadPresentationProjectionTests"]:
+        if marker not in work_packages:
+            failures.append(f"docs/authoritative-baseline/work-packages/README.md: missing close-out validation boundary marker {marker}.")
 
     if failures:
         print("reviewed doc consistency check failed:")
