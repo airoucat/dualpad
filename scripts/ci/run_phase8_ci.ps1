@@ -34,4 +34,5 @@ Invoke-Step xmake @("run", "DualPadPropertyTests")
 Invoke-Step xmake @("run", "DualPadFuzzRegressionTests")
 
 Invoke-Step python @("scripts/dev/generate_dualpad_docs.py")
+Invoke-Step python @("scripts/ci/check_reviewed_docs_consistency.py")
 Invoke-Step git @("diff", "--exit-code", "--", "docs/generated")

@@ -20,20 +20,25 @@
 
 ## 当前仓库状态
 
-- 当前正式主线是：
-  - `HidReader -> PadState -> PadEventSnapshot -> FrameActionPlan -> ActionLifecycleCoordinator -> NativeButtonCommitBackend -> AuthoritativePollState -> UpstreamGamepadHook -> XInputStateBridge`
+- 当前正式 runtime mainline 是：
+  - `HidReader -> PadState -> PadEventSnapshotDispatcher / PadEventSnapshotProcessor shim -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner -> SkyrimCompatibilitySurface / ScaleformPromptAdapter -> UpstreamGamepadHook -> XInputStateBridge`
+- `src/input_v2/` 是当前唯一正式 runtime mainline；旧 `PadEventSnapshotDispatcher / PadEventSnapshotProcessor` 只允许作为 shim / adapter 存在，不得持有 authority。
 - 当前唯一正式支持面仍是：
   - `Skyrim SE 1.5.97`
   - `CommonLibSSE-NG`
-- `Gameplay presentation owner` 的 Phase 2 已并入默认主线，不再作为运行时回退开关。
-- 动态图标当前已落地、且可直接在 repo 内继续推进的 surface 仍是：
+- `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，且不新增后续 runtime phase。
+- `PH8a` 已完成 runtime closeout；`PH8b` 已完成 governance closeout，后续治理工作不能重开 runtime 主线裁决。
+- `ScaleformGlyphBridge`、`GlyphResolutionCompat` 与旧 SWF API 只允许作为 `PromptRuntimeOwner / PromptService` 的兼容包装层，不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority。
+- 动态图标当前已落地、且可直接在 repo 内继续维护的 surface 是：
   - `src/input/glyph/ScaleformGlyphBridge.*`
+  - `src/input/glyph/GlyphResolutionCompat.*`
+  - `src/input_v2/prompt/ScaleformPromptAdapter.*`
+  - `src/input_v2/prompt/PromptRuntimeOwner.*`
   - `config/DualPadBindings.ini`
   - `Interface/startmenu.swf`
 - `FavoritesMenu` 的专项 SWF patch workspace、页面源码和页面级 broker 当前不在 repo 内；
   如果任务重新落到该页面，第一步是恢复工作区，而不是直接修页面逻辑。
-- `DP1a`、`DP4a` 与 `PH0` 已完成；`PH1` - `PH8B` 仍是 `.dualpad-builder/` planned backlog。
-- `PH1` 尚未启动；后续 slice 开工前必须按 builder memory 从 `planned` 晋升并记录 progress。
+- `DP5` / `S-DP5` 仍是 planned post-closeout hardening，不是新的 runtime phase。
 
 ## 新对话的默认阅读顺序
 
@@ -91,8 +96,10 @@
 - 机器私有路径、Skyrim 实例路径、日志路径、外部 live artifact 路径只写到 `AGENTS.win.md` 或 `AGENTS.mac.md`，不要写进共享文档。
 - 不要把 `keyboard-native`、旧 `native button splice`、`XInputGetState` fallback 或缺失的 `FavoritesMenu` workspace 当成当前默认真相。
 - 如果任务是主菜单/通用动态图标：
-  - 继续沿 `ScaleformGlyphBridge + BindingManager + token/descriptor + repo-owned SWF` 主线推进
-  - 但当前推进前仍先回 `docs/authoritative-baseline/README.md` 与 `.dualpad-builder/` 确认 gate；不得绕过后续 Sprint promotion 直接启动 `PH1` 或 `PromptService`
+  - 当前兼容路径固定为 `ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService`。
+  - `DualPad_GetActionGlyphToken` 继续返回单个 token string；`DualPad_GetActionGlyph` 继续保持旧 SWF 兼容 descriptor shape。
+  - 不得把 `BindingManager`、trigger reverse lookup 或 menu fallback 写回当前 glyph authority。
+  - 若要扩展背键、`fn`、组合键、异形键或 Widget / SVG 表达，先做新的治理/验证计划，不在现有 compat surface 中偷改旧 SWF 返回 shape。
 - 如果任务是 `FavoritesMenu`：
   - 第一步先恢复 SWF workspace 与页面源码，再重新做 artifact inventory
 - 在宣称验证通过前，必须真的跑过对应命令或手工验证步骤，并把结果写进 `.dualpad-builder/progress.md`
@@ -113,7 +120,7 @@
   先读 `docs/menu_context_policy_current_status_zh.md`、`docs/gameplay_input_ownership_investigation_and_plan_zh.md`、`docs/gameplay_sustained_digital_and_cursor_handoff_plan_zh.md`。
 
 - “我要改动态 glyph”
-  先读 `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md` 和当前 `.dualpad-builder/sprint_plan.json`，确认当前 gate；`DP1a`、`DP4a` 与 `PH0` 已完成，后续 glyph / prompt 工作仍必须先晋升对应 Sprint。`docs/dynamic_glyph_svg_system_plan_zh.md` 只用于长期 SVG / Widget 方案，不替代当前 compat surface 合同。
+  先读 `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md`、`docs/main_menu_glyph_current_status_zh.md` 和当前 `.dualpad-builder/sprint_plan.json`，确认当前无活跃 Sprint；当前 compat surface 只能沿 `PromptRuntimeOwner / PromptService` 包装层维护。`docs/dynamic_glyph_svg_system_plan_zh.md` 只用于长期 SVG / Widget 方案，不替代当前 compat surface 合同。
 
 - “按默认工作流继续”
   先读 `docs/harness/dualpad-builder.md`、`.dualpad-builder/spec.md`、`.dualpad-builder/feature_list.json`、`.dualpad-builder/sprint_plan.json` 和 `.dualpad-builder/progress.md`，然后按 `Planner -> ce:plan`、`Generator -> ce:work`、`Evaluator -> ce:review` 推进当前 slice。
