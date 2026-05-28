@@ -66,10 +66,10 @@
 
 - current truth 入口根目录始终是 `docs/authoritative-baseline/`
 - 详细代码 reality 仍以 `README.md`、`src/ARCHITECTURE.md`、`docs/DOC_INDEX_zh.md` 和当前事实文档为准
-- 当前正式 runtime mainline 是：
-  - `HidReader -> PadState -> PadEventSnapshotDispatcher / PadEventSnapshotProcessor shim -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner -> SkyrimCompatibilitySurface / ScaleformPromptAdapter -> UpstreamGamepadHook -> XInputStateBridge`
+- 当前正式 runtime authority path 是：
+  - `legacy-named input adapters -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner`
 - `src/input_v2/` 是唯一正式 runtime mainline；`PadEventSnapshotDispatcher / PadEventSnapshotProcessor` 只允许作为 shim / adapter。
-- `AuthoritativePollState` 仅保留 legacy poll compatibility / XInput bridge 侧职责，不再作为 current mainline authority 描述。
+- HID / `PadState` 归一化只属于上游输入 adapter；`SkyrimCompatibilitySurface`、`ScaleformPromptAdapter`、`UpstreamGamepadHook`、`XInputStateBridge` 与 `AuthoritativePollState` 只属于 published / compat state 消费侧，不得写成 current mainline authority。
 - 当前 repo-owned 动态图标 surface 固定为 `ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService` 兼容路径；
   `ScaleformGlyphBridge` 与 `GlyphResolutionCompat` 不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority。
 - `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，不新增后续 runtime phase。

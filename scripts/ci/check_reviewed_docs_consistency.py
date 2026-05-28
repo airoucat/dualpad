@@ -77,6 +77,16 @@ def main() -> int:
         if re.search(r"ScaleformGlyphBridge\s*\+\s*BindingManager|继续沿\s*`?ScaleformGlyphBridge\s*\+\s*BindingManager", text, flags=re.IGNORECASE):
             failures.append(f"{relative}: must not route current glyph work through BindingManager authority.")
 
+    for relative in [
+        pathlib.Path("docs/harness/dualpad-builder.md"),
+        pathlib.Path(".dualpad-builder/spec.md"),
+    ]:
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        if re.search(r"HidReader\s*->\s*PadState", text, flags=re.IGNORECASE):
+            failures.append(f"{relative}: builder memory must not publish HID/PadState normalization as the current runtime authority chain.")
+        if re.search(r"当前[^。\n]*(glyph|图标)[^。\n]*(surface|面)[^。\n]*startmenu\.swf|startmenu\.swf[^。\n]*ScaleformGlyphBridge", text, flags=re.IGNORECASE):
+            failures.append(f"{relative}: builder memory must not describe startmenu.swf as current glyph authority.")
+
     harness = (ROOT / "docs/harness/dualpad-builder.md").read_text(encoding="utf-8")
     if re.search(r"当前仓库的验证入口[\s\S]*(DualPadMenuContextPolicyTests|DualPadRouteHealthContractTests|DualPadGlyphResolutionCompatTests)", harness, flags=re.IGNORECASE):
         failures.append("docs/harness/dualpad-builder.md: old focused targets must not be listed as current default proof.")

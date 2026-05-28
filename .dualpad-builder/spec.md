@@ -16,12 +16,13 @@
 
 - current truth 入口根目录固定为 `docs/authoritative-baseline/`
 - 当前唯一正式支持面仍是 `Skyrim SE 1.5.97`
-- 当前正式 runtime mainline 是：
-  - `HidReader -> PadState -> PadEventSnapshotDispatcher / PadEventSnapshotProcessor shim -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner -> SkyrimCompatibilitySurface / ScaleformPromptAdapter -> UpstreamGamepadHook -> XInputStateBridge`
+- 当前正式 runtime authority path 是：
+  - `legacy-named input adapters -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner`
 - `src/input_v2/` 是唯一正式 runtime mainline；`PadEventSnapshotDispatcher / PadEventSnapshotProcessor` 只允许作为 shim / adapter。
-- `AuthoritativePollState` 仅保留 legacy poll compatibility / XInput bridge 侧职责，不再作为 current mainline authority 描述
+- HID / `PadState` 归一化只属于上游输入 adapter；`SkyrimCompatibilitySurface`、`ScaleformPromptAdapter`、`UpstreamGamepadHook`、`XInputStateBridge` 与 `AuthoritativePollState` 只属于 published / compat state 消费侧，不得写成 current mainline authority
 - `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，不新增后续 runtime phase
-- 当前 repo-owned 动态图标 surface 固定为主菜单 `startmenu.swf`、共享 `ScaleformGlyphBridge` shim、`ScaleformPromptAdapter`、`PromptRuntimeOwner` 和 `PromptService`
+- 当前 repo-owned prompt/glyph compatibility authority 固定为 `ScaleformGlyphBridge` shim、`ScaleformPromptAdapter`、`PromptRuntimeOwner` 和 `PromptService`
+- repo-owned legacy SWF API / artifact 只作为 compat consumer 保持现有 shape；不得写成 glyph authority 或新的默认推进面
 - `ScaleformGlyphBridge` / `GlyphResolutionCompat` 不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority
 - `FavoritesMenu` 的专项 SWF workspace 当前不在 repo 内；如果任务落到这个页面，必须先恢复 workspace 再继续
 - planning / implementation / review 默认采用 `Planner -> ce:plan`、`Generator -> ce:work`、`Evaluator -> ce:review`

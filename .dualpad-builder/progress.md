@@ -1918,3 +1918,23 @@
   - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+
+## 2026-05-28 22:25:45 CST
+
+- `PH8b` governance review / builder-memory wording hardening：
+  - `git fetch origin codex/dynamic-glyph-widget`：exit 0；本地 `HEAD` 与 `origin/codex/dynamic-glyph-widget` 均为 `36c8ab9`。
+  - 复核发现：review 中关于 `DP1` 仍为 `in_progress` / `passes=false` 的状态结论已不符合当前 HEAD；`DP1` - `DP4` 与 `S-DP1` - `S-DP4` 已保持 `completed`，`DP5` / `S-DP5` 保持 planned post-closeout hardening。
+  - 复核同时确认：`docs/harness/dualpad-builder.md` 与 `.dualpad-builder/spec.md` 仍用 `HidReader -> PadState -> ...` 串写 current runtime path，且 `.dualpad-builder/spec.md` 仍把 `startmenu.swf` 放进 current glyph surface wording；这些 wording 容易被静态审查误读为旧 mainline / 旧 glyph surface 复活。
+  - 已将 builder-memory current runtime 描述改为 `legacy-named input adapters -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner` authority path。
+  - 已明确 HID / `PadState` normalization 只是上游 adapter；`SkyrimCompatibilitySurface`、`ScaleformPromptAdapter`、`UpstreamGamepadHook`、`XInputStateBridge` 与 `AuthoritativePollState` 只属于 published / compat state 消费侧，不得写成 current mainline authority。
+  - 已将 `.dualpad-builder/spec.md` 中 glyph wording 收口为 `ScaleformGlyphBridge` shim、`ScaleformPromptAdapter`、`PromptRuntimeOwner` 和 `PromptService`；repo-owned legacy SWF API / artifact 只作为 compat consumer 保持现有 shape，不作为 current glyph authority。
+  - 已扩展 `scripts/ci/check_reviewed_docs_consistency.py`，禁止 harness/spec 再出现 `HidReader -> PadState` current authority chain 或 `startmenu.swf` current glyph authority wording。
+  - 本轮未改 runtime、canonical CI target 名称、replay root 或旧 SWF 返回 shape。
+- 验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadDocGen`，并通过 docgen、reviewed-doc / builder-status consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `xmake run DualPadInputV2Tests` stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPad` 受本机 xmake 配置影响输出 local deploy 路径；该部署输出不写入共享 truth。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
