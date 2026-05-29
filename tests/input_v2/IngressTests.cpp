@@ -230,6 +230,28 @@ namespace
         Require(drained[0].kind == ingress::IngressKind::QueueOverflow, "rejected legacy snapshot batch must publish QueueOverflow");
     }
 
+    void TestRejectedLegacySnapshotAdvancesWatermarkAsDroppedRange()
+    {
+        ingress::IngressHub hub{ 2 };
+
+        Require(hub.PushEvent(PadSample(99, true, true, false)), "setup event must occupy one queue slot");
+        Require(
+            !hub.PushPadSnapshot(LiveHidSnapshot(1, 0x0, 1'000)),
+            "first legacy snapshot batch must overflow when only one slot is available");
+        const auto recovery = hub.Drain();
+        Require(recovery.size() == 1, "overflowed batch must drain to one recovery marker");
+        Require(recovery[0].kind == ingress::IngressKind::QueueOverflow, "overflowed batch must drain QueueOverflow");
+
+        Require(
+            hub.PushPadSnapshot(LiveHidSnapshot(2, 0x0, 2'000)),
+            "next contiguous snapshot must be accepted after overflow drain");
+        const auto accepted = hub.Drain();
+        Require(accepted.size() == 2, "accepted contiguous snapshot must publish ui + pad events");
+        Require(
+            accepted[0].kind != ingress::IngressKind::SequenceGap,
+            "rejected snapshot advances the dropped-range watermark, so the next contiguous snapshot must not emit SequenceGap");
+    }
+
     void TestLegacySequenceDiscontinuityProducesSequenceGap()
     {
         input::PadEventSnapshot snapshot{};
@@ -589,6 +611,7 @@ int main()
     TestHubAssignsSeqAndEmitsOverflowMarker();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
     TestLegacySnapshotBatchOverflowRejectsPartialEvents();
+    TestRejectedLegacySnapshotAdvancesWatermarkAsDroppedRange();
     TestLegacySequenceDiscontinuityProducesSequenceGap();
     TestLiveHidMaskEdgesProducePulseLedger();
     TestLiveHidPressSampleTriggersInteractionEngine();

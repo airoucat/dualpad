@@ -32,9 +32,10 @@ namespace dualpad::input_v2::prompt
     void PromptRuntimeOwner::PublishPresentationState(
         const presentation::PublishedPresentationState& presentation)
     {
+        const auto manifestEpoch = ActiveManifestEpoch();
         std::scoped_lock lock(_mutex);
         _lastPresentation = presentation;
-        (void)RefreshScopeFromActiveManifestLocked();
+        (void)RefreshScopeForManifestEpochLocked(manifestEpoch);
     }
 
     std::uint64_t PromptRuntimeOwner::ActiveManifestEpoch() const
@@ -42,12 +43,12 @@ namespace dualpad::input_v2::prompt
         return actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot().manifestEpoch;
     }
 
-    PublishedPromptScope PromptRuntimeOwner::RefreshScopeFromActiveManifestLocked()
+    PublishedPromptScope PromptRuntimeOwner::RefreshScopeForManifestEpochLocked(std::uint64_t manifestEpoch)
     {
         if (!_lastPresentation) {
             return _projection.GetPublishedPromptScope();
         }
-        return _projection.BuildPromptScope(*_lastPresentation, ActiveManifestEpoch());
+        return _projection.BuildPromptScope(*_lastPresentation, manifestEpoch);
     }
 
     PromptDescriptor PromptRuntimeOwner::Resolve(const PromptQuery& query)
@@ -59,12 +60,13 @@ namespace dualpad::input_v2::prompt
         PublishedPromptScope scope{};
         {
             std::scoped_lock lock(_mutex);
-            scope = RefreshScopeFromActiveManifestLocked();
+            scope = RefreshScopeForManifestEpochLocked(graphSnapshot.manifestEpoch);
         }
 
         if (!bundle || !graph ||
             bundle->manifestEpoch != graphSnapshot.manifestEpoch ||
-            graph->manifestEpoch != graphSnapshot.manifestEpoch) {
+            graph->manifestEpoch != graphSnapshot.manifestEpoch ||
+            scope.manifestEpoch != graphSnapshot.manifestEpoch) {
             return ScopeUnavailableDescriptor(query, scope);
         }
 
@@ -107,7 +109,7 @@ namespace dualpad::input_v2::prompt
     PublishedPromptScope PromptRuntimeOwner::GetPublishedPromptScopeForTests()
     {
         std::scoped_lock lock(_mutex);
-        return RefreshScopeFromActiveManifestLocked();
+        return RefreshScopeForManifestEpochLocked(ActiveManifestEpoch());
     }
 
     void PromptRuntimeOwner::ResetForTests()

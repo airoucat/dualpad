@@ -75,6 +75,9 @@ namespace dualpad::input_v2::ingress
             const auto overflowSeq = NextSeqLocked();
             const auto overflowTime = snapshot.sourceTimestampUs != 0 ? snapshot.sourceTimestampUs : NowMonotonicUs();
             ReplaceBacklogWithOverflowLocked(overflowSeq, overflowTime);
+            // QueueOverflow represents a dropped legacy input range through this snapshot.
+            // Advance the watermark so the next contiguous accepted snapshot does not
+            // report a second SequenceGap for the same discarded range.
             if (snapshot.sequence != 0) {
                 _lastLegacySequence = snapshot.sequence;
             }

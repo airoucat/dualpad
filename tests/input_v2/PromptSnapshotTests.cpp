@@ -328,6 +328,9 @@ namespace
         Require(
             descriptor.status == prompt::PromptQueryStatus::ScopeUnavailable,
             "prompt owner must fail closed when active bundle and graph epochs diverge");
+        Require(
+            descriptor.manifestEpoch == 4242,
+            "scope-unavailable prompt descriptor must report the captured graph snapshot epoch");
 
         LoadRuntimeConfigForPromptTests();
         owner.ResetForTests();

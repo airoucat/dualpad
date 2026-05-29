@@ -858,6 +858,34 @@ namespace
             "synthetic keyboard window must not take over presentation owner");
     }
 
+    void RunRuntimeGraphSkewHealthTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        actions::CompiledActionGraph mismatchedGraph{};
+        mismatchedGraph.manifestEpoch = 77;
+        Require(
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(mismatchedGraph, 77).ok,
+            "test setup must publish a graph with a mismatched manifest epoch");
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                95,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    95'000)),
+            executor);
+
+        Require(result.runtimeHealthDegraded, "runtime graph epoch skew must surface as a health marker");
+        Require(
+            result.projectionFrame.gamepadPlan.transientDigital.count == 0,
+            "runtime graph epoch skew must fail closed without transient gamepad commands");
+    }
+
     void RunRuntimeTransitionRecoveryContractTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -916,6 +944,7 @@ int main()
         RunRuntimePublishedSurfacePipelineTests();
         RunRuntimeLiveStyleGamepadPublishTests();
         RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
+        RunRuntimeGraphSkewHealthTests();
         RunRuntimeTransitionRecoveryContractTests();
         return 0;
     } catch (const std::exception& e) {

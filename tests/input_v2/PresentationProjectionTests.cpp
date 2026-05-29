@@ -225,6 +225,14 @@ void RunPresentationProjectionTests()
     }
 
     {
+        const auto site = presentation::detail::MakeVfuncPatchSite(0x1000, 0x8);
+        Require(
+            site.relocationBase == 0x1000,
+            "vfunc hook site must pass the vtable base to write_vfunc instead of a pre-offset slot address");
+        Require(site.index == 0x8, "vfunc hook site must carry the single vfunc index offset");
+    }
+
+    {
         presentation::GameplayPresentationAdapter adapter;
         const auto first = adapter.PublishForTests(
             presentation::GameplayPresentationAdapterInput{

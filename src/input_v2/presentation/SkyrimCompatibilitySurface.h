@@ -4,6 +4,7 @@
 
 #include "input_v2/presentation/PresentationProjection.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -11,6 +12,25 @@
 
 namespace dualpad::input_v2::presentation
 {
+    namespace detail
+    {
+        struct VfuncPatchSite
+        {
+            std::uintptr_t relocationBase{ 0 };
+            std::size_t index{ 0 };
+        };
+
+        constexpr VfuncPatchSite MakeVfuncPatchSite(
+            std::uintptr_t vtableBase,
+            std::size_t index)
+        {
+            return VfuncPatchSite{
+                .relocationBase = vtableBase,
+                .index = index
+            };
+        }
+    }
+
     struct LegacyCompatibilitySurface
     {
         bool isUsingGamepad{ false };
@@ -58,5 +78,6 @@ namespace dualpad::input_v2::presentation
         PublishedPresentationState _committed{};
         std::uint32_t _lastRefreshEpoch{ 0 };
         bool _installed{ false };
+        bool _installing{ false };
     };
 }

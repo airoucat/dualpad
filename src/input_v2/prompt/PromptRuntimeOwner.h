@@ -32,7 +32,7 @@ namespace dualpad::input_v2::prompt
         PromptRuntimeOwner() = default;
 
         [[nodiscard]] std::uint64_t ActiveManifestEpoch() const;
-        [[nodiscard]] PublishedPromptScope RefreshScopeFromActiveManifestLocked();
+        [[nodiscard]] PublishedPromptScope RefreshScopeForManifestEpochLocked(std::uint64_t manifestEpoch);
 
         mutable std::mutex _mutex;
         PromptProjection _projection;
