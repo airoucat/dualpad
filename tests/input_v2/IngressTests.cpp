@@ -210,6 +210,26 @@ namespace
         Require(stable.facts.controlSamples.size() >= 6, "stable facts must retain non-empty control samples");
     }
 
+    void TestLegacySnapshotBatchOverflowRejectsPartialEvents()
+    {
+        ingress::IngressHub hub{ 1 };
+
+        input::PadEventSnapshot snapshot{};
+        snapshot.sequence = 1;
+        snapshot.firstSequence = 1;
+        snapshot.sourceTimestampUs = 50'000;
+        snapshot.contextEpoch = 7;
+        snapshot.state.timestampUs = 50'000;
+        snapshot.state.sequence = 1;
+
+        Require(!hub.PushPadSnapshot(snapshot), "multi-event legacy snapshot must fail atomically when capacity is too small");
+        Require(hub.PendingLegacySnapshotCount() == 0, "rejected legacy snapshot batch must not increment pending snapshot count");
+
+        const auto drained = hub.Drain();
+        Require(drained.size() == 1, "rejected legacy snapshot batch must leave only one recovery marker");
+        Require(drained[0].kind == ingress::IngressKind::QueueOverflow, "rejected legacy snapshot batch must publish QueueOverflow");
+    }
+
     void TestLegacySequenceDiscontinuityProducesSequenceGap()
     {
         input::PadEventSnapshot snapshot{};
@@ -548,12 +568,27 @@ namespace
         Require(kernel.facts.menuStackRevision == 4, "kernel menu stack revision mirrors boundary key");
         Require(kernel.facts.deviceFamilyRevision == 5, "kernel device family revision mirrors boundary key");
     }
+
+    void TestBuildKernelFrameUsesIngressMonotonicTimestamp()
+    {
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(AssignSeq({
+            Manifest(1),
+            PadSample(9, true, true, false)
+        }));
+
+        const auto& stable = LastFrame(frames);
+        const auto kernel = ingress::BuildKernelFrame(stable);
+        Require(kernel.facts.monotonicUs == 200, "kernel monotonicUs must use ingress event time, not seq");
+        Require(kernel.kernelRevision == stable.lastSeq, "kernel revision remains sequence-based");
+    }
 }
 
 int main()
 {
     TestHubAssignsSeqAndEmitsOverflowMarker();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
+    TestLegacySnapshotBatchOverflowRejectsPartialEvents();
     TestLegacySequenceDiscontinuityProducesSequenceGap();
     TestLiveHidMaskEdgesProducePulseLedger();
     TestLiveHidPressSampleTriggersInteractionEngine();
@@ -567,6 +602,7 @@ int main()
     TestRecoveryMarkersMapFailClosed();
     TestDeviceMarkerMismatchFailsClosed();
     TestBuildKernelFrameDoesNotAcceptTransition();
+    TestBuildKernelFrameUsesIngressMonotonicTimestamp();
     std::cout << "DualPadIngressTests passed\n";
     return 0;
 }

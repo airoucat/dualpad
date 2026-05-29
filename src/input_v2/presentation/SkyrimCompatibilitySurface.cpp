@@ -26,8 +26,12 @@ namespace dualpad::input_v2::presentation
 
     void SkyrimCompatibilitySurface::Install()
     {
-        if (_installed) {
-            return;
+        {
+            std::scoped_lock lock(_mutex);
+            if (_installed) {
+                return;
+            }
+            _installed = true;
         }
 
         REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId, kIsUsingGamepadCallOffset };
@@ -42,12 +46,12 @@ namespace dualpad::input_v2::presentation
         };
         gamepadHandlerHook.write_vfunc(kGamepadIsEnabledVfuncIndex, StaticIsGamepadDeviceEnabledHook);
 
-        _installed = true;
         logger::info("[DualPad][SkyrimCompat] Installed input_v2 public surface hooks");
     }
 
     void SkyrimCompatibilitySurface::Commit(const PublishedPresentationState& state)
     {
+        std::scoped_lock lock(_mutex);
         _committed = state;
     }
 
@@ -62,12 +66,12 @@ namespace dualpad::input_v2::presentation
 
     bool SkyrimCompatibilitySurface::IsUsingGamepadHook() const
     {
-        return _committed.owner == PresentationOwner::Gamepad;
+        return GetCommittedState().owner == PresentationOwner::Gamepad;
     }
 
     bool SkyrimCompatibilitySurface::GamepadControlsCursorHook() const
     {
-        return _committed.cursorOwner == CursorOwner::Gamepad;
+        return GetCommittedState().cursorOwner == CursorOwner::Gamepad;
     }
 
     bool SkyrimCompatibilitySurface::IsGamepadDeviceEnabledHook(bool remapMode) const
@@ -75,11 +79,12 @@ namespace dualpad::input_v2::presentation
         if (!remapMode) {
             return true;
         }
-        return _committed.owner == PresentationOwner::Gamepad;
+        return GetCommittedState().owner == PresentationOwner::Gamepad;
     }
 
     bool SkyrimCompatibilitySurface::ShouldRefreshMenus()
     {
+        std::scoped_lock lock(_mutex);
         const bool presentationDirty =
             HasDirtyFlag(_committed.dirty, PresentationDirtyFlags::Family) ||
             HasDirtyFlag(_committed.dirty, PresentationDirtyFlags::Owner) ||
@@ -96,18 +101,19 @@ namespace dualpad::input_v2::presentation
         const LegacyCompatibilitySurface& legacy,
         bool remapMode) const
     {
+        const auto committed = GetCommittedState();
         PresentationParityRecord record{
-            .contextRevision = _committed.contextRevision,
-            .deviceFamilyRevision = _committed.deviceFamilyRevision,
-            .gameplayPresentationRevision = _committed.gameplayPresentationRevision,
-            .epoch = _committed.epoch,
-            .reason = _committed.reason
+            .contextRevision = committed.contextRevision,
+            .deviceFamilyRevision = committed.deviceFamilyRevision,
+            .gameplayPresentationRevision = committed.gameplayPresentationRevision,
+            .epoch = committed.epoch,
+            .reason = committed.reason
         };
 
-        const bool projectedIsUsingGamepad = _committed.owner == PresentationOwner::Gamepad;
-        const bool projectedCursor = _committed.cursorOwner == CursorOwner::Gamepad;
+        const bool projectedIsUsingGamepad = committed.owner == PresentationOwner::Gamepad;
+        const bool projectedCursor = committed.cursorOwner == CursorOwner::Gamepad;
         const bool projectedDeviceEnabled =
-            !remapMode || _committed.owner == PresentationOwner::Gamepad;
+            !remapMode || committed.owner == PresentationOwner::Gamepad;
 
         if (legacy.isUsingGamepad != projectedIsUsingGamepad) {
             record.diffs.push_back("isUsingGamepad");
@@ -122,8 +128,9 @@ namespace dualpad::input_v2::presentation
         return record;
     }
 
-    const PublishedPresentationState& SkyrimCompatibilitySurface::GetCommittedState() const
+    PublishedPresentationState SkyrimCompatibilitySurface::GetCommittedState() const
     {
+        std::scoped_lock lock(_mutex);
         return _committed;
     }
 

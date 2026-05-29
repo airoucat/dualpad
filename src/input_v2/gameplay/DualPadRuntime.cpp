@@ -78,7 +78,10 @@ namespace dualpad::input_v2::gameplay
         };
 
         if (ingress::ShouldDispatchToInteractionEngine(frame)) {
-            if (const auto graph = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveGraph()) {
+            const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+            if (const auto graph = graphSnapshot.graph;
+                graph && graphSnapshot.manifestEpoch == kernel.facts.manifestEpoch &&
+                graph->manifestEpoch == kernel.facts.manifestEpoch) {
                 const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
                 resolved = _interactionEngine.Resolve(
                     *graph,

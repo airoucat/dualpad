@@ -5,6 +5,7 @@
 #include "input_v2/presentation/PresentationProjection.h"
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -46,13 +47,14 @@ namespace dualpad::input_v2::presentation
             const LegacyCompatibilitySurface& legacy,
             bool remapMode) const;
 
-        const PublishedPresentationState& GetCommittedState() const;
+        PublishedPresentationState GetCommittedState() const;
 
     private:
         static bool StaticIsUsingGamepadHook();
         static bool StaticIsGamepadCursorHook();
         static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
 
+        mutable std::mutex _mutex;
         PublishedPresentationState _committed{};
         std::uint32_t _lastRefreshEpoch{ 0 };
         bool _installed{ false };

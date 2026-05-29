@@ -1880,6 +1880,38 @@
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
 
+## 2026-05-29 21:10:07 CST
+
+- `main` baseline merge 后 runtime hardening follow-up：
+  - 当前跟进分支：`codex/runtime-baseline-hardening`。
+  - 复核用户补充的 2026-05-28 静态 review：其“不应合并 `codex/dynamic-glyph-widget`”前提已因 `main` 完成 baseline merge 而过期；但其中关于 runtime 发布一致性、真实时间语义、legacy snapshot batch overflow 与临时 `backup.patch` 的技术风险仍成立。
+  - 已删除根目录 `backup.patch` 临时补丁 dump，避免其作为误导性 artifact 进入基线。
+  - 已将 `CompiledActionGraphPublisher` 改为单个 `PublishedActionGraphSnapshot`，用 mutex 保护 graph pointer 与 manifest epoch 的同步发布 / 读取。
+  - 已将 `SkyrimCompatibilitySurface` 的 committed presentation state 改为锁保护的按值快照读取，hook 侧不再直接读写未同步成员。
+  - 已修复 `FrameAssembler` 时间语义：`InputFactFrame` / `FactFrame` 保留 ingress `monotonicUs`，`BuildKernelFrame()` 不再把 `lastSeq` 当作微秒时间。
+  - 已将 `IngressHub::PushPadSnapshot()` 改成 legacy snapshot batch 语义；容量不足时整批拒绝并发出单个 `QueueOverflow` recovery marker，不再产生半帧。
+  - 已为 prompt/runtime active graph epoch skew 增加 fail-closed guard：graph snapshot、compiled graph epoch 与 kernel/bundle epoch 不一致时不进入正常 resolve。
+  - 已补充测试覆盖 action graph snapshot、ingress monotonic timestamp、legacy snapshot batch overflow 与 prompt epoch skew。
+  - 本轮未重开 runtime phase，未改 canonical target 名称、replay root、旧 SWF 返回 shape 或 input_v2 runtime 合同。
+- 验证结果：
+  - `xmake build DualPadInputV2Tests`：先在未实现 `GetActiveSnapshot()` 时按 TDD 预期失败；实现后 exit 0。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPresentationProjectionTests`：exit 0。
+  - `xmake run DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 docgen、reviewed-doc / builder-status consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1524 nodes, 3065 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 残余风险 / 后续边界：
+  - 本轮没有做完整统一的 `RuntimeConfigSnapshot { bundle, graph, manifestEpoch }` 架构迁移；当前修复采用 graph snapshot 原子发布并在 prompt/runtime 侧对 epoch skew fail-closed。
+  - `InteractionStateStore` epoch/context key、primary control path exclusivity、`Axis2D` value model、chord timestamp contract、property/fuzz 强化仍属于后续 hardening，不是新 runtime phase。
+
 ## 2026-05-28 19:10:16 CST
 
 - `PH8b` governance review / builder memory drift fixed：

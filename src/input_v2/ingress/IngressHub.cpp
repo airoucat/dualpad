@@ -39,7 +39,7 @@ namespace dualpad::input_v2::ingress
             event.monotonicUs = NowMonotonicUs();
         }
         if (_queue.size() >= _capacity) {
-            ReplaceBacklogWithOverflowLocked();
+            ReplaceBacklogWithOverflowLocked(event.seq, event.monotonicUs);
             return false;
         }
         _queue.push_back(std::move(event));
@@ -49,37 +49,50 @@ namespace dualpad::input_v2::ingress
     bool IngressHub::PushLocked(IngressEvent event)
     {
         if (_queue.size() >= _capacity) {
-            ReplaceBacklogWithOverflowLocked();
+            ReplaceBacklogWithOverflowLocked(event.seq, event.monotonicUs);
             return false;
         }
         _queue.push_back(std::move(event));
         return true;
     }
 
-    void IngressHub::ReplaceBacklogWithOverflowLocked()
+    void IngressHub::ReplaceBacklogWithOverflowLocked(std::uint64_t seq, std::uint64_t monotonicUs)
     {
         IngressEvent overflow = MakeQueueOverflowEvent();
-        overflow.seq = _nextSeq - 1;
-        overflow.monotonicUs = NowMonotonicUs();
+        overflow.seq = seq;
+        overflow.monotonicUs = monotonicUs != 0 ? monotonicUs : NowMonotonicUs();
         _queue.clear();
         _queue.push_back(overflow);
     }
 
     bool IngressHub::PushPadSnapshot(const dualpad::input::PadEventSnapshot& snapshot)
     {
-        const auto converted = ConvertLegacySnapshotToIngressEvents(snapshot, _lastLegacySequence);
-        bool accepted = true;
-        for (auto event : converted) {
-            accepted = PushEvent(std::move(event)) && accepted;
+        std::scoped_lock lock(_mutex);
+        auto converted = ConvertLegacySnapshotToIngressEvents(snapshot, _lastLegacySequence);
+
+        const auto available = _capacity > _queue.size() ? _capacity - _queue.size() : 0;
+        if (converted.size() > available) {
+            const auto overflowSeq = NextSeqLocked();
+            const auto overflowTime = snapshot.sourceTimestampUs != 0 ? snapshot.sourceTimestampUs : NowMonotonicUs();
+            ReplaceBacklogWithOverflowLocked(overflowSeq, overflowTime);
+            if (snapshot.sequence != 0) {
+                _lastLegacySequence = snapshot.sequence;
+            }
+            return false;
+        }
+
+        for (auto& event : converted) {
+            event.seq = NextSeqLocked();
+            if (event.monotonicUs == 0) {
+                event.monotonicUs = NowMonotonicUs();
+            }
+            _queue.push_back(std::move(event));
         }
         if (snapshot.sequence != 0) {
             _lastLegacySequence = snapshot.sequence;
         }
-        {
-            std::scoped_lock lock(_mutex);
-            ++_pendingLegacySnapshots;
-        }
-        return accepted;
+        ++_pendingLegacySnapshots;
+        return true;
     }
 
     void IngressHub::PushManifestEpochChanged(std::uint64_t manifestEpoch)

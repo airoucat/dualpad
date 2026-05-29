@@ -123,9 +123,12 @@ namespace dualpad::input_v2::ingress
         _window.open = true;
         _window.firstSeq = event.seq;
         _window.lastSeq = event.seq;
+        _window.firstMonotonicUs = event.monotonicUs;
+        _window.lastMonotonicUs = event.monotonicUs;
         _window.key = _currentKey;
         _window.facts = _latestFacts;
         ApplyFactsFromBoundaryKey(_window.facts, _currentKey);
+        _window.facts.monotonicUs = event.monotonicUs;
     }
 
     void FrameAssembler::ApplyEventToWindow(const IngressEvent& event)
@@ -134,6 +137,13 @@ namespace dualpad::input_v2::ingress
             StartWindow(event);
         }
         _window.lastSeq = event.seq;
+        if (event.monotonicUs != 0) {
+            if (_window.firstMonotonicUs == 0) {
+                _window.firstMonotonicUs = event.monotonicUs;
+            }
+            _window.lastMonotonicUs = event.monotonicUs;
+            _window.facts.monotonicUs = event.monotonicUs;
+        }
 
         if (event.kind == IngressKind::PadSnapshot) {
             if (event.pad.legacySnapshot) {
@@ -269,7 +279,7 @@ namespace dualpad::input_v2::ingress
         kernel.facts.contextRevision = frame.boundaryKey.contextRevision;
         kernel.facts.menuStackRevision = frame.boundaryKey.menuStackRevision;
         kernel.facts.deviceFamilyRevision = frame.boundaryKey.deviceFamilyRevision;
-        kernel.facts.monotonicUs = frame.lastSeq;
+        kernel.facts.monotonicUs = frame.facts.monotonicUs;
         kernel.state.controlSamples = frame.facts.controlSamples;
         kernel.state.cleanBoundaryBaseline = true;
         kernel.state.healthDegraded = frame.facts.health.boundaryMarkerMismatch ||

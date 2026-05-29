@@ -39,11 +39,7 @@ namespace dualpad::input_v2::prompt
 
     std::uint64_t PromptRuntimeOwner::ActiveManifestEpoch() const
     {
-        const auto graph = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveGraph();
-        if (!graph) {
-            return 0;
-        }
-        return graph->manifestEpoch;
+        return actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot().manifestEpoch;
     }
 
     PublishedPromptScope PromptRuntimeOwner::RefreshScopeFromActiveManifestLocked()
@@ -57,7 +53,8 @@ namespace dualpad::input_v2::prompt
     PromptDescriptor PromptRuntimeOwner::Resolve(const PromptQuery& query)
     {
         const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
-        const auto graph = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveGraph();
+        const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+        const auto graph = graphSnapshot.graph;
 
         PublishedPromptScope scope{};
         {
@@ -65,7 +62,9 @@ namespace dualpad::input_v2::prompt
             scope = RefreshScopeFromActiveManifestLocked();
         }
 
-        if (!bundle || !graph) {
+        if (!bundle || !graph ||
+            bundle->manifestEpoch != graphSnapshot.manifestEpoch ||
+            graph->manifestEpoch != graphSnapshot.manifestEpoch) {
             return ScopeUnavailableDescriptor(query, scope);
         }
 

@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input_v2/context/ContextCatalog.h"
+#include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/presentation/PresentationProjection.h"
 #include "input_v2/prompt/PromptProjection.h"
@@ -305,6 +306,32 @@ namespace
         Require(invalid.buttonArtToken.empty(), "invalid context descriptor must not return generic Menu token");
         Require(invalid.failureReason == "UnknownContext", "invalid context must expose UnknownContext");
     }
+
+    void RunPromptRuntimeOwnerEpochSkewTests()
+    {
+        auto& owner = prompt::PromptRuntimeOwner::GetSingleton();
+        owner.ResetForTests();
+        LoadRuntimeConfigForPromptTests();
+
+        auto mismatchedGraph = Graph();
+        mismatchedGraph.manifestEpoch = 4242;
+        Require(
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(mismatchedGraph, 4242).ok,
+            "test setup must publish mismatched active graph epoch");
+
+        owner.PublishPresentationState(JournalPresentation());
+        const auto descriptor = owner.Resolve(prompt::PromptQuery{
+            .actionId = "Menu.Accept",
+            .selectorKind = prompt::PromptScopeSelectorKind::ExplicitContextName,
+            .contextName = "JournalMenu"
+        });
+        Require(
+            descriptor.status == prompt::PromptQueryStatus::ScopeUnavailable,
+            "prompt owner must fail closed when active bundle and graph epochs diverge");
+
+        LoadRuntimeConfigForPromptTests();
+        owner.ResetForTests();
+    }
 }
 
 int main()
@@ -313,6 +340,7 @@ int main()
         RunPromptProjectionTests();
         RunPromptServiceSuccessTests();
         RunPromptServiceFailClosedTests();
+        RunPromptRuntimeOwnerEpochSkewTests();
         RunPromptRuntimeOwnerTests();
         return 0;
     } catch (const std::exception& e) {

@@ -413,6 +413,9 @@ namespace
         Require(published.ok, "publisher must accept matching manifest epoch");
         Require(publisher.GetActiveGraph() == published.graph, "publisher must hot-swap the active immutable graph through Publish");
         Require(publisher.GetActiveManifestEpoch() == 42, "publisher must expose active manifest epoch");
+        const auto snapshot = publisher.GetActiveSnapshot();
+        Require(snapshot.graph == published.graph, "publisher snapshot must expose the active graph");
+        Require(snapshot.manifestEpoch == 42, "publisher snapshot must expose graph and epoch atomically");
 
         auto& runtimeOwner = actions::CompiledActionGraphPublisher::GetRuntimeOwner();
         runtimeOwner.ResetForTests();
