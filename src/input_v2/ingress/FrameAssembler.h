@@ -34,6 +34,7 @@ namespace dualpad::input_v2::ingress
         std::uint32_t contextRevision{ 0 };
         std::uint32_t menuStackRevision{ 0 };
         std::uint32_t deviceFamilyRevision{ 0 };
+        std::uint64_t monotonicUs{ 0 };
         std::vector<actions::ControlSample> controlSamples;
         std::vector<actions::ControlSample> pulseLedger;
         presentation::SourceEvidenceSnapshot sourceEvidence;
@@ -73,6 +74,8 @@ namespace dualpad::input_v2::ingress
             bool open{ false };
             std::uint64_t firstSeq{ 0 };
             std::uint64_t lastSeq{ 0 };
+            std::uint64_t firstMonotonicUs{ 0 };
+            std::uint64_t lastMonotonicUs{ 0 };
             IngressBoundaryKey key{};
             FactFrame facts{};
         };

@@ -1880,6 +1880,94 @@
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
 
+## 2026-05-30 00:55:06 CST
+
+- `829fb5c` review follow-up / release blocker hardening：
+  - 复核 review finding：`SkyrimCompatibilitySurface::Install()` 的 vfunc hook 确实对 vtable 地址做了 double-offset；这是 release blocker。
+  - 已将 gamepad device enabled vfunc hook 改为只 offset 一次：`REL::Relocation` 保持 vtable base，`write_vfunc()` 只接收 `kGamepadIsEnabledVfuncIndex`。
+  - 已将 `_installed` 标记移动到 hook 写入完成后，并增加 `_installing` guard，避免“标记已安装但 hook 尚未完整写入”的状态。
+  - 已将 `PromptRuntimeOwner` scope refresh 改成显式使用同一个 captured graph snapshot epoch；`Resolve()` 额外校验 `scope.manifestEpoch == graphSnapshot.manifestEpoch`。
+  - 已将 runtime graph / epoch mismatch fail-closed 显式反映到 `DualPadRuntimeResult.runtimeHealthDegraded`，避免只表现为静默无动作。
+  - 已明确 `IngressHub::PushPadSnapshot()` rejected batch 推进 `_lastLegacySequence` 的 dropped-range watermark 合同，并补测试证明 sequence=1 overflow 后 sequence=2 不重复发 `SequenceGap`。
+  - 已补测试覆盖：vfunc patch site 只使用 vtable base + 单一 index、runtime graph skew health marker、dropped-range watermark、ScopeUnavailable descriptor 使用 captured graph epoch。
+  - 本轮未改 canonical target 名称、replay root、旧 SWF 返回 shape，未新增 runtime phase。
+- 验证结果：
+  - `xmake build DualPadPresentationProjectionTests`：先因缺少 `presentation::detail::MakeVfuncPatchSite()` 按 TDD 预期失败；实现后 exit 0。
+  - `xmake run DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build DualPadInputV2Tests`：先因 `DualPadRuntimeResult` 缺少 `runtimeHealthDegraded` 按 TDD 预期失败；实现后 exit 0。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 docgen、reviewed-doc / builder-status consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `xmake build DualPad` 在本机配置下部署到 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`；该路径仅作本机测试目录，不写入共享 truth。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1526 nodes, 3082 edges, 142 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 残余风险 / 后续边界：
+  - 本轮仍未做完整统一的 `RuntimeConfigSnapshot { bundle, graph, manifestEpoch }` 架构迁移；当前 closeout 采用 captured graph snapshot epoch + scope guard + runtime health marker。
+  - `InteractionStateStore` epoch/context key、primary control path exclusivity、`Axis2D` value model、chord timestamp contract、property/fuzz 强化仍属于后续 hardening，不是新 runtime phase。
+
+## 2026-05-31 23:18:45 CST
+
+- `37fd27c` release-candidate review follow-up：
+  - 复核 review finding：`SkyrimCompatibilitySurface::Install()` 已有 `_installing` guard，但没有 failed-state；degraded stable frame 仍会在 `PublishStablePresentationSurface()` 中刷新 `PromptRuntimeOwner` scope。
+  - 已将 install state 收口为 `NotInstalled / Installing / Installed / Failed`，安装失败进入 `Failed`，后续调用不会静默重试，并会记录错误日志。
+  - 已补 `presentation::detail` state-machine 测试，证明 failed install attempt 不能再被当成 fresh install。
+  - 已明确 degraded stable frame 合同：仍允许 commit `SkyrimCompatibilitySurface` 的 public owner / cursor projection，但不 publish `PromptRuntimeOwner` prompt scope。
+  - `PromptRuntimeOwner::GetPublishedPromptScopeForTests()` 改为只读取已发布 scope，不再在 test getter 中隐式 refresh active graph epoch。
+  - 已补 runtime degraded frame 测试：graph skew frame 标记 `runtimeHealthDegraded`，仍更新 Skyrim compat owner，但 prompt scope revision / manifest epoch 不变。
+  - 本轮未改 canonical target 名称、replay root、旧 SWF 返回 shape，未新增 runtime phase。
+- 验证结果：
+  - `xmake build DualPadPresentationProjectionTests; xmake run DualPadPresentationProjectionTests`：先因缺少 `InstallState` / state helper 按 TDD 预期失败；实现后 exit 0。
+  - `xmake build DualPadInputV2Tests; xmake run DualPadInputV2Tests`：先因 degraded frame 仍 publish prompt scope 按 TDD 预期失败；实现后 exit 0；stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadPromptSnapshotTests; xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 docgen、reviewed-doc / builder-status consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `xmake build DualPad` 在本机配置下部署到 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`；SHA256 为 `739A36FCB8B8CB40A74DD1A6C86EE6F668A934780F776130D6F1DAC4518CFE63`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1530 nodes, 3097 edges, 141 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 残余风险 / 后续边界：
+  - 本轮仍未做完整统一的 `RuntimeConfigSnapshot { bundle, graph, manifestEpoch }` 架构迁移。
+  - 多线程 deterministic interleaving reload test、`InteractionStateStore` epoch/context key、primary path exclusivity、`Axis2D` value model、chord timestamp contract、property/fuzz 强化仍属于后续 hardening，不是新 runtime phase。
+
+## 2026-05-29 21:10:07 CST
+
+- `main` baseline merge 后 runtime hardening follow-up：
+  - 当前跟进分支：`codex/runtime-baseline-hardening`。
+  - 复核用户补充的 2026-05-28 静态 review：其“不应合并 `codex/dynamic-glyph-widget`”前提已因 `main` 完成 baseline merge 而过期；但其中关于 runtime 发布一致性、真实时间语义、legacy snapshot batch overflow 与临时 `backup.patch` 的技术风险仍成立。
+  - 已删除根目录 `backup.patch` 临时补丁 dump，避免其作为误导性 artifact 进入基线。
+  - 已将 `CompiledActionGraphPublisher` 改为单个 `PublishedActionGraphSnapshot`，用 mutex 保护 graph pointer 与 manifest epoch 的同步发布 / 读取。
+  - 已将 `SkyrimCompatibilitySurface` 的 committed presentation state 改为锁保护的按值快照读取，hook 侧不再直接读写未同步成员。
+  - 已修复 `FrameAssembler` 时间语义：`InputFactFrame` / `FactFrame` 保留 ingress `monotonicUs`，`BuildKernelFrame()` 不再把 `lastSeq` 当作微秒时间。
+  - 已将 `IngressHub::PushPadSnapshot()` 改成 legacy snapshot batch 语义；容量不足时整批拒绝并发出单个 `QueueOverflow` recovery marker，不再产生半帧。
+  - 已为 prompt/runtime active graph epoch skew 增加 fail-closed guard：graph snapshot、compiled graph epoch 与 kernel/bundle epoch 不一致时不进入正常 resolve。
+  - 已补充测试覆盖 action graph snapshot、ingress monotonic timestamp、legacy snapshot batch overflow 与 prompt epoch skew。
+  - 本轮未重开 runtime phase，未改 canonical target 名称、replay root、旧 SWF 返回 shape 或 input_v2 runtime 合同。
+- 验证结果：
+  - `xmake build DualPadInputV2Tests`：先在未实现 `GetActiveSnapshot()` 时按 TDD 预期失败；实现后 exit 0。
+  - `xmake run DualPadInputV2Tests`：exit 0；stdout 仍包含 publisher epoch mismatch / duplicate binding 的 negative-path error log，进程按测试预期返回 0。
+  - `xmake build DualPadIngressTests`：exit 0。
+  - `xmake run DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build DualPadPresentationProjectionTests`：exit 0。
+  - `xmake run DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build DualPadPromptSnapshotTests`：exit 0。
+  - `xmake run DualPadPromptSnapshotTests`：exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 docgen、reviewed-doc / builder-status consistency lint 与 `git diff --exit-code -- docs/generated`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1524 nodes, 3065 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 残余风险 / 后续边界：
+  - 本轮没有做完整统一的 `RuntimeConfigSnapshot { bundle, graph, manifestEpoch }` 架构迁移；当前修复采用 graph snapshot 原子发布并在 prompt/runtime 侧对 epoch skew fail-closed。
+  - `InteractionStateStore` epoch/context key、primary control path exclusivity、`Axis2D` value model、chord timestamp contract、property/fuzz 强化仍属于后续 hardening，不是新 runtime phase。
+
 ## 2026-05-28 19:10:16 CST
 
 - `PH8b` governance review / builder memory drift fixed：

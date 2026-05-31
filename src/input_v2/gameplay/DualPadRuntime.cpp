@@ -76,9 +76,14 @@ namespace dualpad::input_v2::gameplay
             .manifestEpoch = kernel.facts.manifestEpoch,
             .contextRevision = kernel.facts.contextRevision
         };
+        bool graphAvailableForKernel = false;
 
         if (ingress::ShouldDispatchToInteractionEngine(frame)) {
-            if (const auto graph = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveGraph()) {
+            const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+            if (const auto graph = graphSnapshot.graph;
+                graph && graphSnapshot.manifestEpoch == kernel.facts.manifestEpoch &&
+                graph->manifestEpoch == kernel.facts.manifestEpoch) {
+                graphAvailableForKernel = true;
                 const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
                 resolved = _interactionEngine.Resolve(
                     *graph,
@@ -88,6 +93,9 @@ namespace dualpad::input_v2::gameplay
                 resolved.manifestEpoch = kernel.facts.manifestEpoch;
                 resolved.contextRevision = kernel.facts.contextRevision;
             }
+        }
+        if (ingress::ShouldDispatchToInteractionEngine(frame) && !graphAvailableForKernel) {
+            kernel.state.healthDegraded = true;
         }
 
         const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
@@ -131,7 +139,8 @@ namespace dualpad::input_v2::gameplay
         return DualPadRuntimeResult{
             .projectionFrame = _lastProjectionFrame,
             .output = PollOutputApplyResult{},
-            .gameplayPresentation = _presentationPublisher.GetPublished()
+            .gameplayPresentation = _presentationPublisher.GetPublished(),
+            .runtimeHealthDegraded = true
         };
     }
 
@@ -149,6 +158,9 @@ namespace dualpad::input_v2::gameplay
             contextSnapshot,
             result.gameplayPresentation);
         presentation::SkyrimCompatibilitySurface::GetSingleton().Commit(published);
+        if (result.runtimeHealthDegraded) {
+            return;
+        }
         prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(published);
     }
 
@@ -179,7 +191,8 @@ namespace dualpad::input_v2::gameplay
         return DualPadRuntimeResult{
             .projectionFrame = projection,
             .output = std::move(output),
-            .gameplayPresentation = published
+            .gameplayPresentation = published,
+            .runtimeHealthDegraded = input.kernel.state.healthDegraded
         };
     }
 

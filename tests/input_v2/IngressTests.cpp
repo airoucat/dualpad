@@ -210,6 +210,48 @@ namespace
         Require(stable.facts.controlSamples.size() >= 6, "stable facts must retain non-empty control samples");
     }
 
+    void TestLegacySnapshotBatchOverflowRejectsPartialEvents()
+    {
+        ingress::IngressHub hub{ 1 };
+
+        input::PadEventSnapshot snapshot{};
+        snapshot.sequence = 1;
+        snapshot.firstSequence = 1;
+        snapshot.sourceTimestampUs = 50'000;
+        snapshot.contextEpoch = 7;
+        snapshot.state.timestampUs = 50'000;
+        snapshot.state.sequence = 1;
+
+        Require(!hub.PushPadSnapshot(snapshot), "multi-event legacy snapshot must fail atomically when capacity is too small");
+        Require(hub.PendingLegacySnapshotCount() == 0, "rejected legacy snapshot batch must not increment pending snapshot count");
+
+        const auto drained = hub.Drain();
+        Require(drained.size() == 1, "rejected legacy snapshot batch must leave only one recovery marker");
+        Require(drained[0].kind == ingress::IngressKind::QueueOverflow, "rejected legacy snapshot batch must publish QueueOverflow");
+    }
+
+    void TestRejectedLegacySnapshotAdvancesWatermarkAsDroppedRange()
+    {
+        ingress::IngressHub hub{ 2 };
+
+        Require(hub.PushEvent(PadSample(99, true, true, false)), "setup event must occupy one queue slot");
+        Require(
+            !hub.PushPadSnapshot(LiveHidSnapshot(1, 0x0, 1'000)),
+            "first legacy snapshot batch must overflow when only one slot is available");
+        const auto recovery = hub.Drain();
+        Require(recovery.size() == 1, "overflowed batch must drain to one recovery marker");
+        Require(recovery[0].kind == ingress::IngressKind::QueueOverflow, "overflowed batch must drain QueueOverflow");
+
+        Require(
+            hub.PushPadSnapshot(LiveHidSnapshot(2, 0x0, 2'000)),
+            "next contiguous snapshot must be accepted after overflow drain");
+        const auto accepted = hub.Drain();
+        Require(accepted.size() == 2, "accepted contiguous snapshot must publish ui + pad events");
+        Require(
+            accepted[0].kind != ingress::IngressKind::SequenceGap,
+            "rejected snapshot advances the dropped-range watermark, so the next contiguous snapshot must not emit SequenceGap");
+    }
+
     void TestLegacySequenceDiscontinuityProducesSequenceGap()
     {
         input::PadEventSnapshot snapshot{};
@@ -548,12 +590,28 @@ namespace
         Require(kernel.facts.menuStackRevision == 4, "kernel menu stack revision mirrors boundary key");
         Require(kernel.facts.deviceFamilyRevision == 5, "kernel device family revision mirrors boundary key");
     }
+
+    void TestBuildKernelFrameUsesIngressMonotonicTimestamp()
+    {
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(AssignSeq({
+            Manifest(1),
+            PadSample(9, true, true, false)
+        }));
+
+        const auto& stable = LastFrame(frames);
+        const auto kernel = ingress::BuildKernelFrame(stable);
+        Require(kernel.facts.monotonicUs == 200, "kernel monotonicUs must use ingress event time, not seq");
+        Require(kernel.kernelRevision == stable.lastSeq, "kernel revision remains sequence-based");
+    }
 }
 
 int main()
 {
     TestHubAssignsSeqAndEmitsOverflowMarker();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
+    TestLegacySnapshotBatchOverflowRejectsPartialEvents();
+    TestRejectedLegacySnapshotAdvancesWatermarkAsDroppedRange();
     TestLegacySequenceDiscontinuityProducesSequenceGap();
     TestLiveHidMaskEdgesProducePulseLedger();
     TestLiveHidPressSampleTriggersInteractionEngine();
@@ -567,6 +625,7 @@ int main()
     TestRecoveryMarkersMapFailClosed();
     TestDeviceMarkerMismatchFailsClosed();
     TestBuildKernelFrameDoesNotAcceptTransition();
+    TestBuildKernelFrameUsesIngressMonotonicTimestamp();
     std::cout << "DualPadIngressTests passed\n";
     return 0;
 }

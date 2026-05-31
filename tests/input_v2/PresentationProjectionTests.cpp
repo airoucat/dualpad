@@ -225,6 +225,22 @@ void RunPresentationProjectionTests()
     }
 
     {
+        const auto site = presentation::detail::MakeVfuncPatchSite(0x1000, 0x8);
+        Require(
+            site.relocationBase == 0x1000,
+            "vfunc hook site must pass the vtable base to write_vfunc instead of a pre-offset slot address");
+        Require(site.index == 0x8, "vfunc hook site must carry the single vfunc index offset");
+
+        auto state = presentation::detail::InstallState::NotInstalled;
+        Require(presentation::detail::CanBeginInstall(state), "fresh install state must allow install start");
+        state = presentation::detail::BeginInstall(state);
+        Require(state == presentation::detail::InstallState::Installing, "begin install must enter Installing state");
+        state = presentation::detail::FailInstall(state);
+        Require(state == presentation::detail::InstallState::Failed, "failed install attempt must enter Failed state");
+        Require(!presentation::detail::CanBeginInstall(state), "failed install state must not silently retry");
+    }
+
+    {
         presentation::GameplayPresentationAdapter adapter;
         const auto first = adapter.PublishForTests(
             presentation::GameplayPresentationAdapterInput{

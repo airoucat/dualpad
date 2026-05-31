@@ -27,6 +27,7 @@ namespace dualpad::input_v2::gameplay
         GameplayProjectionFrame projectionFrame{};
         PollOutputApplyResult output{};
         presentation::PublishedGameplayPresentation gameplayPresentation{};
+        bool runtimeHealthDegraded{ false };
     };
 
     class DualPadRuntime

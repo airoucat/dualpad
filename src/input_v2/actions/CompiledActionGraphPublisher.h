@@ -3,6 +3,7 @@
 #include "input_v2/actions/CompiledActionGraph.h"
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace dualpad::input_v2::actions
@@ -11,6 +12,12 @@ namespace dualpad::input_v2::actions
     {
         bool ok{ false };
         std::string message;
+        std::shared_ptr<const CompiledActionGraph> graph;
+    };
+
+    struct PublishedActionGraphSnapshot
+    {
+        std::uint64_t manifestEpoch{ 0 };
         std::shared_ptr<const CompiledActionGraph> graph;
     };
 
@@ -25,10 +32,11 @@ namespace dualpad::input_v2::actions
 
         [[nodiscard]] std::shared_ptr<const CompiledActionGraph> GetActiveGraph() const;
         [[nodiscard]] std::uint64_t GetActiveManifestEpoch() const;
+        [[nodiscard]] PublishedActionGraphSnapshot GetActiveSnapshot() const;
         void ResetForTests();
 
     private:
-        std::shared_ptr<const CompiledActionGraph> _activeGraph;
-        std::uint64_t _activeManifestEpoch{ 0 };
+        mutable std::mutex _mutex;
+        PublishedActionGraphSnapshot _active;
     };
 }

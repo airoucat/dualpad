@@ -413,6 +413,9 @@ namespace
         Require(published.ok, "publisher must accept matching manifest epoch");
         Require(publisher.GetActiveGraph() == published.graph, "publisher must hot-swap the active immutable graph through Publish");
         Require(publisher.GetActiveManifestEpoch() == 42, "publisher must expose active manifest epoch");
+        const auto snapshot = publisher.GetActiveSnapshot();
+        Require(snapshot.graph == published.graph, "publisher snapshot must expose the active graph");
+        Require(snapshot.manifestEpoch == 42, "publisher snapshot must expose graph and epoch atomically");
 
         auto& runtimeOwner = actions::CompiledActionGraphPublisher::GetRuntimeOwner();
         runtimeOwner.ResetForTests();
@@ -855,6 +858,85 @@ namespace
             "synthetic keyboard window must not take over presentation owner");
     }
 
+    void RunRuntimeGraphSkewHealthTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        actions::CompiledActionGraph mismatchedGraph{};
+        mismatchedGraph.manifestEpoch = 77;
+        Require(
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(mismatchedGraph, 77).ok,
+            "test setup must publish a graph with a mismatched manifest epoch");
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                95,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    95'000)),
+            executor);
+
+        Require(result.runtimeHealthDegraded, "runtime graph epoch skew must surface as a health marker");
+        Require(
+            result.projectionFrame.gamepadPlan.transientDigital.count == 0,
+            "runtime graph epoch skew must fail closed without transient gamepad commands");
+    }
+
+    void RunRuntimeDegradedFramePromptPublishContractTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        RecordingPollOutputExecutor baselineExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                94,
+                SourceEvidence(
+                    presentation::DeviceFamily::KeyboardMouse,
+                    1,
+                    false,
+                    94'000)),
+            baselineExecutor);
+
+        const auto beforeScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        const auto beforeCompatEpoch = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().epoch;
+        Require(beforeScope.state == prompt::PromptScopeState::Ready, "baseline frame must publish a prompt scope");
+
+        actions::CompiledActionGraph mismatchedGraph{};
+        mismatchedGraph.manifestEpoch = 77;
+        Require(
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(mismatchedGraph, 77).ok,
+            "test setup must publish a graph with a mismatched manifest epoch");
+
+        RecordingPollOutputExecutor degradedExecutor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                96,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    96'000)),
+            degradedExecutor);
+
+        Require(result.runtimeHealthDegraded, "graph skew frame must be marked degraded");
+        const auto afterCompat = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
+        Require(afterCompat.epoch > beforeCompatEpoch, "degraded frame may still publish Skyrim compatibility owner state");
+        Require(afterCompat.owner == presentation::PresentationOwner::Gamepad, "degraded frame must preserve public owner projection");
+
+        const auto afterScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        Require(
+            afterScope.promptScopeRevision == beforeScope.promptScopeRevision,
+            "degraded frame must not publish a new prompt scope");
+        Require(
+            afterScope.manifestEpoch == beforeScope.manifestEpoch,
+            "degraded frame must not move prompt scope to a mismatched graph epoch");
+    }
+
     void RunRuntimeTransitionRecoveryContractTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -913,6 +995,8 @@ int main()
         RunRuntimePublishedSurfacePipelineTests();
         RunRuntimeLiveStyleGamepadPublishTests();
         RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
+        RunRuntimeGraphSkewHealthTests();
+        RunRuntimeDegradedFramePromptPublishContractTests();
         RunRuntimeTransitionRecoveryContractTests();
         return 0;
     } catch (const std::exception& e) {
