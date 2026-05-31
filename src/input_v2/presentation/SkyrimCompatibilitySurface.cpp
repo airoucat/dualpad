@@ -26,31 +26,32 @@ namespace dualpad::input_v2::presentation
 
     void SkyrimCompatibilitySurface::Install()
     {
-        {
-            std::scoped_lock lock(_mutex);
-            if (_installed || _installing) {
-                return;
+        if (!TryBeginInstall()) {
+            if (GetInstallState() == detail::InstallState::Failed) {
+                logger::error("[DualPad][SkyrimCompat] Previous hook install failed; refusing silent retry");
             }
-            _installing = true;
+            return;
         }
 
-        REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId, kIsUsingGamepadCallOffset };
-        SKSE::GetTrampoline().write_call<6>(usingGamepadHook.address(), StaticIsUsingGamepadHook);
+        try {
+            REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId, kIsUsingGamepadCallOffset };
+            SKSE::GetTrampoline().write_call<6>(usingGamepadHook.address(), StaticIsUsingGamepadHook);
 
-        REL::Relocation<std::uintptr_t> cursorHook{ kGamepadControlsCursorId, kGamepadControlsCursorCallOffset };
-        SKSE::GetTrampoline().write_call<6>(cursorHook.address(), StaticIsGamepadCursorHook);
+            REL::Relocation<std::uintptr_t> cursorHook{ kGamepadControlsCursorId, kGamepadControlsCursorCallOffset };
+            SKSE::GetTrampoline().write_call<6>(cursorHook.address(), StaticIsGamepadCursorHook);
 
-        REL::Relocation<std::uintptr_t> gamepadHandlerVtbl{ kGamepadHandlerVtblId };
-        const auto patchSite = detail::MakeVfuncPatchSite(
-            gamepadHandlerVtbl.address(),
-            kGamepadIsEnabledVfuncIndex);
-        REL::Relocation<std::uintptr_t> gamepadHandlerHook{ patchSite.relocationBase };
-        gamepadHandlerHook.write_vfunc(patchSite.index, StaticIsGamepadDeviceEnabledHook);
+            REL::Relocation<std::uintptr_t> gamepadHandlerVtbl{ kGamepadHandlerVtblId };
+            const auto patchSite = detail::MakeVfuncPatchSite(
+                gamepadHandlerVtbl.address(),
+                kGamepadIsEnabledVfuncIndex);
+            REL::Relocation<std::uintptr_t> gamepadHandlerHook{ patchSite.relocationBase };
+            gamepadHandlerHook.write_vfunc(patchSite.index, StaticIsGamepadDeviceEnabledHook);
 
-        {
-            std::scoped_lock lock(_mutex);
-            _installing = false;
-            _installed = true;
+            MarkInstallSucceeded();
+        } catch (...) {
+            MarkInstallFailed();
+            logger::error("[DualPad][SkyrimCompat] Hook install failed");
+            throw;
         }
 
         logger::info("[DualPad][SkyrimCompat] Installed input_v2 public surface hooks");
@@ -139,6 +140,34 @@ namespace dualpad::input_v2::presentation
     {
         std::scoped_lock lock(_mutex);
         return _committed;
+    }
+
+    bool SkyrimCompatibilitySurface::TryBeginInstall()
+    {
+        std::scoped_lock lock(_mutex);
+        if (!detail::CanBeginInstall(_installState)) {
+            return false;
+        }
+        _installState = detail::BeginInstall(_installState);
+        return true;
+    }
+
+    void SkyrimCompatibilitySurface::MarkInstallSucceeded()
+    {
+        std::scoped_lock lock(_mutex);
+        _installState = detail::CompleteInstall(_installState);
+    }
+
+    void SkyrimCompatibilitySurface::MarkInstallFailed()
+    {
+        std::scoped_lock lock(_mutex);
+        _installState = detail::FailInstall(_installState);
+    }
+
+    detail::InstallState SkyrimCompatibilitySurface::GetInstallState() const
+    {
+        std::scoped_lock lock(_mutex);
+        return _installState;
     }
 
     bool SkyrimCompatibilitySurface::StaticIsUsingGamepadHook()

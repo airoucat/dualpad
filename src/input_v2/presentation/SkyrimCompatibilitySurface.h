@@ -14,6 +14,14 @@ namespace dualpad::input_v2::presentation
 {
     namespace detail
     {
+        enum class InstallState : std::uint8_t
+        {
+            NotInstalled = 0,
+            Installing,
+            Installed,
+            Failed
+        };
+
         struct VfuncPatchSite
         {
             std::uintptr_t relocationBase{ 0 };
@@ -28,6 +36,26 @@ namespace dualpad::input_v2::presentation
                 .relocationBase = vtableBase,
                 .index = index
             };
+        }
+
+        constexpr bool CanBeginInstall(InstallState state)
+        {
+            return state == InstallState::NotInstalled;
+        }
+
+        constexpr InstallState BeginInstall(InstallState state)
+        {
+            return CanBeginInstall(state) ? InstallState::Installing : state;
+        }
+
+        constexpr InstallState CompleteInstall(InstallState state)
+        {
+            return state == InstallState::Installing ? InstallState::Installed : state;
+        }
+
+        constexpr InstallState FailInstall(InstallState state)
+        {
+            return state == InstallState::Installing ? InstallState::Failed : state;
         }
     }
 
@@ -74,10 +102,14 @@ namespace dualpad::input_v2::presentation
         static bool StaticIsGamepadCursorHook();
         static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
 
+        bool TryBeginInstall();
+        void MarkInstallSucceeded();
+        void MarkInstallFailed();
+        detail::InstallState GetInstallState() const;
+
         mutable std::mutex _mutex;
         PublishedPresentationState _committed{};
         std::uint32_t _lastRefreshEpoch{ 0 };
-        bool _installed{ false };
-        bool _installing{ false };
+        detail::InstallState _installState{ detail::InstallState::NotInstalled };
     };
 }

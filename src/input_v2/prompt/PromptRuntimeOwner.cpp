@@ -109,7 +109,7 @@ namespace dualpad::input_v2::prompt
     PublishedPromptScope PromptRuntimeOwner::GetPublishedPromptScopeForTests()
     {
         std::scoped_lock lock(_mutex);
-        return RefreshScopeForManifestEpochLocked(ActiveManifestEpoch());
+        return _projection.GetPublishedPromptScope();
     }
 
     void PromptRuntimeOwner::ResetForTests()

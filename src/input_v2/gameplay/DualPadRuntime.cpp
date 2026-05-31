@@ -158,6 +158,9 @@ namespace dualpad::input_v2::gameplay
             contextSnapshot,
             result.gameplayPresentation);
         presentation::SkyrimCompatibilitySurface::GetSingleton().Commit(published);
+        if (result.runtimeHealthDegraded) {
+            return;
+        }
         prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(published);
     }
 
