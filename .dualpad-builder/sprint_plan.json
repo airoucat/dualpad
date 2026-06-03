@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-05-28T20:04:22+08:00",
+  "updated_at": "2026-06-04T00:48:58+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -486,12 +486,14 @@
       ],
       "status": "planned",
       "exit_criteria": [
-        "只做 post-closeout governance / validation / reporting hardening，不重开 runtime mainline",
+        "只做 DP5-RC20 post-closeout governance / validation / reporting hardening，不重开 runtime mainline",
         "不改 canonical target 名称、replay root、旧 SWF 返回 shape或 input_v2 runtime 合同",
-        "启动前必须单独 promotion，并记录 progress start / verification / closeout"
+        "U0 contract preflight 已完成；U1-U5 必须按 issue 顺序分 slice 推进并记录 progress start / verification / closeout"
       ],
       "verification": [
-        "待具体 hardening slice 确认；默认至少包含 scripts/ci/run_phase8_ci.ps1、builder JSON 校验、graphify rebuild 和 git diff --check"
+        "U0: docs/authoritative-baseline/dp5_rc20_contract_zh.md 已新增并从 authoritative baseline / DOC index 接入",
+        "U0: GitHub Meta #13、U0-U5 #7-#12 已创建；旧 #2-#6 已迁移并以 superseded/not_planned 关闭",
+        "后续具体 hardening slice 默认至少包含 scripts/ci/run_phase8_ci.ps1、builder JSON 校验、graphify rebuild 和 git diff --check"
       ]
     }
   ]

@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-05-28T20:04:22+08:00",
+  "updated_at": "2026-06-04T00:48:58+08:00",
   "features": [
     {
       "id": "WF0",
@@ -339,9 +339,10 @@
       "status": "planned",
       "passes": false,
       "acceptance": [
-        "DP5 / S-DP5 是 PH0-PH8b 之后的 post-closeout hardening，不是新的 runtime phase",
-        "任何 DP5 slice 都不得重开 input_v2 runtime mainline、canonical target 名称、replay root 或旧 SWF 返回 shape",
-        "启动 DP5 前必须单独 promotion，并继续通过 Phase 8 canonical CI、builder JSON、graphify 与 diff hygiene"
+        "DP5 / S-DP5 是 PH0-PH8b 之后的 DP5-RC20 post-closeout hardening / RC readiness；不是新的 runtime phase",
+        "U0 contract preflight 已完成并固定 GitHub Meta #13 与 U0-U5 #7-#12 issue 结构",
+        "任何 DP5-RC20 slice 都不得重开 input_v2 runtime mainline、canonical target 名称、replay root、旧 SWF 返回 shape、FavoritesMenu workspace 或 legacy glyph authority",
+        "后续 U1-U5 必须继续通过 Phase 8 canonical CI、builder JSON、graphify、replay diff 与 diff hygiene"
       ]
     }
   ]

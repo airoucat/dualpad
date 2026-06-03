@@ -36,3 +36,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: Focused targets that explicitly listed `SourceEvidenceCollector.cpp` still passed, but replay and other ph7 consumers failed because `LiveInputFactProducer` depends on the presentation evidence collector. When an input_v2 source group gains a cross-phase dependency, update the reusable group instead of patching only the currently failing target.
 - Related files: `xmake.lua`, `src/input_v2/ingress/LiveInputFactProducer.*`, `src/input_v2/presentation/SourceEvidenceCollector.cpp`
 - Resolution: Moved `SourceEvidenceCollector.cpp` into `ph7_ingress_files` and removed duplicate per-target additions.
+
+## ERR-20260604-001
+
+- Logged: 2026-06-04 00:48 CST
+- Priority: medium
+- Status: resolved
+- Area: GitHub issue migration / PowerShell / network
+- Summary: DP5-RC20 migration script from the downloaded zip failed on a PowerShell parser error, then partially created issues before a GitHub API EOF.
+- Detail: The temporary `create_dp5_rc20_issues.ps1` copy failed around its here-string migration comment block. After replacing the here-string with an array join, a later `gh issue create` run hit GitHub API EOF after creating the milestone and U0-U2. Directly rerunning the original script would have duplicated issues because issue creation was not idempotent.
+- Related files: `build/tmp/dualpad_dp5_rc20_github_issues/.../create_dp5_rc20_issues.ps1`, `docs/authoritative-baseline/dp5_rc20_contract_zh.md`
+- Resolution: Patched only the temporary script copy, queried remote state, then recovered manually with REST `gh api`: created U3-U5 and Meta, added parent comments, migrated #2-#6 to `status:superseded`, and closed them as `not_planned`.
