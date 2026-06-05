@@ -6,6 +6,7 @@
 
 - 无
 - `PH8b` 已完成；`PH0` - `PH8b` closeout 已收口。
+- `DP5-RC20` 已完成 U0 contract preflight；后续 U1-U5 只作为 post-closeout hardening / RC readiness 推进。
 - runtime closeout：`PH8a` 已完成，`PH8b` 不重开 runtime 主线归属。
 - 不新增后续 runtime phase。
 
@@ -47,6 +48,7 @@
 
 ## 当前事实与方案文档
 
+- [authoritative-baseline/dp5_rc20_contract_zh.md](authoritative-baseline/dp5_rc20_contract_zh.md)
 - [backend_routing_decisions.md](backend_routing_decisions.md)
 - [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
 - [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)

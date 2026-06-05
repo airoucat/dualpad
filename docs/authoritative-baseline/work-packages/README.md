@@ -19,7 +19,7 @@
 
 - `PH0` - `PH8b` 是已完成的 rearchitecture / closeout 链。
 - `DP1` - `DP4` 已按 PH8b baseline 结算为 completed，不再代表未完成 current runtime work。
-- `DP5` / `S-DP5` 只表示后续 governance / validation / reporting hardening backlog；它不阻塞 PH8b closeout，也不能重开 runtime mainline。
+- `DP5` / `S-DP5` 仍是 post-closeout hardening backlog；DP5-RC20 issue 结构已建立，但它不阻塞 PH8b closeout，也不能重开 runtime mainline。
 
 ## PH8b Governance Closeout
 
@@ -35,10 +35,35 @@
 
 - `PH8b` / `S-PH8b` 已完成。
 - `DP1` - `DP4` 已同步结算为 `completed` / `passes=true`，避免与 `PH0` - `PH8b` closeout 形成第二状态口径。
-- `DP5` / `S-DP5` 保持 `planned`，但仅作为 post-closeout hardening，不是 active sprint 或后续 runtime phase。
+- `DP5` / `S-DP5` 保持 `planned`，但 DP5-RC20 U0 合同锁定已完成，U1-U5 后续按 GitHub issue 顺序推进。
 - `.dualpad-builder/feature_list.json` 中 `PH8b` 为 `completed` / `passes=true`。
 - `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 为 `completed`，`current_sprint=null`。
 - 本 closeout 不新增后续 runtime phase。
+
+## DP5-RC20 Post-Closeout Hardening
+
+入口：
+
+- `docs/authoritative-baseline/dp5_rc20_contract_zh.md`
+- GitHub Meta issue：#13
+- U0-U5 issues：#7 - #12
+
+状态：
+
+- U0：contract preflight and scope lock 已完成。
+- U1：runtime determinism hardening，下一步实现入口。
+- U2：legacy boundary collapse。
+- U3：product integration and release readiness。
+- U4：config / prompt / menu coverage closure。
+- U5：verification / observability / governance closeout。
+
+硬边界：
+
+- 不新增 runtime phase。
+- 不重开 `input_v2` runtime mainline。
+- 不改 canonical target 名称、replay root 或旧 SWF 返回 shape。
+- 不恢复 `FavoritesMenu` workspace 或 legacy glyph authority。
+- visual icon artwork production 与 DualSense haptics / vibration 都不是本 milestone 默认范围。
 
 首读：
 

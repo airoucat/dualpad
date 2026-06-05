@@ -1,5 +1,51 @@
 # DualPad Builder Progress
 
+## 2026-06-05 23:58:56 CST
+
+- `DP5-RC20` U0 PR #14 远端 Phase8 CI 修复：
+  - 根因：GitHub Windows runner 是干净环境，首次 `xmake build DualPad` 会请求安装 `hidapi 0.14.0` 并等待交互确认；原 `scripts/ci/run_phase8_ci.ps1` 没有传 `-y`，因此远端报 `packages(hidapi): must be installed!`。
+  - 修复：将 Phase8 脚本内所有 `xmake build/run <target>` 调整为 `xmake build/run -y <target>`，保留原 canonical target 顺序，只移除 CI 上的交互确认。
+  - 追加根因：非交互修复后，远端继续失败在 `unknown rule(commonlibsse-ng.plugin)`；原因是 `lib/` 被忽略，`.gitmodules` 只有 CommonLib 条目但当前 `HEAD` 没有 `lib/commonlibsse-ng` gitlink，GitHub checkout 不会自动恢复该目录。
+  - 追加修复：在 `.github/workflows/dualpad-ci.yml` 中新增 `Checkout CommonLibSSE-NG` step，固定 checkout `alandtse/CommonLibVR` 的 `82e62861168308139339e5b8754586bbb556744e` 到 `lib/commonlibsse-ng`，并启用 `submodules: recursive` 恢复 `extern/openvr`。
+- 验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；完整 build/run `DualPad`、`DualPadReplayTests`、`DualPadInputV2Tests`、`DualPadPresentationProjectionTests`、`DualPadIngressTests`、`DualPadPromptSnapshotTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests` 与 `DualPadDocGen`，并通过 generated docs 与 reviewed-doc consistency 检查。
+  - `git ls-remote https://github.com/alandtse/CommonLibVR.git refs/tags/v4.7.0 refs/heads/ng`：exit 0；`refs/tags/v4.7.0` 指向 `82e62861168308139339e5b8754586bbb556744e`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1530 nodes, 3097 edges, 141 communities`。
+
+## 2026-06-04 00:48:58 CST
+
+- `DP5-RC20` issue migration / U0 contract preflight：
+  - 已按 `dualpad_dp5_rc20_github_issues.zip` runbook 创建 GitHub milestone：
+    - `DP5 post-closeout hardening & RC readiness`
+  - 已创建 GitHub issue 结构：
+    - Meta #13 `[DP5-RC20][Meta] Post-closeout hardening & RC readiness`
+    - U0 #7 `Contract preflight and scope lock`
+    - U1 #8 `Runtime determinism hardening`
+    - U2 #9 `Legacy boundary collapse`
+    - U3 #10 `Product integration and release readiness`
+    - U4 #11 `Config / prompt / menu coverage closure`
+    - U5 #12 `Verification / observability / governance closeout`
+  - 已将旧 #2-#6 加入 DP5-RC20 milestone，标记 `status:superseded`，并以 `not_planned` 关闭；迁移评论说明这是 tracking 结构重组，不是声明旧验收项已经自然完成。
+  - 已新增 `docs/authoritative-baseline/dp5_rc20_contract_zh.md`，定义 runtime frame baseline、degraded health、prompt freeze、overflow compaction、hook install failure、legacy shim authority、config/prompt/menu coverage、glyph/icon contract、release blocker 与 non-goals。
+  - 已从 `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md` 与 `docs/DOC_INDEX_zh.md` 接入 DP5-RC20 contract。
+  - `.dualpad-builder/feature_list.json` 中 `DP5` 继续保持 `planned` / `passes=false`，因为 PH8b governance lint 要求 DP5 不升级为 active runtime work；DP5-RC20 作为 issue / contract 结构记录。
+  - `.dualpad-builder/sprint_plan.json` 中 `S-DP5` 继续保持 `planned`，`current_sprint` 仍为 `null`，因为 U0 已完成且当前没有正在执行的 implementation slice。
+- 本轮边界：
+  - 不新增 runtime phase。
+  - 不重开 `input_v2` runtime mainline。
+  - 不改 canonical target 名称、replay root 或旧 SWF 返回 shape。
+  - 不恢复 `FavoritesMenu` workspace、旧 SWF authority、`BindingManager` 或 trigger reverse lookup authority。
+  - visual icon artwork production 与 DualSense haptics / vibration 都不纳入本 milestone，除非后续单独 promotion。
+- 本轮只改治理文档与 builder memory，未改 runtime 代码。
+- 验证结果：
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0，输出 `reviewed docs consistency check passed`。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；build/run 了 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed-doc consistency 检查。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1530 nodes, 3097 edges, 141 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+
 ## 2026-04-18 21:34:08 CST
 
 - 已初始化 `WF0` workflow bootstrap，准备把 `DualPad` 收口到 `harness + ce + graphify` 默认工作流。
