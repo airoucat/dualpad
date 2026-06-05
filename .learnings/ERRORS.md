@@ -47,3 +47,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: The temporary `create_dp5_rc20_issues.ps1` copy failed around its here-string migration comment block. After replacing the here-string with an array join, a later `gh issue create` run hit GitHub API EOF after creating the milestone and U0-U2. Directly rerunning the original script would have duplicated issues because issue creation was not idempotent.
 - Related files: `build/tmp/dualpad_dp5_rc20_github_issues/.../create_dp5_rc20_issues.ps1`, `docs/authoritative-baseline/dp5_rc20_contract_zh.md`
 - Resolution: Patched only the temporary script copy, queried remote state, then recovered manually with REST `gh api`: created U3-U5 and Meta, added parent comments, migrated #2-#6 to `status:superseded`, and closed them as `not_planned`.
+
+## ERR-20260605-001
+
+- Logged: 2026-06-05 23:58 CST
+- Priority: medium
+- Status: resolved
+- Area: GitHub Actions / xmake CI
+- Summary: Phase8 CI failed on GitHub because `xmake build DualPad` prompted for first-time `hidapi` package installation in the clean runner.
+- Detail: Local runs already had packages installed, so the script passed locally without `-y`. On a fresh GitHub Windows runner, `xmake build DualPad` requested confirmation and then failed with `packages(hidapi): must be installed!`. For this xmake version, `-y` must be placed after the task (`xmake build -y DualPad`); `xmake -y build DualPad` is parsed incorrectly and reports `invalid argument: DualPad`.
+- Related files: `scripts/ci/run_phase8_ci.ps1`, `.github/workflows/ci.yml`
+- Resolution: Updated Phase8 CI xmake build/run invocations to pass `-y` after `build` / `run`, then reran `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1` successfully.
