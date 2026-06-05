@@ -27,6 +27,7 @@
 namespace
 {
     namespace actions = dualpad::input_v2::actions;
+    namespace config = dualpad::input_v2::config;
     namespace context = dualpad::input_v2::context;
     namespace gameplay = dualpad::input_v2::gameplay;
     namespace ingress = dualpad::input_v2::ingress;
@@ -153,6 +154,37 @@ namespace
             context::ContextCatalog::BuiltInCatalog());
     }
 
+    context::ResolvedContextSnapshot PublishGameplayContext()
+    {
+        menu::ReconciledMenuStack stack{};
+        stack.menuStackRevision = 12;
+        return context::ContextResolver::GetSingleton().ResolveAndPublish(
+            stack,
+            context::GameplaySubstate::None,
+            context::ContextCatalog::BuiltInCatalog());
+    }
+
+    class ContextInterleavingPollOutputExecutor final : public gameplay::IPollOutputExecutor
+    {
+    public:
+        bool ClearNativeOutput() override { return true; }
+        bool ClearHelperOutput() override { return true; }
+        bool ClearSustainedDigitalAggregator() override { return true; }
+        bool ClearProjectionStickyOwners() override { return true; }
+
+        bool ApplyGatePlan(const gameplay::GatePlan&) override
+        {
+            (void)PublishGameplayContext();
+            return true;
+        }
+
+        bool ApplySustainedDigital(const gameplay::NativeSustainedCommand&) override { return true; }
+        bool ApplyTransientDigital(const gameplay::NativeTransientCommand&) override { return true; }
+        bool ApplyHelperCommand(const gameplay::HelperOutputCommand&) override { return true; }
+        bool PublishAnalogState(const gameplay::ProjectedAnalogState&) override { return true; }
+        bool CommitCleanRecoveryBaseline() override { return true; }
+    };
+
     presentation::SourceEvidenceSnapshot SourceEvidence(
         presentation::DeviceFamily family,
         std::uint32_t deviceFamilyRevision,
@@ -234,6 +266,7 @@ namespace
     void ResetRuntimeSurfaceState(gameplay::DualPadRuntime& runtime)
     {
         runtime.ResetForTests();
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
         context::ContextResolver::GetSingleton().ResetForTests();
         actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
         prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
@@ -880,7 +913,12 @@ namespace
                     95'000)),
             executor);
 
-        Require(result.runtimeHealthDegraded, "runtime graph epoch skew must surface as a health marker");
+        Require(result.RuntimeHealthDegraded(), "runtime graph epoch skew must surface as a health marker");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::ManifestEpochSkew),
+            "runtime graph epoch skew must expose ManifestEpochSkew");
         Require(
             result.projectionFrame.gamepadPlan.transientDigital.count == 0,
             "runtime graph epoch skew must fail closed without transient gamepad commands");
@@ -923,7 +961,12 @@ namespace
                     96'000)),
             degradedExecutor);
 
-        Require(result.runtimeHealthDegraded, "graph skew frame must be marked degraded");
+        Require(result.RuntimeHealthDegraded(), "graph skew frame must be marked degraded");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::ManifestEpochSkew),
+            "graph skew frame must expose ManifestEpochSkew");
         const auto afterCompat = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
         Require(afterCompat.epoch > beforeCompatEpoch, "degraded frame may still publish Skyrim compatibility owner state");
         Require(afterCompat.owner == presentation::PresentationOwner::Gamepad, "degraded frame must preserve public owner projection");
@@ -935,6 +978,43 @@ namespace
         Require(
             afterScope.manifestEpoch == beforeScope.manifestEpoch,
             "degraded frame must not move prompt scope to a mismatched graph epoch");
+    }
+
+    void RunRuntimePresentationUsesFrameBoundContextTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        auto frame = StableMenuFrame(
+            98,
+            SourceEvidence(
+                presentation::DeviceFamily::Gamepad,
+                2,
+                true,
+                98'000));
+        const auto frameContextRevision = frame.facts.contextRevision;
+
+        ContextInterleavingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(frame, executor);
+
+        Require(
+            !result.RuntimeHealthDegraded(),
+            "context interleaving after envelope binding must not degrade the current frame");
+        const auto afterCompat = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
+        Require(
+            afterCompat.uiContextId == context::UiContextId::Journal,
+            "presentation projection must use the frame-bound context instead of a later active context");
+        Require(
+            afterCompat.contextRevision == frameContextRevision,
+            "presentation projection must preserve the frame-bound context revision");
+
+        const auto promptScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        Require(
+            promptScope.uiContextId == context::UiContextId::Journal,
+            "prompt publish must use the same frame-bound context as presentation projection");
+        Require(
+            promptScope.manifestEpoch == frame.facts.manifestEpoch,
+            "prompt publish must use the frame-bound manifest epoch");
     }
 
     void RunRuntimeTransitionRecoveryContractTests()
@@ -997,6 +1077,7 @@ int main()
         RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
         RunRuntimeGraphSkewHealthTests();
         RunRuntimeDegradedFramePromptPublishContractTests();
+        RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
         return 0;
     } catch (const std::exception& e) {

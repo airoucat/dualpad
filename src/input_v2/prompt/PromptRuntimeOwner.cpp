@@ -5,6 +5,8 @@
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 
+#include <utility>
+
 namespace dualpad::input_v2::prompt
 {
     namespace
@@ -32,15 +34,26 @@ namespace dualpad::input_v2::prompt
     void PromptRuntimeOwner::PublishPresentationState(
         const presentation::PublishedPresentationState& presentation)
     {
-        const auto manifestEpoch = ActiveManifestEpoch();
-        std::scoped_lock lock(_mutex);
-        _lastPresentation = presentation;
-        (void)RefreshScopeForManifestEpochLocked(manifestEpoch);
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+        PublishPresentationState(
+            presentation,
+            PromptRuntimeBaseline{
+                .manifestEpoch = graphSnapshot.manifestEpoch,
+                .configGeneration = bundle ? bundle->manifestEpoch : 0,
+                .bundle = bundle,
+                .graph = graphSnapshot
+            });
     }
 
-    std::uint64_t PromptRuntimeOwner::ActiveManifestEpoch() const
+    void PromptRuntimeOwner::PublishPresentationState(
+        const presentation::PublishedPresentationState& presentation,
+        PromptRuntimeBaseline baseline)
     {
-        return actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot().manifestEpoch;
+        std::scoped_lock lock(_mutex);
+        _lastPresentation = presentation;
+        _baseline = std::move(baseline);
+        (void)RefreshScopeForManifestEpochLocked(_baseline->manifestEpoch);
     }
 
     PublishedPromptScope PromptRuntimeOwner::RefreshScopeForManifestEpochLocked(std::uint64_t manifestEpoch)
@@ -53,24 +66,29 @@ namespace dualpad::input_v2::prompt
 
     PromptDescriptor PromptRuntimeOwner::Resolve(const PromptQuery& query)
     {
-        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
-        const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
-        const auto graph = graphSnapshot.graph;
-
+        PromptRuntimeBaseline baseline{};
         PublishedPromptScope scope{};
         {
             std::scoped_lock lock(_mutex);
-            scope = RefreshScopeForManifestEpochLocked(graphSnapshot.manifestEpoch);
+            if (!_baseline) {
+                scope = _projection.GetPublishedPromptScope();
+                return ScopeUnavailableDescriptor(query, scope);
+            }
+            baseline = *_baseline;
+            scope = RefreshScopeForManifestEpochLocked(baseline.manifestEpoch);
         }
 
-        if (!bundle || !graph ||
-            bundle->manifestEpoch != graphSnapshot.manifestEpoch ||
-            graph->manifestEpoch != graphSnapshot.manifestEpoch ||
-            scope.manifestEpoch != graphSnapshot.manifestEpoch) {
+        const auto graph = baseline.graph.graph;
+        if (!baseline.bundle || !graph ||
+            baseline.bundle->manifestEpoch != baseline.manifestEpoch ||
+            baseline.configGeneration != baseline.bundle->manifestEpoch ||
+            baseline.graph.manifestEpoch != baseline.manifestEpoch ||
+            graph->manifestEpoch != baseline.manifestEpoch ||
+            scope.manifestEpoch != baseline.manifestEpoch) {
             return ScopeUnavailableDescriptor(query, scope);
         }
 
-        PromptService service(bundle->catalog, *graph, scope);
+        PromptService service(baseline.bundle->catalog, *graph, scope);
         return service.Resolve(query);
     }
 
@@ -116,6 +134,7 @@ namespace dualpad::input_v2::prompt
     {
         std::scoped_lock lock(_mutex);
         _lastPresentation.reset();
+        _baseline.reset();
         _projection.ResetForTests();
     }
 }

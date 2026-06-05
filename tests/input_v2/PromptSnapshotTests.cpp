@@ -11,6 +11,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string_view>
 
@@ -335,6 +336,49 @@ namespace
         LoadRuntimeConfigForPromptTests();
         owner.ResetForTests();
     }
+
+    void RunPromptRuntimeOwnerExplicitBaselineTests()
+    {
+        auto& owner = prompt::PromptRuntimeOwner::GetSingleton();
+        owner.ResetForTests();
+        LoadRuntimeConfigForPromptTests();
+
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "explicit prompt baseline test needs an active bundle");
+        auto baselineGraph = Graph();
+        baselineGraph.manifestEpoch = bundle->manifestEpoch;
+
+        owner.PublishPresentationState(
+            JournalPresentation(),
+            prompt::PromptRuntimeBaseline{
+                .manifestEpoch = bundle->manifestEpoch,
+                .configGeneration = bundle->manifestEpoch,
+                .bundle = bundle,
+                .graph = actions::PublishedActionGraphSnapshot{
+                    .manifestEpoch = bundle->manifestEpoch,
+                    .graph = std::make_shared<const actions::CompiledActionGraph>(baselineGraph)
+                }
+            });
+
+        auto mismatchedGraph = Graph();
+        mismatchedGraph.manifestEpoch = bundle->manifestEpoch + 1000;
+        Require(
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(mismatchedGraph, mismatchedGraph.manifestEpoch).ok,
+            "test setup must publish a later active graph epoch");
+
+        const auto descriptor = owner.Resolve(prompt::PromptQuery{
+            .actionId = "Menu.Accept",
+            .selectorKind = prompt::PromptScopeSelectorKind::ExplicitContextName,
+            .contextName = "JournalMenu"
+        });
+        Require(descriptor.ok, "prompt resolve must use the stored explicit baseline");
+        Require(
+            descriptor.manifestEpoch == bundle->manifestEpoch,
+            "prompt resolve must report the explicit frame baseline epoch");
+
+        LoadRuntimeConfigForPromptTests();
+        owner.ResetForTests();
+    }
 }
 
 int main()
@@ -343,6 +387,7 @@ int main()
         RunPromptProjectionTests();
         RunPromptServiceSuccessTests();
         RunPromptServiceFailClosedTests();
+        RunPromptRuntimeOwnerExplicitBaselineTests();
         RunPromptRuntimeOwnerEpochSkewTests();
         RunPromptRuntimeOwnerTests();
         return 0;

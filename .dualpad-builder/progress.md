@@ -1,5 +1,31 @@
 # DualPad Builder Progress
 
+## 2026-06-06 00:31:24 CST
+
+- `DP5-RC20` U1 runtime determinism hardening / 首切片：
+  - 已创建分支 `codex/dp5-rc20-u1-runtime-determinism`。
+  - 本切片只处理 frame-bound baseline、prompt publish / resolve causality 与 runtime health reason mask；不处理 FrameAssembler strict seq/time、typed overflow compaction、hook install failure 或 Axis2D/chord/primary path exclusivity。
+  - 已新增 `docs/superpowers/plans/2026-06-06-dp5-rc20-u1-runtime-frame-envelope.md` 作为本切片实现计划。
+  - 已新增 `RuntimeConfigSnapshot` / `FrameRuntimeEnvelope`，stable runtime frame 入口一次性绑定 bundle、graph、context、manifest epoch 与 config generation。
+  - `DualPadRuntime` 的 stable resolve、presentation projection 与 prompt publish 已改为消费同一份 envelope；context 在 output apply 期间变化时，当前 frame 仍使用 frame-bound context。
+  - `PromptRuntimeOwner` 新增 explicit baseline publish API，`Resolve()` 使用已发布 baseline 的 bundle / graph，不再在 resolve 时读取 active bundle / graph。
+  - `runtimeHealthDegraded` 已改为 `RuntimeHealthReasonMask` 派生 helper，并新增 `ManifestEpochSkew` 等 reason 断言。
+  - 额外修复 `DualPadGlyphResolutionCompatTests` 的 xmake source list：该目标现在补齐 `ph7_ingress_files`，以满足 `ActionManifestPublisher -> IngressHub` 链接依赖。
+- Focused 验证结果：
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0。
+  - `xmake build -y DualPadPromptSnapshotTests && xmake run -y DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build -y DualPadGlyphResolutionCompatTests && xmake run -y DualPadGlyphResolutionCompatTests`：exit 0。
+- 完整验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；第一次运行先生成了新的 `docs/generated` manifest hash，暂存 generated docs 后重跑通过。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1544 nodes, 3135 edges, 145 communities`。
+  - `git diff --check` 与 `git diff --cached --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- Builder JSON 状态：
+  - `.dualpad-builder/feature_list.json` 中 `DP5` 继续保持 `planned` / `passes=false`。
+  - `.dualpad-builder/sprint_plan.json` 中 `S-DP5` 继续保持 `planned`，`current_sprint` 继续保持 `null`；这是 PH8b lint 对 post-closeout hardening 的要求，不表示 U1 issue slice 未推进。
+
 ## 2026-06-05 23:58:56 CST
 
 - `DP5-RC20` U0 PR #14 远端 Phase8 CI 修复：
