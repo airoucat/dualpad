@@ -1,5 +1,21 @@
 # DualPad Builder Progress
 
+## 2026-06-06 00:49:41 CST
+
+- `DP5-RC20` U1 PR #15 远端 Phase8 CI 修复：
+  - 根因：`DualPadDocGen` 的 manifest hash 直接消费 provenance 输入文件的 raw bytes；本机工作区和 GitHub Windows runner 对部分文本输入采用不同 checkout 行尾策略，导致同一输入事实在本机生成 `a3e0989cf4a5da80`，远端生成 `a5c9ff75a458cdff`。
+  - 修复：`tools/docgen/DualPadDocGenMain.cpp` 在 hash 前统一把 `CRLF` / lone `CR` 规范化为 `LF`，使 generated docs provenance hash 不再依赖工作区行尾策略。
+  - 已重新生成 `docs/generated/*.md`，新的稳定 manifest hash 为 `c350db93c7217dbf`。
+- 根因验证：
+  - `python scripts/dev/generate_dualpad_docs.py`：exit 0，输出 `DualPadDocGen wrote docs/generated with manifest hash c350db93c7217dbf` 与 `generated docs verified`。
+  - 一次性 hash 复现脚本确认：raw、强制 LF、强制 CRLF 三种输入在新规范下均生成 `c350db93c7217dbf`。
+- 完整验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：先在 generated docs 未暂存时按预期停在 `git diff --exit-code -- docs/generated`；暂存本轮生成物后重跑 exit 0，完整 build/run `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed-doc consistency 检查。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1545 nodes, 3137 edges, 142 communities`。
+  - `git diff --check` 与 `git diff --cached --check`：exit 0。
+
 ## 2026-06-06 00:31:24 CST
 
 - `DP5-RC20` U1 runtime determinism hardening / 首切片：
