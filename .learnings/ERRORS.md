@@ -54,7 +54,7 @@ Command failures, exceptions, and unexpected behaviors.
 - Priority: medium
 - Status: resolved
 - Area: GitHub Actions / xmake CI
-- Summary: Phase8 CI failed on GitHub because `xmake build DualPad` prompted for first-time `hidapi` package installation in the clean runner.
-- Detail: Local runs already had packages installed, so the script passed locally without `-y`. On a fresh GitHub Windows runner, `xmake build DualPad` requested confirmation and then failed with `packages(hidapi): must be installed!`. For this xmake version, `-y` must be placed after the task (`xmake build -y DualPad`); `xmake -y build DualPad` is parsed incorrectly and reports `invalid argument: DualPad`.
-- Related files: `scripts/ci/run_phase8_ci.ps1`, `.github/workflows/ci.yml`
-- Resolution: Updated Phase8 CI xmake build/run invocations to pass `-y` after `build` / `run`, then reran `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1` successfully.
+- Summary: Phase8 CI failed on GitHub because the clean runner lacked both noninteractive xmake package confirmation and the local CommonLib checkout.
+- Detail: Local runs already had packages installed and `lib/commonlibsse-ng` present, so the script passed locally. On a fresh GitHub Windows runner, `xmake build DualPad` first requested confirmation and failed with `packages(hidapi): must be installed!`. After adding `-y`, the runner installed `hidapi` and then failed with `unknown rule(commonlibsse-ng.plugin)` because `lib/` is ignored, `.gitmodules` has a CommonLib entry, but current `HEAD` has no `lib/commonlibsse-ng` gitlink. For this xmake version, `-y` must be placed after the task (`xmake build -y DualPad`); `xmake -y build DualPad` is parsed incorrectly and reports `invalid argument: DualPad`.
+- Related files: `scripts/ci/run_phase8_ci.ps1`, `.github/workflows/dualpad-ci.yml`
+- Resolution: Updated Phase8 CI xmake build/run invocations to pass `-y` after `build` / `run`, added a workflow checkout for `alandtse/CommonLibVR` at `82e62861168308139339e5b8754586bbb556744e` with recursive submodules, then reran `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1` successfully locally before rerunning GitHub Actions.

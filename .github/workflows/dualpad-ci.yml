@@ -9,6 +9,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout CommonLibSSE-NG
+        uses: actions/checkout@v4
+        with:
+          repository: alandtse/CommonLibVR
+          ref: 82e62861168308139339e5b8754586bbb556744e
+          path: lib/commonlibsse-ng
+          submodules: recursive
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
       - name: Run Phase 8 canonical CI
