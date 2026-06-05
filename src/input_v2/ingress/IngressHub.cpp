@@ -9,6 +9,51 @@
 
 namespace dualpad::input_v2::ingress
 {
+    namespace
+    {
+        void CaptureOverflowFact(QueueOverflowPayload& payload, const IngressEvent& event)
+        {
+            switch (event.kind) {
+            case IngressKind::ManifestEpochChanged:
+                payload.hasManifest = true;
+                payload.manifest = event.manifest;
+                break;
+            case IngressKind::UiSnapshot:
+                payload.hasUi = true;
+                payload.ui = event.ui;
+                break;
+            case IngressKind::DeviceFamilyChanged:
+                payload.hasDeviceFamily = true;
+                payload.deviceFamily = event.deviceFamily;
+                break;
+            case IngressKind::SourceEvidence:
+                payload.hasSourceEvidence = true;
+                payload.sourceEvidence = event.sourceEvidence;
+                break;
+            case IngressKind::QueueOverflow:
+                if (event.overflow.hasManifest) {
+                    payload.hasManifest = true;
+                    payload.manifest = event.overflow.manifest;
+                }
+                if (event.overflow.hasUi) {
+                    payload.hasUi = true;
+                    payload.ui = event.overflow.ui;
+                }
+                if (event.overflow.hasDeviceFamily) {
+                    payload.hasDeviceFamily = true;
+                    payload.deviceFamily = event.overflow.deviceFamily;
+                }
+                if (event.overflow.hasSourceEvidence) {
+                    payload.hasSourceEvidence = true;
+                    payload.sourceEvidence = event.overflow.sourceEvidence;
+                }
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
     IngressHub::IngressHub(std::size_t capacity) :
         _capacity(capacity)
     {}
@@ -39,7 +84,7 @@ namespace dualpad::input_v2::ingress
             event.monotonicUs = NowMonotonicUs();
         }
         if (_queue.size() >= _capacity) {
-            ReplaceBacklogWithOverflowLocked(event.seq, event.monotonicUs);
+            ReplaceBacklogWithOverflowLocked(event.seq, event.monotonicUs, { event });
             return false;
         }
         _queue.push_back(std::move(event));
@@ -49,18 +94,27 @@ namespace dualpad::input_v2::ingress
     bool IngressHub::PushLocked(IngressEvent event)
     {
         if (_queue.size() >= _capacity) {
-            ReplaceBacklogWithOverflowLocked(event.seq, event.monotonicUs);
+            ReplaceBacklogWithOverflowLocked(event.seq, event.monotonicUs, { event });
             return false;
         }
         _queue.push_back(std::move(event));
         return true;
     }
 
-    void IngressHub::ReplaceBacklogWithOverflowLocked(std::uint64_t seq, std::uint64_t monotonicUs)
+    void IngressHub::ReplaceBacklogWithOverflowLocked(
+        std::uint64_t seq,
+        std::uint64_t monotonicUs,
+        const std::vector<IngressEvent>& incomingEvents)
     {
         IngressEvent overflow = MakeQueueOverflowEvent();
         overflow.seq = seq;
         overflow.monotonicUs = monotonicUs != 0 ? monotonicUs : NowMonotonicUs();
+        for (const auto& event : _queue) {
+            CaptureOverflowFact(overflow.overflow, event);
+        }
+        for (const auto& event : incomingEvents) {
+            CaptureOverflowFact(overflow.overflow, event);
+        }
         _queue.clear();
         _queue.push_back(overflow);
     }
@@ -74,7 +128,7 @@ namespace dualpad::input_v2::ingress
         if (converted.size() > available) {
             const auto overflowSeq = NextSeqLocked();
             const auto overflowTime = snapshot.sourceTimestampUs != 0 ? snapshot.sourceTimestampUs : NowMonotonicUs();
-            ReplaceBacklogWithOverflowLocked(overflowSeq, overflowTime);
+            ReplaceBacklogWithOverflowLocked(overflowSeq, overflowTime, converted);
             // QueueOverflow represents a dropped legacy input range through this snapshot.
             // Advance the watermark so the next contiguous accepted snapshot does not
             // report a second SequenceGap for the same discarded range.

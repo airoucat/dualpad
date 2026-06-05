@@ -128,6 +128,17 @@ namespace
         return frames.back();
     }
 
+    const ingress::AssembledFactFrame& LastStableFrame(const std::vector<ingress::AssembledFactFrame>& frames)
+    {
+        for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
+            if (it->kind == ingress::AssembledFrameKind::Stable) {
+                return *it;
+            }
+        }
+        Require(false, "frames must contain a stable frame");
+        return frames.back();
+    }
+
     const actions::ControlSample* FindPulse(
         const ingress::FactFrame& facts,
         std::uint32_t code,
@@ -156,6 +167,33 @@ namespace
         Require(drained.size() == 1, "overflow must replace backlog with one marker");
         Require(drained[0].kind == ingress::IngressKind::QueueOverflow, "overflow marker must be formal event");
         Require(drained[0].seq == 3, "hub must assign monotonic seq to overflow marker");
+    }
+
+    void TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput()
+    {
+        ingress::IngressHub hub{ 4 };
+        Require(hub.PushEvent(Manifest(9)), "manifest marker must enqueue");
+        Require(hub.PushEvent(Ui(21, 22)), "ui snapshot must enqueue");
+        Require(
+            hub.PushEvent(DeviceMarker(presentation::DeviceFamily::Gamepad, 7)),
+            "device marker must enqueue");
+        Require(hub.PushEvent(PadSample(99, true, true, false)), "volatile pad sample must enqueue");
+        Require(!hub.PushEvent(SourceEvidence(7)), "source evidence should trigger overflow");
+
+        const auto drained = hub.Drain();
+        Require(drained.size() == 1, "overflow compaction emits one marker");
+        Require(drained[0].kind == ingress::IngressKind::QueueOverflow, "overflow marker kind required");
+        Require(drained[0].overflow.hasManifest, "overflow compaction must retain latest manifest");
+        Require(drained[0].overflow.hasUi, "overflow compaction must retain latest ui snapshot");
+        Require(drained[0].overflow.hasDeviceFamily, "overflow compaction must retain latest device marker");
+        Require(drained[0].overflow.hasSourceEvidence, "overflow compaction must retain latest source evidence");
+        Require(drained[0].overflow.manifest.manifestEpoch == 9, "manifest epoch must be retained");
+        Require(drained[0].overflow.ui.contextRevision == 21, "ui context revision must be retained");
+        Require(drained[0].overflow.ui.menuStackRevision == 22, "ui menu stack revision must be retained");
+        Require(drained[0].overflow.deviceFamily.deviceFamilyRevision == 7, "device revision must be retained");
+        Require(
+            drained[0].overflow.sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision == 7,
+            "source evidence revision must be retained");
     }
 
     void TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger()
@@ -556,6 +594,70 @@ namespace
         Require(ToGameplayRecoveryInput(*overflow).hardResetRequested, "queue overflow maps to hard recovery input");
     }
 
+    void TestFrameAssemblerDoesNotSortOutOfOrderEvents()
+    {
+        auto events = AssignSeq({
+            Manifest(1),
+            PadSample(1, true, true, false),
+            PadSample(1, false, false, true)
+        });
+        std::swap(events[1], events[2]);
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(events);
+        Require(
+            FindTransition(frames, ingress::TransitionReason::SequenceGap) != nullptr,
+            "out-of-order seq must fail closed instead of being sorted back into order");
+    }
+
+    void TestFrameAssemblerRejectsMonotonicTimeRegression()
+    {
+        auto events = AssignSeq({
+            Manifest(1),
+            PadSample(1, true, true, false),
+            PadSample(1, false, false, true)
+        });
+        events[2].monotonicUs = events[1].monotonicUs - 1;
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(events);
+        Require(
+            FindTransition(frames, ingress::TransitionReason::SequenceGap) != nullptr,
+            "monotonic time regression must fail closed through a transition");
+
+        const auto& stable = LastStableFrame(frames);
+        Require(
+            FindPulse(stable.facts, 1, false, true) == nullptr,
+            "time-regressed volatile release must not enter stable pulse ledger");
+    }
+
+    void TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline()
+    {
+        ingress::IngressHub hub{ 4 };
+        Require(hub.PushEvent(Manifest(9)), "manifest marker must enqueue");
+        Require(hub.PushEvent(Ui(21, 22)), "ui snapshot must enqueue");
+        Require(
+            hub.PushEvent(DeviceMarker(presentation::DeviceFamily::Gamepad, 7)),
+            "device marker must enqueue");
+        Require(hub.PushEvent(PadSample(99, true, true, false)), "volatile pad sample must enqueue");
+        Require(!hub.PushEvent(SourceEvidence(7)), "source evidence should trigger overflow");
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        Require(frames.size() == 2, "overflow payload must produce transition plus baseline stable");
+        Require(frames[0].kind == ingress::AssembledFrameKind::Transition, "overflow transition must come first");
+        Require(frames[0].transition.reason == ingress::TransitionReason::QueueOverflow, "transition reason must be overflow");
+        const auto& stable = frames[1];
+        Require(stable.kind == ingress::AssembledFrameKind::Stable, "overflow payload must rebuild stable baseline");
+        Require(
+            stable.boundaryKey == (ingress::IngressBoundaryKey{ 9, 21, 22, 7 }),
+            "overflow baseline must retain latest boundary facts");
+        Require(stable.facts.controlSamples.empty(), "overflow baseline must drop volatile control samples");
+        Require(stable.facts.pulseLedger.empty(), "overflow baseline must drop volatile pulse ledger");
+        Require(!stable.facts.legacySnapshot, "overflow baseline must drop legacy snapshot payload");
+        Require(stable.facts.health.queueOverflow, "overflow baseline must remain degraded for the current frame");
+    }
+
     void TestDeviceMarkerMismatchFailsClosed()
     {
         ingress::FrameAssembler assembler;
@@ -609,6 +711,7 @@ namespace
 int main()
 {
     TestHubAssignsSeqAndEmitsOverflowMarker();
+    TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
     TestLegacySnapshotBatchOverflowRejectsPartialEvents();
     TestRejectedLegacySnapshotAdvancesWatermarkAsDroppedRange();
@@ -623,6 +726,9 @@ int main()
     TestStableMergeKeepsPulseLedger();
     TestBoundaryChangeFlushesStableThenTransition();
     TestRecoveryMarkersMapFailClosed();
+    TestFrameAssemblerDoesNotSortOutOfOrderEvents();
+    TestFrameAssemblerRejectsMonotonicTimeRegression();
+    TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline();
     TestDeviceMarkerMismatchFailsClosed();
     TestBuildKernelFrameDoesNotAcceptTransition();
     TestBuildKernelFrameUsesIngressMonotonicTimestamp();

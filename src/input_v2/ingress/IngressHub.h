@@ -31,7 +31,10 @@ namespace dualpad::input_v2::ingress
         std::uint64_t NextSeqLocked();
         std::uint64_t NowMonotonicUs() const;
         bool PushLocked(IngressEvent event);
-        void ReplaceBacklogWithOverflowLocked(std::uint64_t seq, std::uint64_t monotonicUs);
+        void ReplaceBacklogWithOverflowLocked(
+            std::uint64_t seq,
+            std::uint64_t monotonicUs,
+            const std::vector<IngressEvent>& incomingEvents = {});
 
         std::size_t _capacity{ 256 };
         std::uint64_t _nextSeq{ 1 };

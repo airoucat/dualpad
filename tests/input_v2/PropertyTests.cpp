@@ -37,8 +37,19 @@ int main()
     FrameAssembler assembler;
     const auto frames = assembler.Assemble(drained);
     Require(!frames.empty(), "property assembler should publish at least one frame");
+    std::uint64_t lastStableTime = 0;
     for (const auto& frame : frames) {
         Require(frame.firstSeq <= frame.lastSeq, "assembled frame sequence range must be ordered");
+        if (frame.kind == AssembledFrameKind::Transition) {
+            Require(!ShouldDispatchToInteractionEngine(frame), "transition frames must not dispatch");
+            continue;
+        }
+        if (frame.facts.monotonicUs != 0 && lastStableTime != 0) {
+            Require(frame.facts.monotonicUs >= lastStableTime, "stable frame monotonic time must not regress");
+        }
+        if (frame.facts.monotonicUs != 0) {
+            lastStableTime = frame.facts.monotonicUs;
+        }
     }
 
     return 0;
