@@ -288,9 +288,10 @@ namespace dualpad::input_v2::gameplay
             return ProcessTransitionFrame(frame);
         }
 
-        auto input = BuildStableRuntimeInput(frame);
+        auto envelope = BindRuntimeEnvelope(frame);
+        auto input = BuildStableRuntimeInput(envelope);
         auto result = ProcessGameplayFrame(input);
-        PublishStablePresentationSurface(frame, result);
+        PublishStablePresentationSurface(envelope, result);
         return result;
     }
 }

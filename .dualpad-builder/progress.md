@@ -1,5 +1,47 @@
 # DualPad Builder Progress
 
+## 2026-06-06 00:49:41 CST
+
+- `DP5-RC20` U1 PR #15 远端 Phase8 CI 修复：
+  - 根因：`DualPadDocGen` 的 manifest hash 直接消费 provenance 输入文件的 raw bytes；本机工作区和 GitHub Windows runner 对部分文本输入采用不同 checkout 行尾策略，导致同一输入事实在本机生成 `a3e0989cf4a5da80`，远端生成 `a5c9ff75a458cdff`。
+  - 修复：`tools/docgen/DualPadDocGenMain.cpp` 在 hash 前统一把 `CRLF` / lone `CR` 规范化为 `LF`，使 generated docs provenance hash 不再依赖工作区行尾策略。
+  - 已重新生成 `docs/generated/*.md`，新的稳定 manifest hash 为 `c350db93c7217dbf`。
+- 根因验证：
+  - `python scripts/dev/generate_dualpad_docs.py`：exit 0，输出 `DualPadDocGen wrote docs/generated with manifest hash c350db93c7217dbf` 与 `generated docs verified`。
+  - 一次性 hash 复现脚本确认：raw、强制 LF、强制 CRLF 三种输入在新规范下均生成 `c350db93c7217dbf`。
+- 完整验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：先在 generated docs 未暂存时按预期停在 `git diff --exit-code -- docs/generated`；暂存本轮生成物后重跑 exit 0，完整 build/run `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed-doc consistency 检查。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1545 nodes, 3137 edges, 142 communities`。
+  - `git diff --check` 与 `git diff --cached --check`：exit 0。
+
+## 2026-06-06 00:31:24 CST
+
+- `DP5-RC20` U1 runtime determinism hardening / 首切片：
+  - 已创建分支 `codex/dp5-rc20-u1-runtime-determinism`。
+  - 本切片只处理 frame-bound baseline、prompt publish / resolve causality 与 runtime health reason mask；不处理 FrameAssembler strict seq/time、typed overflow compaction、hook install failure 或 Axis2D/chord/primary path exclusivity。
+  - 已新增 `docs/superpowers/plans/2026-06-06-dp5-rc20-u1-runtime-frame-envelope.md` 作为本切片实现计划。
+  - 已新增 `RuntimeConfigSnapshot` / `FrameRuntimeEnvelope`，stable runtime frame 入口一次性绑定 bundle、graph、context、manifest epoch 与 config generation。
+  - `DualPadRuntime` 的 stable resolve、presentation projection 与 prompt publish 已改为消费同一份 envelope；context 在 output apply 期间变化时，当前 frame 仍使用 frame-bound context。
+  - `PromptRuntimeOwner` 新增 explicit baseline publish API，`Resolve()` 使用已发布 baseline 的 bundle / graph，不再在 resolve 时读取 active bundle / graph。
+  - `runtimeHealthDegraded` 已改为 `RuntimeHealthReasonMask` 派生 helper，并新增 `ManifestEpochSkew` 等 reason 断言。
+  - 额外修复 `DualPadGlyphResolutionCompatTests` 的 xmake source list：该目标现在补齐 `ph7_ingress_files`，以满足 `ActionManifestPublisher -> IngressHub` 链接依赖。
+- Focused 验证结果：
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0。
+  - `xmake build -y DualPadPromptSnapshotTests && xmake run -y DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build -y DualPadGlyphResolutionCompatTests && xmake run -y DualPadGlyphResolutionCompatTests`：exit 0。
+- 完整验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；第一次运行先生成了新的 `docs/generated` manifest hash，暂存 generated docs 后重跑通过。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1544 nodes, 3135 edges, 145 communities`。
+  - `git diff --check` 与 `git diff --cached --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- Builder JSON 状态：
+  - `.dualpad-builder/feature_list.json` 中 `DP5` 继续保持 `planned` / `passes=false`。
+  - `.dualpad-builder/sprint_plan.json` 中 `S-DP5` 继续保持 `planned`，`current_sprint` 继续保持 `null`；这是 PH8b lint 对 post-closeout hardening 的要求，不表示 U1 issue slice 未推进。
+
 ## 2026-06-05 23:58:56 CST
 
 - `DP5-RC20` U0 PR #14 远端 Phase8 CI 修复：

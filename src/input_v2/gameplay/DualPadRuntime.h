@@ -5,6 +5,7 @@
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
+#include "input_v2/gameplay/RuntimeFrameEnvelope.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/presentation/PresentationProjection.h"
 
@@ -18,6 +19,7 @@ namespace dualpad::input_v2::gameplay
         actions::ResolvedActionFrame resolved{};
         GameplayPolicy policy{};
         GameplayRecoveryInput recovery{};
+        RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
         std::uint64_t outputTick{ 0 };
         dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Gameplay };
     };
@@ -27,7 +29,12 @@ namespace dualpad::input_v2::gameplay
         GameplayProjectionFrame projectionFrame{};
         PollOutputApplyResult output{};
         presentation::PublishedGameplayPresentation gameplayPresentation{};
-        bool runtimeHealthDegraded{ false };
+        RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
+
+        [[nodiscard]] bool RuntimeHealthDegraded() const
+        {
+            return runtimeHealthReasons != RuntimeHealthMask(RuntimeHealthReason::None);
+        }
     };
 
     class DualPadRuntime
@@ -55,10 +62,11 @@ namespace dualpad::input_v2::gameplay
         void ResetForTests();
 
     private:
-        DualPadRuntimeInput BuildStableRuntimeInput(const ingress::AssembledFactFrame& frame);
+        FrameRuntimeEnvelope BindRuntimeEnvelope(const ingress::AssembledFactFrame& frame) const;
+        DualPadRuntimeInput BuildStableRuntimeInput(const FrameRuntimeEnvelope& envelope);
         DualPadRuntimeResult ProcessTransitionFrame(const ingress::AssembledFactFrame& frame);
         void PublishStablePresentationSurface(
-            const ingress::AssembledFactFrame& frame,
+            const FrameRuntimeEnvelope& envelope,
             const DualPadRuntimeResult& result);
 
         DualPadRuntimeResult ProcessGameplayFrameWithExecutor(

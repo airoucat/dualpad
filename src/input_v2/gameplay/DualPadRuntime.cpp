@@ -3,6 +3,7 @@
 #include "input_v2/gameplay/DualPadRuntime.h"
 
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
+#include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/ingress/IngressRecovery.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
@@ -35,6 +36,33 @@ namespace dualpad::input_v2::gameplay
             target.sequenceGapObserved = target.sequenceGapObserved || source.sequenceGapObserved;
             target.explicitResetRequested = target.explicitResetRequested || source.explicitResetRequested;
         }
+
+        RuntimeHealthReasonMask RuntimeHealthReasonsFromIngress(const ingress::AssembledFactFrame& frame)
+        {
+            auto reasons = RuntimeHealthMask(RuntimeHealthReason::None);
+            if (frame.facts.health.queueOverflow) {
+                reasons = AddRuntimeHealthReason(reasons, RuntimeHealthReason::QueueOverflow);
+            }
+            if (frame.facts.health.sequenceGap) {
+                reasons = AddRuntimeHealthReason(reasons, RuntimeHealthReason::SequenceGap);
+            }
+            if (frame.facts.health.boundaryMarkerMismatch ||
+                frame.facts.health.pendingBoundaryMarkerPair ||
+                frame.facts.health.coalescedSnapshot ||
+                frame.facts.health.crossContextMismatch) {
+                reasons = AddRuntimeHealthReason(reasons, RuntimeHealthReason::BoundaryMismatch);
+            }
+            return reasons;
+        }
+
+        RuntimeHealthReasonMask RuntimeHealthReasonsFromTransition(const ingress::AssembledFactFrame& frame)
+        {
+            auto reasons = RuntimeHealthMask(RuntimeHealthReason::BoundaryMismatch);
+            if (frame.transition.reason == ingress::TransitionReason::QueueOverflow) {
+                reasons = AddRuntimeHealthReason(reasons, RuntimeHealthReason::QueueOverflow);
+            }
+            return reasons;
+        }
     }
 
     DualPadRuntime& DualPadRuntime::GetSingleton()
@@ -63,31 +91,62 @@ namespace dualpad::input_v2::gameplay
             return ProcessTransitionFrame(frame);
         }
 
-        auto input = BuildStableRuntimeInput(frame);
+        auto envelope = BindRuntimeEnvelope(frame);
+        auto input = BuildStableRuntimeInput(envelope);
         auto result = ProcessGameplayFrameWithExecutor(input, executor);
-        PublishStablePresentationSurface(frame, result);
+        PublishStablePresentationSurface(envelope, result);
         return result;
     }
 
-    DualPadRuntimeInput DualPadRuntime::BuildStableRuntimeInput(const ingress::AssembledFactFrame& frame)
+    FrameRuntimeEnvelope DualPadRuntime::BindRuntimeEnvelope(const ingress::AssembledFactFrame& frame) const
     {
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        auto envelope = FrameRuntimeEnvelope{
+            .frame = frame,
+            .config = RuntimeConfigSnapshot{
+                .bundle = bundle,
+                .graph = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot(),
+                .context = context::ContextResolver::GetSingleton().GetPublishedSnapshot(),
+                .manifestEpoch = frame.facts.manifestEpoch,
+                .configGeneration = bundle ? bundle->manifestEpoch : 0
+            },
+            .healthReasons = RuntimeHealthReasonsFromIngress(frame)
+        };
+
+        if (envelope.config.context.contextRevision != frame.facts.contextRevision) {
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::ContextRevisionSkew);
+        }
+        if (envelope.config.bundle && envelope.config.bundle->manifestEpoch != frame.facts.manifestEpoch) {
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::ManifestEpochSkew);
+        }
+        return envelope;
+    }
+
+    DualPadRuntimeInput DualPadRuntime::BuildStableRuntimeInput(const FrameRuntimeEnvelope& envelope)
+    {
+        const auto& frame = envelope.frame;
         auto kernel = ingress::BuildKernelFrame(frame);
         auto resolved = actions::ResolvedActionFrame{
             .manifestEpoch = kernel.facts.manifestEpoch,
             .contextRevision = kernel.facts.contextRevision
         };
         bool graphAvailableForKernel = false;
+        auto runtimeHealthReasons = envelope.healthReasons;
 
         if (ingress::ShouldDispatchToInteractionEngine(frame)) {
-            const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+            const auto& graphSnapshot = envelope.config.graph;
             if (const auto graph = graphSnapshot.graph;
                 graph && graphSnapshot.manifestEpoch == kernel.facts.manifestEpoch &&
-                graph->manifestEpoch == kernel.facts.manifestEpoch) {
+                graph->manifestEpoch == kernel.facts.manifestEpoch &&
+                !HasRuntimeHealthReason(runtimeHealthReasons, RuntimeHealthReason::ContextRevisionSkew)) {
                 graphAvailableForKernel = true;
-                const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
                 resolved = _interactionEngine.Resolve(
                     *graph,
-                    contextSnapshot.actionSetStack,
+                    envelope.config.context.actionSetStack,
                     kernel,
                     _interactionState);
                 resolved.manifestEpoch = kernel.facts.manifestEpoch;
@@ -96,15 +155,30 @@ namespace dualpad::input_v2::gameplay
         }
         if (ingress::ShouldDispatchToInteractionEngine(frame) && !graphAvailableForKernel) {
             kernel.state.healthDegraded = true;
+            const auto graph = envelope.config.graph.graph;
+            if (!graph) {
+                runtimeHealthReasons = AddRuntimeHealthReason(
+                    runtimeHealthReasons,
+                    RuntimeHealthReason::GraphUnavailable);
+            } else if (
+                envelope.config.graph.manifestEpoch != kernel.facts.manifestEpoch ||
+                graph->manifestEpoch != kernel.facts.manifestEpoch) {
+                runtimeHealthReasons = AddRuntimeHealthReason(
+                    runtimeHealthReasons,
+                    RuntimeHealthReason::ManifestEpochSkew);
+            }
         }
 
-        const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        const auto& contextSnapshot = envelope.config.context;
         GameplayRecoveryInput recovery{ .cleanFrame = true };
         if (_hasPendingRecovery) {
             MergeRecovery(recovery, _pendingRecovery);
             _pendingRecovery = GameplayRecoveryInput{};
             _hasPendingRecovery = false;
         }
+
+        kernel.state.healthDegraded = kernel.state.healthDegraded ||
+            runtimeHealthReasons != RuntimeHealthMask(RuntimeHealthReason::None);
 
         return DualPadRuntimeInput{
             .kernel = kernel,
@@ -119,6 +193,7 @@ namespace dualpad::input_v2::gameplay
                 .mousePhysicalSustainedActive = false
             },
             .recovery = recovery,
+            .runtimeHealthReasons = runtimeHealthReasons,
             .outputTick = kernel.facts.monotonicUs,
             .legacyContext = contextSnapshot.legacyInputContext
         };
@@ -140,28 +215,35 @@ namespace dualpad::input_v2::gameplay
             .projectionFrame = _lastProjectionFrame,
             .output = PollOutputApplyResult{},
             .gameplayPresentation = _presentationPublisher.GetPublished(),
-            .runtimeHealthDegraded = true
+            .runtimeHealthReasons = RuntimeHealthReasonsFromTransition(frame)
         };
     }
 
     void DualPadRuntime::PublishStablePresentationSurface(
-        const ingress::AssembledFactFrame& frame,
+        const FrameRuntimeEnvelope& envelope,
         const DualPadRuntimeResult& result)
     {
+        const auto& frame = envelope.frame;
         if (frame.kind != ingress::AssembledFrameKind::Stable || !result.output.outputApplySucceeded) {
             return;
         }
 
-        const auto& contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
         const auto published = _presentationProjection.Project(
             frame.facts.sourceEvidence,
-            contextSnapshot,
+            envelope.config.context,
             result.gameplayPresentation);
         presentation::SkyrimCompatibilitySurface::GetSingleton().Commit(published);
-        if (result.runtimeHealthDegraded) {
+        if (result.RuntimeHealthDegraded()) {
             return;
         }
-        prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(published);
+        prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(
+            published,
+            prompt::PromptRuntimeBaseline{
+                .manifestEpoch = envelope.config.manifestEpoch,
+                .configGeneration = envelope.config.configGeneration,
+                .bundle = envelope.config.bundle,
+                .graph = envelope.config.graph
+            });
     }
 
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrameWithExecutor(
@@ -188,11 +270,19 @@ namespace dualpad::input_v2::gameplay
             _lastProjectionFrame = projection;
         }
 
+        auto runtimeHealthReasons = input.runtimeHealthReasons;
+        if (input.kernel.state.healthDegraded &&
+            runtimeHealthReasons == RuntimeHealthMask(RuntimeHealthReason::None)) {
+            runtimeHealthReasons = AddRuntimeHealthReason(
+                runtimeHealthReasons,
+                RuntimeHealthReason::BoundaryMismatch);
+        }
+
         return DualPadRuntimeResult{
             .projectionFrame = projection,
             .output = std::move(output),
             .gameplayPresentation = published,
-            .runtimeHealthDegraded = input.kernel.state.healthDegraded
+            .runtimeHealthReasons = runtimeHealthReasons
         };
     }
 

@@ -105,6 +105,23 @@ namespace
         }
     }
 
+    std::string NormalizeLineEndings(std::string content)
+    {
+        std::string normalized;
+        normalized.reserve(content.size());
+        for (std::size_t i = 0; i < content.size(); ++i) {
+            if (content[i] == '\r') {
+                if (i + 1 < content.size() && content[i + 1] == '\n') {
+                    ++i;
+                }
+                normalized.push_back('\n');
+                continue;
+            }
+            normalized.push_back(content[i]);
+        }
+        return normalized;
+    }
+
     std::vector<IniSection> ParseIni(const std::string& content)
     {
         std::vector<IniSection> sections;
@@ -249,7 +266,7 @@ namespace
             const auto relative = fs::relative(file, root).generic_string();
             HashBytes(hash, relative);
             HashBytes(hash, "\n");
-            HashBytes(hash, ReadFile(file));
+            HashBytes(hash, NormalizeLineEndings(ReadFile(file)));
             HashBytes(hash, "\n");
         }
 
