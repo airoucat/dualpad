@@ -114,6 +114,11 @@ namespace dualpad::input_v2::context
         return _published;
     }
 
+    void ContextResolver::PublishSnapshotForReplayTests(ResolvedContextSnapshot snapshot)
+    {
+        _published = std::move(snapshot);
+    }
+
     void ContextResolver::ResetForTests()
     {
         _published = ResolvedContextSnapshot{};

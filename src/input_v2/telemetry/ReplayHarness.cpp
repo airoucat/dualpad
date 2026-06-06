@@ -6,10 +6,13 @@
 #include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
+#include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/actions/ActionSetResolver.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/context/ContextCatalog.h"
 #include "input_v2/context/ContextResolver.h"
+#include "input_v2/ingress/IngressHub.h"
+#include "input_v2/ingress/IngressMarkers.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
@@ -40,6 +43,8 @@ namespace dualpad::input_v2::telemetry
         using CsvRow = std::vector<std::string>;
         using CsvRows = std::vector<CsvRow>;
         using RowsBySequence = std::unordered_map<std::uint64_t, CsvRows>;
+
+        bool gReplayManifestSeeded = false;
 
         std::vector<std::string> SplitCsvLine(std::string_view line)
         {
@@ -171,10 +176,15 @@ namespace dualpad::input_v2::telemetry
                 break;
             }
 
-            const auto contextSnapshot = input_v2::context::ContextResolver::GetSingleton().ResolveAndPublish(
+            auto contextSnapshot = input_v2::context::ContextResolver::GetSingleton().ResolveAndPublish(
                 stack,
                 input_v2::context::ContextResolver::GameplaySubstateFromLegacy(context),
                 catalog);
+            if (epoch != 0 && contextSnapshot.contextRevision != epoch) {
+                contextSnapshot.contextRevision = epoch;
+                contextSnapshot.legacyContextEpoch = epoch;
+                input_v2::context::ContextResolver::GetSingleton().PublishSnapshotForReplayTests(contextSnapshot);
+            }
 
             input_v2::presentation::PublishedPresentationState presentation{};
             presentation.family = input_v2::presentation::DeviceFamily::Gamepad;
@@ -183,7 +193,16 @@ namespace dualpad::input_v2::telemetry
             presentation.uiContextId = resolvedContext;
             presentation.actionSetStack = contextSnapshot.actionSetStack;
             presentation.epoch = epoch == 0 ? 1 : epoch;
-            input_v2::prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(presentation);
+            const auto graphSnapshot =
+                input_v2::actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+            input_v2::prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(
+                presentation,
+                input_v2::prompt::PromptRuntimeBaseline{
+                    .manifestEpoch = graphSnapshot.manifestEpoch,
+                    .configGeneration = bundle ? bundle->manifestEpoch : 0,
+                    .bundle = bundle,
+                    .graph = graphSnapshot
+                });
         }
 
         input::PadEventType ParsePadEventType(const std::string& value)
@@ -526,12 +545,40 @@ namespace dualpad::input_v2::telemetry
             input::PadEventSnapshotProcessor::GetSingleton().ResetState();
             input_v2::context::ContextResolver::GetSingleton().ResetForTests();
             input_v2::prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+            gReplayManifestSeeded = false;
             input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(true);
+        }
+
+        void ResetReplayIngressAfterConfigLoad()
+        {
+            input_v2::ingress::IngressHub::GetSingleton().ResetForTests();
+            gReplayManifestSeeded = false;
+        }
+
+        void SeedReplayManifestForSnapshot(const input::PadEventSnapshot& snapshot)
+        {
+            if (gReplayManifestSeeded) {
+                return;
+            }
+
+            const auto bundle = input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+            if (!bundle) {
+                return;
+            }
+
+            input_v2::ingress::IngressEvent marker{};
+            marker.kind = input_v2::ingress::IngressKind::ManifestEpochChanged;
+            marker.source = input_v2::ingress::IngressSource::ManifestPublisher;
+            marker.monotonicUs = snapshot.sourceTimestampUs;
+            marker.manifest.manifestEpoch = static_cast<std::uint32_t>(bundle->manifestEpoch);
+            (void)input_v2::ingress::IngressHub::GetSingleton().PushEvent(std::move(marker));
+            gReplayManifestSeeded = true;
         }
 
         void ProcessSnapshotThroughRuntime(const input::PadEventSnapshot& snapshot)
         {
             PublishReplayContext(snapshot.context, snapshot.contextEpoch);
+            SeedReplayManifestForSnapshot(snapshot);
             input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(snapshot.sequence);
             input::PadEventSnapshotProcessor::GetSingleton().Process(snapshot);
         }
@@ -742,6 +789,7 @@ namespace dualpad::input_v2::telemetry
             try {
                 ResetProcessorRuntimeForReplay();
                 LoadReplayRuntimeConfig(scenarioPath);
+                ResetReplayIngressAfterConfigLoad();
                 ReplayRuntimeSession session(outputPath);
 
                 const auto processedFrames = ReadScenarioRows(scenarioPath, "processed_snapshot_frames.csv");
@@ -773,6 +821,7 @@ namespace dualpad::input_v2::telemetry
                 ResetProcessorRuntimeForReplay();
                 input::PadEventSnapshotDispatcher::GetSingleton().ResetForReplay();
                 LoadReplayRuntimeConfig(scenarioPath);
+                ResetReplayIngressAfterConfigLoad();
                 ReplayRuntimeSession session(outputPath);
 
                 const auto schedule = ReadScenarioRows(scenarioPath, "dispatcher_schedule.csv");

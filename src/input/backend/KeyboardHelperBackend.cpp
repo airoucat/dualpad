@@ -118,9 +118,10 @@ namespace dualpad::input::backend
             std::uint8_t scancode,
             std::string_view actionId,
             ActionOutputContract contract,
-            InputContext context)
+            InputContext context,
+            bool replayRouteActive)
         {
-            if (!KeyboardNativeBridge::GetSingleton().EnqueuePress(scancode)) {
+            if (!replayRouteActive && !KeyboardNativeBridge::GetSingleton().EnqueuePress(scancode)) {
                 return false;
             }
 
@@ -138,9 +139,10 @@ namespace dualpad::input::backend
             std::uint8_t scancode,
             std::string_view actionId,
             ActionOutputContract contract,
-            InputContext context)
+            InputContext context,
+            bool replayRouteActive)
         {
-            if (!KeyboardNativeBridge::GetSingleton().EnqueueRelease(scancode)) {
+            if (!replayRouteActive && !KeyboardNativeBridge::GetSingleton().EnqueueRelease(scancode)) {
                 return false;
             }
 
@@ -158,9 +160,10 @@ namespace dualpad::input::backend
             std::uint8_t scancode,
             std::string_view actionId,
             ActionOutputContract contract,
-            InputContext context)
+            InputContext context,
+            bool replayRouteActive)
         {
-            if (!KeyboardNativeBridge::GetSingleton().EnqueuePulse(scancode)) {
+            if (!replayRouteActive && !KeyboardNativeBridge::GetSingleton().EnqueuePulse(scancode)) {
                 return false;
             }
 
@@ -343,7 +346,8 @@ namespace dualpad::input::backend
         }
 
         if (hadActiveOutput && IsRouteActive()) {
-            if (KeyboardNativeBridge::GetSingleton().EnqueueReset()) {
+            const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+            if (replayRouteActive || KeyboardNativeBridge::GetSingleton().EnqueueReset()) {
                 input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
                     KeyboardBridgeCommandType::Reset,
                     0,
@@ -373,7 +377,8 @@ namespace dualpad::input::backend
             return false;
         }
 
-        if (!EnqueueBridgePulse(*scancode, actionId, contract, context)) {
+        const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+        if (!EnqueueBridgePulse(*scancode, actionId, contract, context, replayRouteActive)) {
             if (IsDebugLoggingEnabled()) {
                 logger::warn(
                     "[DualPad][KeyboardHelper] failed pulse action={} contract={} scancode=0x{:02X} context={}",
@@ -435,7 +440,8 @@ namespace dualpad::input::backend
                 return false;
             }
 
-            if (!EnqueueBridgePulse(*scancode, actionId, contract, context)) {
+            const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+            if (!EnqueueBridgePulse(*scancode, actionId, contract, context, replayRouteActive)) {
                 if (IsDebugLoggingEnabled()) {
                     logger::warn(
                         "[DualPad][KeyboardHelper] failed source pulse action={} contract={} scancode=0x{:02X} context={}",
@@ -473,7 +479,8 @@ namespace dualpad::input::backend
             }
 
             const auto needsPress = previousRefCount == 0;
-            if (needsPress && !EnqueueBridgePress(*scancode, actionId, contract, context)) {
+            const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+            if (needsPress && !EnqueueBridgePress(*scancode, actionId, contract, context, replayRouteActive)) {
                 if (_bridgeDesiredRefCounts[*scancode] > 0) {
                     --_bridgeDesiredRefCounts[*scancode];
                 }
@@ -501,7 +508,8 @@ namespace dualpad::input::backend
         if (_bridgeDesiredRefCounts[it->second.scancode] > 0) {
             --_bridgeDesiredRefCounts[it->second.scancode];
             if (_bridgeDesiredRefCounts[it->second.scancode] == 0) {
-                released = EnqueueBridgeRelease(it->second.scancode, actionId, contract, context);
+                const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+                released = EnqueueBridgeRelease(it->second.scancode, actionId, contract, context, replayRouteActive);
                 if (!released) {
                     ++_bridgeDesiredRefCounts[it->second.scancode];
                 }
@@ -573,21 +581,24 @@ namespace dualpad::input::backend
         bool queuedPulse = false;
         if (contract == ActionOutputContract::Toggle) {
             if (pressEdge) {
-                queuedPulse = EnqueueBridgePulse(*scancode, actionId, contract, context);
+                const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+                queuedPulse = EnqueueBridgePulse(*scancode, actionId, contract, context, replayRouteActive);
                 if (!queuedPulse) {
                     return false;
                 }
             }
         } else if (contract == ActionOutputContract::Repeat) {
             if (pressEdge) {
-                queuedPulse = EnqueueBridgePulse(*scancode, actionId, contract, context);
+                const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+                queuedPulse = EnqueueBridgePulse(*scancode, actionId, contract, context, replayRouteActive);
                 if (!queuedPulse) {
                     return false;
                 }
                 action.nextRepeatAtHeldSeconds = kRepeatInitialDelaySeconds;
             } else {
                 while ((heldSeconds + kRepeatScheduleEpsilon) >= action.nextRepeatAtHeldSeconds) {
-                    if (!EnqueueBridgePulse(*scancode, actionId, contract, context)) {
+                    const auto replayRouteActive = _replayRouteActive.load(std::memory_order_acquire);
+                    if (!EnqueueBridgePulse(*scancode, actionId, contract, context, replayRouteActive)) {
                         return false;
                     }
                     queuedPulse = true;

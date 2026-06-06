@@ -87,6 +87,7 @@ namespace dualpad::input_v2::context
             const CompiledContextCatalog& catalog);
 
         const ResolvedContextSnapshot& GetPublishedSnapshot() const;
+        void PublishSnapshotForReplayTests(ResolvedContextSnapshot snapshot);
         void ResetForTests();
 
         static GameplaySubstate GameplaySubstateFromLegacy(dualpad::input::InputContext context);

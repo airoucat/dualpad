@@ -32,21 +32,6 @@ namespace dualpad::input_v2::prompt
     }
 
     void PromptRuntimeOwner::PublishPresentationState(
-        const presentation::PublishedPresentationState& presentation)
-    {
-        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
-        const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
-        PublishPresentationState(
-            presentation,
-            PromptRuntimeBaseline{
-                .manifestEpoch = graphSnapshot.manifestEpoch,
-                .configGeneration = bundle ? bundle->manifestEpoch : 0,
-                .bundle = bundle,
-                .graph = graphSnapshot
-            });
-    }
-
-    void PromptRuntimeOwner::PublishPresentationState(
         const presentation::PublishedPresentationState& presentation,
         PromptRuntimeBaseline baseline)
     {

@@ -75,7 +75,16 @@ namespace
 
     void PublishMenuPromptScope()
     {
-        prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(MenuPresentation());
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+        prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(
+            MenuPresentation(),
+            prompt::PromptRuntimeBaseline{
+                .manifestEpoch = graphSnapshot.manifestEpoch,
+                .configGeneration = bundle ? bundle->manifestEpoch : 0,
+                .bundle = bundle,
+                .graph = graphSnapshot
+            });
     }
 
     void TestMissingScopeFailsClosed()

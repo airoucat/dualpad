@@ -30,7 +30,6 @@ namespace dualpad::input_v2::prompt
     public:
         static PromptRuntimeOwner& GetSingleton();
 
-        void PublishPresentationState(const presentation::PublishedPresentationState& presentation);
         void PublishPresentationState(
             const presentation::PublishedPresentationState& presentation,
             PromptRuntimeBaseline baseline);

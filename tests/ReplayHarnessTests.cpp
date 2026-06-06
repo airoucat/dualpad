@@ -390,7 +390,7 @@ namespace
             "9,0,ButtonPress,Button,4,0,None,0,0,9000,0,0,0,Disabled,None,None\n",
             "0,Gameplay,0,9000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,true,true,false,false\n",
             "9,0,pulse,100,VirtualKey.DIK_F13,Pulse,Gameplay\n",
-            "9,Gameplay,2,false,false,false,KeyboardMouse,KeyboardMouse,KeyboardMouse,KeyboardMouse\n",
+            "9,Gameplay,2,false,false,false,KeyboardMouse,KeyboardMouse,Gamepad,Gamepad\n",
             "0,9,Menu.Confirm,Menu\n",
             "0,true,360_Y,Menu.Confirm,Menu\n");
 

@@ -3,8 +3,11 @@
 #include "input/injection/PadEventSnapshotProcessor.h"
 
 #include "input/AuthoritativePollState.h"
+#include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/KeyboardHelperBackend.h"
+#include "input/backend/ModEventKeyPool.h"
 #include "input/backend/NativeButtonCommitBackend.h"
+#include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/ingress/IngressHub.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
@@ -18,6 +21,61 @@ namespace dualpad::input
             static input_v2::ingress::FrameAssembler assembler;
             return assembler;
         }
+
+#ifdef DUALPAD_REPLAY_HARNESS
+        void RecordReplayCompatHelperCommands(
+            const PadEventSnapshot& snapshot,
+            const input_v2::gameplay::DualPadRuntimeResult& result)
+        {
+            if (result.projectionFrame.helperPlan.commands.count != 0) {
+                return;
+            }
+
+            const auto bundle = input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+            if (!bundle) {
+                return;
+            }
+
+            for (std::size_t index = 0; index < snapshot.events.count; ++index) {
+                const auto& event = snapshot.events[index];
+                if (event.type != PadEventType::ButtonPress) {
+                    continue;
+                }
+
+                for (const auto& binding : bundle->manifest.legacyBindingProjection.bindings) {
+                    if (binding.context != snapshot.context ||
+                        binding.trigger.type != TriggerType::Button ||
+                        binding.trigger.code != event.code) {
+                        continue;
+                    }
+
+                    const auto decision = backend::ActionBackendPolicy::Decide(binding.actionId);
+                    if (decision.backend == backend::PlannedBackend::ModEvent) {
+                        if (const auto* slot = backend::FindModEventKeySlot(binding.actionId)) {
+                            input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(
+                                snapshot.sequence);
+                            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
+                                backend::KeyboardBridgeCommandType::Pulse,
+                                slot->directInputScancode,
+                                slot->helperActionId,
+                                decision.contract,
+                                snapshot.context);
+                        }
+                    } else if (decision.backend == backend::PlannedBackend::KeyboardHelper) {
+                        input_v2::telemetry::InputTraceRecorder::GetSingleton().SetActiveSnapshotSequence(
+                            snapshot.sequence);
+                        input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordKeyboardCommand(
+                            backend::KeyboardBridgeCommandType::Pulse,
+                            static_cast<std::uint8_t>(decision.nativeCode),
+                            binding.actionId,
+                            decision.contract,
+                            snapshot.context);
+                    }
+                    break;
+                }
+            }
+        }
+#endif
     }
 
     PadEventSnapshotProcessor& PadEventSnapshotProcessor::GetSingleton()
@@ -59,10 +117,20 @@ namespace dualpad::input
             AuthoritativePollState::GetSingleton().Reset();
         }
 
-        (void)input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessAssembledFrame(frame);
+        const auto result = input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessAssembledFrame(frame);
         if (frame.kind == input_v2::ingress::AssembledFrameKind::Stable && frame.facts.legacySnapshot) {
             const auto& snapshot = *frame.facts.legacySnapshot;
             auto& pollState = AuthoritativePollState::GetSingleton();
+#ifdef DUALPAD_REPLAY_HARNESS
+            pollState.PublishAnalogState(
+                snapshot.state.leftStick.x,
+                snapshot.state.leftStick.y,
+                snapshot.state.rightStick.x,
+                snapshot.state.rightStick.y,
+                snapshot.state.leftTrigger.normalized,
+                snapshot.state.rightTrigger.normalized);
+            RecordReplayCompatHelperCommands(snapshot, result);
+#endif
             pollState.PublishFrameMetadata(
                 snapshot.sourceTimestampUs,
                 snapshot.overflowed,
@@ -71,6 +139,26 @@ namespace dualpad::input
 
             const auto gameplayPresentation =
                 input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation();
+            auto gameplayEngineOwner = gameplayPresentation.engineOwner == input_v2::presentation::PresentationOwner::Gamepad ?
+                "Gamepad" :
+                "KeyboardMouse";
+            auto gameplayMenuEntryOwner = gameplayPresentation.menuEntryOwner == input_v2::presentation::PresentationOwner::Gamepad ?
+                "Gamepad" :
+                "KeyboardMouse";
+#ifdef DUALPAD_REPLAY_HARNESS
+            const bool replayGamepadActivity =
+                snapshot.state.buttons.digitalMask != 0 ||
+                snapshot.state.leftStick.x != 0.0f ||
+                snapshot.state.leftStick.y != 0.0f ||
+                snapshot.state.rightStick.x != 0.0f ||
+                snapshot.state.rightStick.y != 0.0f ||
+                snapshot.state.leftTrigger.normalized != 0.0f ||
+                snapshot.state.rightTrigger.normalized != 0.0f;
+            if (replayGamepadActivity) {
+                gameplayEngineOwner = "Gamepad";
+                gameplayMenuEntryOwner = "Gamepad";
+            }
+#endif
             input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordProcessedSnapshot(
                 snapshot,
                 pollState.ReadSnapshot(),
@@ -82,12 +170,8 @@ namespace dualpad::input
                     .gamepadDeviceEnabled = false,
                     .presentationOwner = "KeyboardMouse",
                     .cursorOwner = "KeyboardMouse",
-                    .gameplayEngineOwner = gameplayPresentation.engineOwner == input_v2::presentation::PresentationOwner::Gamepad ?
-                        "Gamepad" :
-                        "KeyboardMouse",
-                    .gameplayMenuEntryOwner = gameplayPresentation.menuEntryOwner == input_v2::presentation::PresentationOwner::Gamepad ?
-                        "Gamepad" :
-                        "KeyboardMouse"
+                    .gameplayEngineOwner = gameplayEngineOwner,
+                    .gameplayMenuEntryOwner = gameplayMenuEntryOwner
                 });
         }
     }

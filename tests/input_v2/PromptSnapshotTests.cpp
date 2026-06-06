@@ -30,10 +30,10 @@ namespace
         }
     }
 
-    actions::CompiledActionGraph Graph()
+    actions::CompiledActionGraph Graph(std::uint64_t manifestEpoch = 42)
     {
         actions::CompiledActionGraph graph{};
-        graph.manifestEpoch = 42;
+        graph.manifestEpoch = manifestEpoch;
         graph.actions = {
             actions::ActionDefinition{ .id = "Menu.Accept", .valueKind = actions::ActionValueKind::Digital },
             actions::ActionDefinition{ .id = "Menu.Back", .valueKind = actions::ActionValueKind::Digital },
@@ -109,6 +109,18 @@ namespace
     {
         prompt::PromptProjection projection;
         return projection.BuildPromptScope(JournalPresentation(), 42);
+    }
+
+    prompt::PromptRuntimeBaseline BaselineFromActiveRuntime()
+    {
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        const auto graphSnapshot = actions::CompiledActionGraphPublisher::GetRuntimeOwner().GetActiveSnapshot();
+        return prompt::PromptRuntimeBaseline{
+            .manifestEpoch = graphSnapshot.manifestEpoch,
+            .configGeneration = bundle ? bundle->manifestEpoch : 0,
+            .bundle = bundle,
+            .graph = graphSnapshot
+        };
     }
 
     std::filesystem::path FindProjectRoot(std::filesystem::path from = std::filesystem::current_path())
@@ -287,7 +299,7 @@ namespace
             .scopeAnchorIds = { "MenuBase", "UnknownTrackedMenuLayer" }
         };
         menuPresentation.epoch = 1;
-        owner.PublishPresentationState(menuPresentation);
+        owner.PublishPresentationState(menuPresentation, BaselineFromActiveRuntime());
 
         auto& adapter = prompt::ScaleformPromptAdapter::GetSingleton();
         Require(
@@ -314,13 +326,22 @@ namespace
         owner.ResetForTests();
         LoadRuntimeConfigForPromptTests();
 
-        auto mismatchedGraph = Graph();
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "epoch skew test needs an active bundle");
+        auto mismatchedGraph = Graph(bundle->manifestEpoch + 1000);
         mismatchedGraph.manifestEpoch = 4242;
-        Require(
-            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(mismatchedGraph, 4242).ok,
-            "test setup must publish mismatched active graph epoch");
 
-        owner.PublishPresentationState(JournalPresentation());
+        owner.PublishPresentationState(
+            JournalPresentation(),
+            prompt::PromptRuntimeBaseline{
+                .manifestEpoch = mismatchedGraph.manifestEpoch,
+                .configGeneration = bundle->manifestEpoch,
+                .bundle = bundle,
+                .graph = actions::PublishedActionGraphSnapshot{
+                    .manifestEpoch = mismatchedGraph.manifestEpoch,
+                    .graph = std::make_shared<const actions::CompiledActionGraph>(mismatchedGraph)
+                }
+            });
         const auto descriptor = owner.Resolve(prompt::PromptQuery{
             .actionId = "Menu.Accept",
             .selectorKind = prompt::PromptScopeSelectorKind::ExplicitContextName,
@@ -328,10 +349,10 @@ namespace
         });
         Require(
             descriptor.status == prompt::PromptQueryStatus::ScopeUnavailable,
-            "prompt owner must fail closed when active bundle and graph epochs diverge");
+            "prompt owner must fail closed when explicit frame bundle and graph epochs diverge");
         Require(
             descriptor.manifestEpoch == 4242,
-            "scope-unavailable prompt descriptor must report the captured graph snapshot epoch");
+            "scope-unavailable prompt descriptor must report the explicit frame baseline epoch");
 
         LoadRuntimeConfigForPromptTests();
         owner.ResetForTests();
@@ -379,6 +400,53 @@ namespace
         LoadRuntimeConfigForPromptTests();
         owner.ResetForTests();
     }
+
+    void RunPromptRuntimeOwnerReloadInterleavingTests()
+    {
+        auto& owner = prompt::PromptRuntimeOwner::GetSingleton();
+        owner.ResetForTests();
+        LoadRuntimeConfigForPromptTests();
+
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "reload interleaving test needs an active bundle");
+        auto baselineGraph = Graph(bundle->manifestEpoch);
+
+        owner.PublishPresentationState(
+            JournalPresentation(),
+            prompt::PromptRuntimeBaseline{
+                .manifestEpoch = bundle->manifestEpoch,
+                .configGeneration = bundle->manifestEpoch,
+                .bundle = bundle,
+                .graph = actions::PublishedActionGraphSnapshot{
+                    .manifestEpoch = bundle->manifestEpoch,
+                    .graph = std::make_shared<const actions::CompiledActionGraph>(baselineGraph)
+                }
+            });
+
+        auto laterGraph = Graph(bundle->manifestEpoch + 1);
+        Require(
+            actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(laterGraph, laterGraph.manifestEpoch).ok,
+            "test setup must publish a later graph between prompt publish and resolve");
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
+
+        const auto descriptor = owner.Resolve(prompt::PromptQuery{
+            .actionId = "Menu.Accept",
+            .selectorKind = prompt::PromptScopeSelectorKind::ExplicitContextName,
+            .contextName = "JournalMenu"
+        });
+        Require(
+            descriptor.ok,
+            "prompt resolve must keep using the frame baseline after active graph/config reload interleaving");
+        Require(
+            descriptor.manifestEpoch == bundle->manifestEpoch,
+            "prompt resolve must report the stored frame baseline epoch after reload interleaving");
+        Require(
+            descriptor.primary && descriptor.primary->token == "Circle",
+            "prompt resolve must not switch to a later active graph after prompt publish");
+
+        LoadRuntimeConfigForPromptTests();
+        owner.ResetForTests();
+    }
 }
 
 int main()
@@ -388,6 +456,7 @@ int main()
         RunPromptServiceSuccessTests();
         RunPromptServiceFailClosedTests();
         RunPromptRuntimeOwnerExplicitBaselineTests();
+        RunPromptRuntimeOwnerReloadInterleavingTests();
         RunPromptRuntimeOwnerEpochSkewTests();
         RunPromptRuntimeOwnerTests();
         return 0;

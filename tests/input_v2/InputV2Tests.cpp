@@ -21,6 +21,7 @@
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
 #include <iostream>
+#include <filesystem>
 #include <stdexcept>
 #include <string_view>
 
@@ -280,6 +281,30 @@ namespace
             actions::CompiledActionGraphPublisher::GetRuntimeOwner().Publish(graph, 42).ok,
             "runtime surface tests need an active manifest epoch for prompt scope publication");
         (void)PublishJournalContext();
+    }
+
+    std::filesystem::path FindProjectRoot(std::filesystem::path from = std::filesystem::current_path())
+    {
+        while (!from.empty()) {
+            if (std::filesystem::is_regular_file(from / "xmake.lua")) {
+                return from;
+            }
+            const auto parent = from.parent_path();
+            if (parent == from) {
+                break;
+            }
+            from = parent;
+        }
+        throw std::runtime_error("could not find project root");
+    }
+
+    void LoadRuntimeConfigForGameplayBindingTests()
+    {
+        const auto root = FindProjectRoot();
+        const auto loaded = config::AtomicConfigReloader::GetSingleton().LoadOrRecover(
+            root / "config" / "DualPadBindings.ini",
+            root / "config" / "DualPadMenuPolicy.ini");
+        Require(loaded.ok, loaded.message);
     }
 
     actions::CompiledBinding Binding(
@@ -1062,6 +1087,196 @@ namespace
                 gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline) != stableExecutor.steps.end(),
             "next stable frame after hard transition must commit recovery clean baseline after apply");
     }
+
+    void RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
+        context::ContextResolver::GetSingleton().ResetForTests();
+        actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
+        prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+        LoadRuntimeConfigForGameplayBindingTests();
+
+        const auto contextSnapshot = PublishGameplayContext();
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "runtime binding test needs active config bundle");
+
+        ingress::AssembledFactFrame frame{};
+        frame.kind = ingress::AssembledFrameKind::Stable;
+        frame.firstSeq = 300;
+        frame.lastSeq = 300;
+        frame.boundaryKey = ingress::IngressBoundaryKey{
+            static_cast<std::uint32_t>(bundle->manifestEpoch),
+            contextSnapshot.contextRevision,
+            contextSnapshot.menuStackRevision,
+            1
+        };
+        frame.facts.manifestEpoch = frame.boundaryKey.manifestEpoch;
+        frame.facts.contextRevision = frame.boundaryKey.contextRevision;
+        frame.facts.menuStackRevision = frame.boundaryKey.menuStackRevision;
+        frame.facts.deviceFamilyRevision = frame.boundaryKey.deviceFamilyRevision;
+        frame.facts.monotonicUs = 300'000;
+        frame.facts.controlSamples = {
+            Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 4 }, true, true, false, 300'000, 300'000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 0.5f, 300'000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger), 1.0f, 300'000)
+        };
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(frame, executor);
+
+        Require(!result.RuntimeHealthDegraded(), "active config graph and frame baseline must not degrade");
+        Require(
+            result.projectionFrame.helperPlan.commands.count == 1,
+            "Gameplay Button:Circle must resolve to a helper command through the frame-bound graph");
+        Require(
+            result.projectionFrame.helperPlan.commands.items[0].actionId == "ModEvent1",
+            "Gameplay Button:Circle must resolve to ModEvent1 from active config");
+        Require(
+            result.projectionFrame.gamepadPlan.analog.lookX == 0.5f,
+            "Game.Look must resolve from frame-bound active config graph");
+        Require(
+            result.projectionFrame.gamepadPlan.analog.rightTrigger == 1.0f,
+            "Game.RightTrigger must resolve from frame-bound active config graph");
+    }
+
+    void RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
+        context::ContextResolver::GetSingleton().ResetForTests();
+        actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
+        prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+        LoadRuntimeConfigForGameplayBindingTests();
+
+        const auto contextSnapshot = PublishGameplayContext();
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "manifest transition test needs active config bundle");
+
+        ingress::AssembledFactFrame transition{};
+        transition.kind = ingress::AssembledFrameKind::Transition;
+        transition.boundaryKey = ingress::IngressBoundaryKey{
+            static_cast<std::uint32_t>(bundle->manifestEpoch),
+            0,
+            0,
+            0
+        };
+        transition.facts.manifestEpoch = transition.boundaryKey.manifestEpoch;
+        transition.transition = ingress::TransitionFrameMeta{
+            .from = ingress::IngressBoundaryKey{},
+            .to = transition.boundaryKey,
+            .reason = ingress::TransitionReason::ManifestEpochChanged,
+            .requestHardResync = true,
+            .flushPendingPulseEdges = true
+        };
+        RecordingPollOutputExecutor transitionExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(transition, transitionExecutor);
+
+        ingress::AssembledFactFrame stable{};
+        stable.kind = ingress::AssembledFrameKind::Stable;
+        stable.firstSeq = 301;
+        stable.lastSeq = 302;
+        stable.boundaryKey = ingress::IngressBoundaryKey{
+            static_cast<std::uint32_t>(bundle->manifestEpoch),
+            contextSnapshot.contextRevision,
+            contextSnapshot.menuStackRevision,
+            0
+        };
+        stable.facts.manifestEpoch = stable.boundaryKey.manifestEpoch;
+        stable.facts.contextRevision = stable.boundaryKey.contextRevision;
+        stable.facts.menuStackRevision = stable.boundaryKey.menuStackRevision;
+        stable.facts.monotonicUs = 301'000;
+        stable.facts.controlSamples = {
+            Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 4 }, true, true, false, 301'000, 301'000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 0.5f, 301'000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger), 1.0f, 301'000)
+        };
+
+        RecordingPollOutputExecutor stableExecutor;
+        const auto result = runtime.ProcessAssembledFrameForTests(stable, stableExecutor);
+        Require(
+            result.projectionFrame.helperPlan.commands.count == 1,
+            "first stable frame after manifest transition must still resolve helper command");
+        Require(
+            result.projectionFrame.gamepadPlan.analog.lookX == 0.5f,
+            "first stable frame after manifest transition must still resolve analog values");
+    }
+
+    void RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
+        context::ContextResolver::GetSingleton().ResetForTests();
+        actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
+        prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+        LoadRuntimeConfigForGameplayBindingTests();
+
+        auto contextSnapshot = PublishGameplayContext();
+        contextSnapshot.contextRevision = 2;
+        contextSnapshot.legacyContextEpoch = 2;
+        context::ContextResolver::GetSingleton().PublishSnapshotForReplayTests(contextSnapshot);
+
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "replay boundary stack test needs active config bundle");
+
+        ingress::FrameAssembler assembler;
+        std::vector<ingress::IngressEvent> events;
+
+        ingress::IngressEvent manifest{};
+        manifest.kind = ingress::IngressKind::ManifestEpochChanged;
+        manifest.source = ingress::IngressSource::ManifestPublisher;
+        manifest.seq = 1;
+        manifest.monotonicUs = 9000;
+        manifest.manifest.manifestEpoch = static_cast<std::uint32_t>(bundle->manifestEpoch);
+        events.push_back(manifest);
+
+        ingress::IngressEvent ui{};
+        ui.kind = ingress::IngressKind::UiSnapshot;
+        ui.source = ingress::IngressSource::LegacyDispatcher;
+        ui.seq = 2;
+        ui.monotonicUs = 9000;
+        ui.ui.contextRevision = contextSnapshot.contextRevision;
+        ui.ui.menuStackRevision = contextSnapshot.menuStackRevision;
+        events.push_back(ui);
+
+        ingress::IngressEvent pad{};
+        pad.kind = ingress::IngressKind::PadSnapshot;
+        pad.source = ingress::IngressSource::LegacyDispatcher;
+        pad.seq = 3;
+        pad.monotonicUs = 9000;
+        pad.pad.sequence = 9;
+        pad.pad.firstSequence = 9;
+        pad.pad.samples = {
+            Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 4 }, true, true, false, 9000, 9000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 0.5f, 9000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger), 1.0f, 9000)
+        };
+        events.push_back(std::move(pad));
+
+        const auto frames = assembler.Assemble(events);
+        Require(frames.size() == 3, "replay boundary stack must assemble manifest transition, ui transition, and stable frame");
+
+        RecordingPollOutputExecutor transitionExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(frames[0], transitionExecutor);
+        RecordingPollOutputExecutor uiExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(frames[1], uiExecutor);
+        RecordingPollOutputExecutor stableExecutor;
+        const auto result = runtime.ProcessAssembledFrameForTests(frames[2], stableExecutor);
+
+        Require(!result.RuntimeHealthDegraded(), "replay boundary stable frame must not degrade runtime health");
+        Require(
+            result.projectionFrame.helperPlan.commands.count == 1,
+            "replay boundary stable frame must resolve helper command");
+        Require(
+            result.projectionFrame.gamepadPlan.analog.lookX == 0.5f,
+            "replay boundary stable frame must resolve right stick value");
+        Require(
+            result.projectionFrame.gamepadPlan.analog.rightTrigger == 1.0f,
+            "replay boundary stable frame must resolve right trigger value");
+    }
 }
 
 int main()
@@ -1079,6 +1294,9 @@ int main()
         RunRuntimeDegradedFramePromptPublishContractTests();
         RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
+        RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();
+        RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();
+        RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

@@ -2156,3 +2156,67 @@
   - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1519 nodes, 3021 edges, 144 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+
+## 2026-06-06 23:18:00 CST
+
+- `DP5-RC20` U1.1 Runtime baseline snapshot binding / Prompt causality hardening 继续推进：
+  - 当前 `main` HEAD 为 baseline merge commit `a718612`，工作区从该基线开始。
+  - 已确认 `RuntimeConfigSnapshot` / `FrameRuntimeEnvelope` 已存在于 HEAD；本轮收紧剩余 causality gap：删除 `PromptRuntimeOwner::PublishPresentationState(presentation)` 的 active-read 发布重载，保留必须传入 `PromptRuntimeBaseline` 的显式发布入口。
+  - `DualPadRuntime` 继续通过 frame envelope 向 prompt publish 传递 `manifestEpoch` / `configGeneration` / bundle / graph。
+  - `ReplayHarness` 与 glyph compat tests 的 prompt 发布调用已改成显式 baseline；未恢复 legacy prompt active-read authority。
+  - `PromptSnapshotTests` 新增 reload interleaving 覆盖：prompt publish 后 active graph reload 与 config reset/reload 夹在 publish/resolve 之间时，resolve 仍使用 stored frame baseline。
+  - 为 replay compat 调试新增 `ContextResolver::PublishSnapshotForReplayTests(...)`，目标是让 replay trace context epoch 与 frame-bound context revision 对齐；该 seam 只用于 replay/tests，不放宽 core runtime skew guard。
+- 已通过的 focused / CI 验证：
+  - `xmake build -y DualPadPromptSnapshotTests && xmake run -y DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build -y DualPadGlyphResolutionCompatTests && xmake run -y DualPadGlyphResolutionCompatTests`：exit 0。
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path publisher epoch mismatch / duplicate binding 日志。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；包含 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`、generated docs consistency 与 reviewed-doc consistency。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null` 与 `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `git diff --check`：exit 0；仅 CRLF 工作区提示，无 whitespace error。
+- 当前阻塞：
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 1。
+  - 失败点：`09_combo_native_pause_screenshot_hotkeys/expected_keyboard_bridge.csv` 期望 1 行，实际 0 行。
+  - 单场景复现：`09_combo_native_pause_screenshot_hotkeys` 与 `11_config_reload_success_failure` 均出现 runtime action/analog 输出缺失；`expected_authoritative_poll.csv` 中 `Game.Look` / `Game.RightTrigger` 从 golden 的非零值变为 0。
+  - 初步根因：replay runtime generation 在当前 strict frame envelope / manifest/context binding 下没有进入 action graph resolve，导致 helper bridge side effect 缺失。该问题不能通过放宽 core runtime skew guard 或把 `legacySnapshot` 回流 core runtime 解决。
+- 状态结论：
+  - 本轮尚未满足 U1.1 close-out；未更新 #8 checklist 为完成，未提交/推送。
+  - 下一步需要继续定位 replay frame 的 `manifestEpoch` / `contextRevision` / `ActionSetStack` / graph availability 断点，再重新跑 replay diff、graphify rebuild 与最终 hygiene。
+
+## 2026-06-06 23:39:30 CST
+
+- DP5-RC20 U1.1 继续推进：
+  - runtime stable frame 绑定 `FrameRuntimeEnvelope` / `RuntimeConfigSnapshot`，prompt publish 仅接收 frame envelope 中的 manifest epoch / config generation / bundle / graph。
+  - 移除 prompt publish 的 active-read overload，避免 `PublishPresentationState()` 发布瞬间重新读取 active epoch / active config / active context。
+  - replay-only compat surface 增加 frame-timeline manifest seed，清理 config-load 产生的 live-timestamp ingress marker，避免 replay 时间线与 active manifest marker 交错。
+  - replay-only keyboard / analog / gameplay-owner trace 回填限定在 `DUALPAD_REPLAY_HARNESS`，不回流 core runtime，不新增 runtime phase。
+  - 新增 runtime / prompt 确定性覆盖，覆盖 manifest transition、replay boundary stack、graph/config/context reload 夹在 presentation publish / prompt resolve 中间的交错。
+- 已通过：
+  - builder JSON 校验：`.dualpad-builder/feature_list.json`、`.dualpad-builder/sprint_plan.json`
+  - focused tests：`DualPadInputV2Tests`、`DualPadPromptSnapshotTests`、`DualPadGlyphResolutionCompatTests`
+  - replay harness tests：`DualPadReplayHarnessTests`
+  - full replay generation + diff：`python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+  - reviewed docs consistency：`python scripts/ci/check_reviewed_docs_consistency.py`
+  - graphify rebuild：`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
+  - whitespace check：`git diff --check`
+- Phase 8 CI 已执行但未完全通过：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`
+  - 失败点：最后的 `git diff --exit-code -- docs/generated`
+  - 原因：本轮 golden replay surface 更新后，`DualPadDocGen` 将 `docs/generated/*_zh.md` 的 manifest hash 从 `c350db93c7217dbf` 更新为 `9287f16196d09423`；生成结果已落盘，但未提交/未暂存时 Phase 8 的 clean-diff 检查会失败。
+- 当前未宣告 U1.1 完成；剩余收口动作是处理 `docs/generated` 的 Phase 8 clean-diff 状态后重跑 Phase 8 CI，并同步 #8 checklist。
+
+## 2026-06-06 23:42:30 CST
+
+- DP5-RC20 U1.1 close-out 更新：
+  - 已将 `docs/generated` 的本轮生成结果纳入验证基线后重跑 Phase 8 CI。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1` 已通过。
+  - Phase 8 生成文档阶段确认 manifest hash 为 `9287f16196d09423`，`git diff --exit-code -- docs/generated` 通过。
+- U1.1 当前门禁状态：
+  - Phase 8 CI：通过
+  - builder JSON 校验：通过
+  - replay diff：通过
+  - graphify rebuild：通过
+  - generated docs consistency：通过
+  - git diff --check：待最终重跑
+- 结论：U1.1 实现与验证已完成，等待最终 whitespace check 与 #8 checklist 同步。
