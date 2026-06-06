@@ -1,5 +1,28 @@
 # DualPad Builder Progress
 
+## 2026-06-06 01:13:53 CST
+
+- `DP5-RC20` U1 ingress/frame contract hardening / 第二切片：
+  - 已创建分支 `codex/dp5-rc20-u1-ingress-frame-contract`。
+  - 本切片只处理 `FrameAssembler` strict seq / stable-window monotonic time invariant，以及 `IngressHub` typed overflow compaction；不处理 hook install failure、Axis2D、chord timestamp 或 primary path exclusivity。
+  - 已新增 `docs/superpowers/plans/2026-06-06-dp5-rc20-u1-ingress-frame-contract.md`。
+  - `IngressHub` overflow 现在生成带 `QueueOverflowPayload` 的单个 marker，保留最新 `ManifestEpochChanged`、`UiSnapshot`、`DeviceFamilyChanged`、`SourceEvidence`，并丢弃 volatile pad input backlog。
+  - `FrameAssembler` 现在按 drain 到达顺序消费，不再用排序修复乱序输入；seq gap / regression 与 stable window 内 monotonic time regression 会 fail-closed 到 `SequenceGap` transition。
+  - `QueueOverflow` payload 会先产出 `QueueOverflow` transition，再重建一份不含 `controlSamples` / `pulseLedger` / `legacySnapshot` 的 degraded baseline stable frame。
+- TDD / focused 验证结果：
+  - RED：`xmake build -y DualPadIngressTests` 首轮因 `IngressEvent::overflow` 不存在按预期编译失败。
+  - RED：补齐 payload 后，`xmake run -y DualPadIngressTests` 因旧 assembler 会把 out-of-order seq 排序回正常顺序按预期失败。
+  - GREEN：`xmake build -y DualPadIngressTests && xmake run -y DualPadIngressTests`：exit 0。
+  - `xmake build -y DualPadPropertyTests && xmake run -y DualPadPropertyTests`：exit 0。
+  - `xmake build -y DualPadReplayTests && xmake run -y DualPadReplayTests`：exit 0。
+- 完整验证结果：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；完整 build/run `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed-doc consistency 检查。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1554 nodes, 3188 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+
 ## 2026-06-06 00:49:41 CST
 
 - `DP5-RC20` U1 PR #15 远端 Phase8 CI 修复：

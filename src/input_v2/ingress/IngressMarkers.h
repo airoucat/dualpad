@@ -67,6 +67,18 @@ namespace dualpad::input_v2::ingress
         std::uint32_t deviceFamilyRevision{ 0 };
     };
 
+    struct QueueOverflowPayload
+    {
+        bool hasManifest{ false };
+        ManifestEpochChangedPayload manifest;
+        bool hasUi{ false };
+        UiSnapshotPayload ui;
+        bool hasDeviceFamily{ false };
+        DeviceFamilyChangedPayload deviceFamily;
+        bool hasSourceEvidence{ false };
+        presentation::SourceEvidenceSnapshot sourceEvidence;
+    };
+
     struct IngressEvent
     {
         std::uint64_t seq{ 0 };
@@ -79,6 +91,7 @@ namespace dualpad::input_v2::ingress
         presentation::SourceEvidenceSnapshot sourceEvidence;
         ManifestEpochChangedPayload manifest;
         DeviceFamilyChangedPayload deviceFamily;
+        QueueOverflowPayload overflow;
     };
 
     IngressEvent MakeSequenceGapEvent();

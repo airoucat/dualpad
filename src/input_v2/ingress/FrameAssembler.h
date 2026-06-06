@@ -84,8 +84,11 @@ namespace dualpad::input_v2::ingress
         IngressBoundaryKey _currentKey{};
         FactFrame _latestFacts{};
         Window _window{};
+        std::uint64_t _lastConsumedSeq{ 0 };
+        std::uint64_t _lastMonotonicUs{ 0 };
 
         void ApplyEventToWindow(const IngressEvent& event);
+        void ApplyOverflowCompaction(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
         void ApplyFactsFromBoundaryKey(FactFrame& facts, const IngressBoundaryKey& key) const;
         void FlushWindow(std::vector<AssembledFactFrame>& frames);
         void EmitTransition(
@@ -96,6 +99,7 @@ namespace dualpad::input_v2::ingress
             FactHealth health = {});
         void StartWindow(const IngressEvent& event);
         void HandleBoundaryChange(std::vector<AssembledFactFrame>& frames, const IngressEvent& event, IngressBoundaryKey nextKey, TransitionReason reason);
+        bool HandleOrderingViolation(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
         void HandleSourceEvidence(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
     };
 

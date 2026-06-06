@@ -42,20 +42,18 @@ namespace dualpad::input_v2::ingress
         _currentKey = IngressBoundaryKey{};
         _latestFacts = FactFrame{};
         _window = Window{};
+        _lastConsumedSeq = 0;
+        _lastMonotonicUs = 0;
     }
 
     std::vector<AssembledFactFrame> FrameAssembler::Assemble(const std::vector<IngressEvent>& events)
     {
-        std::vector<IngressEvent> sorted = events;
-        std::sort(
-            sorted.begin(),
-            sorted.end(),
-            [](const IngressEvent& lhs, const IngressEvent& rhs) {
-                return lhs.seq < rhs.seq;
-            });
-
         std::vector<AssembledFactFrame> frames;
-        for (const auto& event : sorted) {
+        for (const auto& event : events) {
+            if (HandleOrderingViolation(frames, event)) {
+                continue;
+            }
+
             if (IsHealthMarker(event.kind)) {
                 FlushWindow(frames);
                 auto reason = TransitionReason::ExplicitReset;
@@ -65,6 +63,9 @@ namespace dualpad::input_v2::ingress
                     reason = TransitionReason::QueueOverflow;
                 }
                 EmitTransition(frames, _currentKey, _currentKey, reason);
+                if (event.kind == IngressKind::QueueOverflow) {
+                    ApplyOverflowCompaction(frames, event);
+                }
                 continue;
             }
 
@@ -131,6 +132,43 @@ namespace dualpad::input_v2::ingress
         _window.facts.monotonicUs = event.monotonicUs;
     }
 
+    bool FrameAssembler::HandleOrderingViolation(std::vector<AssembledFactFrame>& frames, const IngressEvent& event)
+    {
+        if (event.seq != 0) {
+            if (_lastConsumedSeq != 0) {
+                if (event.seq <= _lastConsumedSeq) {
+                    FlushWindow(frames);
+                    FactHealth health{};
+                    health.sequenceGap = true;
+                    EmitTransition(frames, _currentKey, _currentKey, TransitionReason::SequenceGap, health);
+                    return true;
+                }
+                if (event.kind != IngressKind::SequenceGap && event.seq > _lastConsumedSeq + 1) {
+                    FlushWindow(frames);
+                    FactHealth health{};
+                    health.sequenceGap = true;
+                    EmitTransition(frames, _currentKey, _currentKey, TransitionReason::SequenceGap, health);
+                }
+            }
+            _lastConsumedSeq = event.seq;
+        }
+
+        if (event.monotonicUs != 0) {
+            if (_window.open &&
+                _window.lastMonotonicUs != 0 &&
+                event.monotonicUs < _window.lastMonotonicUs) {
+                FlushWindow(frames);
+                FactHealth health{};
+                health.sequenceGap = true;
+                EmitTransition(frames, _currentKey, _currentKey, TransitionReason::SequenceGap, health);
+                return true;
+            }
+            _lastMonotonicUs = event.monotonicUs;
+        }
+
+        return false;
+    }
+
     void FrameAssembler::ApplyEventToWindow(const IngressEvent& event)
     {
         if (!_window.open) {
@@ -166,6 +204,63 @@ namespace dualpad::input_v2::ingress
         }
 
         _latestFacts = _window.facts;
+    }
+
+    void FrameAssembler::ApplyOverflowCompaction(std::vector<AssembledFactFrame>& frames, const IngressEvent& event)
+    {
+        const auto& payload = event.overflow;
+        if (!payload.hasManifest &&
+            !payload.hasUi &&
+            !payload.hasDeviceFamily &&
+            !payload.hasSourceEvidence) {
+            return;
+        }
+
+        auto nextKey = _currentKey;
+        if (payload.hasManifest) {
+            nextKey.manifestEpoch = payload.manifest.manifestEpoch;
+        }
+        if (payload.hasUi) {
+            nextKey.contextRevision = payload.ui.contextRevision;
+            nextKey.menuStackRevision = payload.ui.menuStackRevision;
+        }
+        if (payload.hasDeviceFamily) {
+            nextKey.deviceFamilyRevision = payload.deviceFamily.deviceFamilyRevision;
+        }
+
+        FactFrame facts = _latestFacts;
+        facts.controlSamples.clear();
+        facts.pulseLedger.clear();
+        facts.legacySnapshot.reset();
+        facts.health = FactHealth{};
+        facts.health.queueOverflow = true;
+        facts.monotonicUs = event.monotonicUs;
+        if (payload.hasSourceEvidence) {
+            facts.sourceEvidence = payload.sourceEvidence;
+            if (payload.hasDeviceFamily &&
+                payload.sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision !=
+                    payload.deviceFamily.deviceFamilyRevision) {
+                facts.health.pendingBoundaryMarkerPair = true;
+                facts.health.boundaryMarkerMismatch = true;
+            }
+        } else if (payload.hasDeviceFamily) {
+            facts.health.pendingBoundaryMarkerPair = true;
+        }
+        ApplyFactsFromBoundaryKey(facts, nextKey);
+
+        frames.push_back(AssembledFactFrame{
+            .kind = AssembledFrameKind::Stable,
+            .firstSeq = event.seq,
+            .lastSeq = event.seq,
+            .boundaryKey = nextKey,
+            .facts = facts
+        });
+
+        _currentKey = nextKey;
+        _latestFacts = facts;
+        _latestFacts.health = FactHealth{};
+        _window = Window{};
+        _pendingDeviceMarker.reset();
     }
 
     void FrameAssembler::FlushWindow(std::vector<AssembledFactFrame>& frames)
