@@ -43,6 +43,13 @@ namespace dualpad::input_v2::prompt
         std::string token;
         std::string localizedLabel;
         std::string deviceProfile;
+        std::string glyphId;
+        std::string platformId;
+        std::string buttonSemanticName;
+        std::string fallbackText;
+        std::string assetLookupPath;
+        std::string missingIconBehavior;
+        std::string debugReason;
         std::uint16_t priority{ 0 };
     };
 

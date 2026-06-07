@@ -79,6 +79,37 @@ namespace dualpad::input_v2::prompt
             out << binding.actionSetId << ':' << binding.bindingId << ':' << binding.legacyOrigin;
             return out.str();
         }
+
+        std::string GlyphAssetLookupPath(std::string_view platformId, std::string_view glyphId)
+        {
+            std::ostringstream out;
+            out << "Interface/Exported/DualPad/Glyphs/" << platformId << '/' << glyphId << ".svg";
+            return out.str();
+        }
+
+        PromptCandidate MakePromptCandidate(
+            const actions::CompiledGraphBinding& binding,
+            const actions::DisplayBindingRecord& display)
+        {
+            const auto glyphId = display.token;
+            const auto platformId = display.deviceProfile;
+            const auto fallbackText = display.localizedLabel.empty() ? display.token : display.localizedLabel;
+            return PromptCandidate{
+                .bindingId = display.bindingId,
+                .source = CandidateSource(binding),
+                .token = display.token,
+                .localizedLabel = display.localizedLabel,
+                .deviceProfile = display.deviceProfile,
+                .glyphId = glyphId,
+                .platformId = platformId,
+                .buttonSemanticName = fallbackText,
+                .fallbackText = fallbackText,
+                .assetLookupPath = GlyphAssetLookupPath(platformId, glyphId),
+                .missingIconBehavior = "fallback_text",
+                .debugReason = "Ok",
+                .priority = display.priority
+            };
+        }
     }
 
     PromptService::PromptService(
@@ -105,6 +136,13 @@ namespace dualpad::input_v2::prompt
         legacy.promptScopeRevision = descriptor.promptScopeRevision;
         if (descriptor.primary) {
             legacy.buttonArtToken = descriptor.primary->token;
+            legacy.glyphId = descriptor.primary->glyphId;
+            legacy.platformId = descriptor.primary->platformId;
+            legacy.buttonSemanticName = descriptor.primary->buttonSemanticName;
+            legacy.fallbackText = descriptor.primary->fallbackText;
+            legacy.assetLookupPath = descriptor.primary->assetLookupPath;
+            legacy.missingIconBehavior = descriptor.primary->missingIconBehavior;
+            legacy.debugReason = descriptor.primary->debugReason;
         }
         if (descriptor.resolvedContext) {
             legacy.resolvedContextId = ContextIdString(*descriptor.resolvedContext);
@@ -117,6 +155,13 @@ namespace dualpad::input_v2::prompt
         }
         if (!descriptor.ok) {
             legacy.buttonArtToken.clear();
+            legacy.glyphId.clear();
+            legacy.platformId.clear();
+            legacy.buttonSemanticName.clear();
+            legacy.fallbackText.clear();
+            legacy.assetLookupPath.clear();
+            legacy.missingIconBehavior = "fail_closed_empty_token";
+            legacy.debugReason = std::string(ToString(descriptor.status));
         }
         return legacy;
     }
@@ -227,14 +272,7 @@ namespace dualpad::input_v2::prompt
                     continue;
                 }
 
-                anchorCandidates.push_back(PromptCandidate{
-                    .bindingId = display->bindingId,
-                    .source = CandidateSource(*binding),
-                    .token = display->token,
-                    .localizedLabel = display->localizedLabel,
-                    .deviceProfile = display->deviceProfile,
-                    .priority = display->priority
-                });
+                anchorCandidates.push_back(MakePromptCandidate(*binding, *display));
             }
 
             if (!anchorCandidates.empty()) {

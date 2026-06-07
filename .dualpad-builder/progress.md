@@ -2418,3 +2418,48 @@
 - 状态结论：
   - U3 本地实现与验证已完成，`git diff --check` 已通过，GitHub #10 checklist 已更新并关闭，GitHub #13 总控 issue 已同步 U3 完成状态。
   - `DP5` / `S-DP5` 整体仍保持 planned；U4 / U5 尚未完成。
+
+## 2026-06-07 23:27:42 CST
+
+- 已将 PR #19 合并到 `main`：
+  - PR #19 `Complete DP5-RC20 U3 release readiness` 已通过远端 Phase8，并以 merge commit `26867bce299ac3f6d298507bfbbccf77b8789a43` 合入 `main`。
+  - 本轮 U4 工作分支基于新的 `main` merge commit 创建：`codex/dp5-rc20-u4-config-prompt-menu-glyph-closure`。
+- `DP5-RC20` U4 Config / prompt / menu / glyph contract closure 已开始推进：
+  - 本切片不新增 runtime phase，不改变 `src/input_v2/` mainline，不改 canonical target 名称、replay root、旧 SWF token API 或 `FavoritesMenu` workspace。
+  - 内部 `PromptCandidate` / `PromptLegacyGlyphDescriptor` diagnostics 已补 glyph id、platform id、button semantic name、fallback text、asset lookup path、missing icon behavior 与 debug reason。
+  - 旧 `DualPad_GetActionGlyphToken` 继续只返回单 token；`ScaleformPromptAdapter` 的 GFx descriptor 暂不新增 U4 visual asset contract 字段。
+  - 新增 `docs/releases/dp5_rc20_u4_config_prompt_menu_glyph_contract_zh.md`，记录 zero direct binding 分类、`unknown_menu_policy=passthrough` / ignored menu 行为、`FavoritesMenu` non-restore workspace、conflict detection、prompt fail-closed 矩阵与 glyph/icon contract。
+  - 新增 `scripts/ci/check_config_prompt_menu_glyph_closure.py` 并接入 Phase8 CI；reviewed docs consistency 现在要求 Phase8 保留该 U4 gate。
+- 已通过的 focused / static gate：
+  - `xmake build -y DualPadPromptSnapshotTests && xmake run -y DualPadPromptSnapshotTests`：exit 0。
+  - `python scripts/ci/check_config_prompt_menu_glyph_closure.py`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+- 待收尾验证：
+  - `DualPadManifestCompilerTests`
+  - Phase 8 CI
+  - replay diff
+  - builder JSON
+  - legacy authority boundary check
+  - graphify rebuild
+  - `git diff --check`
+  - GitHub #11 checklist 与 #13 总控同步
+
+## 2026-06-07 23:30:25 CST
+
+- `DP5-RC20` U4 close-out 验证完成：
+  - `xmake build -y DualPadPromptSnapshotTests && xmake run -y DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build -y DualPadManifestCompilerTests && xmake run -y DualPadManifestCompilerTests`：exit 0；stdout 仍包含既有 negative-path epoch mismatch / bad config / stale LKG 日志。
+  - `python scripts/ci/check_config_prompt_menu_glyph_closure.py`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：最终 exit 0；构建/运行 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 reviewed docs consistency、legacy authority boundary、U3 release readiness、U4 config/prompt/menu/glyph closure 与 generated docs clean-diff。首次运行因 DocGen 将 generated docs manifest hash 从 `35f58ad5aff249ea` 更新为 `60ab6dd5bcb07037` 停在 `git diff --exit-code -- docs/generated`；按既有 close-out 规则暂存 regenerated docs 后重跑通过。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null` 与 `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_legacy_authority_boundary.py`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1647 nodes, 3468 edges, 143 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 状态结论：
+  - U4 已冻结 config / prompt / menu / glyph 用户可见合同：zero-direct context 分类、`unknown_menu_policy=passthrough` / ignored menu 行为、`FavoritesMenu` non-restore workspace、prompt fail-closed 矩阵与 glyph/icon diagnostics。
+  - 本轮未新增 runtime phase，未改变 `src/input_v2/` mainline，未改旧 SWF token API，未恢复 `FavoritesMenu` workspace、`BindingManager` 或 trigger reverse lookup authority。
+  - `DP5` / `S-DP5` 整体仍保持 planned；U5 尚未完成。

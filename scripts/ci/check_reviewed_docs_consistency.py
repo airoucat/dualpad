@@ -107,6 +107,8 @@ def main() -> int:
         failures.append("scripts/ci/run_phase8_ci.ps1: default CI must run legacy authority boundary check.")
     if "scripts/ci/check_release_readiness.py" not in phase8_ci:
         failures.append("scripts/ci/run_phase8_ci.ps1: default CI must run release readiness check.")
+    if "scripts/ci/check_config_prompt_menu_glyph_closure.py" not in phase8_ci:
+        failures.append("scripts/ci/run_phase8_ci.ps1: default CI must run config/prompt/menu/glyph closure check.")
 
     feature_data = json.loads((ROOT / ".dualpad-builder/feature_list.json").read_text(encoding="utf-8"))
     features = {item["id"]: item for item in feature_data["features"]}
