@@ -2283,3 +2283,42 @@
   - generated docs consistency：通过
   - git diff --check：待最终重跑
 - 结论：U1.1 实现与验证已完成，等待最终 whitespace check 与 #8 checklist 同步。
+
+## 2026-06-07 21:09:03 CST
+
+- `DP5-RC20` U1.9 Axis2D / chord timestamp / primary path contracts 开始并完成 focused 实现：
+  - 当前本地 HEAD 确认基于 `08c5c4715696`。
+  - `Axis2D` 内部语义已收口为同一 action 的 X / Y stick axis coalescing：值域 clamp 到 `[-1.0, 1.0]`，neutral epsilon 为 `0.0001`，value 是 absolute，不解释为 delta；frame 有 `monotonicUs` 时 value / `Value` phase 使用 frame evaluation timestamp。
+  - Chord pulse 已暴露 `firstEdgeUs`、`lastEdgeUs`、`evaluationUs`；chord 只在新 edge 进入窗口时 fire，level-held 不重复 pulse，overflow / degraded stable frame 会 invalidate latch 且不输出 dirty pulse。
+  - Primary path exclusivity 已收口到 `ResolvePrimaryPathArbitration(...)`：gamepad / mouse / keyboard / UI / menu cursor owner 先形成单一 arbitration decision，再回填 channel owner、gate plan 与 presentation owner。
+  - 本轮未改变 prompt / glyph public shape，未恢复旧 SWF shape，未恢复 `FavoritesMenu` workspace，未新增 runtime phase。
+- 已通过的 focused / property 验证：
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path publisher epoch mismatch / duplicate binding / degraded debug 日志。
+  - `xmake build -y DualPadGameplayProjectionTests && xmake run -y DualPadGameplayProjectionTests`：exit 0。
+  - `xmake build -y DualPadPropertyTests && xmake run -y DualPadPropertyTests`：exit 0。
+- 待收尾验证：
+  - Phase 8 CI
+  - replay diff
+  - builder JSON
+  - reviewed/generated docs consistency
+  - graphify rebuild
+  - `git diff --check`
+  - GitHub #8 checklist
+
+## 2026-06-07 21:15:30 CST
+
+- `DP5-RC20` U1.9 close-out 验证完成：
+  - 最终复核中将 `Axis2D` coalesced `scalar` magnitude clamp 到 `[0.0, 1.0]`，并在该最终代码状态后重跑所有下列 gate。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：最终 exit 0；构建/运行 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed docs consistency。第一次运行因 DocGen 将 `docs/generated` manifest hash 从 `39a4b74cae31a15a` 更新为 `5f5914014e46c91d` 而停在 `git diff --exit-code -- docs/generated`；按既有 close-out 规则 stage regenerated docs 后重跑通过。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1617 nodes, 3414 edges, 143 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 状态结论：
+  - U1.9 Axis2D / chord timestamp / primary path contracts 已完成本地实现与验证。
+  - 本轮未改变 prompt / glyph public shape，未恢复旧 SWF shape，未恢复 `FavoritesMenu` workspace，未新增 runtime phase。
+  - `DP5` / `S-DP5` 整体仍保持 planned；U2-U5 尚未完成。

@@ -76,6 +76,7 @@ namespace
             actions::ActionDefinition{ .id = "PowerAttack", .valueKind = actions::ActionValueKind::Digital },
             actions::ActionDefinition{ .id = "NativeCombo", .valueKind = actions::ActionValueKind::Digital },
             actions::ActionDefinition{ .id = "LookX", .valueKind = actions::ActionValueKind::Axis1D },
+            actions::ActionDefinition{ .id = "Game.Look", .valueKind = actions::ActionValueKind::Axis2D },
             actions::ActionDefinition{ .id = "RightTrigger", .valueKind = actions::ActionValueKind::Axis1D }
         };
         return manifest;
@@ -684,6 +685,43 @@ namespace
 
         state.Reset();
         {
+            auto axis2DManifest = ManifestWithActions();
+            axis2DManifest.bindings.push_back(Binding(
+                "Game.Look",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX))));
+            axis2DManifest.bindings.push_back(Binding(
+                "Game.Look",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickY))));
+            const auto axis2DCompiled = actions::ActionGraphCompiler::Compile(axis2DManifest);
+            Require(axis2DCompiled.ok, axis2DCompiled.message);
+
+            actions::LegacyInteractionInputFrame legacy{};
+            legacy.manifestEpoch = 42;
+            legacy.contextRevision = 7;
+            legacy.monotonicUs = 1'650;
+            legacy.samples = {
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 1.25f, 1'640),
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickY), -1.25f, 1'645)
+            };
+            const auto frame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(legacy);
+
+            const auto resolved = engine.Resolve(axis2DCompiled.graph, stack, frame, state);
+            Require(resolved.values.size() == 1, "Axis2D pair must coalesce into one action value");
+            Require(resolved.changes.size() == 1, "Axis2D pair must emit one coalesced Value phase change");
+            Require(resolved.values[0].actionId == "Game.Look", "Axis2D value must retain the action id");
+            Require(resolved.values[0].kind == actions::ActionValueKind::Axis2D, "Axis2D pair must publish Axis2D kind");
+            Require(resolved.values[0].x == 1.0f, "Axis2D X must clamp to the [-1, 1] domain");
+            Require(resolved.values[0].y == -1.0f, "Axis2D Y must clamp to the [-1, 1] domain");
+            Require(resolved.values[0].timestampUs == 1'650, "Axis2D coalesced value timestamp must use frame evaluation time");
+            Require(resolved.changes[0].timestampUs == 1'650, "Axis2D Value change timestamp must use frame evaluation time");
+        }
+
+        state.Reset();
+        {
             auto fallbackManifest = ManifestWithActions();
             fallbackManifest.bindings.push_back(Binding("Jump", Trigger(dualpad::input::TriggerType::Button, 11)));
             const auto fallbackCompiled = actions::ActionGraphCompiler::Compile(fallbackManifest);
@@ -720,6 +758,9 @@ namespace
             Require(resolved.changes.size() == 1, "Combo must fire when final legacy participant arrives second");
             Require(resolved.changes[0].actionId == "NativeCombo", "Combo must resolve to its action");
             Require(resolved.changes[0].phase == actions::ActionPhase::Pulse, "Combo must emit a pulse");
+            Require(resolved.changes[0].firstEdgeUs == 1'950, "Combo pulse must expose firstEdgeUs");
+            Require(resolved.changes[0].lastEdgeUs == 2'000, "Combo pulse must expose lastEdgeUs");
+            Require(resolved.changes[0].evaluationUs == 2'000, "Combo pulse must expose evaluationUs");
         }
 
         state.Reset();
@@ -737,6 +778,63 @@ namespace
             const auto resolved = engine.Resolve(compiled.graph, stack, frame, state);
             Require(resolved.changes.size() == 1, "Combo must be unordered and fire when required participant arrives second");
             Require(resolved.changes[0].actionId == "NativeCombo", "unordered combo must still resolve to combo action");
+            Require(resolved.changes[0].firstEdgeUs == 2'950, "unordered combo firstEdgeUs must use the earlier participant edge");
+            Require(resolved.changes[0].lastEdgeUs == 3'000, "unordered combo lastEdgeUs must use the later participant edge");
+            Require(resolved.changes[0].evaluationUs == 3'000, "unordered combo evaluationUs must use frame evaluation time");
+        }
+
+        state.Reset();
+        {
+            actions::LegacyInteractionInputFrame first{};
+            first.manifestEpoch = 42;
+            first.contextRevision = 7;
+            first.monotonicUs = 5'000;
+            first.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 2 }, true, false, false, 4'950, 5'000),
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, true, false, 5'000, 5'000)
+            };
+            const auto firstResolved = engine.Resolve(
+                compiled.graph,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(first),
+                state);
+            Require(firstResolved.changes.size() == 1, "initial chord edge must fire");
+
+            actions::LegacyInteractionInputFrame held{};
+            held.manifestEpoch = 42;
+            held.contextRevision = 7;
+            held.monotonicUs = 5'050;
+            held.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 2 }, true, false, false, 4'950, 5'050),
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, false, false, 5'000, 5'050)
+            };
+            const auto heldResolved = engine.Resolve(
+                compiled.graph,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(held),
+                state);
+            Require(heldResolved.changes.empty(), "level-held chord must not refire without a new edge");
+
+            auto degradedFrame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(held);
+            degradedFrame.facts.monotonicUs = 5'100;
+            degradedFrame.state.healthDegraded = true;
+            const auto degradedResolved = engine.Resolve(compiled.graph, stack, degradedFrame, state);
+            Require(degradedResolved.changes.empty(), "overflow/degraded frame must invalidate chord without dirty pulse output");
+
+            actions::LegacyInteractionInputFrame refire{};
+            refire.manifestEpoch = 42;
+            refire.contextRevision = 7;
+            refire.monotonicUs = 5'200;
+            refire.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 2 }, true, false, false, 5'150, 5'200),
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, true, false, 5'200, 5'200)
+            };
+            const auto refired = engine.Resolve(
+                compiled.graph,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(refire),
+                state);
+            Require(refired.changes.size() == 1, "new clean chord edge after invalidation must fire");
         }
 
         state.Reset();

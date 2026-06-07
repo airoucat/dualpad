@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-06-04T00:48:58+08:00",
+  "updated_at": "2026-06-07T21:09:03+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -493,6 +493,7 @@
       "verification": [
         "U0: docs/authoritative-baseline/dp5_rc20_contract_zh.md 已新增并从 authoritative baseline / DOC index 接入",
         "U0: GitHub Meta #13、U0-U5 #7-#12 已创建；旧 #2-#6 已迁移并以 superseded/not_planned 关闭",
+        "U1.9: Axis2D / chord timestamp / primary path contracts 必须通过 DualPadInputV2Tests、DualPadGameplayProjectionTests、DualPadPropertyTests、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、graphify rebuild 与 git diff --check",
         "后续具体 hardening slice 默认至少包含 scripts/ci/run_phase8_ci.ps1、builder JSON 校验、graphify rebuild 和 git diff --check"
       ]
     }

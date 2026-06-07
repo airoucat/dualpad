@@ -150,6 +150,87 @@ namespace dualpad::input_v2::gameplay
         }
     }
 
+    PrimaryPathArbitrationDecision ResolvePrimaryPathArbitration(const PrimaryPathArbitrationInput& input)
+    {
+        PrimaryPathArbitrationDecision decision{};
+        decision.cursorOwner = input.menuCursorOwner;
+
+        if (!input.gameplayContext) {
+            decision.lookOwner = ChannelOwner::KeyboardMouse;
+            decision.moveOwner = ChannelOwner::KeyboardMouse;
+            decision.combatOwner = ChannelOwner::KeyboardMouse;
+            decision.digitalOwner = ChannelOwner::KeyboardMouse;
+            decision.engineOwner = input.uiOwner;
+            decision.menuEntryOwner = input.uiOwner;
+            decision.reasons.look = GameplayReasonCode::NonGameplayContext;
+            decision.reasons.move = GameplayReasonCode::NonGameplayContext;
+            decision.reasons.combat = GameplayReasonCode::NonGameplayContext;
+            decision.reasons.digital = GameplayReasonCode::NonGameplayContext;
+            return decision;
+        }
+
+        decision.lookOwner = input.previousLookOwner;
+        decision.moveOwner = input.previousMoveOwner;
+        decision.combatOwner = input.previousCombatOwner;
+        decision.digitalOwner = input.previousDigitalOwner;
+
+        if (input.mouseLookActive) {
+            decision.lookOwner = ChannelOwner::KeyboardMouse;
+            decision.reasons.look = GameplayReasonCode::MouseLookActive;
+        } else if (input.gamepadLookActive || input.gamepadLookSustained) {
+            decision.lookOwner = ChannelOwner::Gamepad;
+            decision.reasons.look = GameplayReasonCode::MeaningfulRightStick;
+        } else {
+            decision.reasons.look = GameplayReasonCode::CarryPreviousOwner;
+        }
+
+        if (input.keyboardMoveActive) {
+            decision.moveOwner = ChannelOwner::KeyboardMouse;
+            decision.reasons.move = GameplayReasonCode::KeyboardMoveActive;
+        } else if (input.gamepadMoveActive || input.gamepadMoveSustained) {
+            decision.moveOwner = ChannelOwner::Gamepad;
+            decision.reasons.move = GameplayReasonCode::MeaningfulLeftStick;
+        } else {
+            decision.reasons.move = GameplayReasonCode::CarryPreviousOwner;
+        }
+
+        if (input.keyboardMouseCombatActive) {
+            decision.combatOwner = ChannelOwner::KeyboardMouse;
+            decision.reasons.combat = GameplayReasonCode::KeyboardMouseCombatActive;
+        } else if (input.gamepadCombatActive || input.gamepadCombatSustained) {
+            decision.combatOwner = ChannelOwner::Gamepad;
+            decision.reasons.combat = GameplayReasonCode::MeaningfulTrigger;
+        } else {
+            decision.reasons.combat = GameplayReasonCode::CarryPreviousOwner;
+        }
+
+        if (input.keyboardMouseDigitalActive) {
+            decision.digitalOwner = ChannelOwner::KeyboardMouse;
+            decision.reasons.digital = GameplayReasonCode::KeyboardMouseTransientDigitalActive;
+        } else if (input.gamepadTransientDigitalActive) {
+            decision.digitalOwner = ChannelOwner::Gamepad;
+            decision.reasons.digital = GameplayReasonCode::GamepadTransientDigitalActive;
+        } else {
+            decision.reasons.digital = GameplayReasonCode::CarryPreviousOwner;
+        }
+
+        const bool keyboardMousePrimary =
+            input.keyboardMouseDigitalActive ||
+            input.keyboardMouseCombatActive ||
+            input.keyboardMoveActive ||
+            input.mouseLookActive;
+        const bool gamepadAnalogPrimary =
+            decision.lookOwner == ChannelOwner::Gamepad ||
+            decision.moveOwner == ChannelOwner::Gamepad ||
+            decision.combatOwner == ChannelOwner::Gamepad;
+
+        decision.engineOwner = keyboardMousePrimary ?
+            presentation::PresentationOwner::KeyboardMouse :
+            (gamepadAnalogPrimary ? presentation::PresentationOwner::Gamepad : input.uiOwner);
+        decision.menuEntryOwner = decision.engineOwner;
+        return decision;
+    }
+
     GameplayProjectionFrame ResolveGameplayProjection(
         const actions::KernelFrame& kernel,
         const actions::ResolvedActionFrame& resolved,
@@ -182,64 +263,33 @@ namespace dualpad::input_v2::gameplay
         const auto rightTriggerMagnitude = AxisMagnitudeForTarget(resolved, NativeAxisTarget::RightTrigger);
         const auto triggerMagnitude = std::max(leftTriggerMagnitude, rightTriggerMagnitude);
 
-        if (!policy.gameplayContext) {
-            frame.lookOwner = ChannelOwner::KeyboardMouse;
-            frame.moveOwner = ChannelOwner::KeyboardMouse;
-            frame.combatOwner = ChannelOwner::KeyboardMouse;
-            frame.digitalOwner = ChannelOwner::KeyboardMouse;
-            frame.reasons.look = GameplayReasonCode::NonGameplayContext;
-            frame.reasons.move = GameplayReasonCode::NonGameplayContext;
-            frame.reasons.combat = GameplayReasonCode::NonGameplayContext;
-            frame.reasons.digital = GameplayReasonCode::NonGameplayContext;
-        } else {
-            frame.lookOwner = previous.lookOwner;
-            frame.moveOwner = previous.moveOwner;
-            frame.combatOwner = previous.combatOwner;
-            frame.digitalOwner = previous.digitalOwner;
-
-            if (policy.mouseLookActive) {
-                frame.lookOwner = ChannelOwner::KeyboardMouse;
-                frame.reasons.look = GameplayReasonCode::MouseLookActive;
-            } else if (lookMagnitude >= policy.lookEnterThreshold ||
-                       (previous.lookOwner == ChannelOwner::Gamepad && lookMagnitude >= policy.lookSustainThreshold)) {
-                frame.lookOwner = ChannelOwner::Gamepad;
-                frame.reasons.look = GameplayReasonCode::MeaningfulRightStick;
-            } else {
-                frame.reasons.look = GameplayReasonCode::CarryPreviousOwner;
-            }
-
-            if (policy.keyboardMoveActive) {
-                frame.moveOwner = ChannelOwner::KeyboardMouse;
-                frame.reasons.move = GameplayReasonCode::KeyboardMoveActive;
-            } else if (moveMagnitude >= policy.moveEnterThreshold ||
-                       (previous.moveOwner == ChannelOwner::Gamepad && moveMagnitude >= policy.moveSustainThreshold)) {
-                frame.moveOwner = ChannelOwner::Gamepad;
-                frame.reasons.move = GameplayReasonCode::MeaningfulLeftStick;
-            } else {
-                frame.reasons.move = GameplayReasonCode::CarryPreviousOwner;
-            }
-
-            if (policy.keyboardMouseCombatActive) {
-                frame.combatOwner = ChannelOwner::KeyboardMouse;
-                frame.reasons.combat = GameplayReasonCode::KeyboardMouseCombatActive;
-            } else if (triggerMagnitude >= policy.triggerEnterThreshold ||
-                       (previous.combatOwner == ChannelOwner::Gamepad && triggerMagnitude >= policy.triggerSustainThreshold)) {
-                frame.combatOwner = ChannelOwner::Gamepad;
-                frame.reasons.combat = GameplayReasonCode::MeaningfulTrigger;
-            } else {
-                frame.reasons.combat = GameplayReasonCode::CarryPreviousOwner;
-            }
-
-            if (policy.keyboardMouseDigitalActive) {
-                frame.digitalOwner = ChannelOwner::KeyboardMouse;
-                frame.reasons.digital = GameplayReasonCode::KeyboardMouseTransientDigitalActive;
-            } else if (hasTransientGamepadDigital) {
-                frame.digitalOwner = ChannelOwner::Gamepad;
-                frame.reasons.digital = GameplayReasonCode::GamepadTransientDigitalActive;
-            } else {
-                frame.reasons.digital = GameplayReasonCode::CarryPreviousOwner;
-            }
-        }
+        const auto recoveryReason = frame.reasons.recovery;
+        const auto primaryPath = ResolvePrimaryPathArbitration(PrimaryPathArbitrationInput{
+            .previousLookOwner = previous.lookOwner,
+            .previousMoveOwner = previous.moveOwner,
+            .previousCombatOwner = previous.combatOwner,
+            .previousDigitalOwner = previous.digitalOwner,
+            .gameplayContext = policy.gameplayContext,
+            .gamepadLookActive = lookMagnitude >= policy.lookEnterThreshold,
+            .gamepadLookSustained = previous.lookOwner == ChannelOwner::Gamepad && lookMagnitude >= policy.lookSustainThreshold,
+            .gamepadMoveActive = moveMagnitude >= policy.moveEnterThreshold,
+            .gamepadMoveSustained = previous.moveOwner == ChannelOwner::Gamepad && moveMagnitude >= policy.moveSustainThreshold,
+            .gamepadCombatActive = triggerMagnitude >= policy.triggerEnterThreshold,
+            .gamepadCombatSustained = previous.combatOwner == ChannelOwner::Gamepad && triggerMagnitude >= policy.triggerSustainThreshold,
+            .gamepadTransientDigitalActive = hasTransientGamepadDigital,
+            .mouseLookActive = policy.mouseLookActive,
+            .keyboardMoveActive = policy.keyboardMoveActive,
+            .keyboardMouseCombatActive = policy.keyboardMouseCombatActive,
+            .keyboardMouseDigitalActive = policy.keyboardMouseDigitalActive,
+            .uiOwner = presentation::PresentationOwner::KeyboardMouse,
+            .menuCursorOwner = presentation::CursorOwner::KeyboardMouse
+        });
+        frame.lookOwner = primaryPath.lookOwner;
+        frame.moveOwner = primaryPath.moveOwner;
+        frame.combatOwner = primaryPath.combatOwner;
+        frame.digitalOwner = primaryPath.digitalOwner;
+        frame.reasons = primaryPath.reasons;
+        frame.reasons.recovery = recoveryReason;
 
         frame.gatePlan.lookGate = frame.lookOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
         frame.gatePlan.moveGate = frame.moveOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
@@ -321,17 +371,8 @@ namespace dualpad::input_v2::gameplay
             }
         }
 
-        const bool analogPresentationGamepad =
-            frame.lookOwner == ChannelOwner::Gamepad ||
-            frame.moveOwner == ChannelOwner::Gamepad ||
-            frame.combatOwner == ChannelOwner::Gamepad;
-        frame.presentationPlan.engineOwner =
-            policy.keyboardMouseDigitalActive || policy.keyboardMouseCombatActive || policy.keyboardMoveActive || policy.mouseLookActive ?
-            presentation::PresentationOwner::KeyboardMouse :
-            (analogPresentationGamepad ?
-                    presentation::PresentationOwner::Gamepad :
-                    presentation::PresentationOwner::KeyboardMouse);
-        frame.presentationPlan.menuEntryOwner = frame.presentationPlan.engineOwner;
+        frame.presentationPlan.engineOwner = primaryPath.engineOwner;
+        frame.presentationPlan.menuEntryOwner = primaryPath.menuEntryOwner;
         if (frame.recoveryPlan.mode == RecoveryMode::HardResetOutputs) {
             frame.presentationPlan.reason = presentation::GameplayPresentationReasonCode::RecoveryRepublish;
         } else {

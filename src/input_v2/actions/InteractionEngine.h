@@ -29,6 +29,9 @@ namespace dualpad::input_v2::actions
         BindingId bindingId{ 0 };
         ActionPhase phase{ ActionPhase::Press };
         std::uint64_t timestampUs{ 0 };
+        std::uint64_t firstEdgeUs{ 0 };
+        std::uint64_t lastEdgeUs{ 0 };
+        std::uint64_t evaluationUs{ 0 };
     };
 
     struct ActionValueSnapshot
@@ -38,6 +41,7 @@ namespace dualpad::input_v2::actions
         float scalar{ 0.0f };
         float x{ 0.0f };
         float y{ 0.0f };
+        std::uint64_t timestampUs{ 0 };
     };
 
     struct ActionOwnershipHint
