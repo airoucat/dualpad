@@ -53,7 +53,7 @@
 - U0：contract preflight and scope lock 已完成。
 - U1：runtime determinism hardening 已完成并经 PR #17 合入 `main`。
 - U2：legacy boundary collapse 已完成本地实现；legacy-named shim / adapter 边界由 focused ingress test 与 Phase8 static check 固化。
-- U3：product integration and release readiness。
+- U3：product integration and release readiness 已落地本地实现；release readiness static gate、stale LKG fail-closed test、release notes 与 release artifact manifest generator 已接入。
 - U4：config / prompt / menu coverage closure。
 - U5：verification / observability / governance closeout。
 
@@ -64,6 +64,7 @@
 - 不改 canonical target 名称、replay root 或旧 SWF 返回 shape。
 - 不恢复 `FavoritesMenu` workspace 或 legacy glyph authority。
 - visual icon artwork production 与 DualSense haptics / vibration 都不是本 milestone 默认范围。
+- U3 release artifact manifest 是 `build/release/` 下的 release 生成物，最终提交后重新生成；它不进入源码提交，避免 source commit hash 循环漂移。
 
 首读：
 
@@ -100,6 +101,9 @@
 人工 close-out 必做：
 
 - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`
+- `python scripts/ci/check_release_readiness.py`
+- `xmake build -y DualPadDInput8Proxy`
+- `python scripts/dev/generate_release_artifact_manifest.py --require-build-artifacts --expect-clean`
 - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
 - JSON / diff hygiene checks
 

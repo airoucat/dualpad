@@ -109,6 +109,46 @@ Primary path 仲裁表固定为内部 gameplay projection 合同：
 
 Hook install 失败必须有显式状态和可诊断原因。不得半安装、不得静默重试。U3 负责把 product integration boundary 上的 failure policy、Skyrim runtime version gate、relocation signature gate 和 release packaging 验证补齐。
 
+## U3 Product Integration / Release Readiness
+
+U3 负责把 post-closeout hardening 推进到 RC 可安装、可诊断、可回滚；它不新增 runtime phase，也不改变 `input_v2` mainline。
+
+### Runtime support gate
+
+- 唯一 supported Skyrim runtime 仍是 `Skyrim SE 1.5.97`。
+- `UpstreamGamepadHook` 必须同时通过 runtime version gate 与 Poll 内部 `XInputGetState` call-site relocation signature gate。
+- unsupported runtime 或 relocation signature mismatch 必须 fail-closed：不安装 hook、不半安装、不进入 silent retry loop，并输出明确日志原因。
+- `ControlMapOverlay` 也必须按同一 supported runtime gate 执行；unsupported runtime 只跳过 overlay，不恢复旧 controlmap authority。
+
+### Install / rollback checks
+
+- `clean install`：验证 `DualPad.dll`、可选 `dinput8.dll`、配置文件、controlmap overlay 与 repo-owned `Interface/startmenu.swf` 的 bundle 来源。
+- `overwrite install`：xmake deploy 不覆盖已存在的用户 INI；二进制可覆盖但必须与 release artifact manifest 的 source commit / hash 对齐。
+- `rollback install`：首选 `DualPadDebug.ini` 中 `use_upstream_gamepad_hook=false`；必要时恢复上一版二进制和配置；不得把 stale LKG 当作有效 rollback。
+
+### Config fail-closed matrix
+
+- missing config：两份主配置同时缺失时只允许 built-in defaults 编译；不从半缺失状态输出 dirty action。
+- bad config：reload 失败时保留 existing active bundle，不提升新 epoch。
+- stale config：bad startup config 加 stale / unsupported LKG schema 必须失败，不提升 active epoch。
+
+### Device lifecycle matrix
+
+- no-device：HID reader 只重试 open，不输出 dirty input。
+- start-connected / hot-plug：open 后提交 reset，重置 live input facts，并绑定 device handle。
+- disconnect：read error 提交 reset，清空 live input facts，清空 haptics handle，关闭设备后重试。
+- reconnect：重新 open 后从新的 software sequence 和 fresh facts 开始。
+
+### Release artifact manifest
+
+U3 的 release artifact manifest 由以下命令生成到 `build/release/`：
+
+```powershell
+python scripts/dev/generate_release_artifact_manifest.py --require-build-artifacts --expect-clean
+```
+
+manifest 必须记录 source commit、tracked dirty 状态、build outputs、config files、repo-owned SWF、generated docs、reviewed release docs、install checks、device lifecycle checks 与 non-goals。由于 manifest 包含最终 commit hash，它是 release 生成物，不提交到源码树。
+
 ## Legacy Shim Authority Boundary
 
 `src/input_v2/` 仍是唯一正式 runtime mainline。legacy-named shim / adapter 只允许作为 black-box compatibility、replay 或 public-surface consumer 存在，不得重新持有 runtime authority。

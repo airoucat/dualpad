@@ -202,13 +202,13 @@ target("DualPadManifestCompilerTests")
     add_deps("commonlibsse-ng")
     add_syslinks("ole32", "user32")
 
-    add_files("tests/input_v2/**.cpp")
-    remove_files("tests/input_v2/ContextResolverTests.cpp")
-    remove_files("tests/input_v2/PresentationProjectionTests.cpp")
-    remove_files("tests/input_v2/IngressTests.cpp")
-    remove_files("tests/input_v2/ReplayTests.cpp")
-    remove_files("tests/input_v2/PropertyTests.cpp")
-    remove_files("tests/input_v2/FuzzRegressionTests.cpp")
+    add_files(
+        "tests/input_v2/ActionManifestTests.cpp",
+        "tests/input_v2/AtomicConfigReloaderTests.cpp",
+        "tests/input_v2/ContextCatalogTests.cpp",
+        "tests/input_v2/LegacyIniImporterTests.cpp",
+        "tests/input_v2/ManifestCompilerTestsMain.cpp",
+        "tests/input_v2/ManifestValidatorTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
