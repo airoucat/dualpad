@@ -12,6 +12,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
 #include <vector>
 
 namespace
@@ -656,6 +657,26 @@ namespace
         Require(stable.facts.pulseLedger.empty(), "overflow baseline must drop volatile pulse ledger");
         Require(!stable.facts.legacySnapshot, "overflow baseline must drop legacy snapshot payload");
         Require(stable.facts.health.queueOverflow, "overflow baseline must remain degraded for the current frame");
+        Require(stable.facts.overflowCompaction.has_value(), "overflow baseline must expose typed compaction debug summary");
+        Require(
+            stable.facts.overflowCompaction->transitionObserved,
+            "overflow compaction debug summary must expose the transition");
+        Require(
+            stable.facts.overflowCompaction->typedCompactionApplied,
+            "overflow compaction debug summary must mark typed compaction");
+        Require(
+            stable.facts.overflowCompaction->retainedManifest &&
+                stable.facts.overflowCompaction->retainedUi &&
+                stable.facts.overflowCompaction->retainedDeviceFamily &&
+                stable.facts.overflowCompaction->retainedSourceEvidence,
+            "overflow compaction debug summary must expose retained boundary facts");
+        Require(
+            stable.facts.overflowCompaction->droppedControlSamples,
+            "overflow compaction debug summary must expose dropped volatile controls");
+        Require(
+            stable.facts.overflowCompaction->debugSummary.find("retained_manifest=true") != std::string::npos &&
+                stable.facts.overflowCompaction->debugSummary.find("dropped_control_samples=true") != std::string::npos,
+            "overflow compaction debug summary must be loggable text");
     }
 
     void TestDeviceMarkerMismatchFailsClosed()

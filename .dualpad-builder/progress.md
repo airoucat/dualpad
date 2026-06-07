@@ -1,5 +1,36 @@
 # DualPad Builder Progress
 
+## 2026-06-07 20:18:23 CST
+
+- `DP5-RC20` U1.8 Debug degraded observability 基于 `d4d44ab` 推进并完成本地 close-out：
+  - 本切片只处理 degraded reason / prompt freeze / overflow compaction / hook install failure 的 debug snapshot 与 reason-transition 日志可观察性。
+  - 未新增 runtime phase，未改变 `input_v2` mainline，未改 canonical target 名称、replay root、旧 SWF 返回 shape 或 `FavoritesMenu` workspace。
+  - 已新增计划文档：`docs/superpowers/plans/2026-06-07-dp5-rc20-u1-8-debug-degraded-observability.md`。
+- 实现结果：
+  - 新增 `RuntimeDiagnostics`，将 `RuntimeHealthReasonMask` 投影为稳定名称：`GraphUnavailable`、`ManifestEpochSkew`、`ContextRevisionSkew`、`QueueOverflow`、`SequenceGap`、`BoundaryMismatch`、`PromptScopeFrozen`、`HookInstallFailed`。
+  - `DualPadRuntime` 现在保留最近一帧 `RuntimeDebugSnapshot`，并用 reason-transition key 去重日志；首次健康帧不刷 recovered，重复 degraded / recovered snapshot 不重复记录。
+  - degraded stable frame 会把 `PromptScopeFrozen` 加入 reason mask，并在 debug snapshot 中展示 prompt frozen / unavailable reason。
+  - hook install failure debug snapshot 展示 hook status 与 debug reason；focused coverage 包括 `partial_install`、`signature_mismatch`、`unsupported_runtime`。
+  - `IngressHub` overflow payload 现在携带 dropped control samples / pulse ledger / legacy snapshot debug flags；`FrameAssembler` typed compaction stable baseline 携带可读 summary。
+  - `InputTraceRecorder` 支持可选 `runtime_debug_snapshot.csv` debug 文件，但它不进入 Phase0 golden required schema。
+- Focused 验证：
+  - `xmake build -y DualPadIngressTests && xmake run -y DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path manifest mismatch / duplicate binding 日志，以及本轮新增 runtime debug degraded transition 日志，进程返回 0。
+- Close-out 验证：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：前两次停在 `git diff --exit-code -- docs/generated`，原因是 `DualPadDocGen` 将 generated docs manifest hash 从 `9287f16196d09423` 更新为 `39a4b74cae31a15a`；暂存 `docs/generated/*.md` 后重跑 exit 0。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0，输出 `reviewed docs consistency check passed`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1607 nodes, 3391 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- GitHub #8 checklist：
+  - 已将 `U1.8 Debug degraded observability` 勾选完成。
+  - 已追加 U1.8 close-out gates，记录 reason mask、hook status/debugReason、prompt freeze/unavailable、overflow typed compaction、日志去重、focused tests 与完整验证。
+  - `gh issue edit 8 --body ...` 返回 `https://github.com/airoucat/dualpad/issues/8`；重试 read-back verification 确认 U1.8 checklist 已勾选，且 `## U1.8 close-out gates` 已存在。
+
 ## 2026-06-07 19:29:05 CST
 
 - `DP5-RC20` U1.7 Hook install result / Skyrim signature gate 开始推进：

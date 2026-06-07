@@ -2,6 +2,7 @@
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 #include "input/RuntimeConfig.h"
+#include "input_v2/gameplay/RuntimeDiagnostics.h"
 #include "input_v2/telemetry/TraceSchema.h"
 
 #include <fstream>
@@ -249,6 +250,17 @@ namespace dualpad::input_v2::telemetry
         _headersReady = true;
     }
 
+    void InputTraceRecorder::EnsureOptionalHeaderLocked(std::string_view fileName, std::string_view header)
+    {
+        const auto filePath = ResolveSessionDirectoryLocked() / fileName;
+        if (std::filesystem::exists(filePath) && std::filesystem::file_size(filePath) != 0) {
+            return;
+        }
+
+        std::ofstream out(filePath, std::ios::trunc);
+        out << header << '\n';
+    }
+
     std::filesystem::path InputTraceRecorder::ResolveSessionDirectoryLocked() const
     {
         return _activeRoot / _activeSession;
@@ -393,5 +405,35 @@ namespace dualpad::input_v2::telemetry
                << EscapeCsv(actionId) << ','
                << EscapeCsv(requestedContextName);
         AppendLineLocked("expected_glyph_results.csv", result.str());
+    }
+
+    void InputTraceRecorder::RecordRuntimeDebugSnapshot(const gameplay::RuntimeDebugSnapshot& snapshot)
+    {
+        std::scoped_lock lock(_mutex);
+        if (!EnsureSessionLocked()) {
+            return;
+        }
+
+        EnsureOptionalHeaderLocked(
+            "runtime_debug_snapshot.csv",
+            "first_seq,last_seq,frame_kind,transition_reason,degraded,reason_mask,reason_names,debug_reason,hook_status,hook_debug_reason,prompt_state,prompt_reason,overflow_transition,overflow_typed_compaction,overflow_compaction_summary");
+
+        std::ostringstream line;
+        line << snapshot.firstSeq << ','
+             << snapshot.lastSeq << ','
+             << snapshot.frameKind << ','
+             << snapshot.transitionReason << ','
+             << BoolString(snapshot.runtimeHealthDegraded) << ','
+             << snapshot.runtimeHealthReasons << ','
+             << EscapeCsv(snapshot.runtimeHealthReasonSummary) << ','
+             << EscapeCsv(snapshot.runtimeHealthDebugReason) << ','
+             << snapshot.hookInstallStatusName << ','
+             << EscapeCsv(snapshot.hookInstallDebugReason) << ','
+             << snapshot.promptStateName << ','
+             << EscapeCsv(snapshot.promptDebugReason) << ','
+             << BoolString(snapshot.overflowTransition) << ','
+             << BoolString(snapshot.overflowTypedCompaction) << ','
+             << EscapeCsv(snapshot.overflowCompactionSummary);
+        AppendLineLocked("runtime_debug_snapshot.csv", line.str());
     }
 }

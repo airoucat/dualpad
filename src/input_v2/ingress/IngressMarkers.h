@@ -77,6 +77,9 @@ namespace dualpad::input_v2::ingress
         DeviceFamilyChangedPayload deviceFamily;
         bool hasSourceEvidence{ false };
         presentation::SourceEvidenceSnapshot sourceEvidence;
+        bool droppedControlSamples{ false };
+        bool droppedPulseLedger{ false };
+        bool droppedLegacySnapshot{ false };
     };
 
     struct IngressEvent

@@ -5,6 +5,7 @@
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
+#include "input_v2/gameplay/RuntimeDiagnostics.h"
 #include "input_v2/gameplay/RuntimeFrameEnvelope.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/presentation/PresentationProjection.h"
@@ -62,6 +63,7 @@ namespace dualpad::input_v2::gameplay
 
         const presentation::PublishedGameplayPresentation& GetPublishedGameplayPresentation() const;
         const GameplayProjectionFrame& GetLastProjectionFrame() const;
+        const RuntimeDebugSnapshot& GetLastDebugSnapshot() const;
         void ResetForTests();
 
     private:
@@ -70,6 +72,9 @@ namespace dualpad::input_v2::gameplay
         DualPadRuntimeResult ProcessTransitionFrame(const ingress::AssembledFactFrame& frame);
         void PublishStablePresentationSurface(
             const FrameRuntimeEnvelope& envelope,
+            const DualPadRuntimeResult& result);
+        void PublishRuntimeDebugSnapshot(
+            const ingress::AssembledFactFrame& frame,
             const DualPadRuntimeResult& result);
 
         DualPadRuntimeResult ProcessGameplayFrameWithExecutor(
@@ -84,5 +89,7 @@ namespace dualpad::input_v2::gameplay
         GameplayPresentationPublisher _presentationPublisher{};
         presentation::PresentationProjection _presentationProjection{};
         PollOutputAdapter _pollOutputAdapter{};
+        RuntimeDebugSnapshot _lastDebugSnapshot{};
+        RuntimeDiagnosticsLogState _diagnosticsLogState{};
     };
 }

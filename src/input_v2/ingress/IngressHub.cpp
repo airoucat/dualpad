@@ -11,9 +11,23 @@ namespace dualpad::input_v2::ingress
 {
     namespace
     {
+        bool IsPulse(const actions::ControlSample& sample)
+        {
+            return sample.pressed || sample.released;
+        }
+
         void CaptureOverflowFact(QueueOverflowPayload& payload, const IngressEvent& event)
         {
             switch (event.kind) {
+            case IngressKind::PadSnapshot:
+                payload.droppedControlSamples = payload.droppedControlSamples ||
+                    !event.pad.samples.empty();
+                payload.droppedLegacySnapshot = payload.droppedLegacySnapshot ||
+                    event.pad.legacySnapshot.has_value();
+                for (const auto& sample : event.pad.samples) {
+                    payload.droppedPulseLedger = payload.droppedPulseLedger || IsPulse(sample);
+                }
+                break;
             case IngressKind::ManifestEpochChanged:
                 payload.hasManifest = true;
                 payload.manifest = event.manifest;
@@ -47,6 +61,12 @@ namespace dualpad::input_v2::ingress
                     payload.hasSourceEvidence = true;
                     payload.sourceEvidence = event.overflow.sourceEvidence;
                 }
+                payload.droppedControlSamples = payload.droppedControlSamples ||
+                    event.overflow.droppedControlSamples;
+                payload.droppedPulseLedger = payload.droppedPulseLedger ||
+                    event.overflow.droppedPulseLedger;
+                payload.droppedLegacySnapshot = payload.droppedLegacySnapshot ||
+                    event.overflow.droppedLegacySnapshot;
                 break;
             default:
                 break;

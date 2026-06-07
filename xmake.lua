@@ -166,7 +166,8 @@ local ph5_gameplay_projection_files = {
     "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
     "src/input_v2/gameplay/PollOutputAdapter.cpp",
     "src/input_v2/gameplay/RecoveryPlan.cpp",
-    "src/input_v2/gameplay/GameplayPresentationPublisher.cpp"
+    "src/input_v2/gameplay/GameplayPresentationPublisher.cpp",
+    "src/input_v2/gameplay/RuntimeDiagnostics.cpp"
 }
 
 local ph5_gameplay_runtime_files = {

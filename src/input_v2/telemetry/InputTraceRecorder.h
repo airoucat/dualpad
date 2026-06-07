@@ -12,6 +12,11 @@
 #include <mutex>
 #include <string_view>
 
+namespace dualpad::input_v2::gameplay
+{
+    struct RuntimeDebugSnapshot;
+}
+
 namespace dualpad::input_v2::telemetry
 {
     struct ReplayCompatibilitySurface
@@ -60,12 +65,14 @@ namespace dualpad::input_v2::telemetry
             std::string_view actionId,
             std::string_view requestedContextName,
             const input::glyph::GlyphResolutionCompatResult& resolution);
+        void RecordRuntimeDebugSnapshot(const gameplay::RuntimeDebugSnapshot& snapshot);
 
     private:
         InputTraceRecorder() = default;
 
         bool EnsureSessionLocked();
         void EnsureHeadersLocked();
+        void EnsureOptionalHeaderLocked(std::string_view fileName, std::string_view header);
         void AppendLineLocked(std::string_view fileName, std::string_view line);
         std::filesystem::path ResolveSessionDirectoryLocked() const;
 

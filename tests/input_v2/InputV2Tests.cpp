@@ -13,6 +13,7 @@
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
+#include "input_v2/gameplay/RuntimeDiagnostics.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
 #include "input_v2/ingress/LiveInputFactProducer.h"
@@ -20,8 +21,9 @@
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
-#include <iostream>
+#include <algorithm>
 #include <filesystem>
+#include <iostream>
 #include <stdexcept>
 #include <string_view>
 
@@ -41,6 +43,16 @@ namespace
         if (!condition) {
             throw std::runtime_error(std::string(message));
         }
+    }
+
+    bool Contains(const std::vector<std::string>& values, std::string_view expected)
+    {
+        for (const auto& value : values) {
+            if (value == expected) {
+                return true;
+            }
+        }
+        return false;
     }
 
     dualpad::input::Trigger Trigger(
@@ -953,6 +965,133 @@ namespace
             "runtime graph epoch skew must fail closed without transient gamepad commands");
     }
 
+    void RunRuntimeDiagnosticsProjectionTests()
+    {
+        ingress::AssembledFactFrame frame{};
+        frame.kind = ingress::AssembledFrameKind::Stable;
+        frame.firstSeq = 700;
+        frame.lastSeq = 701;
+        frame.facts.overflowCompaction = ingress::OverflowCompactionDebugSummary{
+            .transitionObserved = true,
+            .typedCompactionApplied = true,
+            .retainedManifest = true,
+            .retainedUi = true,
+            .retainedDeviceFamily = true,
+            .retainedSourceEvidence = true,
+            .droppedControlSamples = true,
+            .droppedPulseLedger = true,
+            .droppedLegacySnapshot = true,
+            .debugSummary = "overflow_transition=true typed_compaction=true retained_manifest=true retained_ui=true retained_device_family=true retained_source_evidence=true dropped_control_samples=true dropped_pulse_ledger=true dropped_legacy_snapshot=true"
+        };
+
+        auto mask = gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::None);
+        for (const auto reason : {
+                 gameplay::RuntimeHealthReason::GraphUnavailable,
+                 gameplay::RuntimeHealthReason::ManifestEpochSkew,
+                 gameplay::RuntimeHealthReason::ContextRevisionSkew,
+                 gameplay::RuntimeHealthReason::QueueOverflow,
+                 gameplay::RuntimeHealthReason::SequenceGap,
+                 gameplay::RuntimeHealthReason::BoundaryMismatch,
+                 gameplay::RuntimeHealthReason::PromptScopeFrozen,
+                 gameplay::RuntimeHealthReason::HookInstallFailed }) {
+            mask = gameplay::AddRuntimeHealthReason(mask, reason);
+        }
+
+        const auto hook = presentation::detail::MakeHookInstallResult(
+            presentation::HookInstallStatus::PartialInstall,
+            "exception_after_patch_started");
+        const auto snapshot = gameplay::ProjectRuntimeDebugSnapshot(gameplay::RuntimeDebugProjectionInput{
+            .frame = frame,
+            .runtimeHealthReasons = mask,
+            .runtimeHealthDebugReason = "hook_partial_install",
+            .outputApplySucceeded = true,
+            .hookInstall = hook
+        });
+
+        Require(snapshot.runtimeHealthDegraded, "all-reasons mask must project as degraded");
+        for (const auto expected : {
+                 "GraphUnavailable",
+                 "ManifestEpochSkew",
+                 "ContextRevisionSkew",
+                 "QueueOverflow",
+                 "SequenceGap",
+                 "BoundaryMismatch",
+                 "PromptScopeFrozen",
+                 "HookInstallFailed" }) {
+            Require(Contains(snapshot.runtimeHealthReasonNames, expected), "reason mask projection missed a reason name");
+        }
+        Require(
+            snapshot.hookInstallStatusName == "partial_install",
+            "debug snapshot must expose hook partial_install status");
+        Require(
+            snapshot.hookInstallDebugReason == "exception_after_patch_started",
+            "debug snapshot must expose hook debug reason");
+        Require(snapshot.promptState == gameplay::RuntimePromptDebugState::Frozen, "degraded stable frame must freeze prompt");
+        Require(
+            snapshot.promptDebugReason.find("PromptScopeFrozen") != std::string::npos,
+            "prompt freeze reason must include PromptScopeFrozen");
+        Require(snapshot.overflowTransition, "debug snapshot must expose overflow transition");
+        Require(snapshot.overflowTypedCompaction, "debug snapshot must expose typed overflow compaction");
+        Require(
+            snapshot.overflowCompactionSummary.find("retained_source_evidence=true") != std::string::npos,
+            "debug snapshot must expose typed compaction retained facts");
+
+        const auto unsupportedSnapshot = gameplay::ProjectRuntimeDebugSnapshot(gameplay::RuntimeDebugProjectionInput{
+            .frame = frame,
+            .runtimeHealthReasons = gameplay::AddRuntimeHealthReason(
+                gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::PromptScopeFrozen),
+                gameplay::RuntimeHealthReason::HookInstallFailed),
+            .runtimeHealthDebugReason = "unsupported_runtime_1.6.640",
+            .outputApplySucceeded = false,
+            .hookInstall = presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::UnsupportedRuntime,
+                "unsupported_runtime_1.6.640")
+        });
+        Require(
+            unsupportedSnapshot.hookInstallStatusName == "unsupported_runtime",
+            "debug snapshot must expose unsupported_runtime hook status");
+        Require(
+            unsupportedSnapshot.hookInstallDebugReason == "unsupported_runtime_1.6.640",
+            "debug snapshot must expose unsupported runtime debug reason");
+
+        gameplay::RuntimeDiagnosticsLogState logState;
+        Require(gameplay::ShouldEmitRuntimeDebugLog(logState, snapshot), "first degraded snapshot must log");
+        Require(!gameplay::ShouldEmitRuntimeDebugLog(logState, snapshot), "duplicate degraded snapshot must not log");
+
+        auto recovered = snapshot;
+        recovered.runtimeHealthDegraded = false;
+        recovered.runtimeHealthReasons = gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::None);
+        recovered.runtimeHealthReasonNames = gameplay::RuntimeHealthReasonNames(recovered.runtimeHealthReasons);
+        recovered.runtimeHealthReasonSummary = gameplay::RuntimeHealthReasonSummary(recovered.runtimeHealthReasons);
+        recovered.runtimeHealthDebugReason.clear();
+        recovered.promptState = gameplay::RuntimePromptDebugState::Ready;
+        recovered.promptStateName = gameplay::ToString(recovered.promptState);
+        recovered.promptDebugReason = "published";
+        recovered.overflowTransition = false;
+        recovered.overflowTypedCompaction = false;
+        recovered.overflowCompactionSummary.clear();
+        Require(gameplay::ShouldEmitRuntimeDebugLog(logState, recovered), "health recovery transition must log once");
+        Require(!gameplay::ShouldEmitRuntimeDebugLog(logState, recovered), "duplicate recovery snapshot must not log");
+
+        ingress::AssembledFactFrame transition{};
+        transition.kind = ingress::AssembledFrameKind::Transition;
+        transition.transition.reason = ingress::TransitionReason::SequenceGap;
+        const auto transitionSnapshot = gameplay::ProjectRuntimeDebugSnapshot(gameplay::RuntimeDebugProjectionInput{
+            .frame = transition,
+            .runtimeHealthReasons = gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::SequenceGap),
+            .outputApplySucceeded = false,
+            .hookInstall = presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "installed")
+        });
+        Require(
+            transitionSnapshot.promptState == gameplay::RuntimePromptDebugState::Unavailable,
+            "transition frame prompt state must be unavailable");
+        Require(
+            transitionSnapshot.promptDebugReason == "transition_frame",
+            "transition frame must expose prompt unavailable reason");
+    }
+
     void RunRuntimeDegradedFramePromptPublishContractTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -996,6 +1135,11 @@ namespace
                 result.runtimeHealthReasons,
                 gameplay::RuntimeHealthReason::ManifestEpochSkew),
             "graph skew frame must expose ManifestEpochSkew");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::PromptScopeFrozen),
+            "graph skew degraded stable frame must expose PromptScopeFrozen");
         const auto afterCompat = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
         Require(afterCompat.epoch > beforeCompatEpoch, "degraded frame may still publish Skyrim compatibility owner state");
         Require(afterCompat.owner == presentation::PresentationOwner::Gamepad, "degraded frame must preserve public owner projection");
@@ -1007,6 +1151,12 @@ namespace
         Require(
             afterScope.manifestEpoch == beforeScope.manifestEpoch,
             "degraded frame must not move prompt scope to a mismatched graph epoch");
+        const auto& debug = runtime.GetLastDebugSnapshot();
+        Require(debug.runtimeHealthDegraded, "degraded frame must publish a runtime debug snapshot");
+        Require(debug.promptState == gameplay::RuntimePromptDebugState::Frozen, "debug snapshot must expose prompt freeze");
+        Require(
+            debug.promptDebugReason.find("ManifestEpochSkew") != std::string::npos,
+            "debug snapshot prompt freeze reason must include manifest skew");
     }
 
     void RunRuntimeHookInstallFailureFailClosedTests()
@@ -1038,6 +1188,11 @@ namespace
                 gameplay::RuntimeHealthReason::HookInstallFailed),
             "hook install failure must expose HookInstallFailed");
         Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::PromptScopeFrozen),
+            "hook install failure must expose prompt freeze in the reason mask");
+        Require(
             result.runtimeHealthDebugReason.find("signature_mismatch") != std::string::npos,
             "hook install failure must carry debug reason for U1.8 diagnostics");
         Require(executor.steps.empty(), "hook install failure must not call native/prompt/action output executor");
@@ -1051,6 +1206,12 @@ namespace
         Require(
             afterScope.promptScopeRevision == beforeScope.promptScopeRevision,
             "hook install failure must not publish a new prompt scope");
+        const auto& debug = runtime.GetLastDebugSnapshot();
+        Require(debug.hookInstallStatusName == "signature_mismatch", "debug snapshot must expose hook status");
+        Require(
+            debug.hookInstallDebugReason == "is_using_gamepad_call_signature_mismatch",
+            "debug snapshot must expose hook debug reason");
+        Require(debug.promptState == gameplay::RuntimePromptDebugState::Frozen, "hook failure must freeze prompt in debug snapshot");
         presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
             presentation::detail::MakeHookInstallResult(
                 presentation::HookInstallStatus::Success,
@@ -1114,6 +1275,14 @@ namespace
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().epoch == initialEpoch,
             "transition frame must not publish Skyrim compatibility state");
+        const auto transitionDebug = runtime.GetLastDebugSnapshot();
+        Require(
+            transitionDebug.promptState == gameplay::RuntimePromptDebugState::Unavailable,
+            "transition debug snapshot must expose prompt unavailable state");
+        Require(
+            transitionDebug.promptDebugReason == "transition_frame",
+            "transition debug snapshot must expose prompt unavailable reason");
+        Require(transitionDebug.overflowTransition, "queue overflow transition must be visible in debug snapshot");
 
         RecordingPollOutputExecutor stableExecutor;
         const auto stable = runtime.ProcessAssembledFrameForTests(
@@ -1343,6 +1512,7 @@ int main()
         RunRuntimeLiveStyleGamepadPublishTests();
         RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
         RunRuntimeGraphSkewHealthTests();
+        RunRuntimeDiagnosticsProjectionTests();
         RunRuntimeDegradedFramePromptPublishContractTests();
         RunRuntimeHookInstallFailureFailClosedTests();
         RunRuntimePresentationUsesFrameBoundContextTests();

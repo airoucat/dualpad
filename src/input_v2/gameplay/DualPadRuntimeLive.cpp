@@ -276,11 +276,17 @@ namespace dualpad::input_v2::gameplay
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrame(const DualPadRuntimeInput& input)
     {
         if (HasRuntimeHealthReason(input.runtimeHealthReasons, RuntimeHealthReason::HookInstallFailed)) {
+            auto runtimeHealthReasons = input.runtimeHealthReasons;
+            if (runtimeHealthReasons != RuntimeHealthMask(RuntimeHealthReason::None)) {
+                runtimeHealthReasons = AddRuntimeHealthReason(
+                    runtimeHealthReasons,
+                    RuntimeHealthReason::PromptScopeFrozen);
+            }
             return DualPadRuntimeResult{
                 .projectionFrame = GameplayProjectionFrame{},
                 .output = PollOutputApplyResult{},
                 .gameplayPresentation = _presentationPublisher.GetPublished(),
-                .runtimeHealthReasons = input.runtimeHealthReasons,
+                .runtimeHealthReasons = runtimeHealthReasons,
                 .runtimeHealthDebugReason = input.runtimeHealthDebugReason
             };
         }
@@ -295,13 +301,16 @@ namespace dualpad::input_v2::gameplay
     DualPadRuntimeResult DualPadRuntime::ProcessAssembledFrame(const ingress::AssembledFactFrame& frame)
     {
         if (frame.kind == ingress::AssembledFrameKind::Transition) {
-            return ProcessTransitionFrame(frame);
+            auto result = ProcessTransitionFrame(frame);
+            PublishRuntimeDebugSnapshot(frame, result);
+            return result;
         }
 
         auto envelope = BindRuntimeEnvelope(frame);
         auto input = BuildStableRuntimeInput(envelope);
         auto result = ProcessGameplayFrame(input);
         PublishStablePresentationSurface(envelope, result);
+        PublishRuntimeDebugSnapshot(frame, result);
         return result;
     }
 }
