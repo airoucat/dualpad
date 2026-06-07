@@ -50,6 +50,12 @@ def run_git(args: list[str]) -> str:
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
 
+def tracked_content_dirty() -> bool:
+    worktree = subprocess.run(["git", "diff", "--quiet", "--"], cwd=ROOT, check=False)
+    index = subprocess.run(["git", "diff", "--cached", "--quiet", "--"], cwd=ROOT, check=False)
+    return worktree.returncode != 0 or index.returncode != 0
+
+
 def sha256(path: pathlib.Path) -> str | None:
     full = ROOT / path
     if not full.is_file():
@@ -88,7 +94,7 @@ def collect_runtime_artifacts() -> list[dict[str, Any]]:
 def manifest() -> dict[str, Any]:
     commit = run_git(["rev-parse", "HEAD"])
     branch = run_git(["branch", "--show-current"])
-    dirty = run_git(["status", "--porcelain", "--untracked-files=no"]) != ""
+    dirty = tracked_content_dirty()
 
     files = []
     files.extend(collect_runtime_artifacts())

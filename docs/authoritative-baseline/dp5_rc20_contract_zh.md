@@ -207,6 +207,16 @@ U4 内部 contract 字段进入 `PromptCandidate` / `PromptLegacyGlyphDescriptor
 - config / prompt / menu matrix ambiguity 影响用户可见行为。
 - 缺少 canonical runtime targets、replay、property / fuzz、generated docs、graphify 或 builder JSON 的 RC 验证记录。
 
+## U5 Verification / Observability / Governance Closeout
+
+U5 的结论记录在 `docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md`。`Phase8 是 canonical base gate`：`scripts/ci/run_phase8_ci.ps1` 继续直接引用并运行同名 canonical targets，不被新的 wrapper target 替代。
+
+U5 新增 `RC readiness outer gate`：`scripts/ci/run_rc_readiness.ps1`。该 gate 先调用 Phase8，再聚合 replay diff、graphify、builder JSON、generated docs clean diff、legacy boundary、release readiness、U4 contract gate、release artifact manifest、DInput8 proxy build 与 diff hygiene。
+
+U5 同时冻结 `Real-game QA matrix` 与 `Performance budget`：手工 QA 覆盖启动、读档、死亡/重载、快速旅行、alt-tab、设备 hot-plug / disconnect / reconnect、常见菜单、FavoritesMenu non-restore 边界、高频输入、长按切菜单、chord reload、prompt/config reload 和 graph/context change；性能预算覆盖 stable runtime frame、prompt resolve、graph/config reload、ingress queue high-water、overflow count、degraded reason transition count 与 log volume。
+
+Debug snapshot/log surface 当前必须能覆盖 degraded reasons、prompt freeze、overflow compaction、hook failure、manifest/config/context generation。正式 reason 名称保持为 `GraphUnavailable`、`ManifestEpochSkew`、`ContextRevisionSkew`、`QueueOverflow`、`SequenceGap`、`BoundaryMismatch`、`PromptScopeFrozen` 与 `HookInstallFailed`；日志按 reason-transition 去重，避免 per-frame log storm。
+
 ## Non-Goals
 
 - 不新增 runtime phase。

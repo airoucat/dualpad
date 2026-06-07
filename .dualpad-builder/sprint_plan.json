@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-06-07T23:27:42+08:00",
+  "updated_at": "2026-06-08T00:18:00+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -488,7 +488,7 @@
       "exit_criteria": [
         "只做 DP5-RC20 post-closeout governance / validation / reporting hardening，不重开 runtime mainline",
         "不改 canonical target 名称、replay root、旧 SWF 返回 shape或 input_v2 runtime 合同",
-        "U0 contract preflight 已完成；U1-U5 必须按 issue 顺序分 slice 推进并记录 progress start / verification / closeout"
+        "U0-U5 已按 issue 顺序分 slice 推进；DP5-RC20 closeout 记录必须保留 progress start / verification / closeout"
       ],
       "verification": [
         "U0: docs/authoritative-baseline/dp5_rc20_contract_zh.md 已新增并从 authoritative baseline / DOC index 接入",
@@ -496,8 +496,8 @@
         "U1.9: Axis2D / chord timestamp / primary path contracts 必须通过 DualPadInputV2Tests、DualPadGameplayProjectionTests、DualPadPropertyTests、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、graphify rebuild 与 git diff --check",
         "U2: legacy boundary collapse 必须通过 DualPadIngressTests、scripts/ci/check_legacy_authority_boundary.py、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、graphify rebuild 与 git diff --check",
         "U3: product integration and release readiness 必须通过 DualPadManifestCompilerTests、scripts/ci/check_release_readiness.py、Phase 8 CI、DualPadDInput8Proxy build、release artifact manifest generation、replay diff、builder JSON、reviewed/generated docs consistency、legacy authority boundary check、graphify rebuild 与 git diff --check",
-        "U4: config / prompt / menu / glyph contract closure 必须通过 DualPadPromptSnapshotTests、DualPadManifestCompilerTests、scripts/ci/check_config_prompt_menu_glyph_closure.py、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、legacy authority boundary check、graphify rebuild 与 git diff --check",
-        "后续具体 hardening slice 默认至少包含 scripts/ci/run_phase8_ci.ps1、builder JSON 校验、graphify rebuild 和 git diff --check"
+        "U4: config / prompt / menu / glyph contract closure 已通过 DualPadPromptSnapshotTests、DualPadManifestCompilerTests、scripts/ci/check_config_prompt_menu_glyph_closure.py、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、legacy authority boundary check、graphify rebuild 与 git diff --check",
+        "U5: verification / observability / governance closeout 必须通过 scripts/ci/run_phase8_ci.ps1、scripts/ci/run_rc_readiness.ps1、scripts/ci/check_rc_readiness_closeout.py、replay diff、builder JSON、reviewed/generated docs consistency、legacy boundary、release readiness、U4 contract gate、release artifact manifest generation、graphify rebuild 与 git diff --check"
       ]
     }
   ]
