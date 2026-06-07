@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-06-07T23:27:42+08:00",
+  "updated_at": "2026-06-08T00:18:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -344,9 +344,10 @@
         "U1.9 Axis2D / chord timestamp / primary path contracts 已进入 input_v2 内部语义模型与 focused/property tests，不改变 prompt/glyph public shape",
         "U2 legacy boundary collapse 已证明 PadEventSnapshotProcessor 只作为 compat/replay ingress bridge，legacySnapshot 不回流 core kernel，旧 #2/#3/#4/#6 已由删除或迁移证明关闭，旧 #5 重新归类为 U5 / non-authority cleanup",
         "U3 product integration and release readiness 已补 release readiness static gate、stale LKG fail-closed test、release notes 与 release artifact manifest generator；最终 manifest 作为 build/release 生成物对齐 source commit / generated docs / config manifest",
-        "U4 config / prompt / menu / glyph contract closure 冻结 zero-direct context 分类、unknown_menu_policy=passthrough / ignored menu 行为、FavoritesMenu non-restore workspace 边界、prompt fail-closed 矩阵与 glyph/icon contract diagnostics",
+        "U4 config / prompt / menu / glyph contract closure 已通过 PR #20 合入 main，冻结 zero-direct context 分类、unknown_menu_policy=passthrough / ignored menu 行为、FavoritesMenu non-restore workspace 边界、prompt fail-closed 矩阵与 glyph/icon contract diagnostics",
+        "U5 verification / observability / governance closeout 已新增 RC readiness outer gate，聚合 Phase8、replay diff、graphify、builder JSON、generated docs、legacy boundary、release readiness、U4 contract gate 与 artifact manifest，并记录 real-game QA matrix、performance budget 和 debug snapshot/log surface 覆盖",
         "任何 DP5-RC20 slice 都不得重开 input_v2 runtime mainline、canonical target 名称、replay root、旧 SWF 返回 shape、FavoritesMenu workspace 或 legacy glyph authority",
-        "后续 U1-U5 必须继续通过 Phase 8 canonical CI、builder JSON、graphify、replay diff 与 diff hygiene"
+        "DP5-RC20 U0-U5 closeout 必须通过 Phase 8 canonical CI、RC readiness outer gate、builder JSON、graphify、replay diff 与 diff hygiene"
       ]
     }
   ]

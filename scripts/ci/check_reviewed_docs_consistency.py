@@ -110,6 +110,25 @@ def main() -> int:
     if "scripts/ci/check_config_prompt_menu_glyph_closure.py" not in phase8_ci:
         failures.append("scripts/ci/run_phase8_ci.ps1: default CI must run config/prompt/menu/glyph closure check.")
 
+    rc_gate = (ROOT / "scripts/ci/run_rc_readiness.ps1").read_text(encoding="utf-8")
+    for marker in [
+        "scripts/ci/run_phase8_ci.ps1",
+        "DualPadReplayHarness",
+        "scripts/dev/dualpad_trace_diff.py",
+        "scripts/ci/check_legacy_authority_boundary.py",
+        "scripts/ci/check_release_readiness.py",
+        "scripts/ci/check_config_prompt_menu_glyph_closure.py",
+        "scripts/ci/check_rc_readiness_closeout.py",
+        "scripts/dev/generate_release_artifact_manifest.py",
+        "scripts/dev/setup_graphify_local.py",
+    ]:
+        if marker not in rc_gate:
+            failures.append(f"scripts/ci/run_rc_readiness.ps1: RC outer gate missing marker {marker}.")
+    u5_doc = (ROOT / "docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md").read_text(encoding="utf-8")
+    for marker in ["Phase8 是 canonical base gate", "Real-game QA matrix", "Performance budget", "RuntimeDebugSnapshot"]:
+        if marker not in u5_doc:
+            failures.append(f"docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md: missing U5 marker {marker}.")
+
     feature_data = json.loads((ROOT / ".dualpad-builder/feature_list.json").read_text(encoding="utf-8"))
     features = {item["id"]: item for item in feature_data["features"]}
     for feature_id in ["DP1", "DP2", "DP3", "DP4", "PH0", "PH1", "PH2", "PH3", "PH4", "PH5", "PH6", "PH7", "PH8", "PH8a", "PH8b"]:

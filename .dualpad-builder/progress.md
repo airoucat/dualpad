@@ -2463,3 +2463,37 @@
   - U4 已冻结 config / prompt / menu / glyph 用户可见合同：zero-direct context 分类、`unknown_menu_policy=passthrough` / ignored menu 行为、`FavoritesMenu` non-restore workspace、prompt fail-closed 矩阵与 glyph/icon diagnostics。
   - 本轮未新增 runtime phase，未改变 `src/input_v2/` mainline，未改旧 SWF token API，未恢复 `FavoritesMenu` workspace、`BindingManager` 或 trigger reverse lookup authority。
   - `DP5` / `S-DP5` 整体仍保持 planned；U5 尚未完成。
+
+## 2026-06-08 00:18:00 CST
+
+- 已将 PR #20 合并到 `main`：
+  - PR #20 `Complete DP5-RC20 U4 config prompt menu glyph closure` 的远端 `phase8` check 已在 head `08e28c3bc050b347b8a382d08e1ba0c928ddd572` 上通过。
+  - PR #20 以 merge commit `356837d6b0c51c01671a4f7f273932347d435a91` 合入 `main`。
+  - 本轮 U5 工作分支基于该 merge commit 创建：`codex/dp5-rc20-u5-verification-observability-governance`。
+- `DP5-RC20` U5 Verification / observability / governance closeout 已开始推进：
+  - U5 只新增 RC readiness outer gate 与治理/验证文档；不新增 runtime phase，不改变 `src/input_v2/` mainline，不改 canonical target 名称、replay root、旧 SWF 返回 shape 或 `FavoritesMenu` workspace。
+  - `scripts/ci/run_rc_readiness.ps1` 作为 Phase8 外层 gate，先调用 `scripts/ci/run_phase8_ci.ps1`，再聚合 replay diff、builder JSON、reviewed/generated docs consistency、legacy boundary、release readiness、U4 contract gate、DInput8 proxy build、release artifact manifest、graphify rebuild 与 diff hygiene。
+  - `docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md` 已记录 real-game QA matrix、performance budget、debug snapshot/log surface 覆盖和旧 #5 non-authority cleanup 结论。
+  - `.dualpad-builder/feature_list.json` 与 `.dualpad-builder/sprint_plan.json` 已同步 U5 gate 与 closeout 口径；`DP5` / `S-DP5` 继续保持 planned，表示 post-closeout hardening backlog，而不是新的 runtime phase。
+
+## 2026-06-08 00:22:30 CST
+
+- `DP5-RC20` U5 本地 close-out 验证完成：
+  - `python scripts/ci/check_rc_readiness_closeout.py`：exit 0，输出 `RC readiness closeout check passed`。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0，输出 `reviewed docs consistency check passed`。
+  - `python -m json.tool .dualpad-builder/feature_list.json NUL` 与 `python -m json.tool .dualpad-builder/sprint_plan.json NUL`：exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；构建/运行 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 reviewed docs consistency、legacy authority boundary、release readiness、U4 config/prompt/menu/glyph closure 与 generated docs clean-diff。DocGen manifest hash 保持 `60ab6dd5bcb07037`。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1`：exit 0；先运行 Phase8，再完成 `DualPadReplayHarness` build、phase0 dispatcher replay generation、10 个 replay scenarios `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 contract gate、U5 RC closeout static gate、`DualPadDInput8Proxy` build、release artifact manifest generation、graphify rebuild 与 `git diff --check`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` 由 RC gate 执行，输出 `Rebuilt: 1654 nodes, 3476 edges, 145 communities`。
+- 状态结论：
+  - U5 已建立 `scripts/ci/run_rc_readiness.ps1` 作为 Phase8 外层 RC readiness gate；Phase8 仍是 canonical base gate，不替代 canonical targets。
+  - Real-game QA matrix、performance budget、debug snapshot/log surface 覆盖与旧 #5 non-authority cleanup 结论已写入 `docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md`。
+  - U5 本轮未新增 runtime phase，未改变 `src/input_v2/` mainline，未改 canonical target 名称、replay root、旧 SWF 返回 shape 或 `FavoritesMenu` workspace。
+
+## 2026-06-08 00:30:00 CST
+
+- U5 final commit 后 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest` 首次运行失败于 release artifact manifest 步骤：
+  - 失败前已通过 Phase8、phase0 replay generation / diff、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 contract gate、U5 RC closeout static gate 与 `DualPadDInput8Proxy` build。
+  - 失败点：`scripts/dev/generate_release_artifact_manifest.py --require-build-artifacts --expect-clean` 报 `tracked working tree is dirty`。
+  - 根因：Phase8 / DocGen 后 `docs/generated/*.md` 出现 CRLF stat-only working tree 状态；`git diff --exit-code -- docs/generated` 无内容 diff，但原 manifest generator 使用 `git status --porcelain --untracked-files=no`，会把该行尾状态误判为 tracked dirty。
+  - 修复：`scripts/dev/generate_release_artifact_manifest.py` 的 dirty 判定改为 `git diff --quiet --` + `git diff --cached --quiet --`，只按 tracked content / index diff 判断 `trackedWorkingTreeDirty`。
