@@ -177,6 +177,8 @@ U4 负责关闭用户可见矩阵缺口：
 - repeated triggers、ambiguous chords、axis/button collisions 必须有 conflict detection 或明确延后记录。
 - prompt unavailable / frozen / degraded 行为必须 deterministic 且可观察。
 
+U4 close-out 结论记录在 `docs/releases/dp5_rc20_u4_config_prompt_menu_glyph_contract_zh.md`。当前 `zero direct binding` 分类为 inherited、pass-through、ignored、unsupported 与 `bug：当前无`；`unknown_menu_policy=passthrough` 和 ignored menu 行为由 generated policy facts 与 U4 static gate 固化；`FavoritesMenu` 只冻结当前 repo-owned action / prompt facts，不恢复页面级 SWF workspace。
+
 ## Glyph / Icon Contract Freeze
 
 U4 只冻结 glyph/icon contract，不生产完整视觉资产。合同至少包括：
@@ -188,6 +190,8 @@ U4 只冻结 glyph/icon contract，不生产完整视觉资产。合同至少包
 - asset lookup path
 - missing icon behavior
 - debug reason for missing / unavailable glyph
+
+U4 内部 contract 字段进入 `PromptCandidate` / `PromptLegacyGlyphDescriptor` diagnostics：成功候选使用 deterministic `Interface/Exported/DualPad/Glyphs/<platform id>/<glyph id>.svg` lookup path；失败 descriptor 使用 `fail_closed_empty_token` 和 prompt status 作为 debug reason。旧 `DualPad_GetActionGlyphToken` 仍只返回单 token；旧 GFx descriptor 不在 U4 扩展为新的 visual asset contract。
 
 完整 visual icon artwork production 是非目标，除非单独 promotion 到新的 feature milestone。
 

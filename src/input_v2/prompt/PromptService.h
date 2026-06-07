@@ -18,6 +18,13 @@ namespace dualpad::input_v2::prompt
         std::string resolutionSource;
         std::string fallback;
         std::string deviceProfile;
+        std::string glyphId;
+        std::string platformId;
+        std::string buttonSemanticName;
+        std::string fallbackText;
+        std::string assetLookupPath;
+        std::string missingIconBehavior;
+        std::string debugReason;
         std::uint64_t manifestEpoch{ 0 };
         std::uint32_t promptScopeRevision{ 0 };
     };

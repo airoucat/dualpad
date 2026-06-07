@@ -61,11 +61,12 @@ namespace
                 .primaryDisplayBindingId = id,
                 .legacyOrigin = "PromptSnapshotTest"
             });
+            const auto displayToken = token;
             graph.displayBindings.push_back(actions::DisplayBindingRecord{
                 .bindingId = id,
                 .mode = mode,
                 .token = std::move(token),
-                .localizedLabel = graph.bindings.back().actionId,
+                .localizedLabel = displayToken,
                 .priority = priority,
                 .deviceProfile = std::move(deviceProfile),
                 .legacyTokenRenderable = legacyRenderable
@@ -198,6 +199,16 @@ namespace
         Require(exact.ok, "exact context prompt query must succeed");
         Require(exact.primary && exact.primary->token == "Circle", "priority and bindingId tie-break must pick Circle");
         Require(exact.alternates.size() == 1 && exact.alternates[0].token == "Square", "alternate candidate order must be deterministic");
+        Require(exact.primary->glyphId == "Circle", "primary prompt candidate must expose glyph id");
+        Require(exact.primary->platformId == "DualSense", "primary prompt candidate must expose platform id");
+        Require(exact.primary->buttonSemanticName == "Circle", "primary prompt candidate must expose semantic button name");
+        Require(exact.primary->fallbackText == "Circle", "primary prompt candidate must expose fallback text");
+        Require(
+            exact.primary->assetLookupPath == "Interface/Exported/DualPad/Glyphs/DualSense/Circle.svg",
+            "primary prompt candidate must expose deterministic asset lookup path");
+        Require(exact.primary->missingIconBehavior == "fallback_text", "primary prompt candidate must freeze missing icon behavior");
+        Require(exact.primary->debugReason == "Ok", "primary prompt candidate debug reason must be deterministic");
+        Require(exact.alternates[0].glyphId == "Square", "alternate prompt candidate must expose glyph id");
         Require(exact.resolutionSource == prompt::PromptResolutionSource::ExactScope, "exact scope must report ExactScope");
         Require(exact.fallback == prompt::PromptFallbackKind::None, "exact layer candidate must not report fallback");
         Require(exact.deviceProfile && *exact.deviceProfile == exact.primary->deviceProfile, "top-level deviceProfile must mirror primary");
@@ -226,6 +237,10 @@ namespace
             .contextName = "JournalMenu"
         });
         Require(snapshot.status == prompt::PromptQueryStatus::Ok, "snapshot success is derived from status");
+        Require(snapshot.primary && snapshot.primary->glyphId == "Circle", "snapshot must carry glyph id contract");
+        Require(
+            snapshot.primary->assetLookupPath == "Interface/Exported/DualPad/Glyphs/DualSense/Circle.svg",
+            "snapshot must carry asset lookup path contract");
         Require(snapshot.promptScopeRevision == exact.promptScopeRevision, "snapshot must carry promptScopeRevision");
         Require(snapshot.manifestEpoch == 42, "snapshot must carry manifestEpoch");
 
@@ -235,6 +250,12 @@ namespace
         const auto legacy = service.ResolveLegacyGlyph("Menu.Accept", "JournalMenu");
         Require(legacy.ok && legacy.buttonArtToken == "Circle", "legacy descriptor wrapper must preserve ok/buttonArtToken shape");
         Require(!legacy.failureReason.empty(), "legacy descriptor may include diagnostic failureReason/status field");
+        Require(legacy.glyphId == "Circle", "legacy descriptor must expose internal glyph id contract");
+        Require(legacy.platformId == "DualSense", "legacy descriptor must expose internal platform id contract");
+        Require(legacy.fallbackText == "Circle", "legacy descriptor must expose fallback text contract");
+        Require(
+            legacy.assetLookupPath == "Interface/Exported/DualPad/Glyphs/DualSense/Circle.svg",
+            "legacy descriptor must expose deterministic asset lookup path contract");
     }
 
     void RunPromptServiceFailClosedTests()
@@ -275,6 +296,11 @@ namespace
         Require(!legacyFailure.ok, "legacy descriptor wrapper must preserve ok=false on failure");
         Require(legacyFailure.buttonArtToken.empty(), "legacy descriptor wrapper must return empty buttonArtToken on failure");
         Require(legacyFailure.failureReason == "ContextOutOfScope", "legacy descriptor wrapper must expose failureReason=status");
+        Require(legacyFailure.glyphId.empty(), "legacy failure descriptor must not invent glyph id");
+        Require(
+            legacyFailure.missingIconBehavior == "fail_closed_empty_token",
+            "legacy failure descriptor must freeze missing icon fail-closed behavior");
+        Require(legacyFailure.debugReason == "ContextOutOfScope", "legacy failure descriptor must expose debug reason");
     }
 
     void RunPromptRuntimeOwnerTests()
