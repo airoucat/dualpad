@@ -1,5 +1,68 @@
 # DualPad Builder Progress
 
+## 2026-06-07 20:18:23 CST
+
+- `DP5-RC20` U1.8 Debug degraded observability 基于 `d4d44ab` 推进并完成本地 close-out：
+  - 本切片只处理 degraded reason / prompt freeze / overflow compaction / hook install failure 的 debug snapshot 与 reason-transition 日志可观察性。
+  - 未新增 runtime phase，未改变 `input_v2` mainline，未改 canonical target 名称、replay root、旧 SWF 返回 shape 或 `FavoritesMenu` workspace。
+  - 已新增计划文档：`docs/superpowers/plans/2026-06-07-dp5-rc20-u1-8-debug-degraded-observability.md`。
+- 实现结果：
+  - 新增 `RuntimeDiagnostics`，将 `RuntimeHealthReasonMask` 投影为稳定名称：`GraphUnavailable`、`ManifestEpochSkew`、`ContextRevisionSkew`、`QueueOverflow`、`SequenceGap`、`BoundaryMismatch`、`PromptScopeFrozen`、`HookInstallFailed`。
+  - `DualPadRuntime` 现在保留最近一帧 `RuntimeDebugSnapshot`，并用 reason-transition key 去重日志；首次健康帧不刷 recovered，重复 degraded / recovered snapshot 不重复记录。
+  - degraded stable frame 会把 `PromptScopeFrozen` 加入 reason mask，并在 debug snapshot 中展示 prompt frozen / unavailable reason。
+  - hook install failure debug snapshot 展示 hook status 与 debug reason；focused coverage 包括 `partial_install`、`signature_mismatch`、`unsupported_runtime`。
+  - `IngressHub` overflow payload 现在携带 dropped control samples / pulse ledger / legacy snapshot debug flags；`FrameAssembler` typed compaction stable baseline 携带可读 summary。
+  - `InputTraceRecorder` 支持可选 `runtime_debug_snapshot.csv` debug 文件，但它不进入 Phase0 golden required schema。
+- Focused 验证：
+  - `xmake build -y DualPadIngressTests && xmake run -y DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path manifest mismatch / duplicate binding 日志，以及本轮新增 runtime debug degraded transition 日志，进程返回 0。
+- Close-out 验证：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：前两次停在 `git diff --exit-code -- docs/generated`，原因是 `DualPadDocGen` 将 generated docs manifest hash 从 `9287f16196d09423` 更新为 `39a4b74cae31a15a`；暂存 `docs/generated/*.md` 后重跑 exit 0。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 replay 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0，输出 `reviewed docs consistency check passed`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1607 nodes, 3391 edges, 144 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- GitHub #8 checklist：
+  - 已将 `U1.8 Debug degraded observability` 勾选完成。
+  - 已追加 U1.8 close-out gates，记录 reason mask、hook status/debugReason、prompt freeze/unavailable、overflow typed compaction、日志去重、focused tests 与完整验证。
+  - `gh issue edit 8 --body ...` 返回 `https://github.com/airoucat/dualpad/issues/8`；重试 read-back verification 确认 U1.8 checklist 已勾选，且 `## U1.8 close-out gates` 已存在。
+
+## 2026-06-07 19:29:05 CST
+
+- `DP5-RC20` U1.7 Hook install result / Skyrim signature gate 开始推进：
+  - 当前基线确认：`HEAD == origin/main == 33639e7`。
+  - 已创建分支 `codex/dp5-rc20-u1-7-hook-install-result`。
+  - 本切片只处理 `SkyrimCompatibilitySurface` compatibility hook 安装结果显式化、runtime version / relocation signature gate、hook failure fail-closed 与 runtime degraded/debug surface 接线。
+  - 本切片不新增 runtime phase，不重开 `input_v2` mainline，不改 canonical target 名称、replay root、旧 SWF 返回 shape 或 `FavoritesMenu` workspace。
+  - 已新增计划文档：`docs/superpowers/plans/2026-06-07-dp5-rc20-u1-7-hook-install-result.md`。
+- 当前实现 checkpoint：
+  - `SkyrimCompatibilitySurface` 新增 `HookInstallResult` / `HookInstallStatus`，显式区分 `success`、`unsupported_runtime`、`signature_mismatch`、`already_installed`、`failed`、`partial_install`。
+  - 安装前新增 Skyrim SE 1.5.97 runtime gate，以及两个 call patch site 的 6-byte `write_call<6>` pattern gate；vfunc patch site 也会在 patch 前验证 relocation slot。
+  - patch 过程若发生异常或中途失败会记录 `failed` / `partial_install`，并拒绝 silent retry。
+  - `DualPadRuntime` 只消费抽象 `HookInstallFailed` reason 和 debug string；hook failure stable frame 不构造 live native executor，不调用 test executor，不 publish prompt scope，不输出 resolved action commands。
+- Focused 验证：
+  - `xmake build -y DualPadPresentationProjectionTests`：exit 0。
+  - `xmake run -y DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build -y DualPadInputV2Tests`：exit 0。
+  - `xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path publisher epoch mismatch / duplicate binding 日志，进程返回 0。
+  - `xmake build -y DualPad`：exit 0；本机 xmake 配置仍会部署到 `AGENTS.win.md` 记录的本机 MO2 插件目录，该路径不写入共享 truth。
+- Close-out 验证（2026-06-07 19:31:08 CST）：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；完整 build/run `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed-doc consistency 检查。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0，输出 `reviewed docs consistency check passed`。
+  - `xmake build -y DualPadReplayHarness && xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 dispatcher replay 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1583 nodes, 3317 edges, 145 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- GitHub #8 checklist：
+  - 已将 `U1.7 Hook install result/signature gate` 勾选完成。
+  - 已追加 U1.7 close-out gates，记录 hook result、runtime/signature gate、fail-closed、focused tests 与完整验证。
+
 ## 2026-06-06 01:13:53 CST
 
 - `DP5-RC20` U1 ingress/frame contract hardening / 第二切片：
@@ -2220,3 +2283,57 @@
   - generated docs consistency：通过
   - git diff --check：待最终重跑
 - 结论：U1.1 实现与验证已完成，等待最终 whitespace check 与 #8 checklist 同步。
+
+## 2026-06-07 21:09:03 CST
+
+- `DP5-RC20` U1.9 Axis2D / chord timestamp / primary path contracts 开始并完成 focused 实现：
+  - 当前本地 HEAD 确认基于 `08c5c4715696`。
+  - `Axis2D` 内部语义已收口为同一 action 的 X / Y stick axis coalescing：值域 clamp 到 `[-1.0, 1.0]`，neutral epsilon 为 `0.0001`，value 是 absolute，不解释为 delta；frame 有 `monotonicUs` 时 value / `Value` phase 使用 frame evaluation timestamp。
+  - Chord pulse 已暴露 `firstEdgeUs`、`lastEdgeUs`、`evaluationUs`；chord 只在新 edge 进入窗口时 fire，level-held 不重复 pulse，overflow / degraded stable frame 会 invalidate latch 且不输出 dirty pulse。
+  - Primary path exclusivity 已收口到 `ResolvePrimaryPathArbitration(...)`：gamepad / mouse / keyboard / UI / menu cursor owner 先形成单一 arbitration decision，再回填 channel owner、gate plan 与 presentation owner。
+  - 本轮未改变 prompt / glyph public shape，未恢复旧 SWF shape，未恢复 `FavoritesMenu` workspace，未新增 runtime phase。
+- 已通过的 focused / property 验证：
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path publisher epoch mismatch / duplicate binding / degraded debug 日志。
+  - `xmake build -y DualPadGameplayProjectionTests && xmake run -y DualPadGameplayProjectionTests`：exit 0。
+  - `xmake build -y DualPadPropertyTests && xmake run -y DualPadPropertyTests`：exit 0。
+- 待收尾验证：
+  - Phase 8 CI
+  - replay diff
+  - builder JSON
+  - reviewed/generated docs consistency
+  - graphify rebuild
+  - `git diff --check`
+  - GitHub #8 checklist
+
+## 2026-06-07 21:15:30 CST
+
+- `DP5-RC20` U1.9 close-out 验证完成：
+  - 最终复核中将 `Axis2D` coalesced `scalar` magnitude clamp 到 `[0.0, 1.0]`，并在该最终代码状态后重跑所有下列 gate。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：最终 exit 0；构建/运行 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed docs consistency。第一次运行因 DocGen 将 `docs/generated` manifest hash 从 `39a4b74cae31a15a` 更新为 `5f5914014e46c91d` 而停在 `git diff --exit-code -- docs/generated`；按既有 close-out 规则 stage regenerated docs 后重跑通过。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1617 nodes, 3414 edges, 143 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 状态结论：
+  - U1.9 Axis2D / chord timestamp / primary path contracts 已完成本地实现与验证。
+  - 本轮未改变 prompt / glyph public shape，未恢复旧 SWF shape，未恢复 `FavoritesMenu` workspace，未新增 runtime phase。
+  - `DP5` / `S-DP5` 整体仍保持 planned；U2-U5 尚未完成。
+
+## 2026-06-07 21:26:50 CST
+
+- `DP5-RC20` U1.9 非阻塞观察项 follow-up：
+  - 已为 `EvaluateChordTiming(...)` 增加 malformed `requiredPathIndices` defensive guard；当外部/测试 graph 构造出越界 required path 时 fail-closed，不读取 `binding.paths` 越界，也不输出 dirty chord pulse。
+  - 已补 focused regression：手写 malformed chord binding，验证坏 `requiredPathIndices` 在 primary edge 存在时仍返回空 `ResolvedActionFrame::changes`。
+  - `Axis2D` sparse component stream 观察项保持为未来扩展约束；当前 U1.9 contract 仍明确 value 为 absolute frame sample，不在本轮加入 per-action component memory。
+- 已通过：
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path publisher epoch mismatch / duplicate binding / degraded debug 日志。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；DocGen manifest hash 保持 `5f5914014e46c91d`，generated docs clean-diff 通过。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1617 nodes, 3414 edges, 143 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- PR #17 metadata 已同步为 `Complete DP5-RC20 U1.7-U1.9 runtime determinism closeout`。

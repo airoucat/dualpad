@@ -5,11 +5,13 @@
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
+#include "input_v2/gameplay/RuntimeDiagnostics.h"
 #include "input_v2/gameplay/RuntimeFrameEnvelope.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/presentation/PresentationProjection.h"
 
 #include <cstdint>
+#include <string>
 
 namespace dualpad::input_v2::gameplay
 {
@@ -22,6 +24,7 @@ namespace dualpad::input_v2::gameplay
         RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
         std::uint64_t outputTick{ 0 };
         dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Gameplay };
+        std::string runtimeHealthDebugReason;
     };
 
     struct DualPadRuntimeResult
@@ -30,6 +33,7 @@ namespace dualpad::input_v2::gameplay
         PollOutputApplyResult output{};
         presentation::PublishedGameplayPresentation gameplayPresentation{};
         RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
+        std::string runtimeHealthDebugReason;
 
         [[nodiscard]] bool RuntimeHealthDegraded() const
         {
@@ -59,6 +63,7 @@ namespace dualpad::input_v2::gameplay
 
         const presentation::PublishedGameplayPresentation& GetPublishedGameplayPresentation() const;
         const GameplayProjectionFrame& GetLastProjectionFrame() const;
+        const RuntimeDebugSnapshot& GetLastDebugSnapshot() const;
         void ResetForTests();
 
     private:
@@ -67,6 +72,9 @@ namespace dualpad::input_v2::gameplay
         DualPadRuntimeResult ProcessTransitionFrame(const ingress::AssembledFactFrame& frame);
         void PublishStablePresentationSurface(
             const FrameRuntimeEnvelope& envelope,
+            const DualPadRuntimeResult& result);
+        void PublishRuntimeDebugSnapshot(
+            const ingress::AssembledFactFrame& frame,
             const DualPadRuntimeResult& result);
 
         DualPadRuntimeResult ProcessGameplayFrameWithExecutor(
@@ -81,5 +89,7 @@ namespace dualpad::input_v2::gameplay
         GameplayPresentationPublisher _presentationPublisher{};
         presentation::PresentationProjection _presentationProjection{};
         PollOutputAdapter _pollOutputAdapter{};
+        RuntimeDebugSnapshot _lastDebugSnapshot{};
+        RuntimeDiagnosticsLogState _diagnosticsLogState{};
     };
 }

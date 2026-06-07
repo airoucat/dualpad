@@ -63,6 +63,14 @@ namespace dualpad::input_v2::gameplay
             }
             return reasons;
         }
+
+        RuntimeHealthReasonMask AddPromptScopeFrozenForDegradedStableFrame(RuntimeHealthReasonMask reasons)
+        {
+            if (reasons == RuntimeHealthMask(RuntimeHealthReason::None)) {
+                return reasons;
+            }
+            return AddRuntimeHealthReason(reasons, RuntimeHealthReason::PromptScopeFrozen);
+        }
     }
 
     DualPadRuntime& DualPadRuntime::GetSingleton()
@@ -88,13 +96,16 @@ namespace dualpad::input_v2::gameplay
         IPollOutputExecutor& executor)
     {
         if (frame.kind == ingress::AssembledFrameKind::Transition) {
-            return ProcessTransitionFrame(frame);
+            auto result = ProcessTransitionFrame(frame);
+            PublishRuntimeDebugSnapshot(frame, result);
+            return result;
         }
 
         auto envelope = BindRuntimeEnvelope(frame);
         auto input = BuildStableRuntimeInput(envelope);
         auto result = ProcessGameplayFrameWithExecutor(input, executor);
         PublishStablePresentationSurface(envelope, result);
+        PublishRuntimeDebugSnapshot(frame, result);
         return result;
     }
 
@@ -122,6 +133,13 @@ namespace dualpad::input_v2::gameplay
             envelope.healthReasons = AddRuntimeHealthReason(
                 envelope.healthReasons,
                 RuntimeHealthReason::ManifestEpochSkew);
+        }
+        const auto hookInstall = presentation::SkyrimCompatibilitySurface::GetSingleton().GetInstallResult();
+        if (presentation::IsHookInstallFailure(hookInstall)) {
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::HookInstallFailed);
+            envelope.debugReason = presentation::ToDebugString(hookInstall);
         }
         return envelope;
     }
@@ -195,7 +213,8 @@ namespace dualpad::input_v2::gameplay
             .recovery = recovery,
             .runtimeHealthReasons = runtimeHealthReasons,
             .outputTick = kernel.facts.monotonicUs,
-            .legacyContext = contextSnapshot.legacyInputContext
+            .legacyContext = contextSnapshot.legacyInputContext,
+            .runtimeHealthDebugReason = envelope.debugReason
         };
     }
 
@@ -246,10 +265,36 @@ namespace dualpad::input_v2::gameplay
             });
     }
 
+    void DualPadRuntime::PublishRuntimeDebugSnapshot(
+        const ingress::AssembledFactFrame& frame,
+        const DualPadRuntimeResult& result)
+    {
+        const auto hookInstall = presentation::SkyrimCompatibilitySurface::GetSingleton().GetInstallResult();
+        _lastDebugSnapshot = ProjectRuntimeDebugSnapshot(RuntimeDebugProjectionInput{
+            .frame = frame,
+            .runtimeHealthReasons = result.runtimeHealthReasons,
+            .runtimeHealthDebugReason = result.runtimeHealthDebugReason,
+            .outputApplySucceeded = result.output.outputApplySucceeded,
+            .hookInstall = hookInstall
+        });
+        LogRuntimeDebugSnapshotTransition(_diagnosticsLogState, _lastDebugSnapshot);
+    }
+
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrameWithExecutor(
         const DualPadRuntimeInput& input,
         IPollOutputExecutor& executor)
     {
+        if (HasRuntimeHealthReason(input.runtimeHealthReasons, RuntimeHealthReason::HookInstallFailed)) {
+            const auto runtimeHealthReasons = AddPromptScopeFrozenForDegradedStableFrame(input.runtimeHealthReasons);
+            return DualPadRuntimeResult{
+                .projectionFrame = GameplayProjectionFrame{},
+                .output = PollOutputApplyResult{},
+                .gameplayPresentation = _presentationPublisher.GetPublished(),
+                .runtimeHealthReasons = runtimeHealthReasons,
+                .runtimeHealthDebugReason = input.runtimeHealthDebugReason
+            };
+        }
+
         const auto previous = ShouldClearProjectionStickyOwners(input.recovery) ?
             GameplayProjectionFrame{} :
             _lastProjectionFrame;
@@ -277,12 +322,14 @@ namespace dualpad::input_v2::gameplay
                 runtimeHealthReasons,
                 RuntimeHealthReason::BoundaryMismatch);
         }
+        runtimeHealthReasons = AddPromptScopeFrozenForDegradedStableFrame(runtimeHealthReasons);
 
         return DualPadRuntimeResult{
             .projectionFrame = projection,
             .output = std::move(output),
             .gameplayPresentation = published,
-            .runtimeHealthReasons = runtimeHealthReasons
+            .runtimeHealthReasons = runtimeHealthReasons,
+            .runtimeHealthDebugReason = input.runtimeHealthDebugReason
         };
     }
 
@@ -304,9 +351,16 @@ namespace dualpad::input_v2::gameplay
         return _lastProjectionFrame;
     }
 
+    const RuntimeDebugSnapshot& DualPadRuntime::GetLastDebugSnapshot() const
+    {
+        return _lastDebugSnapshot;
+    }
+
     void DualPadRuntime::ResetForTests()
     {
         _lastProjectionFrame = GameplayProjectionFrame{};
+        _lastDebugSnapshot = RuntimeDebugSnapshot{};
+        _diagnosticsLogState = RuntimeDiagnosticsLogState{};
         _pendingRecovery = GameplayRecoveryInput{};
         _hasPendingRecovery = false;
         _interactionState.Reset();

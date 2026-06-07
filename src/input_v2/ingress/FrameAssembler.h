@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace dualpad::input_v2::ingress
@@ -28,6 +29,20 @@ namespace dualpad::input_v2::ingress
         bool crossContextMismatch{ false };
     };
 
+    struct OverflowCompactionDebugSummary
+    {
+        bool transitionObserved{ false };
+        bool typedCompactionApplied{ false };
+        bool retainedManifest{ false };
+        bool retainedUi{ false };
+        bool retainedDeviceFamily{ false };
+        bool retainedSourceEvidence{ false };
+        bool droppedControlSamples{ false };
+        bool droppedPulseLedger{ false };
+        bool droppedLegacySnapshot{ false };
+        std::string debugSummary;
+    };
+
     struct FactFrame
     {
         std::uint32_t manifestEpoch{ 0 };
@@ -40,6 +55,7 @@ namespace dualpad::input_v2::ingress
         presentation::SourceEvidenceSnapshot sourceEvidence;
         std::optional<dualpad::input::PadEventSnapshot> legacySnapshot;
         FactHealth health;
+        std::optional<OverflowCompactionDebugSummary> overflowCompaction;
     };
 
     struct TransitionFrameMeta

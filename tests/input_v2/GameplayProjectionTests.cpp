@@ -232,6 +232,82 @@ namespace
             "presentation plan engineOwner must follow gameplay projection owner result");
     }
 
+    void RunPrimaryPathArbitrationContractTests()
+    {
+        const auto keyboardMouseWins = gameplay::ResolvePrimaryPathArbitration(gameplay::PrimaryPathArbitrationInput{
+            .previousLookOwner = gameplay::ChannelOwner::Gamepad,
+            .previousMoveOwner = gameplay::ChannelOwner::Gamepad,
+            .previousCombatOwner = gameplay::ChannelOwner::Gamepad,
+            .previousDigitalOwner = gameplay::ChannelOwner::Gamepad,
+            .gameplayContext = true,
+            .gamepadLookActive = true,
+            .gamepadMoveActive = true,
+            .gamepadCombatActive = true,
+            .gamepadTransientDigitalActive = true,
+            .mouseLookActive = true,
+            .keyboardMoveActive = true,
+            .keyboardMouseCombatActive = true,
+            .keyboardMouseDigitalActive = true,
+            .uiOwner = presentation::PresentationOwner::KeyboardMouse,
+            .menuCursorOwner = presentation::CursorOwner::KeyboardMouse
+        });
+        Require(
+            keyboardMouseWins.lookOwner == gameplay::ChannelOwner::KeyboardMouse,
+            "primary path table must give mouse look precedence over gamepad look");
+        Require(
+            keyboardMouseWins.moveOwner == gameplay::ChannelOwner::KeyboardMouse,
+            "primary path table must give keyboard move precedence over gamepad move");
+        Require(
+            keyboardMouseWins.combatOwner == gameplay::ChannelOwner::KeyboardMouse,
+            "primary path table must give keyboard/mouse combat precedence over gamepad combat");
+        Require(
+            keyboardMouseWins.digitalOwner == gameplay::ChannelOwner::KeyboardMouse,
+            "primary path table must give keyboard/mouse digital precedence over gamepad digital");
+        Require(
+            keyboardMouseWins.engineOwner == presentation::PresentationOwner::KeyboardMouse,
+            "primary path table must publish a single UI engine owner");
+        Require(
+            keyboardMouseWins.cursorOwner == presentation::CursorOwner::KeyboardMouse,
+            "primary path table must preserve menu cursor owner coherence");
+
+        const auto gamepadReclaims = gameplay::ResolvePrimaryPathArbitration(gameplay::PrimaryPathArbitrationInput{
+            .previousLookOwner = gameplay::ChannelOwner::KeyboardMouse,
+            .previousMoveOwner = gameplay::ChannelOwner::KeyboardMouse,
+            .previousCombatOwner = gameplay::ChannelOwner::KeyboardMouse,
+            .previousDigitalOwner = gameplay::ChannelOwner::KeyboardMouse,
+            .gameplayContext = true,
+            .gamepadLookActive = true,
+            .gamepadMoveActive = true,
+            .gamepadCombatActive = true,
+            .gamepadTransientDigitalActive = true,
+            .uiOwner = presentation::PresentationOwner::Gamepad,
+            .menuCursorOwner = presentation::CursorOwner::Gamepad
+        });
+        Require(gamepadReclaims.lookOwner == gameplay::ChannelOwner::Gamepad, "gamepad look must reclaim when no mouse look is active");
+        Require(gamepadReclaims.moveOwner == gameplay::ChannelOwner::Gamepad, "gamepad move must reclaim when no keyboard move is active");
+        Require(gamepadReclaims.combatOwner == gameplay::ChannelOwner::Gamepad, "gamepad combat must reclaim when no keyboard/mouse combat is active");
+        Require(gamepadReclaims.digitalOwner == gameplay::ChannelOwner::Gamepad, "gamepad digital must reclaim when no keyboard/mouse digital is active");
+        Require(gamepadReclaims.engineOwner == presentation::PresentationOwner::Gamepad, "gamepad analog path must publish Gamepad engine owner");
+        Require(gamepadReclaims.cursorOwner == presentation::CursorOwner::Gamepad, "gamepad menu cursor owner must stay coherent with the table");
+
+        const auto menuContext = gameplay::ResolvePrimaryPathArbitration(gameplay::PrimaryPathArbitrationInput{
+            .previousLookOwner = gameplay::ChannelOwner::Gamepad,
+            .previousMoveOwner = gameplay::ChannelOwner::Gamepad,
+            .previousCombatOwner = gameplay::ChannelOwner::Gamepad,
+            .previousDigitalOwner = gameplay::ChannelOwner::Gamepad,
+            .gameplayContext = false,
+            .gamepadLookActive = true,
+            .gamepadMoveActive = true,
+            .gamepadCombatActive = true,
+            .gamepadTransientDigitalActive = true,
+            .uiOwner = presentation::PresentationOwner::KeyboardMouse,
+            .menuCursorOwner = presentation::CursorOwner::KeyboardMouse
+        });
+        Require(menuContext.lookOwner == gameplay::ChannelOwner::KeyboardMouse, "non-gameplay context must not keep gamepad look owner");
+        Require(menuContext.moveOwner == gameplay::ChannelOwner::KeyboardMouse, "non-gameplay context must not keep gamepad move owner");
+        Require(menuContext.engineOwner == presentation::PresentationOwner::KeyboardMouse, "non-gameplay context must use UI owner");
+    }
+
     void RunOverflowFailClosedTests()
     {
         auto resolved = Resolved();
@@ -405,6 +481,7 @@ int main()
         RunFrozenFrameShapeTests();
         RunRecoveryPlanTests();
         RunProjectionClassificationAndGateTests();
+        RunPrimaryPathArbitrationContractTests();
         RunOverflowFailClosedTests();
         RunPresentationPublisherTests();
         RunPollOutputAdapterExecutionTests();

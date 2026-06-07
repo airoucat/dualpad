@@ -166,7 +166,8 @@ local ph5_gameplay_projection_files = {
     "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
     "src/input_v2/gameplay/PollOutputAdapter.cpp",
     "src/input_v2/gameplay/RecoveryPlan.cpp",
-    "src/input_v2/gameplay/GameplayPresentationPublisher.cpp"
+    "src/input_v2/gameplay/GameplayPresentationPublisher.cpp",
+    "src/input_v2/gameplay/RuntimeDiagnostics.cpp"
 }
 
 local ph5_gameplay_runtime_files = {
@@ -280,8 +281,14 @@ target("DualPadGameplayProjectionTests")
 
     add_files("tests/input_v2/GameplayProjectionTests.cpp")
     add_files(table.unpack(ph4_action_graph_files))
+    add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(ph2_context_resolver_files))
     add_files(table.unpack(ph5_gameplay_projection_files))
+    add_files(table.unpack(ph6_prompt_files))
+    add_files(table.unpack(ph7_ingress_files))
     add_files(
+        "src/input_v2/presentation/PresentationProjection.cpp",
+        "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
         "src/input/backend/ActionBackendPolicy.cpp",
         "src/input/backend/NativeActionDescriptor.cpp",
         "src/input/RuntimeConfig.cpp")

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace dualpad::input_v2::presentation
@@ -20,6 +21,12 @@ namespace dualpad::input_v2::presentation
             Installing,
             Installed,
             Failed
+        };
+
+        enum class HookInstallProgress : std::uint8_t
+        {
+            NotStarted = 0,
+            PatchStarted
         };
 
         struct VfuncPatchSite
@@ -59,6 +66,45 @@ namespace dualpad::input_v2::presentation
         }
     }
 
+    enum class HookInstallStatus : std::uint8_t
+    {
+        NotAttempted = 0,
+        Success,
+        UnsupportedRuntime,
+        SignatureMismatch,
+        AlreadyInstalled,
+        Failed,
+        PartialInstall
+    };
+
+    struct HookInstallResult
+    {
+        HookInstallStatus status{ HookInstallStatus::NotAttempted };
+        bool installed{ false };
+        bool failClosed{ false };
+        std::string debugReason;
+    };
+
+    namespace detail
+    {
+        HookInstallResult MakeHookInstallResult(
+            HookInstallStatus status,
+            std::string_view debugReason);
+
+        HookInstallResult EvaluateHookInstallGate(
+            bool runtimeSupported,
+            bool signaturesMatch,
+            std::string_view debugReason = {});
+
+        HookInstallResult EvaluateHookPatchFailure(
+            HookInstallProgress progress,
+            std::string_view debugReason);
+    }
+
+    bool IsHookInstallFailure(const HookInstallResult& result);
+    const char* ToString(HookInstallStatus status);
+    std::string ToDebugString(const HookInstallResult& result);
+
     struct LegacyCompatibilitySurface
     {
         bool isUsingGamepad{ false };
@@ -82,7 +128,7 @@ namespace dualpad::input_v2::presentation
     public:
         static SkyrimCompatibilitySurface& GetSingleton();
 
-        void Install();
+        HookInstallResult Install();
         void Commit(const PublishedPresentationState& state);
         void EnableRollback(const LegacyCompatibilitySurface& legacy);
         void DisableRollback();
@@ -96,6 +142,9 @@ namespace dualpad::input_v2::presentation
             bool remapMode) const;
 
         PublishedPresentationState GetCommittedState() const;
+        HookInstallResult GetInstallResult() const;
+        void ForceInstallResultForTests(const HookInstallResult& result);
+        void ResetInstallStateForTests();
 
     private:
         static bool StaticIsUsingGamepadHook();
@@ -103,13 +152,15 @@ namespace dualpad::input_v2::presentation
         static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
 
         bool TryBeginInstall();
-        void MarkInstallSucceeded();
-        void MarkInstallFailed();
+        HookInstallResult MarkInstallResultLocked(const HookInstallResult& result);
+        HookInstallResult MarkInstallSucceeded();
+        HookInstallResult MarkInstallFailed(const HookInstallResult& result);
         detail::InstallState GetInstallState() const;
 
         mutable std::mutex _mutex;
         PublishedPresentationState _committed{};
         std::uint32_t _lastRefreshEpoch{ 0 };
         detail::InstallState _installState{ detail::InstallState::NotInstalled };
+        HookInstallResult _installResult{};
     };
 }

@@ -3,6 +3,7 @@
 #include "input_v2/ingress/FrameAssembler.h"
 
 #include <algorithm>
+#include <sstream>
 
 namespace dualpad::input_v2::ingress
 {
@@ -33,6 +34,40 @@ namespace dualpad::input_v2::ingress
                 return;
             }
             *it = sample;
+        }
+
+        std::string BoolString(bool value)
+        {
+            return value ? "true" : "false";
+        }
+
+        OverflowCompactionDebugSummary BuildOverflowCompactionDebugSummary(
+            const QueueOverflowPayload& payload)
+        {
+            OverflowCompactionDebugSummary summary{
+                .transitionObserved = true,
+                .typedCompactionApplied = true,
+                .retainedManifest = payload.hasManifest,
+                .retainedUi = payload.hasUi,
+                .retainedDeviceFamily = payload.hasDeviceFamily,
+                .retainedSourceEvidence = payload.hasSourceEvidence,
+                .droppedControlSamples = payload.droppedControlSamples,
+                .droppedPulseLedger = payload.droppedPulseLedger,
+                .droppedLegacySnapshot = payload.droppedLegacySnapshot
+            };
+
+            std::ostringstream out;
+            out << "overflow_transition=true"
+                << " typed_compaction=true"
+                << " retained_manifest=" << BoolString(summary.retainedManifest)
+                << " retained_ui=" << BoolString(summary.retainedUi)
+                << " retained_device_family=" << BoolString(summary.retainedDeviceFamily)
+                << " retained_source_evidence=" << BoolString(summary.retainedSourceEvidence)
+                << " dropped_control_samples=" << BoolString(summary.droppedControlSamples)
+                << " dropped_pulse_ledger=" << BoolString(summary.droppedPulseLedger)
+                << " dropped_legacy_snapshot=" << BoolString(summary.droppedLegacySnapshot);
+            summary.debugSummary = out.str();
+            return summary;
         }
     }
 
@@ -235,6 +270,7 @@ namespace dualpad::input_v2::ingress
         facts.health = FactHealth{};
         facts.health.queueOverflow = true;
         facts.monotonicUs = event.monotonicUs;
+        facts.overflowCompaction = BuildOverflowCompactionDebugSummary(payload);
         if (payload.hasSourceEvidence) {
             facts.sourceEvidence = payload.sourceEvidence;
             if (payload.hasDeviceFamily &&

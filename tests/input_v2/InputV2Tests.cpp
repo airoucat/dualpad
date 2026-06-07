@@ -13,6 +13,7 @@
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
+#include "input_v2/gameplay/RuntimeDiagnostics.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
 #include "input_v2/ingress/LiveInputFactProducer.h"
@@ -20,8 +21,9 @@
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
-#include <iostream>
+#include <algorithm>
 #include <filesystem>
+#include <iostream>
 #include <stdexcept>
 #include <string_view>
 
@@ -41,6 +43,16 @@ namespace
         if (!condition) {
             throw std::runtime_error(std::string(message));
         }
+    }
+
+    bool Contains(const std::vector<std::string>& values, std::string_view expected)
+    {
+        for (const auto& value : values) {
+            if (value == expected) {
+                return true;
+            }
+        }
+        return false;
     }
 
     dualpad::input::Trigger Trigger(
@@ -64,6 +76,7 @@ namespace
             actions::ActionDefinition{ .id = "PowerAttack", .valueKind = actions::ActionValueKind::Digital },
             actions::ActionDefinition{ .id = "NativeCombo", .valueKind = actions::ActionValueKind::Digital },
             actions::ActionDefinition{ .id = "LookX", .valueKind = actions::ActionValueKind::Axis1D },
+            actions::ActionDefinition{ .id = "Game.Look", .valueKind = actions::ActionValueKind::Axis2D },
             actions::ActionDefinition{ .id = "RightTrigger", .valueKind = actions::ActionValueKind::Axis1D }
         };
         return manifest;
@@ -274,6 +287,10 @@ namespace
         auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compat.DisableRollback();
         compat.Commit(presentation::PublishedPresentationState{});
+        compat.ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "test_hook_installed"));
 
         actions::CompiledActionGraph graph{};
         graph.manifestEpoch = 42;
@@ -668,6 +685,43 @@ namespace
 
         state.Reset();
         {
+            auto axis2DManifest = ManifestWithActions();
+            axis2DManifest.bindings.push_back(Binding(
+                "Game.Look",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX))));
+            axis2DManifest.bindings.push_back(Binding(
+                "Game.Look",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickY))));
+            const auto axis2DCompiled = actions::ActionGraphCompiler::Compile(axis2DManifest);
+            Require(axis2DCompiled.ok, axis2DCompiled.message);
+
+            actions::LegacyInteractionInputFrame legacy{};
+            legacy.manifestEpoch = 42;
+            legacy.contextRevision = 7;
+            legacy.monotonicUs = 1'650;
+            legacy.samples = {
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 1.25f, 1'640),
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickY), -1.25f, 1'645)
+            };
+            const auto frame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(legacy);
+
+            const auto resolved = engine.Resolve(axis2DCompiled.graph, stack, frame, state);
+            Require(resolved.values.size() == 1, "Axis2D pair must coalesce into one action value");
+            Require(resolved.changes.size() == 1, "Axis2D pair must emit one coalesced Value phase change");
+            Require(resolved.values[0].actionId == "Game.Look", "Axis2D value must retain the action id");
+            Require(resolved.values[0].kind == actions::ActionValueKind::Axis2D, "Axis2D pair must publish Axis2D kind");
+            Require(resolved.values[0].x == 1.0f, "Axis2D X must clamp to the [-1, 1] domain");
+            Require(resolved.values[0].y == -1.0f, "Axis2D Y must clamp to the [-1, 1] domain");
+            Require(resolved.values[0].timestampUs == 1'650, "Axis2D coalesced value timestamp must use frame evaluation time");
+            Require(resolved.changes[0].timestampUs == 1'650, "Axis2D Value change timestamp must use frame evaluation time");
+        }
+
+        state.Reset();
+        {
             auto fallbackManifest = ManifestWithActions();
             fallbackManifest.bindings.push_back(Binding("Jump", Trigger(dualpad::input::TriggerType::Button, 11)));
             const auto fallbackCompiled = actions::ActionGraphCompiler::Compile(fallbackManifest);
@@ -704,6 +758,9 @@ namespace
             Require(resolved.changes.size() == 1, "Combo must fire when final legacy participant arrives second");
             Require(resolved.changes[0].actionId == "NativeCombo", "Combo must resolve to its action");
             Require(resolved.changes[0].phase == actions::ActionPhase::Pulse, "Combo must emit a pulse");
+            Require(resolved.changes[0].firstEdgeUs == 1'950, "Combo pulse must expose firstEdgeUs");
+            Require(resolved.changes[0].lastEdgeUs == 2'000, "Combo pulse must expose lastEdgeUs");
+            Require(resolved.changes[0].evaluationUs == 2'000, "Combo pulse must expose evaluationUs");
         }
 
         state.Reset();
@@ -721,6 +778,104 @@ namespace
             const auto resolved = engine.Resolve(compiled.graph, stack, frame, state);
             Require(resolved.changes.size() == 1, "Combo must be unordered and fire when required participant arrives second");
             Require(resolved.changes[0].actionId == "NativeCombo", "unordered combo must still resolve to combo action");
+            Require(resolved.changes[0].firstEdgeUs == 2'950, "unordered combo firstEdgeUs must use the earlier participant edge");
+            Require(resolved.changes[0].lastEdgeUs == 3'000, "unordered combo lastEdgeUs must use the later participant edge");
+            Require(resolved.changes[0].evaluationUs == 3'000, "unordered combo evaluationUs must use frame evaluation time");
+        }
+
+        state.Reset();
+        {
+            actions::LegacyInteractionInputFrame first{};
+            first.manifestEpoch = 42;
+            first.contextRevision = 7;
+            first.monotonicUs = 5'000;
+            first.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 2 }, true, false, false, 4'950, 5'000),
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, true, false, 5'000, 5'000)
+            };
+            const auto firstResolved = engine.Resolve(
+                compiled.graph,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(first),
+                state);
+            Require(firstResolved.changes.size() == 1, "initial chord edge must fire");
+
+            actions::LegacyInteractionInputFrame held{};
+            held.manifestEpoch = 42;
+            held.contextRevision = 7;
+            held.monotonicUs = 5'050;
+            held.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 2 }, true, false, false, 4'950, 5'050),
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, false, false, 5'000, 5'050)
+            };
+            const auto heldResolved = engine.Resolve(
+                compiled.graph,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(held),
+                state);
+            Require(heldResolved.changes.empty(), "level-held chord must not refire without a new edge");
+
+            auto degradedFrame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(held);
+            degradedFrame.facts.monotonicUs = 5'100;
+            degradedFrame.state.healthDegraded = true;
+            const auto degradedResolved = engine.Resolve(compiled.graph, stack, degradedFrame, state);
+            Require(degradedResolved.changes.empty(), "overflow/degraded frame must invalidate chord without dirty pulse output");
+
+            actions::LegacyInteractionInputFrame refire{};
+            refire.manifestEpoch = 42;
+            refire.contextRevision = 7;
+            refire.monotonicUs = 5'200;
+            refire.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 2 }, true, false, false, 5'150, 5'200),
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, true, false, 5'200, 5'200)
+            };
+            const auto refired = engine.Resolve(
+                compiled.graph,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(refire),
+                state);
+            Require(refired.changes.size() == 1, "new clean chord edge after invalidation must fire");
+        }
+
+        state.Reset();
+        {
+            actions::CompiledActionGraph malformed{};
+            malformed.manifestEpoch = 42;
+            malformed.actions = {
+                actions::ActionDefinition{ .id = "NativeCombo", .valueKind = actions::ActionValueKind::Digital }
+            };
+            malformed.bindings.push_back(actions::CompiledGraphBinding{
+                .bindingId = 99,
+                .actionId = "NativeCombo",
+                .actionSetId = "GameplayBase",
+                .paths = {
+                    actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }
+                },
+                .interaction = actions::InteractionSpec{
+                    .kind = actions::InteractionKind::Chord,
+                    .primaryPathIndex = 0,
+                    .requiredPathIndices = { 1 },
+                    .chordWindowUs = actions::kLegacyComboWindowUs,
+                    .unordered = true
+                },
+                .matchPolicy = actions::BindingMatchPolicy::ExactOnly
+            });
+            malformed.lookups.bindingIndexById[99] = 0;
+            malformed.lookups.bindingIdsByActionSetId["GameplayBase"].push_back(99);
+
+            actions::LegacyInteractionInputFrame legacy{};
+            legacy.manifestEpoch = 42;
+            legacy.contextRevision = 7;
+            legacy.monotonicUs = 5'500;
+            legacy.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, true, false, 5'500, 5'500)
+            };
+            const auto resolved = engine.Resolve(
+                malformed,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(legacy),
+                state);
+            Require(resolved.changes.empty(), "malformed chord requiredPathIndices must fail closed without a dirty pulse");
         }
 
         state.Reset();
@@ -949,6 +1104,133 @@ namespace
             "runtime graph epoch skew must fail closed without transient gamepad commands");
     }
 
+    void RunRuntimeDiagnosticsProjectionTests()
+    {
+        ingress::AssembledFactFrame frame{};
+        frame.kind = ingress::AssembledFrameKind::Stable;
+        frame.firstSeq = 700;
+        frame.lastSeq = 701;
+        frame.facts.overflowCompaction = ingress::OverflowCompactionDebugSummary{
+            .transitionObserved = true,
+            .typedCompactionApplied = true,
+            .retainedManifest = true,
+            .retainedUi = true,
+            .retainedDeviceFamily = true,
+            .retainedSourceEvidence = true,
+            .droppedControlSamples = true,
+            .droppedPulseLedger = true,
+            .droppedLegacySnapshot = true,
+            .debugSummary = "overflow_transition=true typed_compaction=true retained_manifest=true retained_ui=true retained_device_family=true retained_source_evidence=true dropped_control_samples=true dropped_pulse_ledger=true dropped_legacy_snapshot=true"
+        };
+
+        auto mask = gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::None);
+        for (const auto reason : {
+                 gameplay::RuntimeHealthReason::GraphUnavailable,
+                 gameplay::RuntimeHealthReason::ManifestEpochSkew,
+                 gameplay::RuntimeHealthReason::ContextRevisionSkew,
+                 gameplay::RuntimeHealthReason::QueueOverflow,
+                 gameplay::RuntimeHealthReason::SequenceGap,
+                 gameplay::RuntimeHealthReason::BoundaryMismatch,
+                 gameplay::RuntimeHealthReason::PromptScopeFrozen,
+                 gameplay::RuntimeHealthReason::HookInstallFailed }) {
+            mask = gameplay::AddRuntimeHealthReason(mask, reason);
+        }
+
+        const auto hook = presentation::detail::MakeHookInstallResult(
+            presentation::HookInstallStatus::PartialInstall,
+            "exception_after_patch_started");
+        const auto snapshot = gameplay::ProjectRuntimeDebugSnapshot(gameplay::RuntimeDebugProjectionInput{
+            .frame = frame,
+            .runtimeHealthReasons = mask,
+            .runtimeHealthDebugReason = "hook_partial_install",
+            .outputApplySucceeded = true,
+            .hookInstall = hook
+        });
+
+        Require(snapshot.runtimeHealthDegraded, "all-reasons mask must project as degraded");
+        for (const auto expected : {
+                 "GraphUnavailable",
+                 "ManifestEpochSkew",
+                 "ContextRevisionSkew",
+                 "QueueOverflow",
+                 "SequenceGap",
+                 "BoundaryMismatch",
+                 "PromptScopeFrozen",
+                 "HookInstallFailed" }) {
+            Require(Contains(snapshot.runtimeHealthReasonNames, expected), "reason mask projection missed a reason name");
+        }
+        Require(
+            snapshot.hookInstallStatusName == "partial_install",
+            "debug snapshot must expose hook partial_install status");
+        Require(
+            snapshot.hookInstallDebugReason == "exception_after_patch_started",
+            "debug snapshot must expose hook debug reason");
+        Require(snapshot.promptState == gameplay::RuntimePromptDebugState::Frozen, "degraded stable frame must freeze prompt");
+        Require(
+            snapshot.promptDebugReason.find("PromptScopeFrozen") != std::string::npos,
+            "prompt freeze reason must include PromptScopeFrozen");
+        Require(snapshot.overflowTransition, "debug snapshot must expose overflow transition");
+        Require(snapshot.overflowTypedCompaction, "debug snapshot must expose typed overflow compaction");
+        Require(
+            snapshot.overflowCompactionSummary.find("retained_source_evidence=true") != std::string::npos,
+            "debug snapshot must expose typed compaction retained facts");
+
+        const auto unsupportedSnapshot = gameplay::ProjectRuntimeDebugSnapshot(gameplay::RuntimeDebugProjectionInput{
+            .frame = frame,
+            .runtimeHealthReasons = gameplay::AddRuntimeHealthReason(
+                gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::PromptScopeFrozen),
+                gameplay::RuntimeHealthReason::HookInstallFailed),
+            .runtimeHealthDebugReason = "unsupported_runtime_1.6.640",
+            .outputApplySucceeded = false,
+            .hookInstall = presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::UnsupportedRuntime,
+                "unsupported_runtime_1.6.640")
+        });
+        Require(
+            unsupportedSnapshot.hookInstallStatusName == "unsupported_runtime",
+            "debug snapshot must expose unsupported_runtime hook status");
+        Require(
+            unsupportedSnapshot.hookInstallDebugReason == "unsupported_runtime_1.6.640",
+            "debug snapshot must expose unsupported runtime debug reason");
+
+        gameplay::RuntimeDiagnosticsLogState logState;
+        Require(gameplay::ShouldEmitRuntimeDebugLog(logState, snapshot), "first degraded snapshot must log");
+        Require(!gameplay::ShouldEmitRuntimeDebugLog(logState, snapshot), "duplicate degraded snapshot must not log");
+
+        auto recovered = snapshot;
+        recovered.runtimeHealthDegraded = false;
+        recovered.runtimeHealthReasons = gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::None);
+        recovered.runtimeHealthReasonNames = gameplay::RuntimeHealthReasonNames(recovered.runtimeHealthReasons);
+        recovered.runtimeHealthReasonSummary = gameplay::RuntimeHealthReasonSummary(recovered.runtimeHealthReasons);
+        recovered.runtimeHealthDebugReason.clear();
+        recovered.promptState = gameplay::RuntimePromptDebugState::Ready;
+        recovered.promptStateName = gameplay::ToString(recovered.promptState);
+        recovered.promptDebugReason = "published";
+        recovered.overflowTransition = false;
+        recovered.overflowTypedCompaction = false;
+        recovered.overflowCompactionSummary.clear();
+        Require(gameplay::ShouldEmitRuntimeDebugLog(logState, recovered), "health recovery transition must log once");
+        Require(!gameplay::ShouldEmitRuntimeDebugLog(logState, recovered), "duplicate recovery snapshot must not log");
+
+        ingress::AssembledFactFrame transition{};
+        transition.kind = ingress::AssembledFrameKind::Transition;
+        transition.transition.reason = ingress::TransitionReason::SequenceGap;
+        const auto transitionSnapshot = gameplay::ProjectRuntimeDebugSnapshot(gameplay::RuntimeDebugProjectionInput{
+            .frame = transition,
+            .runtimeHealthReasons = gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::SequenceGap),
+            .outputApplySucceeded = false,
+            .hookInstall = presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "installed")
+        });
+        Require(
+            transitionSnapshot.promptState == gameplay::RuntimePromptDebugState::Unavailable,
+            "transition frame prompt state must be unavailable");
+        Require(
+            transitionSnapshot.promptDebugReason == "transition_frame",
+            "transition frame must expose prompt unavailable reason");
+    }
+
     void RunRuntimeDegradedFramePromptPublishContractTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -992,6 +1274,11 @@ namespace
                 result.runtimeHealthReasons,
                 gameplay::RuntimeHealthReason::ManifestEpochSkew),
             "graph skew frame must expose ManifestEpochSkew");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::PromptScopeFrozen),
+            "graph skew degraded stable frame must expose PromptScopeFrozen");
         const auto afterCompat = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
         Require(afterCompat.epoch > beforeCompatEpoch, "degraded frame may still publish Skyrim compatibility owner state");
         Require(afterCompat.owner == presentation::PresentationOwner::Gamepad, "degraded frame must preserve public owner projection");
@@ -1003,6 +1290,71 @@ namespace
         Require(
             afterScope.manifestEpoch == beforeScope.manifestEpoch,
             "degraded frame must not move prompt scope to a mismatched graph epoch");
+        const auto& debug = runtime.GetLastDebugSnapshot();
+        Require(debug.runtimeHealthDegraded, "degraded frame must publish a runtime debug snapshot");
+        Require(debug.promptState == gameplay::RuntimePromptDebugState::Frozen, "debug snapshot must expose prompt freeze");
+        Require(
+            debug.promptDebugReason.find("ManifestEpochSkew") != std::string::npos,
+            "debug snapshot prompt freeze reason must include manifest skew");
+    }
+
+    void RunRuntimeHookInstallFailureFailClosedTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        const auto beforeScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::SignatureMismatch,
+                "is_using_gamepad_call_signature_mismatch"));
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                97,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    97'000)),
+            executor);
+
+        Require(result.RuntimeHealthDegraded(), "hook install failure must surface as degraded runtime health");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::HookInstallFailed),
+            "hook install failure must expose HookInstallFailed");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::PromptScopeFrozen),
+            "hook install failure must expose prompt freeze in the reason mask");
+        Require(
+            result.runtimeHealthDebugReason.find("signature_mismatch") != std::string::npos,
+            "hook install failure must carry debug reason for U1.8 diagnostics");
+        Require(executor.steps.empty(), "hook install failure must not call native/prompt/action output executor");
+        Require(!result.output.outputApplySucceeded, "hook install failure must not report output apply success");
+        Require(
+            result.projectionFrame.gamepadPlan.transientDigital.count == 0 &&
+                result.projectionFrame.helperPlan.commands.count == 0,
+            "hook install failure must not expose resolved action commands");
+
+        const auto afterScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        Require(
+            afterScope.promptScopeRevision == beforeScope.promptScopeRevision,
+            "hook install failure must not publish a new prompt scope");
+        const auto& debug = runtime.GetLastDebugSnapshot();
+        Require(debug.hookInstallStatusName == "signature_mismatch", "debug snapshot must expose hook status");
+        Require(
+            debug.hookInstallDebugReason == "is_using_gamepad_call_signature_mismatch",
+            "debug snapshot must expose hook debug reason");
+        Require(debug.promptState == gameplay::RuntimePromptDebugState::Frozen, "hook failure must freeze prompt in debug snapshot");
+        presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "test_hook_installed"));
     }
 
     void RunRuntimePresentationUsesFrameBoundContextTests()
@@ -1062,6 +1414,14 @@ namespace
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().epoch == initialEpoch,
             "transition frame must not publish Skyrim compatibility state");
+        const auto transitionDebug = runtime.GetLastDebugSnapshot();
+        Require(
+            transitionDebug.promptState == gameplay::RuntimePromptDebugState::Unavailable,
+            "transition debug snapshot must expose prompt unavailable state");
+        Require(
+            transitionDebug.promptDebugReason == "transition_frame",
+            "transition debug snapshot must expose prompt unavailable reason");
+        Require(transitionDebug.overflowTransition, "queue overflow transition must be visible in debug snapshot");
 
         RecordingPollOutputExecutor stableExecutor;
         const auto stable = runtime.ProcessAssembledFrameForTests(
@@ -1291,7 +1651,9 @@ int main()
         RunRuntimeLiveStyleGamepadPublishTests();
         RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
         RunRuntimeGraphSkewHealthTests();
+        RunRuntimeDiagnosticsProjectionTests();
         RunRuntimeDegradedFramePromptPublishContractTests();
+        RunRuntimeHookInstallFailureFailClosedTests();
         RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();

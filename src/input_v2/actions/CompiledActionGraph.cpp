@@ -41,10 +41,24 @@ namespace dualpad::input_v2::actions
 
         ControlPath AxisPath(std::uint32_t code)
         {
+            using dualpad::input::PadAxisId;
+            AxisComponent component = AxisComponent::None;
+            switch (static_cast<PadAxisId>(code)) {
+            case PadAxisId::LeftStickX:
+            case PadAxisId::RightStickX:
+                component = AxisComponent::X;
+                break;
+            case PadAxisId::LeftStickY:
+            case PadAxisId::RightStickY:
+                component = AxisComponent::Y;
+                break;
+            default:
+                break;
+            }
             return ControlPath{
                 .kind = ControlPathKind::AnalogAxis1D,
                 .code = code,
-                .component = AxisComponent::None
+                .component = component
             };
         }
 
