@@ -10,6 +10,7 @@
 #include "input_v2/presentation/PresentationProjection.h"
 
 #include <cstdint>
+#include <string>
 
 namespace dualpad::input_v2::gameplay
 {
@@ -22,6 +23,7 @@ namespace dualpad::input_v2::gameplay
         RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
         std::uint64_t outputTick{ 0 };
         dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Gameplay };
+        std::string runtimeHealthDebugReason;
     };
 
     struct DualPadRuntimeResult
@@ -30,6 +32,7 @@ namespace dualpad::input_v2::gameplay
         PollOutputApplyResult output{};
         presentation::PublishedGameplayPresentation gameplayPresentation{};
         RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
+        std::string runtimeHealthDebugReason;
 
         [[nodiscard]] bool RuntimeHealthDegraded() const
         {

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace dualpad::input_v2::config
 {
@@ -60,6 +61,7 @@ namespace dualpad::input_v2::gameplay
         ingress::AssembledFactFrame frame;
         RuntimeConfigSnapshot config;
         RuntimeHealthReasonMask healthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
+        std::string debugReason;
 
         [[nodiscard]] bool RuntimeHealthDegraded() const
         {

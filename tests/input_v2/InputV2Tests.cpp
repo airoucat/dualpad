@@ -274,6 +274,10 @@ namespace
         auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compat.DisableRollback();
         compat.Commit(presentation::PublishedPresentationState{});
+        compat.ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "test_hook_installed"));
 
         actions::CompiledActionGraph graph{};
         graph.manifestEpoch = 42;
@@ -1005,6 +1009,54 @@ namespace
             "degraded frame must not move prompt scope to a mismatched graph epoch");
     }
 
+    void RunRuntimeHookInstallFailureFailClosedTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        const auto beforeScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::SignatureMismatch,
+                "is_using_gamepad_call_signature_mismatch"));
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                97,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    97'000)),
+            executor);
+
+        Require(result.RuntimeHealthDegraded(), "hook install failure must surface as degraded runtime health");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::HookInstallFailed),
+            "hook install failure must expose HookInstallFailed");
+        Require(
+            result.runtimeHealthDebugReason.find("signature_mismatch") != std::string::npos,
+            "hook install failure must carry debug reason for U1.8 diagnostics");
+        Require(executor.steps.empty(), "hook install failure must not call native/prompt/action output executor");
+        Require(!result.output.outputApplySucceeded, "hook install failure must not report output apply success");
+        Require(
+            result.projectionFrame.gamepadPlan.transientDigital.count == 0 &&
+                result.projectionFrame.helperPlan.commands.count == 0,
+            "hook install failure must not expose resolved action commands");
+
+        const auto afterScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        Require(
+            afterScope.promptScopeRevision == beforeScope.promptScopeRevision,
+            "hook install failure must not publish a new prompt scope");
+        presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "test_hook_installed"));
+    }
+
     void RunRuntimePresentationUsesFrameBoundContextTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -1292,6 +1344,7 @@ int main()
         RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
         RunRuntimeGraphSkewHealthTests();
         RunRuntimeDegradedFramePromptPublishContractTests();
+        RunRuntimeHookInstallFailureFailClosedTests();
         RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();

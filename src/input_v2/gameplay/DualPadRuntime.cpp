@@ -123,6 +123,13 @@ namespace dualpad::input_v2::gameplay
                 envelope.healthReasons,
                 RuntimeHealthReason::ManifestEpochSkew);
         }
+        const auto hookInstall = presentation::SkyrimCompatibilitySurface::GetSingleton().GetInstallResult();
+        if (presentation::IsHookInstallFailure(hookInstall)) {
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::HookInstallFailed);
+            envelope.debugReason = presentation::ToDebugString(hookInstall);
+        }
         return envelope;
     }
 
@@ -195,7 +202,8 @@ namespace dualpad::input_v2::gameplay
             .recovery = recovery,
             .runtimeHealthReasons = runtimeHealthReasons,
             .outputTick = kernel.facts.monotonicUs,
-            .legacyContext = contextSnapshot.legacyInputContext
+            .legacyContext = contextSnapshot.legacyInputContext,
+            .runtimeHealthDebugReason = envelope.debugReason
         };
     }
 
@@ -250,6 +258,16 @@ namespace dualpad::input_v2::gameplay
         const DualPadRuntimeInput& input,
         IPollOutputExecutor& executor)
     {
+        if (HasRuntimeHealthReason(input.runtimeHealthReasons, RuntimeHealthReason::HookInstallFailed)) {
+            return DualPadRuntimeResult{
+                .projectionFrame = GameplayProjectionFrame{},
+                .output = PollOutputApplyResult{},
+                .gameplayPresentation = _presentationPublisher.GetPublished(),
+                .runtimeHealthReasons = input.runtimeHealthReasons,
+                .runtimeHealthDebugReason = input.runtimeHealthDebugReason
+            };
+        }
+
         const auto previous = ShouldClearProjectionStickyOwners(input.recovery) ?
             GameplayProjectionFrame{} :
             _lastProjectionFrame;
@@ -282,7 +300,8 @@ namespace dualpad::input_v2::gameplay
             .projectionFrame = projection,
             .output = std::move(output),
             .gameplayPresentation = published,
-            .runtimeHealthReasons = runtimeHealthReasons
+            .runtimeHealthReasons = runtimeHealthReasons,
+            .runtimeHealthDebugReason = input.runtimeHealthDebugReason
         };
     }
 

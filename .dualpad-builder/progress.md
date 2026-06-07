@@ -1,5 +1,37 @@
 # DualPad Builder Progress
 
+## 2026-06-07 19:29:05 CST
+
+- `DP5-RC20` U1.7 Hook install result / Skyrim signature gate 开始推进：
+  - 当前基线确认：`HEAD == origin/main == 33639e7`。
+  - 已创建分支 `codex/dp5-rc20-u1-7-hook-install-result`。
+  - 本切片只处理 `SkyrimCompatibilitySurface` compatibility hook 安装结果显式化、runtime version / relocation signature gate、hook failure fail-closed 与 runtime degraded/debug surface 接线。
+  - 本切片不新增 runtime phase，不重开 `input_v2` mainline，不改 canonical target 名称、replay root、旧 SWF 返回 shape 或 `FavoritesMenu` workspace。
+  - 已新增计划文档：`docs/superpowers/plans/2026-06-07-dp5-rc20-u1-7-hook-install-result.md`。
+- 当前实现 checkpoint：
+  - `SkyrimCompatibilitySurface` 新增 `HookInstallResult` / `HookInstallStatus`，显式区分 `success`、`unsupported_runtime`、`signature_mismatch`、`already_installed`、`failed`、`partial_install`。
+  - 安装前新增 Skyrim SE 1.5.97 runtime gate，以及两个 call patch site 的 6-byte `write_call<6>` pattern gate；vfunc patch site 也会在 patch 前验证 relocation slot。
+  - patch 过程若发生异常或中途失败会记录 `failed` / `partial_install`，并拒绝 silent retry。
+  - `DualPadRuntime` 只消费抽象 `HookInstallFailed` reason 和 debug string；hook failure stable frame 不构造 live native executor，不调用 test executor，不 publish prompt scope，不输出 resolved action commands。
+- Focused 验证：
+  - `xmake build -y DualPadPresentationProjectionTests`：exit 0。
+  - `xmake run -y DualPadPresentationProjectionTests`：exit 0。
+  - `xmake build -y DualPadInputV2Tests`：exit 0。
+  - `xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path publisher epoch mismatch / duplicate binding 日志，进程返回 0。
+  - `xmake build -y DualPad`：exit 0；本机 xmake 配置仍会部署到 `AGENTS.win.md` 记录的本机 MO2 插件目录，该路径不写入共享 truth。
+- Close-out 验证（2026-06-07 19:31:08 CST）：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；完整 build/run `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs 与 reviewed-doc consistency 检查。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0，输出 `reviewed docs consistency check passed`。
+  - `xmake build -y DualPadReplayHarness && xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 dispatcher replay 场景均为 `no diff`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1583 nodes, 3317 edges, 145 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- GitHub #8 checklist：
+  - 已将 `U1.7 Hook install result/signature gate` 勾选完成。
+  - 已追加 U1.7 close-out gates，记录 hook result、runtime/signature gate、fail-closed、focused tests 与完整验证。
+
 ## 2026-06-06 01:13:53 CST
 
 - `DP5-RC20` U1 ingress/frame contract hardening / 第二切片：

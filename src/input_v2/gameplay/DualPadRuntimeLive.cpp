@@ -275,6 +275,16 @@ namespace dualpad::input_v2::gameplay
 
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrame(const DualPadRuntimeInput& input)
     {
+        if (HasRuntimeHealthReason(input.runtimeHealthReasons, RuntimeHealthReason::HookInstallFailed)) {
+            return DualPadRuntimeResult{
+                .projectionFrame = GameplayProjectionFrame{},
+                .output = PollOutputApplyResult{},
+                .gameplayPresentation = _presentationPublisher.GetPublished(),
+                .runtimeHealthReasons = input.runtimeHealthReasons,
+                .runtimeHealthDebugReason = input.runtimeHealthDebugReason
+            };
+        }
+
         RuntimePollOutputExecutor executor(
             input.legacyContext,
             input.kernel.facts.contextRevision,

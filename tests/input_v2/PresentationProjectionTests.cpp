@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace
@@ -238,6 +239,63 @@ void RunPresentationProjectionTests()
         state = presentation::detail::FailInstall(state);
         Require(state == presentation::detail::InstallState::Failed, "failed install attempt must enter Failed state");
         Require(!presentation::detail::CanBeginInstall(state), "failed install state must not silently retry");
+
+        const auto success = presentation::detail::MakeHookInstallResult(
+            presentation::HookInstallStatus::Success,
+            "installed");
+        Require(success.installed, "success hook install result must be installed");
+        Require(!presentation::IsHookInstallFailure(success), "success hook install result must not fail closed");
+        Require(
+            presentation::ToString(success.status) == std::string_view("success"),
+            "success hook install result must expose a stable debug status");
+
+        const auto unsupported = presentation::detail::MakeHookInstallResult(
+            presentation::HookInstallStatus::UnsupportedRuntime,
+            "unsupported_runtime_1.6.640");
+        Require(!unsupported.installed, "unsupported runtime hook result must not be installed");
+        Require(presentation::IsHookInstallFailure(unsupported), "unsupported runtime must fail closed");
+        Require(
+            presentation::ToDebugString(unsupported).find("unsupported_runtime") != std::string::npos,
+            "unsupported runtime hook result must expose debug reason");
+
+        const auto mismatch = presentation::detail::MakeHookInstallResult(
+            presentation::HookInstallStatus::SignatureMismatch,
+            "is_using_gamepad_call_signature_mismatch");
+        Require(!mismatch.installed, "signature mismatch hook result must not be installed");
+        Require(presentation::IsHookInstallFailure(mismatch), "signature mismatch must fail closed");
+
+        const auto alreadyInstalled = presentation::detail::MakeHookInstallResult(
+            presentation::HookInstallStatus::AlreadyInstalled,
+            "install_already_completed");
+        Require(alreadyInstalled.installed, "already installed hook result must remain installed");
+        Require(!presentation::IsHookInstallFailure(alreadyInstalled), "already installed must not fail closed");
+
+        const auto failed = presentation::detail::EvaluateHookPatchFailure(
+            presentation::detail::HookInstallProgress::NotStarted,
+            "exception_before_patch_started");
+        Require(failed.status == presentation::HookInstallStatus::Failed, "pre-patch exception must be failed");
+        Require(presentation::IsHookInstallFailure(failed), "failed hook install must fail closed");
+
+        const auto partial = presentation::detail::EvaluateHookPatchFailure(
+            presentation::detail::HookInstallProgress::PatchStarted,
+            "exception_after_patch_started");
+        Require(
+            partial.status == presentation::HookInstallStatus::PartialInstall,
+            "post-patch exception must be partial install");
+        Require(presentation::IsHookInstallFailure(partial), "partial hook install must fail closed");
+
+        Require(
+            presentation::detail::EvaluateHookInstallGate(true, true).status ==
+                presentation::HookInstallStatus::Success,
+            "matching runtime and signatures may install");
+        Require(
+            presentation::detail::EvaluateHookInstallGate(false, true).status ==
+                presentation::HookInstallStatus::UnsupportedRuntime,
+            "unsupported runtime must stop before patching");
+        Require(
+            presentation::detail::EvaluateHookInstallGate(true, false).status ==
+                presentation::HookInstallStatus::SignatureMismatch,
+            "signature mismatch must stop before patching");
     }
 
     {
