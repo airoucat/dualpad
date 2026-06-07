@@ -839,6 +839,47 @@ namespace
 
         state.Reset();
         {
+            actions::CompiledActionGraph malformed{};
+            malformed.manifestEpoch = 42;
+            malformed.actions = {
+                actions::ActionDefinition{ .id = "NativeCombo", .valueKind = actions::ActionValueKind::Digital }
+            };
+            malformed.bindings.push_back(actions::CompiledGraphBinding{
+                .bindingId = 99,
+                .actionId = "NativeCombo",
+                .actionSetId = "GameplayBase",
+                .paths = {
+                    actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }
+                },
+                .interaction = actions::InteractionSpec{
+                    .kind = actions::InteractionKind::Chord,
+                    .primaryPathIndex = 0,
+                    .requiredPathIndices = { 1 },
+                    .chordWindowUs = actions::kLegacyComboWindowUs,
+                    .unordered = true
+                },
+                .matchPolicy = actions::BindingMatchPolicy::ExactOnly
+            });
+            malformed.lookups.bindingIndexById[99] = 0;
+            malformed.lookups.bindingIdsByActionSetId["GameplayBase"].push_back(99);
+
+            actions::LegacyInteractionInputFrame legacy{};
+            legacy.manifestEpoch = 42;
+            legacy.contextRevision = 7;
+            legacy.monotonicUs = 5'500;
+            legacy.samples = {
+                Sample(actions::ControlPath{ .kind = actions::ControlPathKind::DigitalButton, .code = 3 }, true, true, false, 5'500, 5'500)
+            };
+            const auto resolved = engine.Resolve(
+                malformed,
+                stack,
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(legacy),
+                state);
+            Require(resolved.changes.empty(), "malformed chord requiredPathIndices must fail closed without a dirty pulse");
+        }
+
+        state.Reset();
+        {
             actions::LegacyInteractionInputFrame legacy{};
             legacy.manifestEpoch = 41;
             legacy.contextRevision = 7;

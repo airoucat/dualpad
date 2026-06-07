@@ -2322,3 +2322,18 @@
   - U1.9 Axis2D / chord timestamp / primary path contracts 已完成本地实现与验证。
   - 本轮未改变 prompt / glyph public shape，未恢复旧 SWF shape，未恢复 `FavoritesMenu` workspace，未新增 runtime phase。
   - `DP5` / `S-DP5` 整体仍保持 planned；U2-U5 尚未完成。
+
+## 2026-06-07 21:26:50 CST
+
+- `DP5-RC20` U1.9 非阻塞观察项 follow-up：
+  - 已为 `EvaluateChordTiming(...)` 增加 malformed `requiredPathIndices` defensive guard；当外部/测试 graph 构造出越界 required path 时 fail-closed，不读取 `binding.paths` 越界，也不输出 dirty chord pulse。
+  - 已补 focused regression：手写 malformed chord binding，验证坏 `requiredPathIndices` 在 primary edge 存在时仍返回空 `ResolvedActionFrame::changes`。
+  - `Axis2D` sparse component stream 观察项保持为未来扩展约束；当前 U1.9 contract 仍明确 value 为 absolute frame sample，不在本轮加入 per-action component memory。
+- 已通过：
+  - `xmake build -y DualPadInputV2Tests && xmake run -y DualPadInputV2Tests`：exit 0；stdout 仍包含既有 negative-path publisher epoch mismatch / duplicate binding / degraded debug 日志。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；DocGen manifest hash 保持 `5f5914014e46c91d`，generated docs clean-diff 通过。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1617 nodes, 3414 edges, 143 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- PR #17 metadata 已同步为 `Complete DP5-RC20 U1.7-U1.9 runtime determinism closeout`。

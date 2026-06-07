@@ -317,6 +317,9 @@ namespace dualpad::input_v2::actions
             timing.lastEdgeUs = timing.firstEdgeUs;
 
             for (const auto requiredIndex : binding.interaction.requiredPathIndices) {
+                if (requiredIndex >= binding.paths.size()) {
+                    return timing;
+                }
                 const auto required = InteractionEngine::FindSample(frame, binding.paths[requiredIndex]);
                 if (!required.has_value() || !required->down) {
                     return timing;
