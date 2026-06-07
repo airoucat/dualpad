@@ -1,5 +1,53 @@
 # DualPad Builder Progress
 
+## 2026-06-07 22:18:13 CST
+
+- `DP5-RC20` U2 Legacy boundary collapse 基于 `main` merge commit `376462f` 开始推进：
+  - PR #17 已通过 `gh pr merge 17 --merge` 合并到 `main`，本地 `main` 已 fast-forward 到 `376462f`。
+  - 已从该 merge commit 创建分支 `codex/dp5-rc20-u2-legacy-boundary-collapse`。
+  - 本切片不新增 runtime phase，不改变 `input_v2` mainline，不改 canonical target 名称、replay root、旧 SWF 返回 shape 或 `FavoritesMenu` workspace。
+- 旧 #2/#3/#4/#5/#6 迁移复核：
+  - #2：`GameplayOwnershipCoordinator.*` 与 `InputModalityTracker.*` 已从 `src/` 删除，反向依赖不再存在。
+  - #3：`InputModalityTracker.*` 已删除；gameplay presentation adaptation 已迁移到 input_v2 presentation / publisher surface。
+  - #4：旧 tracker setter 触发 `RefreshMenus` 的路径已删除；menu refresh 当前由 `SkyrimCompatibilitySurface` published presentation dirty/epoch 驱动。
+  - #5：`GameplayKbmFactTracker` 仍是 legacy KBM fact / diagnostic support surface，但不进入 `input_v2` core runtime；ControlMap lookup cleanup 重新归类为 U5 / non-authority cleanup。
+  - #6：`PadEventSnapshotProcessor` 已退为 compat/replay ingress bridge；degraded recovery 归属 ingress transition / runtime recovery input。
+- Focused 实现：
+  - 新增 `scripts/ci/check_legacy_authority_boundary.py`，禁止旧 authority 文件/标识回流、禁止 `legacySnapshot` 越过 allowlist、禁止 core runtime 决策读取 legacy tokens，并要求 Phase8 CI 调用该检查。
+  - 红灯验证：首次运行 `python scripts/ci/check_legacy_authority_boundary.py` exit 1，失败点为 `scripts/ci/run_phase8_ci.ps1` 尚未调用该检查。
+  - `scripts/ci/run_phase8_ci.ps1` 已接入 legacy authority boundary check；`scripts/ci/check_reviewed_docs_consistency.py` 同步要求该接线存在。
+  - `DualPadIngressTests` 新增 `TestLegacySnapshotCannotOverrideKernelFacts()`，证明 `BuildKernelFrame(...)` 只从 input_v2 boundary key、monotonic time 与 `controlSamples` 构造 kernel，`legacySnapshot` 不能覆盖 kernel facts。
+- 已通过的 focused 验证：
+  - `python scripts/ci/check_legacy_authority_boundary.py`：exit 0，输出 `legacy authority boundary check passed`。
+  - `xmake build -y DualPadIngressTests && xmake run -y DualPadIngressTests`：exit 0，输出 `DualPadIngressTests passed`。
+- 待收尾验证：
+  - Phase 8 CI
+  - replay diff
+  - builder JSON
+  - reviewed/generated docs consistency
+  - graphify rebuild
+  - `git diff --check`
+  - GitHub U2 issue #9 checklist
+
+## 2026-06-07 22:21:00 CST
+
+- `DP5-RC20` U2 Legacy boundary collapse close-out 验证完成：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；构建/运行 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs、reviewed docs consistency、legacy authority boundary static check 与 `git diff --exit-code -- docs/generated`。DocGen manifest hash 保持 `5f5914014e46c91d`。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 场景均为 `no diff`。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0，输出 `reviewed docs consistency check passed`。
+  - `python scripts/ci/check_legacy_authority_boundary.py`：exit 0，输出 `legacy authority boundary check passed`。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1625 nodes, 3430 edges, 143 communities`。
+  - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
+- 状态结论：
+  - `PadEventSnapshotProcessor` 已由 CI static check 固定为 compat/replay ingress bridge，不持有 core runtime authority。
+  - `legacySnapshot` 已由 focused test 与 static allowlist 固定为 compat/replay/debug payload，不能覆盖 input_v2 kernel facts。
+  - 旧 #2/#3/#4/#6 的迁移结论仍准确；旧 #5 已重新归类为 U5 / non-authority cleanup。
+  - 本轮未新增 runtime phase，未改变 `input_v2` mainline。
+
 ## 2026-06-07 20:18:23 CST
 
 - `DP5-RC20` U1.8 Debug degraded observability 基于 `d4d44ab` 推进并完成本地 close-out：

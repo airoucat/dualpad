@@ -51,8 +51,8 @@
 状态：
 
 - U0：contract preflight and scope lock 已完成。
-- U1：runtime determinism hardening，下一步实现入口。
-- U2：legacy boundary collapse。
+- U1：runtime determinism hardening 已完成并经 PR #17 合入 `main`。
+- U2：legacy boundary collapse 已完成本地实现；legacy-named shim / adapter 边界由 focused ingress test 与 Phase8 static check 固化。
 - U3：product integration and release readiness。
 - U4：config / prompt / menu coverage closure。
 - U5：verification / observability / governance closeout。

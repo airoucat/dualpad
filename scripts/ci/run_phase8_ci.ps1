@@ -37,4 +37,5 @@ Invoke-Step xmake @("run", "-y", "DualPadFuzzRegressionTests")
 
 Invoke-Step python @("scripts/dev/generate_dualpad_docs.py")
 Invoke-Step python @("scripts/ci/check_reviewed_docs_consistency.py")
+Invoke-Step python @("scripts/ci/check_legacy_authority_boundary.py")
 Invoke-Step git @("diff", "--exit-code", "--", "docs/generated")

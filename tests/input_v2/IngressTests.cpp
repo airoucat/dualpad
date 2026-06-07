@@ -714,6 +714,45 @@ namespace
         Require(kernel.facts.deviceFamilyRevision == 5, "kernel device family revision mirrors boundary key");
     }
 
+    void TestLegacySnapshotCannotOverrideKernelFacts()
+    {
+        ingress::AssembledFactFrame stable{};
+        stable.kind = ingress::AssembledFrameKind::Stable;
+        stable.lastSeq = 77;
+        stable.boundaryKey = ingress::IngressBoundaryKey{ 42, 101, 102, 103 };
+        stable.facts.manifestEpoch = 999;
+        stable.facts.contextRevision = 888;
+        stable.facts.menuStackRevision = 887;
+        stable.facts.deviceFamilyRevision = 886;
+        stable.facts.monotonicUs = 55'000;
+        stable.facts.controlSamples.push_back(actions::ControlSample{
+            .path = actions::ControlPath{
+                .kind = actions::ControlPathKind::DigitalButton,
+                .code = 9
+            },
+            .down = true,
+            .pressed = true,
+            .timestampUs = 54'000
+        });
+
+        input::PadEventSnapshot legacy{};
+        legacy.sequence = 1234;
+        legacy.contextEpoch = 777;
+        legacy.sourceTimestampUs = 1;
+        legacy.state.buttons.digitalMask = 0;
+        stable.facts.legacySnapshot = legacy;
+
+        const auto kernel = ingress::BuildKernelFrame(stable);
+        Require(kernel.facts.manifestEpoch == 42, "kernel manifest epoch must come from ingress boundary key");
+        Require(kernel.facts.contextRevision == 101, "kernel context revision must come from ingress boundary key");
+        Require(kernel.facts.menuStackRevision == 102, "kernel menu stack revision must come from ingress boundary key");
+        Require(kernel.facts.deviceFamilyRevision == 103, "kernel device family revision must come from ingress boundary key");
+        Require(kernel.facts.monotonicUs == 55'000, "kernel monotonic time comes from input_v2 fact frame");
+        Require(kernel.kernelRevision == 77, "kernel revision comes from assembled frame sequence");
+        Require(kernel.state.controlSamples.size() == 1, "kernel only carries input_v2 control samples");
+        Require(kernel.state.controlSamples[0].path.code == 9, "kernel sample must not be rebuilt from legacy snapshot");
+    }
+
     void TestBuildKernelFrameUsesIngressMonotonicTimestamp()
     {
         ingress::FrameAssembler assembler;
@@ -752,6 +791,7 @@ int main()
     TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline();
     TestDeviceMarkerMismatchFailsClosed();
     TestBuildKernelFrameDoesNotAcceptTransition();
+    TestLegacySnapshotCannotOverrideKernelFacts();
     TestBuildKernelFrameUsesIngressMonotonicTimestamp();
     std::cout << "DualPadIngressTests passed\n";
     return 0;

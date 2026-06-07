@@ -24,6 +24,15 @@ Generated facts 固定由 `DualPadDocGen` 输出到：
 
 它们不再是独立 runtime authority，也不负责恢复旧 fallback。
 
+## DP5-RC20 U2 legacy 边界结论
+
+- `PadEventSnapshotProcessor` 只允许作为 compat/replay ingress bridge：`PadEventSnapshot -> IngressHub -> FrameAssembler -> DualPadRuntime`。它不得直接执行 interaction、gameplay projection、prompt publish、owner 仲裁或 degraded recovery 决策。
+- `legacySnapshot` 只能作为 compat/replay/debug payload 保留在 ingress window 与 trace surface。`BuildKernelFrame(...)` 只从 `AssembledFactFrame` 的 boundary key、health、monotonic time 和 `controlSamples` 构造 kernel，不读取 `legacySnapshot`。
+- `GameplayOwnershipCoordinator.*` 与 `InputModalityTracker.*` 已在 PH8a 物理删除；相关旧 issue 只保留为迁移历史，不再是 live source authority。
+- `GameplayKbmFactTracker` 仍是 legacy KBM fact / diagnostic support surface；它不得进入 `src/input_v2/` core runtime 决策，ControlMap hot-path cleanup 不属于 U2 release-blocking authority debt。
+- degraded recovery 当前归属 `IngressHub`、`FrameAssembler` transition / health markers 与 `DualPadRuntime` recovery input，不再由 `PadEventSnapshotProcessor::Process(...)` 拥有。
+- `scripts/ci/check_legacy_authority_boundary.py` 已接入 Phase8 CI，用 static check 固化上述边界。
+
 ## 输出面
 
 当前输出面分为：
