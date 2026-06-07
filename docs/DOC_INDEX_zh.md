@@ -49,6 +49,7 @@
 ## 当前事实与方案文档
 
 - [authoritative-baseline/dp5_rc20_contract_zh.md](authoritative-baseline/dp5_rc20_contract_zh.md)
+- [releases/dp5_rc20_u3_release_notes_zh.md](releases/dp5_rc20_u3_release_notes_zh.md)
 - [backend_routing_decisions.md](backend_routing_decisions.md)
 - [unified_action_lifecycle_model_zh.md](unified_action_lifecycle_model_zh.md)
 - [main_menu_glyph_current_status_zh.md](main_menu_glyph_current_status_zh.md)

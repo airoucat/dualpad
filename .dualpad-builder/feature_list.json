@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-06-07T22:18:13+08:00",
+  "updated_at": "2026-06-07T22:52:10+08:00",
   "features": [
     {
       "id": "WF0",
@@ -343,6 +343,7 @@
         "U0 contract preflight 已完成并固定 GitHub Meta #13 与 U0-U5 #7-#12 issue 结构",
         "U1.9 Axis2D / chord timestamp / primary path contracts 已进入 input_v2 内部语义模型与 focused/property tests，不改变 prompt/glyph public shape",
         "U2 legacy boundary collapse 已证明 PadEventSnapshotProcessor 只作为 compat/replay ingress bridge，legacySnapshot 不回流 core kernel，旧 #2/#3/#4/#6 已由删除或迁移证明关闭，旧 #5 重新归类为 U5 / non-authority cleanup",
+        "U3 product integration and release readiness 已补 release readiness static gate、stale LKG fail-closed test、release notes 与 release artifact manifest generator；最终 manifest 作为 build/release 生成物对齐 source commit / generated docs / config manifest",
         "任何 DP5-RC20 slice 都不得重开 input_v2 runtime mainline、canonical target 名称、replay root、旧 SWF 返回 shape、FavoritesMenu workspace 或 legacy glyph authority",
         "后续 U1-U5 必须继续通过 Phase 8 canonical CI、builder JSON、graphify、replay diff 与 diff hygiene"
       ]

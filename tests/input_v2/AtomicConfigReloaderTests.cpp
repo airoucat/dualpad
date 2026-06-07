@@ -158,6 +158,39 @@ void RunAtomicConfigReloaderTests()
         Require(!res.ok, "startup must fail when config is invalid and no LKG exists");
     }
 
+    // Startup with invalid config and stale/bad disk LKG fails closed.
+    {
+        const auto tempStale = std::filesystem::temp_directory_path() / "dualpad-inputv2-reloader-stale-lkg";
+        std::filesystem::remove_all(tempStale);
+        std::filesystem::create_directories(tempStale);
+
+        const auto bindingsStale = tempStale / "DualPadBindings.ini";
+        const auto policyStale = tempStale / "DualPadMenuPolicy.ini";
+        const auto lkgStale = tempStale / "DualPad.Manifest.lkg.json";
+
+        WriteFile(bindingsStale, "[Gameplay]\nButton:Cross=Game.NotARealAction\n");
+        WriteFile(policyStale, "[Policy]\nunknown_menu_policy=track\n");
+        WriteFile(
+            lkgStale,
+            "{\n"
+            "  \"schemaVersion\": 999,\n"
+            "  \"manifestEpoch\": 42,\n"
+            "  \"bindingsPath\": \"DualPadBindings.ini\",\n"
+            "  \"menuPolicyPath\": \"DualPadMenuPolicy.ini\",\n"
+            "  \"bindingsMissing\": false,\n"
+            "  \"menuPolicyMissing\": false,\n"
+            "  \"bindingsIni\": \"[Gameplay]\\nButton:Cross=Game.Jump\\n\",\n"
+            "  \"menuPolicyIni\": \"[Policy]\\nunknown_menu_policy=track\\n\"\n"
+            "}\n");
+
+        cfg::AtomicConfigReloader::GetSingleton().ResetForTests();
+        const auto res = cfg::AtomicConfigReloader::GetSingleton().LoadOrRecover(bindingsStale, policyStale);
+        Require(!res.ok, "startup must fail when config is invalid and disk LKG schema is stale");
+        Require(
+            !cfg::AtomicConfigReloader::GetSingleton().GetActiveEpoch().has_value(),
+            "stale LKG startup failure must not promote an active epoch");
+    }
+
     // Config files missing -> built-in defaults are allowed.
     {
         const auto temp3 = std::filesystem::temp_directory_path() / "dualpad-inputv2-reloader-missing";

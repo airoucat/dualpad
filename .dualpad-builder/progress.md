@@ -2385,3 +2385,36 @@
   - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1617 nodes, 3414 edges, 143 communities`。
   - `git diff --check`：exit 0；仅输出 CRLF 工作区提示，无 whitespace error。
 - PR #17 metadata 已同步为 `Complete DP5-RC20 U1.7-U1.9 runtime determinism closeout`。
+
+## 2026-06-07 22:56:43 CST
+
+- 已将 PR #18 合并到 `main`：
+  - PR #18 `Complete DP5-RC20 U2 legacy boundary collapse` 已通过远端 Phase8，并以 merge commit `7c0183cfa64a2ce3918febb0ad6a70ae07ebe306` 合入 `main`。
+  - 本轮 U3 工作分支基于新的 `main` merge commit 创建：`codex/dp5-rc20-u3-release-readiness`。
+- `DP5-RC20` U3 Product integration and release readiness 已落地：
+  - 不新增 runtime phase，不改变 `src/input_v2/` mainline。
+  - release notes 明确唯一 supported Skyrim runtime 为 `Skyrim SE 1.5.97`；unsupported runtime 对 `UpstreamGamepadHook` 与 `ControlMapOverlay` 均 fail-closed，不半安装、不 silent retry。
+  - `clean install` / `overwrite install` / `rollback install` 检查已写入 `docs/releases/dp5_rc20_u3_release_notes_zh.md` 与 release artifact manifest generator。
+  - `missing config` / `bad config` / `stale config` fail-closed 已由 `AtomicConfigReloaderTests` 现有矩阵加 stale LKG schema 回归覆盖。
+  - `no-device` / `start-connected` / `hot-plug` / `disconnect` / `reconnect` 行为已由 `HidReader` reset / fact reset / handle clear 路径和 `scripts/ci/check_release_readiness.py` 静态 gate 固化。
+  - release notes 明确 non-goals：不生产最终图标视觉资产，不把 DualSense haptics / vibration 纳入本 milestone。
+  - 新增 `scripts/dev/generate_release_artifact_manifest.py`，生成 `build/release/DP5-RC20-U3-release-artifact-manifest.json` 与 `.md`；manifest 对齐 source commit、generated docs、config files、repo-owned SWF 与 build outputs。
+  - 新增 `scripts/ci/check_release_readiness.py` 并接入 `scripts/ci/run_phase8_ci.ps1`；`scripts/ci/check_reviewed_docs_consistency.py` 现在要求 Phase8 CI 保留该 U3 gate。
+  - 修复 `DualPadManifestCompilerTests` 的 xmake 文件枚举：不再用 `tests/input_v2/**.cpp` 后置排除，改为显式列出 manifest/config 测试，避免把其他 focused test 的 `main` 链进来。
+- 已通过的 U3 focused / product gate：
+  - `xmake build -y DualPadManifestCompilerTests && xmake run -y DualPadManifestCompilerTests`：exit 0；新增 stale LKG startup failure regression 已执行。
+  - `python scripts/ci/check_release_readiness.py`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `python scripts/ci/check_legacy_authority_boundary.py`：exit 0。
+- 已通过的 close-out gate：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：最终 exit 0；构建/运行 `DualPad`、6 个 canonical runtime targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`、generated docs consistency、reviewed docs consistency、legacy authority boundary check 与 U3 release readiness check。第一次运行因 DocGen 将 generated docs manifest hash 从 `5f5914014e46c91d` 更新为 `35f58ad5aff249ea` 而停在 `git diff --exit-code -- docs/generated`；按既有 close-out 规则纳入 regenerated docs 后重跑通过。
+  - `xmake build -y DualPadReplayHarness`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0；10 个 phase0 场景均为 `no diff`。
+  - `xmake build -y DualPadDInput8Proxy`：exit 0；repo-local `build/bin/DualPadDInput8Proxy/dinput8.dll` 已生成。
+  - `python scripts/dev/generate_release_artifact_manifest.py --require-build-artifacts`：exit 0；`build/release/DP5-RC20-U3-release-artifact-manifest.{json,md}` 已生成。最终提交后还需用 `--expect-clean` 重新生成一次绑定最终 commit。
+  - `python -m json.tool .dualpad-builder/feature_list.json > $null` 与 `python -m json.tool .dualpad-builder/sprint_plan.json > $null`：exit 0。
+  - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`：exit 0，输出 `Rebuilt: 1640 nodes, 3458 edges, 146 communities`。
+- 状态结论：
+  - U3 本地实现与验证已完成，`git diff --check` 已通过，GitHub #10 checklist 已更新并关闭，GitHub #13 总控 issue 已同步 U3 完成状态。
+  - `DP5` / `S-DP5` 整体仍保持 planned；U4 / U5 尚未完成。

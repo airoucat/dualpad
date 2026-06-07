@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-06-07T22:18:13+08:00",
+  "updated_at": "2026-06-07T22:52:10+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -495,6 +495,7 @@
         "U0: GitHub Meta #13、U0-U5 #7-#12 已创建；旧 #2-#6 已迁移并以 superseded/not_planned 关闭",
         "U1.9: Axis2D / chord timestamp / primary path contracts 必须通过 DualPadInputV2Tests、DualPadGameplayProjectionTests、DualPadPropertyTests、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、graphify rebuild 与 git diff --check",
         "U2: legacy boundary collapse 必须通过 DualPadIngressTests、scripts/ci/check_legacy_authority_boundary.py、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、graphify rebuild 与 git diff --check",
+        "U3: product integration and release readiness 必须通过 DualPadManifestCompilerTests、scripts/ci/check_release_readiness.py、Phase 8 CI、DualPadDInput8Proxy build、release artifact manifest generation、replay diff、builder JSON、reviewed/generated docs consistency、legacy authority boundary check、graphify rebuild 与 git diff --check",
         "后续具体 hardening slice 默认至少包含 scripts/ci/run_phase8_ci.ps1、builder JSON 校验、graphify rebuild 和 git diff --check"
       ]
     }
