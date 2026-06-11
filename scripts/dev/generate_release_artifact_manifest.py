@@ -42,18 +42,58 @@ GENERATED_DOCS = [
 
 REVIEWED_RELEASE_DOCS = [
     pathlib.Path("docs/releases/dp5_rc20_u3_release_notes_zh.md"),
+    pathlib.Path("docs/releases/dp5_rc20_u4_config_prompt_menu_glyph_contract_zh.md"),
+    pathlib.Path("docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md"),
     pathlib.Path("docs/authoritative-baseline/dp5_rc20_contract_zh.md"),
 ]
 
 
 def run_git(args: list[str]) -> str:
-    return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
+    return subprocess.check_output(
+        ["git", *args],
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    ).strip()
 
 
 def tracked_content_dirty() -> bool:
     worktree = subprocess.run(["git", "diff", "--quiet", "--"], cwd=ROOT, check=False)
     index = subprocess.run(["git", "diff", "--cached", "--quiet", "--"], cwd=ROOT, check=False)
     return worktree.returncode != 0 or index.returncode != 0
+
+
+def tracked_content_dirty_files() -> list[str]:
+    paths: list[str] = []
+    for args in [
+        ["diff", "--name-status", "--"],
+        ["diff", "--cached", "--name-status", "--"],
+    ]:
+        output = run_git(args)
+        if output:
+            paths.extend(line for line in output.splitlines() if line)
+    return paths
+
+
+def tracked_content_dirty_diff() -> str:
+    paths = tracked_content_dirty_file_paths()
+    if not paths:
+        return ""
+    diffs = [
+        run_git(["diff", "--", *paths]),
+        run_git(["diff", "--cached", "--", *paths]),
+    ]
+    return "\n".join(diff for diff in diffs if diff)
+
+
+def tracked_content_dirty_file_paths() -> list[str]:
+    paths: list[str] = []
+    for line in tracked_content_dirty_files():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            paths.append(parts[-1])
+    return paths
 
 
 def sha256(path: pathlib.Path) -> str | None:
@@ -95,6 +135,7 @@ def manifest() -> dict[str, Any]:
     commit = run_git(["rev-parse", "HEAD"])
     branch = run_git(["branch", "--show-current"])
     dirty = tracked_content_dirty()
+    dirty_files = tracked_content_dirty_files() if dirty else []
 
     files = []
     files.extend(collect_runtime_artifacts())
@@ -105,12 +146,13 @@ def manifest() -> dict[str, Any]:
 
     return {
         "schemaVersion": 1,
-        "name": "DP5-RC20 U3 release artifact manifest",
+        "name": "DP5-RC20 release artifact manifest",
         "generatedAtUtc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "source": {
             "commit": commit,
             "branch": branch,
             "trackedWorkingTreeDirty": dirty,
+            "trackedWorkingTreeDirtyFiles": dirty_files,
         },
         "support": {
             "supportedRuntime": "Skyrim SE 1.5.97",
@@ -161,7 +203,7 @@ def render_markdown(data: dict[str, Any]) -> str:
     source = data["source"]
     support = data["support"]
     lines = [
-        "# DP5-RC20 U3 Release Artifact Manifest",
+        "# DP5-RC20 Release Artifact Manifest",
         "",
         f"- Source commit: `{source['commit']}`",
         f"- Source branch: `{source['branch']}`",
@@ -221,6 +263,12 @@ def main() -> int:
 
     if args.expect_clean and data["source"]["trackedWorkingTreeDirty"]:
         failures.append("tracked working tree is dirty")
+        for path in data["source"]["trackedWorkingTreeDirtyFiles"]:
+            failures.append(f"dirty tracked file: {path}")
+        dirty_diff = tracked_content_dirty_diff()
+        if dirty_diff:
+            failures.append("tracked working tree diff:")
+            failures.extend(dirty_diff.splitlines())
 
     if args.require_build_artifacts:
         for item in data["files"]:
@@ -229,8 +277,8 @@ def main() -> int:
 
     output_dir = ROOT / args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = output_dir / "DP5-RC20-U3-release-artifact-manifest.json"
-    md_path = output_dir / "DP5-RC20-U3-release-artifact-manifest.md"
+    json_path = output_dir / "DP5-RC20-release-artifact-manifest.json"
+    md_path = output_dir / "DP5-RC20-release-artifact-manifest.md"
     json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     md_path.write_text(render_markdown(data), encoding="utf-8")
 

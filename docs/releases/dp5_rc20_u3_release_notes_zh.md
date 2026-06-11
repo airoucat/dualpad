@@ -55,8 +55,8 @@ python scripts/dev/generate_release_artifact_manifest.py --require-build-artifac
 
 输出：
 
-- `build/release/DP5-RC20-U3-release-artifact-manifest.json`
-- `build/release/DP5-RC20-U3-release-artifact-manifest.md`
+- `build/release/DP5-RC20-release-artifact-manifest.json`
+- `build/release/DP5-RC20-release-artifact-manifest.md`
 
 manifest 记录 source commit、tracked dirty 状态、build outputs、config files、repo-owned SWF、generated docs、reviewed release docs、install checks、device lifecycle checks 与 non-goals。
 

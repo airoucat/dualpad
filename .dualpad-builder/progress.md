@@ -2497,3 +2497,171 @@
   - 失败点：`scripts/dev/generate_release_artifact_manifest.py --require-build-artifacts --expect-clean` 报 `tracked working tree is dirty`。
   - 根因：Phase8 / DocGen 后 `docs/generated/*.md` 出现 CRLF stat-only working tree 状态；`git diff --exit-code -- docs/generated` 无内容 diff，但原 manifest generator 使用 `git status --porcelain --untracked-files=no`，会把该行尾状态误判为 tracked dirty。
   - 修复：`scripts/dev/generate_release_artifact_manifest.py` 的 dirty 判定改为 `git diff --quiet --` + `git diff --cached --quiet --`，只按 tracked content / index diff 判断 `trackedWorkingTreeDirty`。
+
+## 2026-06-12 00:00:00 CST
+
+- `DP5-RC20` PR-A RC gate / CI / release artifact evidence fix 已在分支 `codex/dp5-rc20-rc-gate-evidence-fix` 开始执行：
+  - `.github/workflows/dualpad-ci.yml` 新增远端 `rc-readiness` job，并设置 `needs: phase8`，执行 `scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - `scripts/ci/run_phase8_ci.ps1` 已把 `DualPadManifestCompilerTests` 纳入 Phase8 build/run。
+  - `scripts/dev/generate_release_artifact_manifest.py` 已将 release manifest 输出名升级为 `DP5-RC20-release-artifact-manifest.{json,md}`，并把 U4 / U5 reviewed docs 纳入 manifest。
+  - `scripts/ci/check_rc_readiness_closeout.py` 与 `scripts/ci/check_reviewed_docs_consistency.py` 已增加 PR-A gate marker 检查。
+- 已执行的轻量验证：
+  - `python -m json.tool .dualpad-builder/feature_list.json NUL`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json NUL`：exit 0。
+  - `python scripts/ci/check_rc_readiness_closeout.py`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `python scripts/ci/check_release_readiness.py`：exit 0。
+- 未预写结果：
+  - Phase8 / RC readiness 完整本地验证尚未完成。
+  - 远端 `phase8` / `rc-readiness` run id 尚未产生。
+
+## 2026-06-12 01:03:00 CST
+
+- `DP5-RC20` PR-A 本地验证完成：
+  - `xmake build -y DualPadManifestCompilerTests`：exit 0。
+  - `xmake run -y DualPadManifestCompilerTests`：exit 0；stdout 仍包含既有 negative-path epoch mismatch / bad config / stale LKG 日志。
+  - `git diff --check`：exit 0；仅输出 Windows 行尾提示，无 whitespace error。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；Phase8 已构建并运行 `DualPadManifestCompilerTests`，并通过 canonical targets、DocGen、reviewed docs consistency、legacy boundary、release readiness 与 U4 closure gate。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1`：exit 0；完成 Phase8、phase0 dispatcher replay generation、10 个 replay scenarios `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 contract gate、U5 RC closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` generation、graphify rebuild 与 `git diff --check`。
+- 备注：
+  - `-ExpectCleanManifest` 需要 final commit 后的干净 tracked content / index 才能作为 source binding 验证；本条不预写该验证结果。
+  - 远端 `phase8` / `rc-readiness` run id 尚未产生。
+
+## 2026-06-12 01:25:00 CST
+
+- PR-A 远端验证第一次反馈：
+  - PR #22 `phase8` 已在 GitHub Actions 通过。
+  - PR #22 `rc-readiness` 在 graphify rebuild step 失败；失败前已通过 Phase8、replay diff、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 closeout gate、DInput8 proxy build 与 `DP5-RC20-release-artifact-manifest.{json,md}` generation。
+  - 失败根因：GitHub Windows runner 上 Python stdout 使用 cp1252，`scripts/dev/setup_graphify_local.py` 在 graphify 缺失时打印中文安装提示，触发 `UnicodeEncodeError`。
+  - 修复：`scripts/ci/run_rc_readiness.ps1` 在执行 Python steps 前设置 `PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`。
+- 待重新验证：
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `rc-readiness`。
+
+## 2026-06-12 01:45:00 CST
+
+- PR-A 远端验证第二次反馈：
+  - `PYTHONUTF8` / `PYTHONIOENCODING` 已解决 cp1252 编码异常。
+  - PR #22 `rc-readiness` 继续失败在 graphify rebuild step；失败根因变更为 fresh runner 自动安装 `graphifyy 0.8.37` 后仍无法 `import graphify`。
+  - 本机 `python -m pip show graphifyy` 显示当前可用版本为 `0.4.14`，且 `python -c "import importlib.util; ..."` 确认 `graphify` module 存在。
+  - 修复：`scripts/dev/setup_graphify_local.py` 将自动安装版本固定为 `graphifyy==0.4.14`，并把该 pin 纳入 RC static gate。
+- 待重新验证：
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 02:05:00 CST
+
+- PR-A 远端验证第三次反馈：
+  - `graphifyy==0.4.14` pin 生效，GitHub runner 已安装固定版本。
+  - `rc-readiness` 仍失败于同一 Python 进程的 `import graphify`；日志显示 package 安装成功，但 `--user` 安装目录没有在当前进程 import path 中立即可见。
+  - 修复：`scripts/dev/setup_graphify_local.py` 安装后显式把 `site.getusersitepackages()` 加入 `sys.path`，并调用 `importlib.invalidate_caches()` 后再导入 `graphify`。
+- 待重新验证：
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 02:10:00 CST
+
+- PR-A 本地最终验证：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：exit 0。
+  - 覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
+- 待重新验证：
+  - 本条 progress-only commit 后再运行一次同一 RC gate。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 02:30:00 CST
+
+- PR-A 远端验证：
+  - PR: `https://github.com/airoucat/dualpad/pull/22`
+  - Head commit: `199f391`
+  - `phase8`：pass，run `27367759219` job `80871672853`，`https://github.com/airoucat/dualpad/actions/runs/27367759219/job/80871672853`。
+  - `phase8`：pass，run `27367760931` job `80871680129`，`https://github.com/airoucat/dualpad/actions/runs/27367760931/job/80871680129`。
+  - `rc-readiness`：pass，run `27367759219` job `80873536204`，`https://github.com/airoucat/dualpad/actions/runs/27367759219/job/80873536204`。
+  - `rc-readiness`：pass，run `27367760931` job `80873236896`，`https://github.com/airoucat/dualpad/actions/runs/27367760931/job/80873236896`。
+- 备注：
+  - 两组 check 来自 PR push / pull_request 触发；均为远端可见绿色。
+
+## 2026-06-12 02:50:00 CST
+
+- PR-A 远端验证第四次反馈：
+  - 追加远端证据 progress commit 后，PR #22 的 branch-trigger `rc-readiness` 通过，但 pull_request merge-ref trigger 的 `rc-readiness` 失败。
+  - 失败 job：run `27368886206` job `80877148289`，`https://github.com/airoucat/dualpad/actions/runs/27368886206/job/80877148289`。
+  - 失败根因：fresh GitHub runner 执行 `xmake build -y DualPad` 时按 `xmake-requires.lock` 更新 package repository，命中 `https://gitee.com/tboox/xmake-repo.git`，无交互认证导致 `fatal: could not read Username for 'https://gitee.com'`。
+  - 对照：同一 head commit 的 branch-trigger job 已通过，说明 runtime / release manifest / graphify gate 本身未回归。
+  - 修复：`xmake-requires.lock` 中的 `gitcode.com` / `gitee.com` xmake-repo mirror 统一改为 `https://github.com/xmake-io/xmake-repo.git`，并在 `check_rc_readiness_closeout.py` 增加静态 gate，禁止 gitee/gitcode mirror 回流。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 03:08:00 CST
+
+- PR-A 远端验证第五次反馈：
+  - `gitee.com` / `gitcode.com` mirror 修复后，PR #22 的两套 `phase8` 通过，但两套 `rc-readiness` 在 release manifest `--expect-clean` 处失败。
+  - 失败 jobs:
+    - run `27370051718` job `80881031952`，`https://github.com/airoucat/dualpad/actions/runs/27370051718/job/80881031952`。
+    - run `27370054432` job `80881204519`，`https://github.com/airoucat/dualpad/actions/runs/27370054432/job/80881204519`。
+  - 失败根因：GitHub Actions 使用 `xmake-version: latest`，当前解析为 xmake `3.0.9`；fresh runner 构建后 `xmake-requires.lock` 被重写，导致 tracked working tree dirty。主机本地验证使用 xmake `3.0.7`，该版本不会重写当前 lock。
+  - 修复：`.github/workflows/dualpad-ci.yml` 将两个 `xmake-io/github-action-setup-xmake@v1` step 固定到 `xmake-version: 3.0.7`，并在 `check_rc_readiness_closeout.py` 增加静态 gate，防止 CI 回到 floating `latest`。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 03:35:00 CST
+
+- PR-A 远端验证第六次反馈：
+  - `xmake-version: 3.0.7` 已在两套 GitHub Actions job 中生效；失败不再来自 floating xmake 版本。
+  - 两套 `rc-readiness` 仍在 release manifest `--expect-clean` 处失败：
+    - run `27371055936` job `80884548738`，`https://github.com/airoucat/dualpad/actions/runs/27371055936/job/80884548738`。
+    - run `27371054532` job `80884746721`，`https://github.com/airoucat/dualpad/actions/runs/27371054532/job/80884746721`。
+  - 日志显示 Phase8 的 DocGen 通过 `git diff --exit-code -- docs/generated`，但随后全仓库 clean manifest check 看到 `docs/generated/*.md` 与 `xmake-requires.lock` 的 Windows 行尾告警，并判定 tracked working tree dirty。
+  - 修复：新增 `.gitattributes`，将 `docs/generated/*.md` 与 `xmake-requires.lock` 固定为 `text eol=lf`；同时增强 release manifest dirty 诊断，失败时输出具体 dirty tracked file，并把 EOL 合同纳入 U5 static gate。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 03:45:00 CST
+
+- PR-A 本地验证：
+  - Head commit: `dee5fd4`。
+  - `python scripts/ci/check_rc_readiness_closeout.py`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `git diff --check` / `git diff --cached --check`：exit 0；仅有 Windows 行尾提示，无 whitespace error。
+  - `python scripts/dev/generate_release_artifact_manifest.py --expect-clean` 在未提交修复时按预期失败，并输出具体 dirty tracked file，验证新增诊断可用。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：exit 0；覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 RC closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
+  - `git ls-files --eol docs/generated/*.md xmake-requires.lock`：均为 `i/lf w/lf attr/text eol=lf`。
+- 待重新验证：
+  - 本条 progress-only commit 后再运行一次同一 RC gate。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 04:05:00 CST
+
+- PR-A 远端验证第七次反馈：
+  - Head commit: `25b708f`。
+  - 两套 `phase8` 均通过：
+    - run `27372313050` job `80887493865`。
+    - run `27372314562` job `80887499118`。
+  - 两套 `rc-readiness` 仍在 release manifest `--expect-clean` 处失败：
+    - run `27372313050` job `80888666639`。
+    - run `27372314562` job `80888783940`。
+  - 新增诊断确认 `docs/generated` 已不再 dirty；唯一 dirty tracked file 是 `xmake-requires.lock`。这说明 `.gitattributes` 修复了 DocGen 行尾问题，剩余问题是 GitHub fresh runner 上 xmake 构建过程刷新 lockfile。
+  - 修复：`scripts/ci/run_rc_readiness.ps1` 在 GitHub Actions 环境中、release manifest clean check 前打印 `xmake-requires.lock` diff 并恢复该文件，避免构建工具自动刷新污染 source-binding manifest；本地运行不自动 restore，避免误删开发者未提交的 lockfile 修改。同时 release manifest 失败诊断扩展为输出 dirty file 的实际 diff。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 04:20:00 CST
+
+- PR-A 本地与远端验证：
+  - Head commit: `3ec972a`。
+  - 本地 `GITHUB_ACTIONS=true powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：exit 0；覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 RC closeout static gate、`DualPadDInput8Proxy` build、CI-only `xmake-requires.lock` diff/restore branch、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
+  - PR #22 push trigger:
+    - `phase8`：pass，run `27373380388` job `80891206892`，`https://github.com/airoucat/dualpad/actions/runs/27373380388/job/80891206892`。
+    - `rc-readiness`：pass，run `27373380388` job `80892656631`，`https://github.com/airoucat/dualpad/actions/runs/27373380388/job/80892656631`。
+  - PR #22 pull_request trigger:
+    - `phase8`：pass，run `27373385092` job `80891224204`，`https://github.com/airoucat/dualpad/actions/runs/27373385092/job/80891224204`。
+    - `rc-readiness`：pass，run `27373385092` job `80892545879`，`https://github.com/airoucat/dualpad/actions/runs/27373385092/job/80892545879`。
+- 备注：
+  - 本条为 evidence-only progress 更新；推送后需确认最后一轮 PR #22 checks 仍为 green。

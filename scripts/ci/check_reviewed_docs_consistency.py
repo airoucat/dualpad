@@ -95,6 +95,7 @@ def main() -> int:
     for target in [
         "DualPadReplayTests",
         "DualPadInputV2Tests",
+        "DualPadManifestCompilerTests",
         "DualPadIngressTests",
         "DualPadPromptSnapshotTests",
         "DualPadPropertyTests",
@@ -110,6 +111,11 @@ def main() -> int:
     if "scripts/ci/check_config_prompt_menu_glyph_closure.py" not in phase8_ci:
         failures.append("scripts/ci/run_phase8_ci.ps1: default CI must run config/prompt/menu/glyph closure check.")
 
+    workflow = (ROOT / ".github/workflows/dualpad-ci.yml").read_text(encoding="utf-8")
+    for marker in ["rc-readiness:", "needs: phase8", "scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest"]:
+        if marker not in workflow:
+            failures.append(f".github/workflows/dualpad-ci.yml: missing RC readiness workflow marker {marker}.")
+
     rc_gate = (ROOT / "scripts/ci/run_rc_readiness.ps1").read_text(encoding="utf-8")
     for marker in [
         "scripts/ci/run_phase8_ci.ps1",
@@ -120,10 +126,15 @@ def main() -> int:
         "scripts/ci/check_config_prompt_menu_glyph_closure.py",
         "scripts/ci/check_rc_readiness_closeout.py",
         "scripts/dev/generate_release_artifact_manifest.py",
+        "PYTHONUTF8",
+        "PYTHONIOENCODING",
         "scripts/dev/setup_graphify_local.py",
     ]:
         if marker not in rc_gate:
             failures.append(f"scripts/ci/run_rc_readiness.ps1: RC outer gate missing marker {marker}.")
+    graphify_setup = (ROOT / "scripts/dev/setup_graphify_local.py").read_text(encoding="utf-8")
+    if "graphifyy==0.4.14" not in graphify_setup:
+        failures.append("scripts/dev/setup_graphify_local.py: graphify install must stay pinned for clean CI runners.")
     u5_doc = (ROOT / "docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md").read_text(encoding="utf-8")
     for marker in ["Phase8 是 canonical base gate", "Real-game QA matrix", "Performance budget", "RuntimeDebugSnapshot"]:
         if marker not in u5_doc:

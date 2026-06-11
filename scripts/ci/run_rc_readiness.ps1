@@ -6,6 +6,9 @@ $ErrorActionPreference = "Stop"
 
 Set-StrictMode -Version Latest
 
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)]
@@ -55,6 +58,11 @@ Invoke-Step python @("scripts/ci/check_config_prompt_menu_glyph_closure.py")
 Invoke-Step python @("scripts/ci/check_rc_readiness_closeout.py")
 
 Invoke-Step xmake @("build", "-y", "DualPadDInput8Proxy")
+
+if ($env:GITHUB_ACTIONS -eq "true") {
+    Invoke-Step git @("diff", "--", "xmake-requires.lock")
+    Invoke-Step git @("restore", "--worktree", "--", "xmake-requires.lock")
+}
 
 $manifestArgs = @("scripts/dev/generate_release_artifact_manifest.py", "--require-build-artifacts")
 if ($ExpectCleanManifest) {

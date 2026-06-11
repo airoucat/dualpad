@@ -7,7 +7,7 @@
             repo = {
                 branch = "master",
                 commit = "d3f5164cd147433c264ff3f6d65d40052bbbe384",
-                url = "https://gitcode.com/xmake-io/xmake-repo.git"
+                url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "4.2.1"
         },
@@ -31,7 +31,7 @@
             repo = {
                 branch = "master",
                 commit = "d3f5164cd147433c264ff3f6d65d40052bbbe384",
-                url = "https://gitee.com/tboox/xmake-repo.git"
+                url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "0.14.0"
         },
@@ -39,7 +39,7 @@
             repo = {
                 branch = "master",
                 commit = "d3f5164cd147433c264ff3f6d65d40052bbbe384",
-                url = "https://gitcode.com/xmake-io/xmake-repo.git"
+                url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v1.13.1"
         },

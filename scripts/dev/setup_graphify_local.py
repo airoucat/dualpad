@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
+import site
 import stat
 import subprocess
 import sys
@@ -10,6 +12,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK_DIR = REPO_ROOT / ".githooks"
+GRAPHIFYY_PACKAGE = "graphifyy==0.4.14"
 
 
 def ensure_graphify() -> None:
@@ -17,12 +20,16 @@ def ensure_graphify() -> None:
         import graphify  # noqa: F401
         return
     except ImportError:
-        print("[graphify setup] graphify 未安装，使用当前 Python 自动安装 graphifyy ...")
+        print(f"[graphify setup] graphify 未安装，使用当前 Python 自动安装 {GRAPHIFYY_PACKAGE} ...")
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--user", "graphifyy"],
+            [sys.executable, "-m", "pip", "install", "--user", GRAPHIFYY_PACKAGE],
             cwd=REPO_ROOT,
             check=True,
         )
+        user_site = site.getusersitepackages()
+        if user_site not in sys.path:
+            sys.path.append(user_site)
+        importlib.invalidate_caches()
         import graphify  # noqa: F401
 
 
