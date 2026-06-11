@@ -2548,3 +2548,13 @@
 - 待重新验证：
   - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 02:05:00 CST
+
+- PR-A 远端验证第三次反馈：
+  - `graphifyy==0.4.14` pin 生效，GitHub runner 已安装固定版本。
+  - `rc-readiness` 仍失败于同一 Python 进程的 `import graphify`；日志显示 package 安装成功，但 `--user` 安装目录没有在当前进程 import path 中立即可见。
+  - 修复：`scripts/dev/setup_graphify_local.py` 安装后显式把 `site.getusersitepackages()` 加入 `sys.path`，并调用 `importlib.invalidate_caches()` 后再导入 `graphify`。
+- 待重新验证：
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。

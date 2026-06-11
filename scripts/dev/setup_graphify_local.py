@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
+import site
 import stat
 import subprocess
 import sys
@@ -24,6 +26,10 @@ def ensure_graphify() -> None:
             cwd=REPO_ROOT,
             check=True,
         )
+        user_site = site.getusersitepackages()
+        if user_site not in sys.path:
+            sys.path.append(user_site)
+        importlib.invalidate_caches()
         import graphify  # noqa: F401
 
 
