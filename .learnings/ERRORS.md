@@ -80,3 +80,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: The first failure occurred after the RC gate had passed Phase8, replay diff, static gates, DInput8 proxy build, and release manifest generation. The graphify step imported `graphify`, fell back to the install path, then printing the Chinese install message raised `UnicodeEncodeError: 'charmap' codec can't encode characters`. After forcing UTF-8, the next fresh runner installed `graphifyy 0.8.37`, but `import graphify` still failed. Pinning `graphifyy==0.4.14` installed the expected package, but the same Python process still could not import it until the user site path was explicitly added. Local runs did not reproduce because the local environment already had a working `graphify` import.
 - Related files: `scripts/ci/run_rc_readiness.ps1`, `scripts/dev/setup_graphify_local.py`
 - Resolution: Set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` in `scripts/ci/run_rc_readiness.ps1`, pinned `scripts/dev/setup_graphify_local.py` to install `graphifyy==0.4.14`, and added `site.getusersitepackages()` to `sys.path` after install.
+
+## ERR-20260612-003
+
+- Logged: 2026-06-12 02:50 CST
+- Priority: medium
+- Status: resolved
+- Area: GitHub Actions / xmake package repositories
+- Summary: PR #22 `rc-readiness` failed on one fresh GitHub runner because `xmake-requires.lock` referenced gitee/gitcode xmake-repo mirrors.
+- Detail: The pull_request merge-ref job failed during `xmake build -y DualPad` while updating package repositories. The log showed xmake cloning from `https://gitee.com/tboox/xmake-repo.git`, then Git Credential Manager could not prompt on the noninteractive runner and failed with `fatal: could not read Username for 'https://gitee.com'`. A branch-trigger job for the same head passed, confirming the failure was mirror/source selection rather than runtime or graphify logic.
+- Related files: `xmake-requires.lock`, `scripts/ci/check_rc_readiness_closeout.py`
+- Resolution: Rewrote all xmake-repo URLs in `xmake-requires.lock` to `https://github.com/xmake-io/xmake-repo.git` and added a RC closeout static check that rejects gitee/gitcode mirrors.

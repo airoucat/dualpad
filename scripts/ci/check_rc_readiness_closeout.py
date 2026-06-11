@@ -142,6 +142,11 @@ def main() -> int:
         "scripts/dev/setup_graphify_local.py",
         ["graphifyy==0.4.14"],
     )
+    xmake_lock = read("xmake-requires.lock")
+    if "https://gitee.com" in xmake_lock or "https://gitcode.com" in xmake_lock:
+        failures.append("xmake-requires.lock: CI package repositories must not use gitee/gitcode mirrors.")
+    if "https://github.com/xmake-io/xmake-repo.git" not in xmake_lock:
+        failures.append("xmake-requires.lock: missing GitHub xmake-repo source.")
 
     require_tokens(
         failures,

@@ -2579,3 +2579,16 @@
   - `rc-readiness`：pass，run `27367760931` job `80873236896`，`https://github.com/airoucat/dualpad/actions/runs/27367760931/job/80873236896`。
 - 备注：
   - 两组 check 来自 PR push / pull_request 触发；均为远端可见绿色。
+
+## 2026-06-12 02:50:00 CST
+
+- PR-A 远端验证第四次反馈：
+  - 追加远端证据 progress commit 后，PR #22 的 branch-trigger `rc-readiness` 通过，但 pull_request merge-ref trigger 的 `rc-readiness` 失败。
+  - 失败 job：run `27368886206` job `80877148289`，`https://github.com/airoucat/dualpad/actions/runs/27368886206/job/80877148289`。
+  - 失败根因：fresh GitHub runner 执行 `xmake build -y DualPad` 时按 `xmake-requires.lock` 更新 package repository，命中 `https://gitee.com/tboox/xmake-repo.git`，无交互认证导致 `fatal: could not read Username for 'https://gitee.com'`。
+  - 对照：同一 head commit 的 branch-trigger job 已通过，说明 runtime / release manifest / graphify gate 本身未回归。
+  - 修复：`xmake-requires.lock` 中的 `gitcode.com` / `gitee.com` xmake-repo mirror 统一改为 `https://github.com/xmake-io/xmake-repo.git`，并在 `check_rc_readiness_closeout.py` 增加静态 gate，禁止 gitee/gitcode mirror 回流。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
