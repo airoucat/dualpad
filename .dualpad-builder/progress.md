@@ -2497,3 +2497,32 @@
   - 失败点：`scripts/dev/generate_release_artifact_manifest.py --require-build-artifacts --expect-clean` 报 `tracked working tree is dirty`。
   - 根因：Phase8 / DocGen 后 `docs/generated/*.md` 出现 CRLF stat-only working tree 状态；`git diff --exit-code -- docs/generated` 无内容 diff，但原 manifest generator 使用 `git status --porcelain --untracked-files=no`，会把该行尾状态误判为 tracked dirty。
   - 修复：`scripts/dev/generate_release_artifact_manifest.py` 的 dirty 判定改为 `git diff --quiet --` + `git diff --cached --quiet --`，只按 tracked content / index diff 判断 `trackedWorkingTreeDirty`。
+
+## 2026-06-12 00:00:00 CST
+
+- `DP5-RC20` PR-A RC gate / CI / release artifact evidence fix 已在分支 `codex/dp5-rc20-rc-gate-evidence-fix` 开始执行：
+  - `.github/workflows/dualpad-ci.yml` 新增远端 `rc-readiness` job，并设置 `needs: phase8`，执行 `scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - `scripts/ci/run_phase8_ci.ps1` 已把 `DualPadManifestCompilerTests` 纳入 Phase8 build/run。
+  - `scripts/dev/generate_release_artifact_manifest.py` 已将 release manifest 输出名升级为 `DP5-RC20-release-artifact-manifest.{json,md}`，并把 U4 / U5 reviewed docs 纳入 manifest。
+  - `scripts/ci/check_rc_readiness_closeout.py` 与 `scripts/ci/check_reviewed_docs_consistency.py` 已增加 PR-A gate marker 检查。
+- 已执行的轻量验证：
+  - `python -m json.tool .dualpad-builder/feature_list.json NUL`：exit 0。
+  - `python -m json.tool .dualpad-builder/sprint_plan.json NUL`：exit 0。
+  - `python scripts/ci/check_rc_readiness_closeout.py`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `python scripts/ci/check_release_readiness.py`：exit 0。
+- 未预写结果：
+  - Phase8 / RC readiness 完整本地验证尚未完成。
+  - 远端 `phase8` / `rc-readiness` run id 尚未产生。
+
+## 2026-06-12 01:03:00 CST
+
+- `DP5-RC20` PR-A 本地验证完成：
+  - `xmake build -y DualPadManifestCompilerTests`：exit 0。
+  - `xmake run -y DualPadManifestCompilerTests`：exit 0；stdout 仍包含既有 negative-path epoch mismatch / bad config / stale LKG 日志。
+  - `git diff --check`：exit 0；仅输出 Windows 行尾提示，无 whitespace error。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；Phase8 已构建并运行 `DualPadManifestCompilerTests`，并通过 canonical targets、DocGen、reviewed docs consistency、legacy boundary、release readiness 与 U4 closure gate。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1`：exit 0；完成 Phase8、phase0 dispatcher replay generation、10 个 replay scenarios `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 contract gate、U5 RC closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` generation、graphify rebuild 与 `git diff --check`。
+- 备注：
+  - `-ExpectCleanManifest` 需要 final commit 后的干净 tracked content / index 才能作为 source binding 验证；本条不预写该验证结果。
+  - 远端 `phase8` / `rc-readiness` run id 尚未产生。

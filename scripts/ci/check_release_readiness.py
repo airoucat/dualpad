@@ -101,7 +101,7 @@ def main() -> int:
         failures,
         "scripts/dev/generate_release_artifact_manifest.py",
         [
-            "DP5-RC20 U3 release artifact manifest",
+            "DP5-RC20 release artifact manifest",
             "DualPad.dll",
             "dinput8.dll",
             "DualPadBindings.ini",

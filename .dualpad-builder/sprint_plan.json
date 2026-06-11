@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": null,
-  "updated_at": "2026-06-08T00:18:00+08:00",
+  "updated_at": "2026-06-12T00:00:00+08:00",
   "sprints": [
     {
       "id": "S-WF0",
@@ -497,7 +497,8 @@
         "U2: legacy boundary collapse 必须通过 DualPadIngressTests、scripts/ci/check_legacy_authority_boundary.py、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、graphify rebuild 与 git diff --check",
         "U3: product integration and release readiness 必须通过 DualPadManifestCompilerTests、scripts/ci/check_release_readiness.py、Phase 8 CI、DualPadDInput8Proxy build、release artifact manifest generation、replay diff、builder JSON、reviewed/generated docs consistency、legacy authority boundary check、graphify rebuild 与 git diff --check",
         "U4: config / prompt / menu / glyph contract closure 已通过 DualPadPromptSnapshotTests、DualPadManifestCompilerTests、scripts/ci/check_config_prompt_menu_glyph_closure.py、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、legacy authority boundary check、graphify rebuild 与 git diff --check",
-        "U5: verification / observability / governance closeout 必须通过 scripts/ci/run_phase8_ci.ps1、scripts/ci/run_rc_readiness.ps1、scripts/ci/check_rc_readiness_closeout.py、replay diff、builder JSON、reviewed/generated docs consistency、legacy boundary、release readiness、U4 contract gate、release artifact manifest generation、graphify rebuild 与 git diff --check"
+        "U5: verification / observability / governance closeout 必须通过 scripts/ci/run_phase8_ci.ps1、scripts/ci/run_rc_readiness.ps1、scripts/ci/check_rc_readiness_closeout.py、replay diff、builder JSON、reviewed/generated docs consistency、legacy boundary、release readiness、U4 contract gate、release artifact manifest generation、graphify rebuild 与 git diff --check",
+        "PR-A: RC evidence 修正必须让 GitHub Actions 同时暴露 phase8 与 rc-readiness job，Phase8 必须构建/运行 DualPadManifestCompilerTests，release artifact manifest 必须使用 DP5-RC20 通用名称并覆盖 U3/U4/U5 reviewed docs"
       ]
     }
   ]

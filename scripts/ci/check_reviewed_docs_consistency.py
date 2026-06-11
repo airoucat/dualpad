@@ -95,6 +95,7 @@ def main() -> int:
     for target in [
         "DualPadReplayTests",
         "DualPadInputV2Tests",
+        "DualPadManifestCompilerTests",
         "DualPadIngressTests",
         "DualPadPromptSnapshotTests",
         "DualPadPropertyTests",
@@ -109,6 +110,11 @@ def main() -> int:
         failures.append("scripts/ci/run_phase8_ci.ps1: default CI must run release readiness check.")
     if "scripts/ci/check_config_prompt_menu_glyph_closure.py" not in phase8_ci:
         failures.append("scripts/ci/run_phase8_ci.ps1: default CI must run config/prompt/menu/glyph closure check.")
+
+    workflow = (ROOT / ".github/workflows/dualpad-ci.yml").read_text(encoding="utf-8")
+    for marker in ["rc-readiness:", "needs: phase8", "scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest"]:
+        if marker not in workflow:
+            failures.append(f".github/workflows/dualpad-ci.yml: missing RC readiness workflow marker {marker}.")
 
     rc_gate = (ROOT / "scripts/ci/run_rc_readiness.ps1").read_text(encoding="utf-8")
     for marker in [

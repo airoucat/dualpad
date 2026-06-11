@@ -101,6 +101,7 @@ def main() -> int:
     for target in [
         "DualPadReplayTests",
         "DualPadInputV2Tests",
+        "DualPadManifestCompilerTests",
         "DualPadIngressTests",
         "DualPadPromptSnapshotTests",
         "DualPadPropertyTests",
@@ -111,6 +112,29 @@ def main() -> int:
 
     if "scripts/ci/run_rc_readiness.ps1" in phase8:
         failures.append("scripts/ci/run_phase8_ci.ps1: Phase8 must not call the RC outer gate.")
+
+    workflow = read(".github/workflows/dualpad-ci.yml")
+    if "rc-readiness:" not in workflow:
+        failures.append(".github/workflows/dualpad-ci.yml: missing rc-readiness job.")
+    if "needs: phase8" not in workflow:
+        failures.append(".github/workflows/dualpad-ci.yml: rc-readiness must depend on phase8.")
+    if "scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest" not in workflow:
+        failures.append(".github/workflows/dualpad-ci.yml: rc-readiness must run outer gate with -ExpectCleanManifest.")
+    if "scripts/ci/run_phase8_ci.ps1" not in workflow:
+        failures.append(".github/workflows/dualpad-ci.yml: phase8 must still run scripts/ci/run_phase8_ci.ps1.")
+
+    require_tokens(
+        failures,
+        "scripts/dev/generate_release_artifact_manifest.py",
+        [
+            "DP5-RC20-release-artifact-manifest.json",
+            "DP5-RC20-release-artifact-manifest.md",
+            "docs/releases/dp5_rc20_u4_config_prompt_menu_glyph_contract_zh.md",
+            "docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md",
+            "git\", \"diff\", \"--quiet\", \"--",
+            "git\", \"diff\", \"--cached\", \"--quiet\", \"--",
+        ],
+    )
 
     require_tokens(
         failures,
