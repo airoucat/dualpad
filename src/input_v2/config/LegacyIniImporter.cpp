@@ -5,25 +5,69 @@
 #include "input/IniParseHelpers.h"
 
 #include <fstream>
+#include <sstream>
 
 namespace dualpad::input_v2::config
 {
     namespace
     {
+        enum class IniParseRole
+        {
+            Bindings = 0,
+            MenuPolicy
+        };
+
+        struct ParsedIniFile
+        {
+            bool ok{ true };
+            bool opened{ false };
+            bool hadNonCommentContent{ false };
+            std::vector<ImportedSection> sections;
+            std::vector<std::string> warnings;
+            std::string message{ "ok" };
+        };
+
         void AddWarning(std::vector<std::string>& warnings, std::string message)
         {
             warnings.push_back(std::move(message));
         }
 
-        std::vector<ImportedSection> ParseIniFile(const std::filesystem::path& path, std::vector<std::string>& warnings)
+        void AddParseIssue(ParsedIniFile& parsed, std::string message, bool fatal)
         {
-            std::ifstream in(path);
-            if (!in.is_open()) {
-                AddWarning(warnings, std::string("failed to open ini: ") + path.string());
+            AddWarning(parsed.warnings, message);
+            if (fatal && parsed.ok) {
+                parsed.ok = false;
+                parsed.message = std::move(message);
+            }
+        }
+
+        std::string WarningSummary(const std::vector<std::string>& warnings)
+        {
+            if (warnings.empty()) {
                 return {};
             }
 
-            std::vector<ImportedSection> sections;
+            std::ostringstream out;
+            out << "warnings: ";
+            for (std::size_t i = 0; i < warnings.size(); ++i) {
+                if (i != 0) {
+                    out << " | ";
+                }
+                out << warnings[i];
+            }
+            return out.str();
+        }
+
+        ParsedIniFile ParseIniFile(const std::filesystem::path& path, IniParseRole role)
+        {
+            ParsedIniFile parsed{};
+            std::ifstream in(path);
+            if (!in.is_open()) {
+                AddParseIssue(parsed, std::string("failed to open ini: ") + path.string(), true);
+                return parsed;
+            }
+            parsed.opened = true;
+
             ImportedSection* current = nullptr;
 
             std::string line;
@@ -43,24 +87,31 @@ namespace dualpad::input_v2::config
                 if (line.empty() || line[0] == ';' || line[0] == '#') {
                     continue;
                 }
+                parsed.hadNonCommentContent = true;
 
                 if (line.front() == '[' && line.back() == ']') {
                     ImportedSection section{};
                     section.name = dualpad::input::ini::Trim(line.substr(1, line.size() - 2));
                     section.span = SourceSpan{ .path = path, .line = lineNo };
-                    sections.push_back(std::move(section));
-                    current = &sections.back();
+                    parsed.sections.push_back(std::move(section));
+                    current = &parsed.sections.back();
                     continue;
                 }
 
                 const auto eqPos = line.find('=');
                 if (eqPos == std::string::npos) {
-                    AddWarning(warnings, std::string("ini line missing '=' at ") + path.string() + ":" + std::to_string(lineNo));
+                    AddParseIssue(
+                        parsed,
+                        std::string("ini line missing '=' at ") + path.string() + ":" + std::to_string(lineNo),
+                        role == IniParseRole::Bindings);
                     continue;
                 }
 
                 if (!current) {
-                    AddWarning(warnings, std::string("ini entry without section at ") + path.string() + ":" + std::to_string(lineNo));
+                    AddParseIssue(
+                        parsed,
+                        std::string("ini entry without section at ") + path.string() + ":" + std::to_string(lineNo),
+                        role == IniParseRole::Bindings);
                     continue;
                 }
 
@@ -74,7 +125,26 @@ namespace dualpad::input_v2::config
                 current->entries.push_back(std::move(kv));
             }
 
-            return sections;
+            if (role == IniParseRole::Bindings && parsed.hadNonCommentContent && parsed.sections.empty()) {
+                AddParseIssue(
+                    parsed,
+                    std::string("bindings ini has content but no sections: ") + path.string(),
+                    true);
+            } else if (
+                role == IniParseRole::MenuPolicy &&
+                parsed.hadNonCommentContent &&
+                parsed.sections.empty()) {
+                AddParseIssue(
+                    parsed,
+                    std::string("menu policy ini has content but no sections; using default policy: ") + path.string(),
+                    false);
+            }
+
+            if (parsed.ok && !parsed.warnings.empty()) {
+                parsed.message = WarningSummary(parsed.warnings);
+            }
+
+            return parsed;
         }
 
         void CompileMenuPolicyAst(
@@ -145,19 +215,38 @@ namespace dualpad::input_v2::config
             result.bundle.bindingsMissing = true;
         } else {
             // Parse bindings ini into raw AST (no trigger/action lowering here).
-            result.bundle.bindings.sections = ParseIniFile(result.bundle.bindingsPath, result.bundle.warnings);
+            auto parsed = ParseIniFile(result.bundle.bindingsPath, IniParseRole::Bindings);
+            result.bundle.warnings.insert(
+                result.bundle.warnings.end(),
+                parsed.warnings.begin(),
+                parsed.warnings.end());
+            if (!parsed.ok) {
+                result.ok = false;
+                result.message = parsed.message;
+                return result;
+            }
+            result.bundle.bindings.sections = std::move(parsed.sections);
         }
 
         if (!std::filesystem::exists(result.bundle.menuPolicyPath)) {
             result.bundle.menuPolicyMissing = true;
         } else {
-            const auto sections = ParseIniFile(result.bundle.menuPolicyPath, result.bundle.warnings);
-            CompileMenuPolicyAst(result.bundle.menuPolicyPath, sections, result.bundle.menuPolicy);
+            auto parsed = ParseIniFile(result.bundle.menuPolicyPath, IniParseRole::MenuPolicy);
+            result.bundle.warnings.insert(
+                result.bundle.warnings.end(),
+                parsed.warnings.begin(),
+                parsed.warnings.end());
+            if (!parsed.ok) {
+                result.ok = false;
+                result.message = parsed.message;
+                return result;
+            }
+            CompileMenuPolicyAst(result.bundle.menuPolicyPath, parsed.sections, result.bundle.menuPolicy);
         }
 
         // Missing files are not an import failure; compile phase decides whether built-in defaults are allowed.
         result.ok = true;
-        result.message = "ok";
+        result.message = result.bundle.warnings.empty() ? "ok" : WarningSummary(result.bundle.warnings);
         return result;
     }
 }

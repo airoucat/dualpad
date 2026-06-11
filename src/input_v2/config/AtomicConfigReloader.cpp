@@ -337,6 +337,23 @@ namespace dualpad::input_v2::config
                 return false;
             }
         };
+
+        std::string WarningSummary(const std::vector<std::string>& warnings)
+        {
+            if (warnings.empty()) {
+                return {};
+            }
+
+            std::ostringstream out;
+            out << "warnings: ";
+            for (std::size_t i = 0; i < warnings.size(); ++i) {
+                if (i != 0) {
+                    out << " | ";
+                }
+                out << warnings[i];
+            }
+            return out.str();
+        }
     }
 
     AtomicConfigReloader& AtomicConfigReloader::GetSingleton()
@@ -469,7 +486,7 @@ namespace dualpad::input_v2::config
 
             LoadOrRecoverResult r{};
             r.ok = true;
-            r.message = "ok";
+            r.message = scratch.message;
             return r;
         }
 
@@ -556,6 +573,9 @@ namespace dualpad::input_v2::config
             result.message = std::string("import failed: ") + importResult.message;
             return result;
         }
+        for (const auto& warning : importResult.bundle.warnings) {
+            logger::warn("[DualPad][PH1][Importer] {}", warning);
+        }
 
         const auto importedValidation = ManifestValidator::ValidateImportedAst(importResult.bundle);
         if (!importedValidation.ok) {
@@ -592,7 +612,7 @@ namespace dualpad::input_v2::config
         }
 
         result.ok = true;
-        result.message = "ok";
+        result.message = importResult.bundle.warnings.empty() ? "ok" : std::string("ok; ") + WarningSummary(importResult.bundle.warnings);
         result.bundle = std::move(bundle);
         return result;
     }

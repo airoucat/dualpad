@@ -3,6 +3,7 @@
 #include "input_v2/config/LegacyIniImporter.h"
 
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string_view>
 
@@ -31,6 +32,18 @@ namespace
             from = parent;
         }
         return std::filesystem::current_path();
+    }
+
+    void WriteFile(const std::filesystem::path& path, std::string_view contents)
+    {
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << contents;
+    }
+
+    bool Contains(std::string_view text, std::string_view needle)
+    {
+        return text.find(needle) != std::string_view::npos;
     }
 }
 
@@ -61,6 +74,45 @@ void RunLegacyIniImporterTests()
         Require(res.ok, "LegacyIniImporter::Import(missing) should still be ok");
         Require(res.bundle.bindingsMissing, "bindingsMissing should be true");
         Require(res.bundle.menuPolicyMissing, "menuPolicyMissing should be true");
+    }
+
+    {
+        const auto temp = std::filesystem::temp_directory_path() / "dualpad-inputv2-import-entry-before-section";
+        std::filesystem::remove_all(temp);
+        const auto badBindings = temp / "DualPadBindings.ini";
+        WriteFile(badBindings, "Button:Cross=Game.Jump\n");
+
+        const auto res = cfg::LegacyIniImporter::Import(badBindings, policy);
+        Require(!res.ok, "existing bindings file with entry before section must fail import");
+        Require(
+            Contains(res.message, "entry without section"),
+            "entry-before-section failure should be visible in import message");
+    }
+
+    {
+        const auto temp = std::filesystem::temp_directory_path() / "dualpad-inputv2-import-malformed-line";
+        std::filesystem::remove_all(temp);
+        const auto badBindings = temp / "DualPadBindings.ini";
+        WriteFile(badBindings, "[Gameplay]\nButton:Cross Game.Jump\n");
+
+        const auto res = cfg::LegacyIniImporter::Import(badBindings, policy);
+        Require(!res.ok, "existing bindings file with malformed line must fail import");
+        Require(
+            Contains(res.message, "missing '='"),
+            "malformed-line failure should be visible in import message");
+    }
+
+    {
+        const auto temp = std::filesystem::temp_directory_path() / "dualpad-inputv2-import-bindings-directory";
+        std::filesystem::remove_all(temp);
+        const auto bindingsDirectory = temp / "DualPadBindings.ini";
+        std::filesystem::create_directories(bindingsDirectory);
+
+        const auto res = cfg::LegacyIniImporter::Import(bindingsDirectory, policy);
+        Require(!res.ok, "existing bindings path that is a directory must fail import");
+        Require(
+            Contains(res.message, "failed to open ini"),
+            "unreadable bindings failure should be visible in import message");
     }
 }
 
