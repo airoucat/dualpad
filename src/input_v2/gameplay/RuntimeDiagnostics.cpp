@@ -68,6 +68,9 @@ namespace dualpad::input_v2::gameplay
                 << "|debug=" << snapshot.runtimeHealthDebugReason
                 << "|hook=" << snapshot.hookInstallStatusName
                 << "|hook_reason=" << snapshot.hookInstallDebugReason
+                << "|upstream=" << snapshot.upstreamRouteInstallStatusName
+                << "|upstream_failed=" << (snapshot.upstreamRouteInstallFailed ? "true" : "false")
+                << "|upstream_reason=" << snapshot.upstreamRouteInstallDebugReason
                 << "|prompt=" << snapshot.promptStateName
                 << "|prompt_reason=" << snapshot.promptDebugReason
                 << "|overflow=" << snapshot.overflowCompactionSummary
@@ -191,6 +194,11 @@ namespace dualpad::input_v2::gameplay
             .hookInstallStatusName = presentation::ToString(input.hookInstall.status),
             .hookInstallDebugReason = input.hookInstall.debugReason,
             .hookInstallDebugSummary = presentation::ToDebugString(input.hookInstall),
+            .upstreamRouteConfigured = input.upstreamRoute.configured,
+            .upstreamRouteInstallFailed = input.upstreamRoute.configured && input.upstreamRoute.failed,
+            .upstreamRouteInstallStatus = input.upstreamRoute.status,
+            .upstreamRouteInstallStatusName = input::ToString(input.upstreamRoute.status),
+            .upstreamRouteInstallDebugReason = std::string(input.upstreamRoute.debugReason),
             .promptState = promptState,
             .promptStateName = ToString(promptState),
             .promptDebugReason = ResolvePromptDebugReason(input, promptState, reasonSummary),
@@ -233,20 +241,23 @@ namespace dualpad::input_v2::gameplay
 
         if (snapshot.runtimeHealthDegraded) {
             logger::warn(
-                "[DualPad][RuntimeDebug] degraded reasons={} debug='{}' prompt_state={} prompt_reason={} hook_status={} hook_reason='{}' overflow='{}'",
+                "[DualPad][RuntimeDebug] degraded reasons={} debug='{}' prompt_state={} prompt_reason={} hook_status={} hook_reason='{}' upstream_status={} upstream_reason='{}' overflow='{}'",
                 snapshot.runtimeHealthReasonSummary,
                 snapshot.runtimeHealthDebugReason,
                 snapshot.promptStateName,
                 snapshot.promptDebugReason,
                 snapshot.hookInstallStatusName,
                 snapshot.hookInstallDebugReason,
+                snapshot.upstreamRouteInstallStatusName,
+                snapshot.upstreamRouteInstallDebugReason,
                 snapshot.overflowCompactionSummary);
             return;
         }
 
         logger::info(
-            "[DualPad][RuntimeDebug] recovered prompt_state={} hook_status={}",
+            "[DualPad][RuntimeDebug] recovered prompt_state={} hook_status={} upstream_status={}",
             snapshot.promptStateName,
-            snapshot.hookInstallStatusName);
+            snapshot.hookInstallStatusName,
+            snapshot.upstreamRouteInstallStatusName);
     }
 }

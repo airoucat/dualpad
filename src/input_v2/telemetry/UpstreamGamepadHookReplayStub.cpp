@@ -3,8 +3,15 @@
 
 #include <Windows.h>
 
+#include <optional>
+
 namespace dualpad::input
 {
+    namespace
+    {
+        std::optional<UpstreamRouteInstallSnapshot> g_forcedSnapshot;
+    }
+
     UpstreamGamepadHook& UpstreamGamepadHook::GetSingleton()
     {
         static UpstreamGamepadHook instance;
@@ -21,6 +28,26 @@ namespace dualpad::input
     }
 
     bool UpstreamGamepadHook::IsRouteActive() const
+    {
+        return true;
+    }
+
+    UpstreamGamepadHookInstallStatus UpstreamGamepadHook::GetInstallStatus() const
+    {
+        return UpstreamGamepadHookInstallStatus::Installed;
+    }
+
+    std::string_view UpstreamGamepadHook::GetInstallDebugReason() const
+    {
+        return "test_upstream_hook_installed";
+    }
+
+    bool UpstreamGamepadHook::HasInstallFailed() const
+    {
+        return false;
+    }
+
+    bool UpstreamGamepadHook::WasInstallAttempted() const
     {
         return true;
     }
@@ -44,5 +71,39 @@ namespace dualpad::input
     {
         const auto age = GetLastPollCallAgeMs();
         return age && *age <= maxAgeMs;
+    }
+
+    void UpstreamGamepadHook::SetInstallStatus(
+        UpstreamGamepadHookInstallStatus,
+        std::string_view)
+    {
+    }
+
+    UpstreamRouteInstallSnapshot GetUpstreamRouteInstallSnapshot()
+    {
+        if (g_forcedSnapshot) {
+            return *g_forcedSnapshot;
+        }
+        return UpstreamRouteInstallSnapshot{
+            .configured = true,
+            .installAttempted = true,
+            .installed = true,
+            .failed = false,
+            .status = UpstreamGamepadHookInstallStatus::Installed,
+            .debugReason = "test_upstream_hook_installed"
+        };
+    }
+
+    namespace detail
+    {
+        void ForceUpstreamRouteInstallSnapshotForTests(const UpstreamRouteInstallSnapshot& snapshot)
+        {
+            g_forcedSnapshot = snapshot;
+        }
+
+        void ResetUpstreamRouteInstallSnapshotForTests()
+        {
+            g_forcedSnapshot.reset();
+        }
     }
 }

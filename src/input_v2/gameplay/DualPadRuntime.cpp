@@ -9,6 +9,8 @@
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
+#include "input/injection/RouteHealthContract.h"
+
 namespace dualpad::input_v2::gameplay
 {
     namespace
@@ -134,12 +136,21 @@ namespace dualpad::input_v2::gameplay
                 envelope.healthReasons,
                 RuntimeHealthReason::ManifestEpochSkew);
         }
+        const auto upstreamRoute = input::GetUpstreamRouteInstallSnapshot();
+        if (upstreamRoute.configured && upstreamRoute.failed) {
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::HookInstallFailed);
+            envelope.debugReason = std::string(upstreamRoute.debugReason);
+        }
         const auto hookInstall = presentation::SkyrimCompatibilitySurface::GetSingleton().GetInstallResult();
         if (presentation::IsHookInstallFailure(hookInstall)) {
             envelope.healthReasons = AddRuntimeHealthReason(
                 envelope.healthReasons,
                 RuntimeHealthReason::HookInstallFailed);
-            envelope.debugReason = presentation::ToDebugString(hookInstall);
+            if (envelope.debugReason.empty()) {
+                envelope.debugReason = presentation::ToDebugString(hookInstall);
+            }
         }
         return envelope;
     }
@@ -275,7 +286,8 @@ namespace dualpad::input_v2::gameplay
             .runtimeHealthReasons = result.runtimeHealthReasons,
             .runtimeHealthDebugReason = result.runtimeHealthDebugReason,
             .outputApplySucceeded = result.output.outputApplySucceeded,
-            .hookInstall = hookInstall
+            .hookInstall = hookInstall,
+            .upstreamRoute = input::GetUpstreamRouteInstallSnapshot()
         });
         LogRuntimeDebugSnapshotTransition(_diagnosticsLogState, _lastDebugSnapshot);
     }

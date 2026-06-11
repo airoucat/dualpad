@@ -46,4 +46,28 @@ namespace dualpad::input
             return "frame_pump_disabled";
         }
     }
+
+    const char* ToString(UpstreamGamepadHookInstallStatus status)
+    {
+        switch (status) {
+        case UpstreamGamepadHookInstallStatus::NotAttempted:
+            return "not_attempted";
+        case UpstreamGamepadHookInstallStatus::DisabledByConfig:
+            return "disabled_by_config";
+        case UpstreamGamepadHookInstallStatus::UnsupportedMode:
+            return "unsupported_mode";
+        case UpstreamGamepadHookInstallStatus::UnsupportedRuntime:
+            return "unsupported_runtime";
+        case UpstreamGamepadHookInstallStatus::SignatureMismatch:
+            return "signature_mismatch";
+        case UpstreamGamepadHookInstallStatus::PatchFailed:
+            return "patch_failed";
+        case UpstreamGamepadHookInstallStatus::Installed:
+            return "installed";
+        case UpstreamGamepadHookInstallStatus::AlreadyInstalled:
+            return "already_installed";
+        default:
+            return "unknown";
+        }
+    }
 }

@@ -102,3 +102,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: GitHub Windows runners checked out/generated `docs/generated/*.md` with CRLF working-tree endings. Phase8's path-scoped generated-doc diff emitted only line-ending warnings, but the later release manifest clean check used a full tracked-content dirty check and failed. After adding file-level dirty diagnostics, the next CI run confirmed `docs/generated` was fixed and the only remaining dirty tracked file was `xmake-requires.lock`, which xmake refreshed during build on the fresh runner.
 - Related files: `.gitattributes`, `scripts/dev/generate_release_artifact_manifest.py`, `scripts/ci/check_rc_readiness_closeout.py`, `.dualpad-builder/progress.md`
 - Resolution: Added `.gitattributes` entries for `docs/generated/*.md text eol=lf` and `xmake-requires.lock text eol=lf`, added manifest dirty-file and dirty-diff reporting, required those contracts in the RC closeout static gate, and restored CI-only xmake lockfile churn before the release manifest clean check.
+
+## ERR-20260612-005
+
+- Logged: 2026-06-12 04:59 CST
+- Priority: low
+- Status: resolved
+- Area: RC readiness / local xmake lock churn
+- Summary: Local `run_rc_readiness.ps1 -ExpectCleanManifest` could still fail after successful builds because xmake refreshed only the xmake-repo commit in `xmake-requires.lock`.
+- Detail: The prior RC hardening restored `xmake-requires.lock` only on GitHub Actions. A local xmake 3.0.7 run can also update the package repository commit without changing package versions, leaving the working tree dirty before `generate_release_artifact_manifest.py --expect-clean`.
+- Related files: `scripts/ci/run_rc_readiness.ps1`, `xmake-requires.lock`
+- Resolution: Changed RC readiness to detect and restore `xmake-requires.lock` churn before the clean manifest step in both local and CI runs.

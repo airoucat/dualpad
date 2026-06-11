@@ -15,6 +15,7 @@
 #include "input/RuntimeConfig.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/backend/KeyboardHelperBackend.h"
+#include "input/injection/RouteHealthContract.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 
@@ -86,16 +87,25 @@ namespace
             dualpad::input::ContextEventSink::GetSingleton().Register();
 
             dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton().RegisterInitialMenus();
-            if (!dualpad::input::ControlMapOverlay::GetSingleton().Apply()) {
-                logger::warn(
-                    "[DualPad] Runtime gamepad controlmap overlay inactive; combo-native actions may be unavailable");
-            }
-
-            dualpad::input::InputFramePump::GetSingleton().Register();
 
             if (dualpad::input::RuntimeConfig::GetSingleton().UseUpstreamGamepadHook()) {
                 dualpad::input::UpstreamGamepadHook::GetSingleton().Install();
             }
+
+            const auto upstreamRoute = dualpad::input::GetUpstreamRouteInstallSnapshot();
+            if (dualpad::input::ShouldApplyControlMapOverlay(upstreamRoute.configured, upstreamRoute.status)) {
+                if (!dualpad::input::ControlMapOverlay::GetSingleton().Apply()) {
+                    logger::warn(
+                        "[DualPad] Runtime gamepad controlmap overlay inactive; combo-native actions may be unavailable");
+                }
+            } else {
+                logger::error(
+                    "[DualPad] Runtime gamepad controlmap overlay skipped because upstream route install failed status={} reason='{}'",
+                    dualpad::input::ToString(upstreamRoute.status),
+                    upstreamRoute.debugReason);
+            }
+
+            dualpad::input::InputFramePump::GetSingleton().Register();
 
             dualpad::input::backend::KeyboardHelperBackend::GetSingleton().Install();
 

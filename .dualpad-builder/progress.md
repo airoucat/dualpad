@@ -2702,3 +2702,11 @@
   - 覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure gate（含 B1 menu glyph lifecycle static markers）、U5 RC closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
 - 待验证：
   - 推送后远端 PR-B1 `phase8` / `rc-readiness`。
+
+## 2026-06-12 04:51:53 +08:00
+
+- PR-B2 upstream route health fix 开始：分支 codex/dp5-rc20-upstream-route-health-fix。范围：为 UpstreamGamepadHook 增加安装状态/原因合同，将 configured+failed upstream route 映射到 RuntimeHealthReason::HookInstallFailed，并在 hook 失败时跳过 ControlMapOverlay，避免 prompt/controlmap 与实际输入路由半安装。待验证：DualPadRouteHealthContractTests、DualPadInputV2Tests、phase8、rc-readiness、graphify rebuild、git diff --check。
+
+## 2026-06-12 05:01:53 +08:00
+
+- PR-B2 本地验证通过。已运行并通过：xmake build/run DualPadRouteHealthContractTests；xmake build/run DualPadInputV2Tests；xmake build DualPad；powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1（含 DualPadRouteHealthContractTests）；powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest。RC gate 覆盖 Phase8、DualPadReplayHarness phase0 dispatcher replay 10 个 scenario no diff、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 closeout、DualPadDInput8Proxy build、DP5-RC20 release artifact manifest clean check、graphify manual-closeout rebuild 与 git diff --check。待验证：推送后远端 PR-B2 phase8 / rc-readiness。
