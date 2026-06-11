@@ -1,5 +1,6 @@
 #pragma once
 
+#include "input/injection/RouteHealthContract.h"
 #include "input_v2/gameplay/RuntimeFrameEnvelope.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
@@ -35,6 +36,14 @@ namespace dualpad::input_v2::gameplay
         std::string hookInstallDebugReason;
         std::string hookInstallDebugSummary;
 
+        bool upstreamRouteConfigured{ false };
+        bool upstreamRouteInstallFailed{ false };
+        input::UpstreamGamepadHookInstallStatus upstreamRouteInstallStatus{
+            input::UpstreamGamepadHookInstallStatus::NotAttempted
+        };
+        std::string upstreamRouteInstallStatusName;
+        std::string upstreamRouteInstallDebugReason;
+
         RuntimePromptDebugState promptState{ RuntimePromptDebugState::Unavailable };
         std::string promptStateName;
         std::string promptDebugReason;
@@ -51,6 +60,7 @@ namespace dualpad::input_v2::gameplay
         std::string_view runtimeHealthDebugReason;
         bool outputApplySucceeded{ false };
         presentation::HookInstallResult hookInstall;
+        input::UpstreamRouteInstallSnapshot upstreamRoute;
     };
 
     struct RuntimeDiagnosticsLogState

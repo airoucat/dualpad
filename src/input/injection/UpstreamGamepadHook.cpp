@@ -5,6 +5,8 @@
 #include <SKSE/Version.h>
 
 #include <array>
+#include <exception>
+#include <string>
 
 #include "input/HidReader.h"
 #include "input/XInputStateBridge.h"
@@ -133,24 +135,37 @@ namespace dualpad::input
 
     void UpstreamGamepadHook::Install()
     {
-        if (_installed || _attemptedInstall) {
+        if (_installed) {
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::AlreadyInstalled, "already_installed");
+            return;
+        }
+        if (_attemptedInstall) {
             return;
         }
         _attemptedInstall = true;
 
         const auto& config = RuntimeConfig::GetSingleton();
         if (!config.UseUpstreamGamepadHook()) {
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::DisabledByConfig, "disabled_by_config");
             return;
         }
 
         if (config.GetUpstreamGamepadHookMode() != UpstreamGamepadHookMode::PollXInputCall) {
+            if (config.GetUpstreamGamepadHookMode() == UpstreamGamepadHookMode::Disabled) {
+                SetInstallStatus(UpstreamGamepadHookInstallStatus::DisabledByConfig, "disabled_by_config");
+                return;
+            }
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::UnsupportedMode, "unsupported_mode");
             logger::warn(
                 "[DualPad][UpstreamGamepad] Unsupported upstream hook mode '{}'; only poll-xinput-call is retained as the official route",
-                config.GetUpstreamGamepadHookMode() == UpstreamGamepadHookMode::Disabled ? "disabled" : "unknown");
+                "unknown");
             return;
         }
 
         if (REL::Module::get().version() != kSupportedRuntime) {
+            SetInstallStatus(
+                UpstreamGamepadHookInstallStatus::UnsupportedRuntime,
+                std::string("unsupported_runtime_") + REL::Module::get().version().string());
             if (!_loggedUnsupportedRuntime) {
                 logger::error(
                     "[DualPad][UpstreamGamepad] Unsupported runtime {}; Route B is only enabled on Skyrim SE 1.5.97",
@@ -163,6 +178,9 @@ namespace dualpad::input
         const auto pollAddress = REL::Module::get().base() + kExpectedPollRva;
         const auto windowAddress = pollAddress + kExpectedPollXInputWindowOffset;
         if (!REL::verify_code(windowAddress, kExpectedPollXInputWindow)) {
+            SetInstallStatus(
+                UpstreamGamepadHookInstallStatus::SignatureMismatch,
+                "is_using_gamepad_call_signature_mismatch");
             logger::error(
                 "[DualPad][UpstreamGamepad] Poll XInput call-site verification failed at poll=0x{:X}; upstream poll hook remains disabled",
                 pollAddress);
@@ -170,12 +188,32 @@ namespace dualpad::input
         }
 
         const auto callAddress = pollAddress + kExpectedPollXInputCallOffset;
-        PollXInputCallHook::_originalTarget = SKSE::GetTrampoline().write_call<5>(
-            callAddress,
-            PollXInputCallHook::Thunk);
+        try {
+            PollXInputCallHook::_originalTarget = SKSE::GetTrampoline().write_call<5>(
+                callAddress,
+                PollXInputCallHook::Thunk);
+        }
+        catch (const std::exception& e) {
+            SetInstallStatus(
+                UpstreamGamepadHookInstallStatus::PatchFailed,
+                std::string("patch_failed:") + e.what());
+            logger::error(
+                "[DualPad][UpstreamGamepad] Exception while patching Poll-internal XInput call at 0x{:X}: {}",
+                callAddress,
+                e.what());
+            return;
+        }
+        catch (...) {
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::PatchFailed, "patch_failed:unknown_exception");
+            logger::error(
+                "[DualPad][UpstreamGamepad] Unknown exception while patching Poll-internal XInput call at 0x{:X}",
+                callAddress);
+            return;
+        }
         _installed = PollXInputCallHook::_originalTarget != 0;
 
         if (!_installed) {
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::PatchFailed, "patch_failed:no_original_target");
             logger::error(
                 "[DualPad][UpstreamGamepad] Failed to patch Poll-internal XInput call at 0x{:X}; upstream poll hook remains disabled",
                 callAddress);
@@ -187,6 +225,7 @@ namespace dualpad::input
             pollAddress,
             callAddress,
             PollXInputCallHook::_originalTarget);
+        SetInstallStatus(UpstreamGamepadHookInstallStatus::Installed, "installed");
     }
 
     bool UpstreamGamepadHook::IsInstalled() const
@@ -200,6 +239,26 @@ namespace dualpad::input
         return _installed &&
             config.UseUpstreamGamepadHook() &&
             config.GetUpstreamGamepadHookMode() == UpstreamGamepadHookMode::PollXInputCall;
+    }
+
+    UpstreamGamepadHookInstallStatus UpstreamGamepadHook::GetInstallStatus() const
+    {
+        return _installStatus;
+    }
+
+    std::string_view UpstreamGamepadHook::GetInstallDebugReason() const
+    {
+        return _installDebugReason;
+    }
+
+    bool UpstreamGamepadHook::HasInstallFailed() const
+    {
+        return HasUpstreamGamepadHookInstallFailed(_installStatus);
+    }
+
+    bool UpstreamGamepadHook::WasInstallAttempted() const
+    {
+        return WasUpstreamGamepadHookInstallAttempted(_installStatus);
     }
 
     void UpstreamGamepadHook::NotePollCallActivity()
@@ -226,5 +285,29 @@ namespace dualpad::input
     {
         const auto lastPollAgeMs = GetLastPollCallAgeMs();
         return lastPollAgeMs && *lastPollAgeMs <= maxAgeMs;
+    }
+
+    void UpstreamGamepadHook::SetInstallStatus(
+        UpstreamGamepadHookInstallStatus status,
+        std::string_view debugReason)
+    {
+        _installStatus = status;
+        _installDebugReason = debugReason.empty() ? ToString(status) : std::string(debugReason);
+    }
+
+    UpstreamRouteInstallSnapshot GetUpstreamRouteInstallSnapshot()
+    {
+        const auto& config = RuntimeConfig::GetSingleton();
+        const auto& hook = UpstreamGamepadHook::GetSingleton();
+        const bool configured = config.UseUpstreamGamepadHook();
+        const auto status = hook.GetInstallStatus();
+        return UpstreamRouteInstallSnapshot{
+            .configured = configured,
+            .installAttempted = hook.WasInstallAttempted(),
+            .installed = hook.IsInstalled(),
+            .failed = hook.HasInstallFailed(),
+            .status = status,
+            .debugReason = hook.GetInstallDebugReason()
+        };
     }
 }

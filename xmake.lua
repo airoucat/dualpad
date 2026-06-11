@@ -268,6 +268,8 @@ target("DualPadInputV2Tests")
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
         "src/input/backend/ActionBackendPolicy.cpp",
         "src/input/backend/NativeActionDescriptor.cpp",
+        "src/input/injection/RouteHealthContract.cpp",
+        "src/input_v2/telemetry/UpstreamGamepadHookReplayStub.cpp",
         "src/input/RuntimeConfig.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")

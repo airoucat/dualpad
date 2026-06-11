@@ -1,5 +1,6 @@
 #include "pch.h"
 
+#include "input/injection/RouteHealthContract.h"
 #include "input/injection/PadEventSnapshot.h"
 #include "input/Trigger.h"
 #include "input_v2/actions/CompiledActionGraph.h"
@@ -291,6 +292,7 @@ namespace
             presentation::detail::MakeHookInstallResult(
                 presentation::HookInstallStatus::Success,
                 "test_hook_installed"));
+        dualpad::input::detail::ResetUpstreamRouteInstallSnapshotForTests();
 
         actions::CompiledActionGraph graph{};
         graph.manifestEpoch = 42;
@@ -1357,6 +1359,126 @@ namespace
                 "test_hook_installed"));
     }
 
+    void AssertUpstreamRouteFailureFailsClosed(
+        dualpad::input::UpstreamGamepadHookInstallStatus status,
+        std::string_view debugReason)
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        const auto beforeScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        dualpad::input::detail::ForceUpstreamRouteInstallSnapshotForTests(dualpad::input::UpstreamRouteInstallSnapshot{
+            .configured = true,
+            .installAttempted = true,
+            .installed = false,
+            .failed = dualpad::input::HasUpstreamGamepadHookInstallFailed(status),
+            .status = status,
+            .debugReason = debugReason
+        });
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                98,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    98'000)),
+            executor);
+
+        Require(result.RuntimeHealthDegraded(), "upstream route install failure must degrade runtime health");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::HookInstallFailed),
+            "upstream route install failure must expose HookInstallFailed");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::PromptScopeFrozen),
+            "upstream route install failure must freeze prompt scope");
+        Require(
+            result.runtimeHealthDebugReason == debugReason,
+            "upstream route install failure must carry debug reason");
+        Require(executor.steps.empty(), "upstream route install failure must not apply native output");
+        Require(!result.output.outputApplySucceeded, "upstream route install failure must not report output success");
+        Require(
+            result.projectionFrame.gamepadPlan.transientDigital.count == 0 &&
+                result.projectionFrame.helperPlan.commands.count == 0,
+            "upstream route install failure must fail closed without resolved action commands");
+
+        const auto afterScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+        Require(
+            afterScope.promptScopeRevision == beforeScope.promptScopeRevision,
+            "upstream route install failure must not publish a new prompt scope");
+        const auto& debug = runtime.GetLastDebugSnapshot();
+        Require(
+            debug.upstreamRouteInstallStatusName == dualpad::input::ToString(status),
+            "debug snapshot must expose upstream route install status");
+        Require(
+            debug.upstreamRouteInstallDebugReason == debugReason,
+            "debug snapshot must expose upstream route debug reason");
+        Require(
+            debug.promptState == gameplay::RuntimePromptDebugState::Frozen,
+            "upstream route failure must freeze prompt in debug snapshot");
+
+        dualpad::input::detail::ResetUpstreamRouteInstallSnapshotForTests();
+    }
+
+    void RunRuntimeUpstreamRouteInstallFailureFailClosedTests()
+    {
+        AssertUpstreamRouteFailureFailsClosed(
+            dualpad::input::UpstreamGamepadHookInstallStatus::SignatureMismatch,
+            "is_using_gamepad_call_signature_mismatch");
+        AssertUpstreamRouteFailureFailsClosed(
+            dualpad::input::UpstreamGamepadHookInstallStatus::UnsupportedRuntime,
+            "unsupported_runtime_1.6.640");
+    }
+
+    void RunRuntimeDisabledUpstreamRouteDoesNotFailClosedTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+        dualpad::input::detail::ForceUpstreamRouteInstallSnapshotForTests(dualpad::input::UpstreamRouteInstallSnapshot{
+            .configured = false,
+            .installAttempted = false,
+            .installed = false,
+            .failed = false,
+            .status = dualpad::input::UpstreamGamepadHookInstallStatus::DisabledByConfig,
+            .debugReason = "disabled_by_config"
+        });
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                99,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    99'000)),
+            executor);
+
+        Require(
+            !gameplay::HasRuntimeHealthReason(
+                result.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::HookInstallFailed),
+            "disabled upstream route must not expose HookInstallFailed");
+        Require(
+            result.runtimeHealthDebugReason.empty(),
+            "disabled upstream route must not set runtime health debug reason");
+        const auto& debug = runtime.GetLastDebugSnapshot();
+        Require(
+            debug.upstreamRouteInstallStatusName == "disabled_by_config",
+            "debug snapshot must expose disabled upstream route status");
+        Require(
+            !debug.upstreamRouteInstallFailed,
+            "disabled upstream route must not be marked failed in debug snapshot");
+
+        dualpad::input::detail::ResetUpstreamRouteInstallSnapshotForTests();
+    }
+
     void RunRuntimePresentationUsesFrameBoundContextTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -1654,6 +1776,8 @@ int main()
         RunRuntimeDiagnosticsProjectionTests();
         RunRuntimeDegradedFramePromptPublishContractTests();
         RunRuntimeHookInstallFailureFailClosedTests();
+        RunRuntimeUpstreamRouteInstallFailureFailClosedTests();
+        RunRuntimeDisabledUpstreamRouteDoesNotFailClosedTests();
         RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();

@@ -59,9 +59,13 @@ Invoke-Step python @("scripts/ci/check_rc_readiness_closeout.py")
 
 Invoke-Step xmake @("build", "-y", "DualPadDInput8Proxy")
 
-if ($env:GITHUB_ACTIONS -eq "true") {
-    Invoke-Step git @("diff", "--", "xmake-requires.lock")
+git diff --quiet -- xmake-requires.lock
+if ($LASTEXITCODE -eq 1) {
+    Write-Host "==> git diff -- xmake-requires.lock"
+    git diff -- xmake-requires.lock
     Invoke-Step git @("restore", "--worktree", "--", "xmake-requires.lock")
+} elseif ($LASTEXITCODE -ne 0) {
+    throw "command failed: git diff --quiet -- xmake-requires.lock"
 }
 
 $manifestArgs = @("scripts/dev/generate_release_artifact_manifest.py", "--require-build-artifacts")
