@@ -2558,3 +2558,12 @@
 - 待重新验证：
   - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 02:10:00 CST
+
+- PR-A 本地最终验证：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：exit 0。
+  - 覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
+- 待重新验证：
+  - 本条 progress-only commit 后再运行一次同一 RC gate。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
