@@ -2693,3 +2693,12 @@
 - 待验证：
   - 本条提交后运行 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR-B1 `phase8` / `rc-readiness`。
+
+## 2026-06-12 05:05:00 CST
+
+- PR-B1 本地 RC 验证：
+  - Head commit: `535a3d7`。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：exit 0。
+  - 覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure gate（含 B1 menu glyph lifecycle static markers）、U5 RC closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
+- 待验证：
+  - 推送后远端 PR-B1 `phase8` / `rc-readiness`。
