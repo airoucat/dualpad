@@ -90,6 +90,8 @@ def main() -> int:
             "scripts/dev/generate_release_artifact_manifest.py",
             "--require-build-artifacts",
             "--expect-clean",
+            "PYTHONUTF8",
+            "PYTHONIOENCODING",
             "scripts/dev/setup_graphify_local.py",
             "git",
             "diff",

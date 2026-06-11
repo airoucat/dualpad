@@ -2526,3 +2526,14 @@
 - 备注：
   - `-ExpectCleanManifest` 需要 final commit 后的干净 tracked content / index 才能作为 source binding 验证；本条不预写该验证结果。
   - 远端 `phase8` / `rc-readiness` run id 尚未产生。
+
+## 2026-06-12 01:25:00 CST
+
+- PR-A 远端验证第一次反馈：
+  - PR #22 `phase8` 已在 GitHub Actions 通过。
+  - PR #22 `rc-readiness` 在 graphify rebuild step 失败；失败前已通过 Phase8、replay diff、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 closeout gate、DInput8 proxy build 与 `DP5-RC20-release-artifact-manifest.{json,md}` generation。
+  - 失败根因：GitHub Windows runner 上 Python stdout 使用 cp1252，`scripts/dev/setup_graphify_local.py` 在 graphify 缺失时打印中文安装提示，触发 `UnicodeEncodeError`。
+  - 修复：`scripts/ci/run_rc_readiness.ps1` 在执行 Python steps 前设置 `PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`。
+- 待重新验证：
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `rc-readiness`。

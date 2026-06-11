@@ -126,6 +126,8 @@ def main() -> int:
         "scripts/ci/check_config_prompt_menu_glyph_closure.py",
         "scripts/ci/check_rc_readiness_closeout.py",
         "scripts/dev/generate_release_artifact_manifest.py",
+        "PYTHONUTF8",
+        "PYTHONIOENCODING",
         "scripts/dev/setup_graphify_local.py",
     ]:
         if marker not in rc_gate:

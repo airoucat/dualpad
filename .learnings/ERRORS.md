@@ -58,3 +58,25 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: Local runs already had packages installed and `lib/commonlibsse-ng` present, so the script passed locally. On a fresh GitHub Windows runner, `xmake build DualPad` first requested confirmation and failed with `packages(hidapi): must be installed!`. After adding `-y`, the runner installed `hidapi` and then failed with `unknown rule(commonlibsse-ng.plugin)` because `lib/` is ignored, `.gitmodules` has a CommonLib entry, but current `HEAD` has no `lib/commonlibsse-ng` gitlink. For this xmake version, `-y` must be placed after the task (`xmake build -y DualPad`); `xmake -y build DualPad` is parsed incorrectly and reports `invalid argument: DualPad`.
 - Related files: `scripts/ci/run_phase8_ci.ps1`, `.github/workflows/dualpad-ci.yml`
 - Resolution: Updated Phase8 CI xmake build/run invocations to pass `-y` after `build` / `run`, added a workflow checkout for `alandtse/CommonLibVR` at `82e62861168308139339e5b8754586bbb556744e` with recursive submodules, then reran `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1` successfully locally before rerunning GitHub Actions.
+
+## ERR-20260612-001
+
+- Logged: 2026-06-12 01:06 CST
+- Priority: low
+- Status: resolved
+- Area: GitHub CLI / PowerShell shell syntax
+- Summary: `gh pr create` failed because a Bash heredoc (`<<'EOF'`) was used while the active shell was PowerShell.
+- Detail: In this workspace the shell is PowerShell. For multi-line CLI arguments, use a PowerShell here-string assigned to a variable and pass that variable, or write a temporary body file with PowerShell-native commands. Do not paste Bash heredoc syntax into `shell_command` on Windows.
+- Related files: `.github/workflows/dualpad-ci.yml`, `.dualpad-builder/progress.md`
+- Resolution: Retried PR creation with a PowerShell here-string body.
+
+## ERR-20260612-002
+
+- Logged: 2026-06-12 01:25 CST
+- Priority: medium
+- Status: resolved
+- Area: GitHub Actions / Python encoding / graphify
+- Summary: PR #22 `rc-readiness` failed on GitHub Windows runner because Python stdout used cp1252 while `setup_graphify_local.py` printed Chinese text.
+- Detail: The failure occurred after the RC gate had passed Phase8, replay diff, static gates, DInput8 proxy build, and release manifest generation. The graphify step imported `graphify`, fell back to the install path, then printing the Chinese install message raised `UnicodeEncodeError: 'charmap' codec can't encode characters`. Local runs did not reproduce because the local terminal accepted UTF-8 output.
+- Related files: `scripts/ci/run_rc_readiness.ps1`, `scripts/dev/setup_graphify_local.py`
+- Resolution: Set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` in `scripts/ci/run_rc_readiness.ps1` before Python steps.

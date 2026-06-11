@@ -6,6 +6,9 @@ $ErrorActionPreference = "Stop"
 
 Set-StrictMode -Version Latest
 
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)]
