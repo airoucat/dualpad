@@ -2592,3 +2592,17 @@
   - 本地 RC closeout static gate。
   - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 03:08:00 CST
+
+- PR-A 远端验证第五次反馈：
+  - `gitee.com` / `gitcode.com` mirror 修复后，PR #22 的两套 `phase8` 通过，但两套 `rc-readiness` 在 release manifest `--expect-clean` 处失败。
+  - 失败 jobs:
+    - run `27370051718` job `80881031952`，`https://github.com/airoucat/dualpad/actions/runs/27370051718/job/80881031952`。
+    - run `27370054432` job `80881204519`，`https://github.com/airoucat/dualpad/actions/runs/27370054432/job/80881204519`。
+  - 失败根因：GitHub Actions 使用 `xmake-version: latest`，当前解析为 xmake `3.0.9`；fresh runner 构建后 `xmake-requires.lock` 被重写，导致 tracked working tree dirty。主机本地验证使用 xmake `3.0.7`，该版本不会重写当前 lock。
+  - 修复：`.github/workflows/dualpad-ci.yml` 将两个 `xmake-io/github-action-setup-xmake@v1` step 固定到 `xmake-version: 3.0.7`，并在 `check_rc_readiness_closeout.py` 增加静态 gate，防止 CI 回到 floating `latest`。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。

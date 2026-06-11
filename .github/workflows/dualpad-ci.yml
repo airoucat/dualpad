@@ -18,6 +18,8 @@ jobs:
           submodules: recursive
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: 3.0.7
       - name: Run Phase 8 canonical CI
         shell: pwsh
         run: scripts/ci/run_phase8_ci.ps1
@@ -36,6 +38,8 @@ jobs:
           submodules: recursive
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: 3.0.7
       - name: Run RC readiness outer gate
         shell: pwsh
         run: scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest

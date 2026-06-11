@@ -124,6 +124,8 @@ def main() -> int:
         failures.append(".github/workflows/dualpad-ci.yml: rc-readiness must run outer gate with -ExpectCleanManifest.")
     if "scripts/ci/run_phase8_ci.ps1" not in workflow:
         failures.append(".github/workflows/dualpad-ci.yml: phase8 must still run scripts/ci/run_phase8_ci.ps1.")
+    if "xmake-version: 3.0.7" not in workflow:
+        failures.append(".github/workflows/dualpad-ci.yml: xmake must be pinned to 3.0.7 for lockfile-stable CI.")
 
     require_tokens(
         failures,
