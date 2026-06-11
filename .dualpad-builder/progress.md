@@ -2722,3 +2722,7 @@
 ## 2026-06-12 05:46:00 +08:00
 
 - PR-B3 本地验证通过。Head commit: `abe30d5`。已先执行 TDD 红测：`xmake build -y DualPadManifestCompilerTests; xmake run -y DualPadManifestCompilerTests` 失败于 `existing bindings file with entry before section must fail import`，确认旧行为会把破损 existing INI 静默当空配置处理。实现后 focused green：`xmake build -y DualPadManifestCompilerTests; xmake run -y DualPadManifestCompilerTests` exit 0。完整 gate：`powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest` exit 0，覆盖 Phase8、`DualPadManifestCompilerTests` build/run、phase0 dispatcher replay 10 个 scenario no diff、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 closeout、`DualPadDInput8Proxy` build、DP5-RC20 release artifact manifest clean check、graphify manual-closeout rebuild 与 `git diff --check`。待验证：推送后远端 PR-B3 `phase8` / `rc-readiness`。
+
+## 2026-06-12 06:11:00 +08:00
+
+- PR-B3 远端验证通过：PR #25 https://github.com/airoucat/dualpad/pull/25，head `a8fcaf2713cfdc41be704a93818823a114fa9833`。远端 checks：push `phase8` run `27379474743` job `80912184185` pass；push `rc-readiness` run `27379474743` job `80913581414` pass；pull_request `phase8` run `27379485298` job `80912221999` pass；pull_request `rc-readiness` run `27379485298` job `80913439616` pass。待处理：推送本 evidence 记录后等待最终 checks，再 merge PR-B3。
