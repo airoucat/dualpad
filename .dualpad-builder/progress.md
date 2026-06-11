@@ -2718,3 +2718,7 @@
 ## 2026-06-12 05:39:39 +08:00
 
 - PR-B2 已合入 main：PR #24 merge commit 8411a0d4a1bcd0635b3422ebdc8c15c2015828c2。开始 PR-B3 broken INI fail-closed：分支 codex/dp5-rc20-broken-ini-fail-closed。范围：LegacyIniImporter 区分 missing 与 existing-but-unreadable/broken；两份主配置 missing 仍允许 built-in defaults；存在但打不开、缺 '='、section 前 key 或 bindings 空 AST 必须可见失败并阻止静默当空配置成功。先补红测，待验证。
+
+## 2026-06-12 05:46:00 +08:00
+
+- PR-B3 本地验证通过。Head commit: `abe30d5`。已先执行 TDD 红测：`xmake build -y DualPadManifestCompilerTests; xmake run -y DualPadManifestCompilerTests` 失败于 `existing bindings file with entry before section must fail import`，确认旧行为会把破损 existing INI 静默当空配置处理。实现后 focused green：`xmake build -y DualPadManifestCompilerTests; xmake run -y DualPadManifestCompilerTests` exit 0。完整 gate：`powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest` exit 0，覆盖 Phase8、`DualPadManifestCompilerTests` build/run、phase0 dispatcher replay 10 个 scenario no diff、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 closeout、`DualPadDInput8Proxy` build、DP5-RC20 release artifact manifest clean check、graphify manual-closeout rebuild 与 `git diff --check`。待验证：推送后远端 PR-B3 `phase8` / `rc-readiness`。
