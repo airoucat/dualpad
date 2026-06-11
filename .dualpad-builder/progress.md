@@ -2620,3 +2620,17 @@
   - 本地 RC closeout static gate。
   - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 03:45:00 CST
+
+- PR-A 本地验证：
+  - Head commit: `dee5fd4`。
+  - `python scripts/ci/check_rc_readiness_closeout.py`：exit 0。
+  - `python scripts/ci/check_reviewed_docs_consistency.py`：exit 0。
+  - `git diff --check` / `git diff --cached --check`：exit 0；仅有 Windows 行尾提示，无 whitespace error。
+  - `python scripts/dev/generate_release_artifact_manifest.py --expect-clean` 在未提交修复时按预期失败，并输出具体 dirty tracked file，验证新增诊断可用。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：exit 0；覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 RC closeout static gate、`DualPadDInput8Proxy` build、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
+  - `git ls-files --eol docs/generated/*.md xmake-requires.lock`：均为 `i/lf w/lf attr/text eol=lf`。
+- 待重新验证：
+  - 本条 progress-only commit 后再运行一次同一 RC gate。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
