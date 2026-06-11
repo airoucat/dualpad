@@ -49,6 +49,11 @@ namespace
         std::getline(in, s, '\0');
         return s;
     }
+
+    bool Contains(std::string_view text, std::string_view needle)
+    {
+        return text.find(needle) != std::string_view::npos;
+    }
 }
 
 void RunAtomicConfigReloaderTests()
@@ -132,6 +137,18 @@ void RunAtomicConfigReloaderTests()
         Require(epoch.has_value() && *epoch == 2, "failed reload must keep active epoch");
     }
 
+    // Runtime reload with a syntactically broken existing config keeps existing active bundle.
+    {
+        WriteFile(bindings, "[Gameplay]\nButton:Cross Game.Jump\n");
+        const auto res = cfg::AtomicConfigReloader::GetSingleton().Reload();
+        Require(!res.ok, "reload with malformed bindings config should fail");
+        Require(
+            Contains(res.message, "missing '='"),
+            "reload import failure should expose malformed-line reason");
+        const auto epoch = cfg::AtomicConfigReloader::GetSingleton().GetActiveEpoch();
+        Require(epoch.has_value() && *epoch == 2, "failed malformed reload must keep active epoch");
+    }
+
     // Startup recovery uses disk last-known-good when config is invalid and no active bundle exists.
     {
         cfg::AtomicConfigReloader::GetSingleton().ResetForTests();
@@ -156,6 +173,28 @@ void RunAtomicConfigReloaderTests()
         cfg::AtomicConfigReloader::GetSingleton().ResetForTests();
         const auto res = cfg::AtomicConfigReloader::GetSingleton().LoadOrRecover(bindings2, policy2);
         Require(!res.ok, "startup must fail when config is invalid and no LKG exists");
+    }
+
+    // Startup with syntactically broken config and no disk LKG fails closed.
+    {
+        const auto tempBroken = std::filesystem::temp_directory_path() / "dualpad-inputv2-reloader-broken-no-lkg";
+        std::filesystem::remove_all(tempBroken);
+        std::filesystem::create_directories(tempBroken);
+
+        const auto bindingsBroken = tempBroken / "DualPadBindings.ini";
+        const auto policyBroken = tempBroken / "DualPadMenuPolicy.ini";
+        WriteFile(bindingsBroken, "[Gameplay]\nButton:Cross Game.Jump\n");
+        WriteFile(policyBroken, "[Policy]\nunknown_menu_policy=track\n");
+
+        cfg::AtomicConfigReloader::GetSingleton().ResetForTests();
+        const auto res = cfg::AtomicConfigReloader::GetSingleton().LoadOrRecover(bindingsBroken, policyBroken);
+        Require(!res.ok, "startup must fail closed when existing bindings config is malformed and no LKG exists");
+        Require(
+            Contains(res.message, "missing '='"),
+            "startup malformed config failure should expose malformed-line reason");
+        Require(
+            !cfg::AtomicConfigReloader::GetSingleton().GetActiveEpoch().has_value(),
+            "startup malformed config failure must not promote an active epoch");
     }
 
     // Startup with invalid config and stale/bad disk LKG fails closed.

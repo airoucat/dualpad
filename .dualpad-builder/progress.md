@@ -2714,3 +2714,7 @@
 ## 2026-06-12 05:21:02 +08:00
 
 - PR-B2 远端验证通过：PR #24 https://github.com/airoucat/dualpad/pull/24，head a6e74dc。远端 checks：push phase8 run 27377256038 job 80904601807 pass；push rc-readiness run 27377256038 job 80906081844 pass；pull_request phase8 run 27377273931 job 80904662615 pass；pull_request rc-readiness run 27377273931 job 80906257898 pass。待处理：推送本 evidence 记录后等待最终 checks，再 merge PR-B2。
+
+## 2026-06-12 05:39:39 +08:00
+
+- PR-B2 已合入 main：PR #24 merge commit 8411a0d4a1bcd0635b3422ebdc8c15c2015828c2。开始 PR-B3 broken INI fail-closed：分支 codex/dp5-rc20-broken-ini-fail-closed。范围：LegacyIniImporter 区分 missing 与 existing-but-unreadable/broken；两份主配置 missing 仍允许 built-in defaults；存在但打不开、缺 '='、section 前 key 或 bindings 空 AST 必须可见失败并阻止静默当空配置成功。先补红测，待验证。

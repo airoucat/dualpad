@@ -60,6 +60,7 @@ namespace dualpad::input_v2::config
         LegacyBindingsAst bindings;
         LegacyMenuPolicyAst menuPolicy;
 
+        // Non-fatal importer diagnostics that must remain visible to startup/reload callers.
         std::vector<std::string> warnings;
     };
 
