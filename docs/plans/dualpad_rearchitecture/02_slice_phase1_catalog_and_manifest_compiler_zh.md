@@ -637,7 +637,7 @@ validator 不允许只吐 warning；上面这些都必须 hard fail。
 
 - 构建通过
 - 新测试通过
-- 现有 `DualPadMenuContextPolicyTests` 不因为 facade 化而回归
+- 现有 menu policy focused 行为不因为 facade 化而回归；当前可运行覆盖以 `DualPadManifestCompilerTests` 为准
 - 插件启动时能在日志里明确看到
   - compile 成功
   - active bundle promote
@@ -651,8 +651,8 @@ validator 不允许只吐 warning；上面这些都必须 hard fail。
 ```powershell
 xmake build DualPadManifestCompilerTests
 xmake run DualPadManifestCompilerTests
-xmake build DualPadMenuContextPolicyTests
-xmake run DualPadMenuContextPolicyTests
+xmake build DualPadManifestCompilerTests
+xmake run DualPadManifestCompilerTests
 xmake build DualPad
 ```
 
@@ -699,9 +699,9 @@ xmake build DualPad
   - 通过
 - `xmake run DualPadManifestCompilerTests`
   - 通过
-- `xmake build DualPadMenuContextPolicyTests`
+- `xmake build DualPadManifestCompilerTests`
   - 通过
-- `xmake run DualPadMenuContextPolicyTests`
+- `xmake run DualPadManifestCompilerTests`
   - 通过
 - `xmake build DualPad`
   - 通过

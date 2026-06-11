@@ -18,18 +18,31 @@ U4 只关闭用户可见矩阵的解释和诊断缺口：
 | 分类 | 上下文 | 结论 |
 | --- | --- | --- |
 | inherited | `BarterMenu`、`Book`、`ContainerMenu`、`GiftMenu`、`InventoryMenu` 派生菜单、`MagicMenu`、`StatsMenu`、`TweenMenu` 等 | 从 `MenuBase` 或当前 action set stack 继承通用菜单行为；prompt resolve 可沿 scope anchor 做 `AncestorScope` fallback。 |
-| inherited gameplay substate | `Combat`、`Sneaking`、`Riding`、`VampireLord`、`Werewolf`、`Bleedout`、`Death`、`KillMove`、`Ragdoll` | 这些是 gameplay / substate context，不要求每个 context 自带 direct binding；runtime 仍从当前 stack 和 action graph 解析。 |
-| pass-through | unknown tracked / passthrough overlay | `unknown_menu_policy=passthrough` 时不抢占 gameplay owner，不发明 generic menu prompt。 |
+| inherited gameplay substate | `Combat`、`Sneaking`、`Riding`、`VampireLord`、`Werewolf`、`Bleedout`、`Death`、`KillMove`、`Ragdoll` | 这些是 gameplay / substate context，不要求每个 context 自带 direct binding；`Combat` 有 live detector，其余 substate 当前只作为 catalog / resolver / replay / legacy mirror 能力保留，进入实机 QA 前不得写成已证明的用户可见 live detector。 |
+| pass-through | passthrough overlay | live overlay 判定命中时不抢占 gameplay owner，不发明 generic menu prompt；`unknown_menu_policy=passthrough` 目前只作为 parsed metadata / QA required 字段保留。 |
 | ignored | `HUD Menu`、`Fader Menu`、`Cursor Menu`、`Mist Menu`、`Tutorial Menu`、`LoadWaitSpinner`、`TrueHUD` 等 | 明确由 ignore policy 排除，不进入 prompt / action ownership。 |
 | unsupported | repo 未拥有页面级 workspace 的特殊页面能力 | 例如 `FavoritesMenu` 的页面级 SWF patch workspace 未恢复；repo 只拥有当前 action / prompt contract，不声明页面级 broker 已恢复。 |
 | bug：当前无 | 当前无 | 当前 generated facts 中没有必须新增 direct binding 才能闭环的 bug 类缺口；后续若发现用户可见 wrong prompt，再单独开 blocker。 |
 
 ## unknown menu 与 ignored menu
 
-当前 checked-in policy 为 `unknown_menu_policy=passthrough`：
+当前 checked-in policy 仍生成 `unknown_menu_policy=passthrough` metadata，但文档必须区分 live implemented、parsed-only reserved 和 QA required：
 
-- 未知 overlay 不进入 generic `Menu`，不抢占 gameplay action owner。
-- `track` 仍可作为排查配置存在，但不是默认 release 行为。
+| 项 | 当前分类 | 说明 |
+| --- | --- | --- |
+| `unknown_menu_policy=passthrough` | parsed-only reserved / QA required | `LegacyIniImporter` 与 `ContextCatalog` 会解析并保存该字段；当前 live `MenuInstanceRegistry` 未读取 `unknownMenuPolicy`，未知菜单行为仍由 known menu、explicit `[Track]` key、ignore rules 与 overlay flags 决定。不得把该字段写成已证明的用户可见 runtime switch。 |
+| `[Track]` key-side menu name | live implemented | `MenuInstanceRegistry` 会用 `trackRules.contains(menuName)` 阻止该菜单被当作 passthrough overlay。 |
+| `[Track]` value-side context mapping | parsed-only reserved | `ContextCatalog` 会校验 target context；当前 `ContextResolver` 不读取该 target 值来改写 resolved context。 |
+| `log_unknown_menu_probe` / `log_unknown_menu_decision` | parsed-only reserved | 字段会解析到 metadata；当前 runtime 没有读取它们驱动 live logging。 |
+| ignored menu rules | live implemented | `ignoreRules.contains(menuName)` 直接进入 passthrough / ignored 路径，不发布新的 menu prompt scope。 |
+| `Combat` gameplay substate | live implemented | `TESCombatEvent` 经 `ContextEventSink -> ContextRefreshTick -> ContextResolver` 更新 combat context。 |
+| `Sneaking` / `Riding` / `Werewolf` / `VampireLord` / `Death` / `Bleedout` / `Ragdoll` / `KillMove` | QA required / reserved | catalog、resolver 与 replay 能表示这些 substate；除现有 legacy / replay 输入外，本轮不声明完整 live detector 已实机证明。 |
+| `FavoritesMenu` page workspace | non-restore workspace | 当前 repo 只拥有 generated action / prompt facts；页面级 SWF workspace 未恢复。 |
+
+因此：
+
+- 未知 overlay 不得被文档描述成一定会进入 generic `Menu`；当前 release 行为需要按 live `MenuInstanceRegistry` 条件解释。
+- `track` 仍可作为排查配置存在，但只有 key-side tracking 是 live 行为；value-side mapping 仍是 reserved。
 - ignored menu 命中后应保持 ignored：不发布新的 menu prompt scope，不制造 `MenuBase` fallback，不输出 dirty action。
 
 这些事实由 `docs/generated/policies_zh.md` 枚举，U4 static gate 会检查 `unknown_menu_policy=passthrough` 和关键 ignored menu marker。

@@ -19,7 +19,7 @@
 
 - `PH0` - `PH8b` 是已完成的 rearchitecture / closeout 链。
 - `DP1` - `DP4` 已按 PH8b baseline 结算为 completed，不再代表未完成 current runtime work。
-- `DP5` / `S-DP5` 仍是 post-closeout hardening backlog；DP5-RC20 issue 结构已建立，但它不阻塞 PH8b closeout，也不能重开 runtime mainline。
+- `DP5` / `S-DP5` 是 post-closeout hardening / RC readiness 记录面；DP5-RC20 U0-U5 已完成，它不阻塞 PH8b closeout，也不能重开 runtime mainline。
 
 ## PH8b Governance Closeout
 
@@ -35,7 +35,7 @@
 
 - `PH8b` / `S-PH8b` 已完成。
 - `DP1` - `DP4` 已同步结算为 `completed` / `passes=true`，避免与 `PH0` - `PH8b` closeout 形成第二状态口径。
-- `DP5` / `S-DP5` 保持 `planned`，但 DP5-RC20 U0 合同锁定已完成，U1-U5 后续按 GitHub issue 顺序推进。
+- `DP5` / `S-DP5` 保持 `planned`，但 DP5-RC20 U0-U5 closeout 已完成；后续 PR-A/B/C 是 RC evidence / field-readiness 修正，不是 U6。
 - `.dualpad-builder/feature_list.json` 中 `PH8b` 为 `completed` / `passes=true`。
 - `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 为 `completed`，`current_sprint=null`。
 - 本 closeout 不新增后续 runtime phase。
@@ -56,6 +56,8 @@
 - U3：product integration and release readiness 已通过 PR #19 合入 `main`；release readiness static gate、stale LKG fail-closed test、release notes 与 release artifact manifest generator 已接入。
 - U4：config / prompt / menu / glyph contract closure 已通过 PR #20 合入 `main`；zero-direct context 分类、unknown / ignored menu 行为、prompt fail-closed 矩阵和 glyph/icon contract 已冻结。
 - U5：verification / observability / governance closeout 已完成；RC readiness outer gate、real-game QA matrix、performance budget 与 debug snapshot/log surface 已收口。
+- PR-A/B1/B2/B3：RC evidence / field-readiness 修正已合入；远端 `phase8` 与 `rc-readiness` 对应 PR 均通过。
+- PR-C：文档合同卫生、死链和 stale-status cleanup；完成后最终 `main` head 需再次通过远端 `phase8` 与 `rc-readiness` 才能称为 `RC QA baseline`。
 
 硬边界：
 

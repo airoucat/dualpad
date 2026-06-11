@@ -641,13 +641,11 @@ value_or(InputContext::Menu)
 建议的构建与运行入口固定为：
 
 ```powershell
-xmake build DualPadMenuContextPolicyTests
-xmake run DualPadMenuContextPolicyTests
 xmake build DualPadContextResolverTests
 xmake run DualPadContextResolverTests
 ```
 
-其中 `DualPadContextResolverTests` 需要在 `xmake.lua` 中新增，包含：
+其中 `DualPadContextResolverTests` 已在 `xmake.lua` 中维护，包含：
 
 - `tests/input_v2/UiMenuObserverTests.cpp`
 - `tests/input_v2/MenuInstanceRegistryTests.cpp`
