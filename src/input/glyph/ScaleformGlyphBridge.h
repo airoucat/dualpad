@@ -17,6 +17,7 @@ namespace dualpad::input::glyph
 
         void RegisterInitialMenus();
         void OnMenuOpened(std::string_view menuName);
+        void OnMenuClosed(std::string_view menuName);
         GlyphResolutionCompatResult ReplayResolveActionGlyph(
             std::string_view actionId,
             std::string_view contextName);
