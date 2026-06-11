@@ -137,6 +137,11 @@ def main() -> int:
             "git\", \"diff\", \"--cached\", \"--quiet\", \"--",
         ],
     )
+    require_tokens(
+        failures,
+        "scripts/dev/setup_graphify_local.py",
+        ["graphifyy==0.4.14"],
+    )
 
     require_tokens(
         failures,

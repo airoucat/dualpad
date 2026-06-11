@@ -132,6 +132,9 @@ def main() -> int:
     ]:
         if marker not in rc_gate:
             failures.append(f"scripts/ci/run_rc_readiness.ps1: RC outer gate missing marker {marker}.")
+    graphify_setup = (ROOT / "scripts/dev/setup_graphify_local.py").read_text(encoding="utf-8")
+    if "graphifyy==0.4.14" not in graphify_setup:
+        failures.append("scripts/dev/setup_graphify_local.py: graphify install must stay pinned for clean CI runners.")
     u5_doc = (ROOT / "docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md").read_text(encoding="utf-8")
     for marker in ["Phase8 是 canonical base gate", "Real-game QA matrix", "Performance budget", "RuntimeDebugSnapshot"]:
         if marker not in u5_doc:

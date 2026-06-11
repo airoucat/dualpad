@@ -76,7 +76,7 @@ Command failures, exceptions, and unexpected behaviors.
 - Priority: medium
 - Status: resolved
 - Area: GitHub Actions / Python encoding / graphify
-- Summary: PR #22 `rc-readiness` failed on GitHub Windows runner because Python stdout used cp1252 while `setup_graphify_local.py` printed Chinese text.
-- Detail: The failure occurred after the RC gate had passed Phase8, replay diff, static gates, DInput8 proxy build, and release manifest generation. The graphify step imported `graphify`, fell back to the install path, then printing the Chinese install message raised `UnicodeEncodeError: 'charmap' codec can't encode characters`. Local runs did not reproduce because the local terminal accepted UTF-8 output.
+- Summary: PR #22 `rc-readiness` failed on GitHub Windows runner because the fresh graphify setup path was not deterministic.
+- Detail: The first failure occurred after the RC gate had passed Phase8, replay diff, static gates, DInput8 proxy build, and release manifest generation. The graphify step imported `graphify`, fell back to the install path, then printing the Chinese install message raised `UnicodeEncodeError: 'charmap' codec can't encode characters`. After forcing UTF-8, the next fresh runner installed `graphifyy 0.8.37`, but `import graphify` still failed. Local runs did not reproduce because the local environment had a working `graphifyy 0.4.14` install.
 - Related files: `scripts/ci/run_rc_readiness.ps1`, `scripts/dev/setup_graphify_local.py`
-- Resolution: Set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` in `scripts/ci/run_rc_readiness.ps1` before Python steps.
+- Resolution: Set `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` in `scripts/ci/run_rc_readiness.ps1`, then pinned `scripts/dev/setup_graphify_local.py` to install `graphifyy==0.4.14`.

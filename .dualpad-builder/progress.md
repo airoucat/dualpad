@@ -2537,3 +2537,14 @@
 - 待重新验证：
   - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR #22 `rc-readiness`。
+
+## 2026-06-12 01:45:00 CST
+
+- PR-A 远端验证第二次反馈：
+  - `PYTHONUTF8` / `PYTHONIOENCODING` 已解决 cp1252 编码异常。
+  - PR #22 `rc-readiness` 继续失败在 graphify rebuild step；失败根因变更为 fresh runner 自动安装 `graphifyy 0.8.37` 后仍无法 `import graphify`。
+  - 本机 `python -m pip show graphifyy` 显示当前可用版本为 `0.4.14`，且 `python -c "import importlib.util; ..."` 确认 `graphify` module 存在。
+  - 修复：`scripts/dev/setup_graphify_local.py` 将自动安装版本固定为 `graphifyy==0.4.14`，并把该 pin 纳入 RC static gate。
+- 待重新验证：
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。
