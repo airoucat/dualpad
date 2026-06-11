@@ -6,7 +6,9 @@
 
 - 无
 - `PH8b` 已完成；`PH0` - `PH8b` closeout 已收口。
-- `DP5-RC20` 已完成 U0 contract preflight；后续 U1-U5 只作为 post-closeout hardening / RC readiness 推进。
+- `DP5-RC20` U0-U5 已完成；后续为 RC evidence / field-readiness fixes 与实机 QA，不是新 runtime phase。
+- `PR-A`、`PR-B1`、`PR-B2`、`PR-B3` 已合入；`PR-C` 只修正文档合同卫生、死链和状态滞后。
+- 最终 `main` head 同时通过远端 `phase8` 与 `rc-readiness` 后，才可称为 `RC QA baseline`。
 - runtime closeout：`PH8a` 已完成，`PH8b` 不重开 runtime 主线归属。
 - 不新增后续 runtime phase。
 

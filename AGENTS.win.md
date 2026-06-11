@@ -31,8 +31,12 @@ This file is for machine-specific context on this Windows machine and is intenti
 ## Recommended Commands For This Repo
 
 - `xmake build DualPad`
-- `xmake build DualPadMenuContextPolicyTests`
-- `xmake run DualPadMenuContextPolicyTests`
+- `xmake build -y DualPadManifestCompilerTests`
+- `xmake run -y DualPadManifestCompilerTests`
+- `xmake build -y DualPadInputV2Tests`
+- `xmake run -y DualPadInputV2Tests`
+- `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`
+- `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`
 - `python3 scripts/dev/setup_graphify_local.py`
 - `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`
 

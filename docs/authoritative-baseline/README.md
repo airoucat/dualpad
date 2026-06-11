@@ -11,14 +11,16 @@
 
 它不替代 `README.md`、`src/ARCHITECTURE.md`、`docs/DOC_INDEX_zh.md` 或 generated facts。
 
-## 当前工作路（2026-06-04）
+## 当前工作路（2026-06-12）
 
 - 当前活跃 Sprint：无
-- 当前直接焦点：`DP5-RC20` 已完成 U0 contract preflight，后续按 U1-U5 issue 顺序推进。
+- 当前直接焦点：`DP5-RC20` U0-U5 已完成；后续为 RC evidence / field-readiness fixes 与实机 QA，不是新 runtime phase。
 - 已完成阶段：`PH0` - `PH8b`
 - 当前边界：
   - `PH8a` 已完成 runtime closeout；`PH8b` 不负责 runtime 主线裁决。
   - `DP5-RC20` 是 post-closeout hardening / RC readiness，不是新的 runtime phase。
+  - `PR-A`、`PR-B1`、`PR-B2`、`PR-B3` 已合入；`PR-C` 只收口文档合同卫生、死链和状态滞后。
+  - 只有最终 `main` head 同时通过远端 `phase8` 与 `rc-readiness` 后，才可称为 `RC QA baseline`。
   - generated facts 只能放在 `docs/generated/`。
   - reviewed docs 只保留 narrative。
   - 默认 CI 必须直接引用同名 canonical targets。

@@ -655,8 +655,8 @@ Phase 3 向后续 slice 固定交接两条独立 published seam：
 
 ```powershell
 xmake build DualPad
-xmake build DualPadMenuContextPolicyTests
-xmake run DualPadMenuContextPolicyTests
+xmake build DualPadPresentationProjectionTests
+xmake run DualPadPresentationProjectionTests
 ```
 
 若 Phase 0 的 replay harness 已落地，必须回放至少 4 条资产：

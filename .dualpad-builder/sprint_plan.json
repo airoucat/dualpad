@@ -223,8 +223,6 @@
       "verification": [
         "xmake build DualPadManifestCompilerTests",
         "xmake run DualPadManifestCompilerTests",
-        "xmake build DualPadMenuContextPolicyTests",
-        "xmake run DualPadMenuContextPolicyTests",
         "xmake build DualPad",
         "xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher",
         "python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher",
@@ -488,7 +486,7 @@
       "exit_criteria": [
         "只做 DP5-RC20 post-closeout governance / validation / reporting hardening，不重开 runtime mainline",
         "不改 canonical target 名称、replay root、旧 SWF 返回 shape或 input_v2 runtime 合同",
-        "U0-U5 已按 issue 顺序分 slice 推进；DP5-RC20 closeout 记录必须保留 progress start / verification / closeout"
+        "U0-U5 已完成；DP5-RC20 closeout 记录保留 progress start / verification / closeout，PR-A/B1/B2/B3/C 只作为 RC evidence / field-readiness 修正"
       ],
       "verification": [
         "U0: docs/authoritative-baseline/dp5_rc20_contract_zh.md 已新增并从 authoritative baseline / DOC index 接入",
@@ -498,7 +496,9 @@
         "U3: product integration and release readiness 必须通过 DualPadManifestCompilerTests、scripts/ci/check_release_readiness.py、Phase 8 CI、DualPadDInput8Proxy build、release artifact manifest generation、replay diff、builder JSON、reviewed/generated docs consistency、legacy authority boundary check、graphify rebuild 与 git diff --check",
         "U4: config / prompt / menu / glyph contract closure 已通过 DualPadPromptSnapshotTests、DualPadManifestCompilerTests、scripts/ci/check_config_prompt_menu_glyph_closure.py、Phase 8 CI、replay diff、reviewed/generated docs consistency、builder JSON、legacy authority boundary check、graphify rebuild 与 git diff --check",
         "U5: verification / observability / governance closeout 必须通过 scripts/ci/run_phase8_ci.ps1、scripts/ci/run_rc_readiness.ps1、scripts/ci/check_rc_readiness_closeout.py、replay diff、builder JSON、reviewed/generated docs consistency、legacy boundary、release readiness、U4 contract gate、release artifact manifest generation、graphify rebuild 与 git diff --check",
-        "PR-A: RC evidence 修正必须让 GitHub Actions 同时暴露 phase8 与 rc-readiness job，Phase8 必须构建/运行 DualPadManifestCompilerTests，release artifact manifest 必须使用 DP5-RC20 通用名称并覆盖 U3/U4/U5 reviewed docs"
+        "PR-A: RC evidence 修正已让 GitHub Actions 同时暴露 phase8 与 rc-readiness job，Phase8 构建/运行 DualPadManifestCompilerTests，release artifact manifest 使用 DP5-RC20 通用名称并覆盖 U3/U4/U5 reviewed docs",
+        "PR-B1/B2/B3: menu glyph reattach、upstream route health fail-closed 与 broken INI fail-closed 已合入，并通过远端 phase8 / rc-readiness",
+        "PR-C: documentation contract hygiene 必须通过 docs consistency、U4/U5 gates、builder JSON 与 git diff --check；PR-C 合入后最终 main head 仍需通过远端 phase8 / rc-readiness 才能称为 RC QA baseline"
       ]
     }
   ]

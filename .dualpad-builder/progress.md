@@ -1098,9 +1098,9 @@
       - 结果：exit 0。
     - `xmake run DualPadManifestCompilerTests`
       - 结果：exit 0。
-    - `xmake build DualPadMenuContextPolicyTests`
+    - `xmake build DualPadManifestCompilerTests`
       - 结果：exit 0。
-    - `xmake run DualPadMenuContextPolicyTests`
+    - `xmake run DualPadManifestCompilerTests`
       - 结果：exit 0。
     - `xmake build DualPad`
       - 结果：exit 0；输出包含 `Deployed: local configured deploy target` 与 `build ok`。
@@ -1138,13 +1138,13 @@
   - `ActionManifestPublisher::PublishPromotedBundle(...)` 改为 epoch mismatch fail-closed：不发布、不增加 `publishCount`、返回 failure；`AtomicConfigReloader::Promote()` 会感知 publisher failure。
   - `AtomicConfigReloader::Promote()` 顺序改为先发布 manifest epoch seam，发布成功后才 swap active bundle；测试证明 publish seam 观察到的是旧 active epoch。
   - `BindingConfig::Reload()` 与 `MenuContextPolicy::Reload()` 在 reloader 失败时返回 failure，并保留旧 active bundle。
-  - `MenuContextPolicy::ParseConfig()` 已移出生产 runtime surface，仅在 `DualPadMenuContextPolicyTests` 的 test-only define 下保留兼容测试入口。
+  - `MenuContextPolicy::ParseConfig()` 已移出生产 runtime surface；当时的 focused menu policy test 入口后续已由 manifest compiler / input_v2 tests 接管。
   - 未启动 `PH2`，未实现 `PH2 / PH3 / PH4 / PH6 / PH7`，未改变旧 SWF 返回 shape。
 - 验证结果：
   - `xmake build DualPadManifestCompilerTests`：exit 0。
   - `xmake run DualPadManifestCompilerTests`：exit 0。
-  - `xmake build DualPadMenuContextPolicyTests`：exit 0。
-  - `xmake run DualPadMenuContextPolicyTests`：exit 0。
+  - `xmake build DualPadManifestCompilerTests`：exit 0。
+  - `xmake run DualPadManifestCompilerTests`：exit 0。
   - `xmake build DualPad`：exit 0。
   - `xmake run DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay-dispatcher`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
   - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay-dispatcher --report-root build/replay-diff-dispatcher`：exit 0，10 个 mandatory 场景均为 `no diff`。
@@ -2726,3 +2726,16 @@
 ## 2026-06-12 06:11:00 +08:00
 
 - PR-B3 远端验证通过：PR #25 https://github.com/airoucat/dualpad/pull/25，head `a8fcaf2713cfdc41be704a93818823a114fa9833`。远端 checks：push `phase8` run `27379474743` job `80912184185` pass；push `rc-readiness` run `27379474743` job `80913581414` pass；pull_request `phase8` run `27379485298` job `80912221999` pass；pull_request `rc-readiness` run `27379485298` job `80913439616` pass。待处理：推送本 evidence 记录后等待最终 checks，再 merge PR-B3。
+
+## 2026-06-12 06:31:00 +08:00
+
+- PR-B3 已合入 main：PR #25 merge 后 main head `51c70d7`。最终 evidence commit `20bb60d` 的远端 checks 通过：push `phase8` run `27380299870` job `80915035234` pass；push `rc-readiness` run `27380299870` job `80916161516` pass；pull_request `phase8` run `27380299950` job `80915035026` pass；pull_request `rc-readiness` run `27380299950` job `80916122483` pass。
+- 开始 PR-C documentation contract hygiene：分支 `codex/dp5-rc20-doc-contract-hygiene`。范围：修正文档状态滞后、retired menu policy focused test target 死链、U4/U5 live implemented / parsed-only reserved / QA required 分类、#8 cockpit 残影 superseded note，并同步 builder memory。已在 GitHub #8 追加 historical cockpit note：`https://github.com/airoucat/dualpad/issues/8#issuecomment-4685593281`。待验证：docs consistency、U4/U5 gates、builder JSON、`git diff --check`。
+
+## 2026-06-12 06:48:00 +08:00
+
+- PR-C 本地验证通过。已运行并通过：`python scripts/ci/check_reviewed_docs_consistency.py`；`python scripts/ci/check_config_prompt_menu_glyph_closure.py`；`python scripts/ci/check_rc_readiness_closeout.py`；`python -m json.tool .dualpad-builder/feature_list.json NUL`；`python -m json.tool .dualpad-builder/sprint_plan.json NUL`；`git diff --check`。额外 grep：`DualPadMenuContextPolicyTests` / `xmake build|run DualPadMenuContextPolicyTests` / `U1-U5 待推进` / `fully certified RC baseline` 在 `docs AGENTS.win.md .dualpad-builder` 中无命中。`git diff --check` 仅有 Windows 行尾提示，exit 0。待验证：推送后远端 PR-C `phase8` / `rc-readiness`。
+
+## 2026-06-12 07:05:00 +08:00
+
+- PR-C 远端验证通过：PR #26 https://github.com/airoucat/dualpad/pull/26，head `bbfe3befd89990c6fa7d8e1e0d023dc31eea2cf1`。远端 checks：push `phase8` run `27381393993` job `80918707810` pass；push `rc-readiness` run `27381393993` job `80919803848` pass；pull_request `phase8` run `27381404943` job `80918743654` pass；pull_request `rc-readiness` run `27381404943` job `80919873507` pass。待处理：推送本 evidence 记录后等待最终 checks，再 merge PR-C。

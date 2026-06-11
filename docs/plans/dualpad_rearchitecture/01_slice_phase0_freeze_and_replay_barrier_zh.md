@@ -110,7 +110,7 @@
 - 如需历史背景或比对拆分前总纲，再额外回看 `docs/plans/dualpad_rearchitecture/README_zh.md` 与 `dualpad_rearchitecture_plan_zh.md`；它们不是本 slice 的 current truth 输入。
 - 实现本 slice 前，先在 `.dualpad-builder/progress.md` 追加一条 “Phase 0 start” 记录；结束时再追加 “Phase 0 done / blocked” 记录。
 - `Phase 0` 开工前，必须先完成 builder memory 里登记的 `DP1a Route-health contract freeze` 与 `DP4a Glyph compat diagnostics freeze`；不得在 replay barrier 里临时拍板 route hierarchy 或 glyph diagnostics exposure layer。
-- 当前 repo 已存在 focused tests：`DualPadMenuContextPolicyTests`、`DualPadRouteHealthContractTests`、`DualPadGlyphResolutionCompatTests`；但仍没有独立 replay harness target。Phase 0 必须新增 replay target，不能把这些 focused tests 当成 replay harness 替代。
+- 当前 repo 当时已有若干 focused tests（menu policy、route health、glyph compat）；但仍没有独立 replay harness target。Phase 0 必须新增 replay target，不能把这些 focused tests 当成 replay harness 替代。当前可运行目标以 `DualPadManifestCompilerTests`、`DualPadInputV2Tests`、`DualPadRouteHealthContractTests` 与 `DualPadPromptSnapshotTests` 为准。
 - `keyboard helper` 相关场景要求本机能跑：
   - `xmake build DualPad`
   - `xmake build DualPadDInput8Proxy`

@@ -73,7 +73,7 @@
 - 当前 repo-owned 动态图标 surface 固定为 `ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService` 兼容路径；
   `ScaleformGlyphBridge` 与 `GlyphResolutionCompat` 不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority。
 - `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，不新增后续 runtime phase。
-- `DP5` / `S-DP5` 是 planned post-closeout validation / governance hardening，不是新的 runtime phase。
+- `DP5` / `S-DP5` 已完成 U0-U5 closeout；后续 RC evidence / field-readiness fixes 与实机 QA 仍不是新的 runtime phase。
 - `FavoritesMenu` 页面级改造必须先恢复 workspace，再谈实现。
 - 机器私有路径、Skyrim 实例路径和外部 live artifact 路径只写到 `AGENTS.win.md` / `AGENTS.mac.md`
 - 共享文档一律使用 repo-relative 路径，不写机器私有绝对路径
@@ -84,11 +84,14 @@ PH8b 之后的默认验证入口固定为：
 
 - `scripts/ci/run_phase8_ci.ps1`
 - `.github/workflows/dualpad-ci.yml`
+- `scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest` 作为 RC outer gate；远端 `rc-readiness` 必须 `needs: phase8`。
 
 默认 CI 必须直接引用同名 canonical runtime targets：
 
 - `DualPadReplayTests`
 - `DualPadInputV2Tests`
+- `DualPadManifestCompilerTests`
+- `DualPadRouteHealthContractTests`
 - `DualPadIngressTests`
 - `DualPadPromptSnapshotTests`
 - `DualPadPropertyTests`
