@@ -2651,3 +2651,17 @@
   - 本地 RC closeout static gate。
   - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 04:20:00 CST
+
+- PR-A 本地与远端验证：
+  - Head commit: `3ec972a`。
+  - 本地 `GITHUB_ACTIONS=true powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：exit 0；覆盖 Phase8、`DualPadManifestCompilerTests`、phase0 dispatcher replay 10 个 scenario `no diff`、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 closure、U5 RC closeout static gate、`DualPadDInput8Proxy` build、CI-only `xmake-requires.lock` diff/restore branch、`DP5-RC20-release-artifact-manifest.{json,md}` clean manifest check、graphify manual-closeout rebuild 与 `git diff --check`。
+  - PR #22 push trigger:
+    - `phase8`：pass，run `27373380388` job `80891206892`，`https://github.com/airoucat/dualpad/actions/runs/27373380388/job/80891206892`。
+    - `rc-readiness`：pass，run `27373380388` job `80892656631`，`https://github.com/airoucat/dualpad/actions/runs/27373380388/job/80892656631`。
+  - PR #22 pull_request trigger:
+    - `phase8`：pass，run `27373385092` job `80891224204`，`https://github.com/airoucat/dualpad/actions/runs/27373385092/job/80891224204`。
+    - `rc-readiness`：pass，run `27373385092` job `80892545879`，`https://github.com/airoucat/dualpad/actions/runs/27373385092/job/80892545879`。
+- 备注：
+  - 本条为 evidence-only progress 更新；推送后需确认最后一轮 PR #22 checks 仍为 green。
