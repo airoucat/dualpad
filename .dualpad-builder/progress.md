@@ -2567,3 +2567,15 @@
 - 待重新验证：
   - 本条 progress-only commit 后再运行一次同一 RC gate。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 02:30:00 CST
+
+- PR-A 远端验证：
+  - PR: `https://github.com/airoucat/dualpad/pull/22`
+  - Head commit: `199f391`
+  - `phase8`：pass，run `27367759219` job `80871672853`，`https://github.com/airoucat/dualpad/actions/runs/27367759219/job/80871672853`。
+  - `phase8`：pass，run `27367760931` job `80871680129`，`https://github.com/airoucat/dualpad/actions/runs/27367760931/job/80871680129`。
+  - `rc-readiness`：pass，run `27367759219` job `80873536204`，`https://github.com/airoucat/dualpad/actions/runs/27367759219/job/80873536204`。
+  - `rc-readiness`：pass，run `27367760931` job `80873236896`，`https://github.com/airoucat/dualpad/actions/runs/27367760931/job/80873236896`。
+- 备注：
+  - 两组 check 来自 PR push / pull_request 触发；均为远端可见绿色。
