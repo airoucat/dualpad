@@ -91,3 +91,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: The pull_request merge-ref job failed during `xmake build -y DualPad` while updating package repositories. The log showed xmake cloning from `https://gitee.com/tboox/xmake-repo.git`, then Git Credential Manager could not prompt on the noninteractive runner and failed with `fatal: could not read Username for 'https://gitee.com'`. A branch-trigger job for the same head passed, confirming the first failure was mirror/source selection rather than runtime or graphify logic. After rewriting the mirror URLs, both remote `rc-readiness` jobs advanced further but failed at `generate_release_artifact_manifest.py --expect-clean` because the workflow used floating `xmake-version: latest`, which resolved to xmake 3.0.9 and rewrote `xmake-requires.lock` on the fresh runner.
 - Related files: `.github/workflows/dualpad-ci.yml`, `xmake-requires.lock`, `scripts/ci/check_rc_readiness_closeout.py`
 - Resolution: Rewrote all xmake-repo URLs in `xmake-requires.lock` to `https://github.com/xmake-io/xmake-repo.git`, pinned both GitHub Actions xmake setup steps to `xmake-version: 3.0.7`, and added RC closeout static checks that reject gitee/gitcode mirrors and floating xmake versions.
+
+## ERR-20260612-004
+
+- Logged: 2026-06-12 03:35 CST
+- Priority: medium
+- Status: resolved
+- Area: GitHub Actions / Windows line endings / release manifest gate
+- Summary: PR #22 `rc-readiness` still failed after pinning xmake because generated docs and the xmake lockfile had no repository EOL contract.
+- Detail: GitHub Windows runners checked out/generated `docs/generated/*.md` with CRLF working-tree endings. Phase8's path-scoped generated-doc diff emitted only line-ending warnings, but the later release manifest clean check used a full tracked-content dirty check and failed. `xmake-requires.lock` also emitted the same line-ending warning, making the dirty source ambiguous without better diagnostics.
+- Related files: `.gitattributes`, `scripts/dev/generate_release_artifact_manifest.py`, `scripts/ci/check_rc_readiness_closeout.py`, `.dualpad-builder/progress.md`
+- Resolution: Added `.gitattributes` entries for `docs/generated/*.md text eol=lf` and `xmake-requires.lock text eol=lf`, added manifest dirty-file reporting, and required those contracts in the RC closeout static gate.

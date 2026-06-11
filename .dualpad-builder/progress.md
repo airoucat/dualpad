@@ -2606,3 +2606,17 @@
   - 本地 RC closeout static gate。
   - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 03:35:00 CST
+
+- PR-A 远端验证第六次反馈：
+  - `xmake-version: 3.0.7` 已在两套 GitHub Actions job 中生效；失败不再来自 floating xmake 版本。
+  - 两套 `rc-readiness` 仍在 release manifest `--expect-clean` 处失败：
+    - run `27371055936` job `80884548738`，`https://github.com/airoucat/dualpad/actions/runs/27371055936/job/80884548738`。
+    - run `27371054532` job `80884746721`，`https://github.com/airoucat/dualpad/actions/runs/27371054532/job/80884746721`。
+  - 日志显示 Phase8 的 DocGen 通过 `git diff --exit-code -- docs/generated`，但随后全仓库 clean manifest check 看到 `docs/generated/*.md` 与 `xmake-requires.lock` 的 Windows 行尾告警，并判定 tracked working tree dirty。
+  - 修复：新增 `.gitattributes`，将 `docs/generated/*.md` 与 `xmake-requires.lock` 固定为 `text eol=lf`；同时增强 release manifest dirty 诊断，失败时输出具体 dirty tracked file，并把 EOL 合同纳入 U5 static gate。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。

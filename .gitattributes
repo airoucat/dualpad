@@ -1,0 +1,3 @@
+# Keep RC gate inputs and generated verification docs stable on Windows runners.
+docs/generated/*.md text eol=lf
+xmake-requires.lock text eol=lf

@@ -129,6 +129,15 @@ def main() -> int:
 
     require_tokens(
         failures,
+        ".gitattributes",
+        [
+            "docs/generated/*.md text eol=lf",
+            "xmake-requires.lock text eol=lf",
+        ],
+    )
+
+    require_tokens(
+        failures,
         "scripts/dev/generate_release_artifact_manifest.py",
         [
             "DP5-RC20-release-artifact-manifest.json",
@@ -137,6 +146,8 @@ def main() -> int:
             "docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md",
             "git\", \"diff\", \"--quiet\", \"--",
             "git\", \"diff\", \"--cached\", \"--quiet\", \"--",
+            "diff\", \"--name-status\", \"--",
+            "trackedWorkingTreeDirtyFiles",
         ],
     )
     require_tokens(

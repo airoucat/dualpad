@@ -58,6 +58,18 @@ def tracked_content_dirty() -> bool:
     return worktree.returncode != 0 or index.returncode != 0
 
 
+def tracked_content_dirty_files() -> list[str]:
+    paths: list[str] = []
+    for args in [
+        ["diff", "--name-status", "--"],
+        ["diff", "--cached", "--name-status", "--"],
+    ]:
+        output = run_git(args)
+        if output:
+            paths.extend(line for line in output.splitlines() if line)
+    return paths
+
+
 def sha256(path: pathlib.Path) -> str | None:
     full = ROOT / path
     if not full.is_file():
@@ -97,6 +109,7 @@ def manifest() -> dict[str, Any]:
     commit = run_git(["rev-parse", "HEAD"])
     branch = run_git(["branch", "--show-current"])
     dirty = tracked_content_dirty()
+    dirty_files = tracked_content_dirty_files() if dirty else []
 
     files = []
     files.extend(collect_runtime_artifacts())
@@ -113,6 +126,7 @@ def manifest() -> dict[str, Any]:
             "commit": commit,
             "branch": branch,
             "trackedWorkingTreeDirty": dirty,
+            "trackedWorkingTreeDirtyFiles": dirty_files,
         },
         "support": {
             "supportedRuntime": "Skyrim SE 1.5.97",
@@ -223,6 +237,8 @@ def main() -> int:
 
     if args.expect_clean and data["source"]["trackedWorkingTreeDirty"]:
         failures.append("tracked working tree is dirty")
+        for path in data["source"]["trackedWorkingTreeDirtyFiles"]:
+            failures.append(f"dirty tracked file: {path}")
 
     if args.require_build_artifacts:
         for item in data["files"]:
