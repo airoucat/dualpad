@@ -2634,3 +2634,20 @@
 - 待重新验证：
   - 本条 progress-only commit 后再运行一次同一 RC gate。
   - 推送后远端 PR #22 `phase8` / `rc-readiness`。
+
+## 2026-06-12 04:05:00 CST
+
+- PR-A 远端验证第七次反馈：
+  - Head commit: `25b708f`。
+  - 两套 `phase8` 均通过：
+    - run `27372313050` job `80887493865`。
+    - run `27372314562` job `80887499118`。
+  - 两套 `rc-readiness` 仍在 release manifest `--expect-clean` 处失败：
+    - run `27372313050` job `80888666639`。
+    - run `27372314562` job `80888783940`。
+  - 新增诊断确认 `docs/generated` 已不再 dirty；唯一 dirty tracked file 是 `xmake-requires.lock`。这说明 `.gitattributes` 修复了 DocGen 行尾问题，剩余问题是 GitHub fresh runner 上 xmake 构建过程刷新 lockfile。
+  - 修复：`scripts/ci/run_rc_readiness.ps1` 在 GitHub Actions 环境中、release manifest clean check 前打印 `xmake-requires.lock` diff 并恢复该文件，避免构建工具自动刷新污染 source-binding manifest；本地运行不自动 restore，避免误删开发者未提交的 lockfile 修改。同时 release manifest 失败诊断扩展为输出 dirty file 的实际 diff。
+- 待重新验证：
+  - 本地 RC closeout static gate。
+  - 本地 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR #22 `phase8` / `rc-readiness`。

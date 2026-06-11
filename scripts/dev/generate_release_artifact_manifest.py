@@ -49,7 +49,13 @@ REVIEWED_RELEASE_DOCS = [
 
 
 def run_git(args: list[str]) -> str:
-    return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
+    return subprocess.check_output(
+        ["git", *args],
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    ).strip()
 
 
 def tracked_content_dirty() -> bool:
@@ -67,6 +73,26 @@ def tracked_content_dirty_files() -> list[str]:
         output = run_git(args)
         if output:
             paths.extend(line for line in output.splitlines() if line)
+    return paths
+
+
+def tracked_content_dirty_diff() -> str:
+    paths = tracked_content_dirty_file_paths()
+    if not paths:
+        return ""
+    diffs = [
+        run_git(["diff", "--", *paths]),
+        run_git(["diff", "--cached", "--", *paths]),
+    ]
+    return "\n".join(diff for diff in diffs if diff)
+
+
+def tracked_content_dirty_file_paths() -> list[str]:
+    paths: list[str] = []
+    for line in tracked_content_dirty_files():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            paths.append(parts[-1])
     return paths
 
 
@@ -239,6 +265,10 @@ def main() -> int:
         failures.append("tracked working tree is dirty")
         for path in data["source"]["trackedWorkingTreeDirtyFiles"]:
             failures.append(f"dirty tracked file: {path}")
+        dirty_diff = tracked_content_dirty_diff()
+        if dirty_diff:
+            failures.append("tracked working tree diff:")
+            failures.extend(dirty_diff.splitlines())
 
     if args.require_build_artifacts:
         for item in data["files"]:

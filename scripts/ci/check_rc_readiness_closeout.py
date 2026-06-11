@@ -90,6 +90,9 @@ def main() -> int:
             "scripts/dev/generate_release_artifact_manifest.py",
             "--require-build-artifacts",
             "--expect-clean",
+            "GITHUB_ACTIONS",
+            "xmake-requires.lock",
+            "restore",
             "PYTHONUTF8",
             "PYTHONIOENCODING",
             "scripts/dev/setup_graphify_local.py",
@@ -147,6 +150,7 @@ def main() -> int:
             "git\", \"diff\", \"--quiet\", \"--",
             "git\", \"diff\", \"--cached\", \"--quiet\", \"--",
             "diff\", \"--name-status\", \"--",
+            "tracked_content_dirty_diff",
             "trackedWorkingTreeDirtyFiles",
         ],
     )
