@@ -2735,3 +2735,7 @@
 ## 2026-06-12 06:48:00 +08:00
 
 - PR-C 本地验证通过。已运行并通过：`python scripts/ci/check_reviewed_docs_consistency.py`；`python scripts/ci/check_config_prompt_menu_glyph_closure.py`；`python scripts/ci/check_rc_readiness_closeout.py`；`python -m json.tool .dualpad-builder/feature_list.json NUL`；`python -m json.tool .dualpad-builder/sprint_plan.json NUL`；`git diff --check`。额外 grep：`DualPadMenuContextPolicyTests` / `xmake build|run DualPadMenuContextPolicyTests` / `U1-U5 待推进` / `fully certified RC baseline` 在 `docs AGENTS.win.md .dualpad-builder` 中无命中。`git diff --check` 仅有 Windows 行尾提示，exit 0。待验证：推送后远端 PR-C `phase8` / `rc-readiness`。
+
+## 2026-06-12 07:05:00 +08:00
+
+- PR-C 远端验证通过：PR #26 https://github.com/airoucat/dualpad/pull/26，head `bbfe3befd89990c6fa7d8e1e0d023dc31eea2cf1`。远端 checks：push `phase8` run `27381393993` job `80918707810` pass；push `rc-readiness` run `27381393993` job `80919803848` pass；pull_request `phase8` run `27381404943` job `80918743654` pass；pull_request `rc-readiness` run `27381404943` job `80919873507` pass。待处理：推送本 evidence 记录后等待最终 checks，再 merge PR-C。
