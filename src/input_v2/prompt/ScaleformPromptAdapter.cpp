@@ -83,6 +83,16 @@ namespace dualpad::input_v2::prompt
         }
     }
 
+    void ScaleformPromptAdapter::OnMenuClosed(std::string_view menuName)
+    {
+        const auto menu = std::string(menuName);
+        std::scoped_lock lock(_mutex);
+        const auto removed = _registeredDelegatesByMenu.erase(menu);
+        if (removed != 0) {
+            logger::info("[DualPad][PromptAdapter] Cleared GameDelegate prompt handler record for {}", menu);
+        }
+    }
+
     std::string ScaleformPromptAdapter::ResolveLegacyGlyphTokenForRuntime(
         std::string_view actionId,
         std::string_view contextName)
@@ -222,13 +232,15 @@ namespace dualpad::input_v2::prompt
         }
 
         const auto delegateKey = reinterpret_cast<std::uintptr_t>(menu->fxDelegate.get());
+        const auto menuKey = std::string(menuName);
         {
             std::scoped_lock lock(_mutex);
-            if (_registeredDelegates.contains(delegateKey)) {
+            const auto registered = _registeredDelegatesByMenu.find(menuKey);
+            if (registered != _registeredDelegatesByMenu.end() && registered->second == delegateKey) {
                 return true;
             }
             menu->fxDelegate->RegisterHandler(this);
-            _registeredDelegates.insert(delegateKey);
+            _registeredDelegatesByMenu[menuKey] = delegateKey;
         }
 
         logger::info("[DualPad][PromptAdapter] Registered GameDelegate prompt handler for {}", menuName);

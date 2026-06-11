@@ -7,7 +7,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <unordered_set>
+#include <unordered_map>
 
 namespace dualpad::input::glyph
 {
@@ -23,6 +23,7 @@ namespace dualpad::input_v2::prompt
 
         void RegisterInitialMenus();
         void OnMenuOpened(std::string_view menuName);
+        void OnMenuClosed(std::string_view menuName);
 
         [[nodiscard]] std::string ResolveLegacyGlyphTokenForRuntime(
             std::string_view actionId,
@@ -45,6 +46,6 @@ namespace dualpad::input_v2::prompt
         bool AttachToMenu(std::string_view menuName);
 
         std::mutex _mutex;
-        std::unordered_set<std::uintptr_t> _registeredDelegates;
+        std::unordered_map<std::string, std::uintptr_t> _registeredDelegatesByMenu;
     };
 }

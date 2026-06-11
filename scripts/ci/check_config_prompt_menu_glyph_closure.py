@@ -141,6 +141,43 @@ def main() -> int:
     if "scripts/ci/check_config_prompt_menu_glyph_closure.py" not in reviewed_lint:
         failures.append("scripts/ci/check_reviewed_docs_consistency.py: reviewed docs lint must require the U4 closure check.")
 
+    context_event_sink = read("src/input/ContextEventSink.cpp")
+    for marker in [
+        "ScaleformGlyphBridge::GetSingleton",
+        "glyphBridge.OnMenuOpened",
+        "glyphBridge.OnMenuClosed",
+    ]:
+        if marker not in context_event_sink:
+            failures.append(f"src/input/ContextEventSink.cpp: missing menu glyph lifecycle marker {marker!r}.")
+
+    scaleform_bridge_h = read("src/input/glyph/ScaleformGlyphBridge.h")
+    scaleform_bridge_cpp = read("src/input/glyph/ScaleformGlyphBridge.cpp")
+    for relative, text in [
+        ("src/input/glyph/ScaleformGlyphBridge.h", scaleform_bridge_h),
+        ("src/input/glyph/ScaleformGlyphBridge.cpp", scaleform_bridge_cpp),
+    ]:
+        if "OnMenuClosed" not in text:
+            failures.append(f"{relative}: missing OnMenuClosed forwarding surface.")
+
+    scaleform_adapter_h = read("src/input_v2/prompt/ScaleformPromptAdapter.h")
+    scaleform_adapter_cpp = read("src/input_v2/prompt/ScaleformPromptAdapter.cpp")
+    for marker in [
+        "OnMenuClosed",
+        "_registeredDelegatesByMenu",
+        "std::unordered_map<std::string, std::uintptr_t>",
+    ]:
+        if marker not in scaleform_adapter_h:
+            failures.append(f"src/input_v2/prompt/ScaleformPromptAdapter.h: missing per-menu delegate marker {marker!r}.")
+    for marker in [
+        "_registeredDelegatesByMenu.find(menuKey)",
+        "_registeredDelegatesByMenu.erase(menu)",
+        "_registeredDelegatesByMenu[menuKey] = delegateKey",
+    ]:
+        if marker not in scaleform_adapter_cpp:
+            failures.append(f"src/input_v2/prompt/ScaleformPromptAdapter.cpp: missing per-menu delegate lifecycle marker {marker!r}.")
+    if "_registeredDelegates.contains(delegateKey)" in scaleform_adapter_cpp:
+        failures.append("src/input_v2/prompt/ScaleformPromptAdapter.cpp: must not use a global delegate pointer set as the only reattach guard.")
+
     if failures:
         print("config/prompt/menu/glyph closure check failed:")
         for failure in failures:

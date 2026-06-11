@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "input/ContextEventSink.h"
+#include "input/glyph/ScaleformGlyphBridge.h"
 #include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/menu/UiMenuObserver.h"
 
@@ -67,6 +68,14 @@ namespace dualpad::input
 
         auto& observer = dualpad::input_v2::menu::UiMenuObserver::GetSingleton();
         observer.MarkMenuEvent(event->menuName.c_str(), event->opening);
+
+        auto& glyphBridge = dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton();
+        if (event->opening) {
+            glyphBridge.OnMenuOpened(event->menuName.c_str());
+        }
+        else {
+            glyphBridge.OnMenuClosed(event->menuName.c_str());
+        }
 
         return RE::BSEventNotifyControl::kContinue;
     }

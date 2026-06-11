@@ -2665,3 +2665,31 @@
     - `rc-readiness`：pass，run `27373385092` job `80892545879`，`https://github.com/airoucat/dualpad/actions/runs/27373385092/job/80892545879`。
 - 备注：
   - 本条为 evidence-only progress 更新；推送后需确认最后一轮 PR #22 checks 仍为 green。
+
+## 2026-06-12 04:35:00 CST
+
+- PR-B1 start：MainMenu / menu glyph delegate reattach fix。
+- 分支：`codex/dp5-rc20-menu-glyph-reattach-fix`，从 PR-A merge 后的 `main` 创建。
+- 范围：
+  - `ContextEventSink` 在 `MenuOpenCloseEvent` 后通知 `ScaleformGlyphBridge::OnMenuOpened` / `OnMenuClosed`。
+  - `ScaleformGlyphBridge` 继续仅作为 facade 转发到 `ScaleformPromptAdapter`。
+  - `ScaleformPromptAdapter` 将 delegate 注册记录改为 per-menu pointer map，菜单关闭时只清理记录，不访问旧 delegate / 不反注册。
+  - U4 static gate 增加 menu glyph lifecycle / per-menu delegate map marker。
+- 待验证：
+  - `python scripts/ci/check_config_prompt_menu_glyph_closure.py`
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`
+  - `git diff --check`
+
+## 2026-06-12 04:50:00 CST
+
+- PR-B1 本地验证：
+  - `python scripts/ci/check_config_prompt_menu_glyph_closure.py`：exit 0。
+  - `xmake build -y DualPadPromptSnapshotTests`：exit 0。
+  - `xmake run -y DualPadPromptSnapshotTests`：exit 0。
+  - `xmake build -y DualPad`：exit 0；覆盖 `ContextEventSink`、`ScaleformGlyphBridge`、`ScaleformPromptAdapter` 与 replay stub 编译面。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；覆盖 canonical Phase8 targets、DocGen、reviewed docs consistency、legacy boundary、release readiness、U4 closure gate 与 generated docs diff。
+  - `git diff --check`：exit 0；仅 Windows 行尾提示，无 whitespace error。
+- 待验证：
+  - 本条提交后运行 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`。
+  - 推送后远端 PR-B1 `phase8` / `rc-readiness`。

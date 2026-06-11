@@ -24,6 +24,11 @@ namespace dualpad::input::glyph
         input_v2::prompt::ScaleformPromptAdapter::GetSingleton().OnMenuOpened(menuName);
     }
 
+    void ScaleformGlyphBridge::OnMenuClosed(std::string_view menuName)
+    {
+        input_v2::prompt::ScaleformPromptAdapter::GetSingleton().OnMenuClosed(menuName);
+    }
+
     GlyphResolutionCompatResult ScaleformGlyphBridge::ReplayResolveActionGlyph(
         std::string_view actionId,
         std::string_view contextName)

@@ -20,6 +20,10 @@ namespace dualpad::input::glyph
     {
     }
 
+    void ScaleformGlyphBridge::OnMenuClosed(std::string_view)
+    {
+    }
+
     GlyphResolutionCompatResult ScaleformGlyphBridge::ReplayResolveActionGlyph(
         std::string_view actionId,
         std::string_view contextName)
