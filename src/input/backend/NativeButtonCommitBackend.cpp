@@ -195,7 +195,21 @@ namespace dualpad::input::backend
         }
 
         PollCommitRequest request{};
-        if (!TranslatePlannedActionToCommitRequest(action, request)) {
+        const auto translationResult = TranslatePlannedActionToCommitRequest(action, request);
+        if (translationResult == NativeButtonCommitTranslationKind::Noop) {
+            if (ShouldLogPollCommit()) {
+                logger::debug(
+                    "[DualPad][NativeButtonCommit] pulse_release_noop action={} phase={} contract={} digitalPolicy={} outputCode={}",
+                    action.actionId.c_str(),
+                    ToString(action.phase),
+                    ToString(action.contract),
+                    ToString(action.digitalPolicy),
+                    ToString(static_cast<NativeControlCode>(action.outputCode)));
+            }
+            return true;
+        }
+
+        if (translationResult == NativeButtonCommitTranslationKind::Invalid) {
             if (ShouldLogPollCommit()) {
                 logger::warn(
                     "[DualPad][NativeButtonCommit] translate_failed action={} phase={} contract={} digitalPolicy={} outputCode={}",
@@ -207,6 +221,7 @@ namespace dualpad::input::backend
             }
             return false;
         }
+
         const auto queued = _pollCommit.QueueRequest(request);
         if (ShouldLogPollCommit()) {
             logger::info(
@@ -433,20 +448,21 @@ namespace dualpad::input::backend
         };
     }
 
-    bool NativeButtonCommitBackend::TranslatePlannedActionToCommitRequest(
+    NativeButtonCommitTranslationKind NativeButtonCommitBackend::TranslatePlannedActionToCommitRequest(
         const PlannedAction& action,
         PollCommitRequest& outRequest)
     {
-        if (action.backend != PlannedBackend::NativeButtonCommit ||
-            action.kind != PlannedActionKind::NativeButton ||
-            action.digitalPolicy == NativeDigitalPolicyKind::None ||
-            action.outputCode == 0) {
-            return false;
+        const auto translation = TranslatePlannedActionForNativeButtonCommit(action);
+        if (translation.kind != NativeButtonCommitTranslationKind::Request) {
+            return translation.kind;
         }
 
         outRequest.actionId = RE::BSFixedString(action.actionId.c_str());
         outRequest.context = action.context;
         outRequest.outputCode = static_cast<NativeControlCode>(action.outputCode);
+        outRequest.mode = translation.mode;
+        outRequest.kind = translation.requestKind;
+        outRequest.contributor = translation.contributor;
         outRequest.gateAware = action.gateAware;
         outRequest.epoch = action.contextEpoch;
         outRequest.timestampUs = action.timestampUs;
@@ -454,57 +470,7 @@ namespace dualpad::input::backend
         outRequest.repeatDelayMs = action.repeatDelayMs;
         outRequest.repeatIntervalMs = action.repeatIntervalMs;
 
-        switch (action.digitalPolicy) {
-        case NativeDigitalPolicyKind::PulseMinDown:
-            if (action.phase == PlannedActionPhase::Pulse ||
-                action.phase == PlannedActionPhase::Press) {
-                outRequest.mode = PollCommitMode::Pulse;
-                outRequest.kind = PollCommitRequestKind::Pulse;
-                return true;
-            }
-            return false;
-
-        case NativeDigitalPolicyKind::HoldOwner:
-            outRequest.mode = PollCommitMode::Hold;
-            outRequest.contributor = HeldContributor::Gamepad;
-            if (action.phase == PlannedActionPhase::Release) {
-                outRequest.kind = PollCommitRequestKind::HoldClear;
-                return true;
-            }
-            if (action.phase == PlannedActionPhase::Press ||
-                action.phase == PlannedActionPhase::Hold) {
-                outRequest.kind = PollCommitRequestKind::HoldSet;
-                return true;
-            }
-            return false;
-
-        case NativeDigitalPolicyKind::RepeatOwner:
-            outRequest.mode = PollCommitMode::Repeat;
-            outRequest.contributor = HeldContributor::Gamepad;
-            if (action.phase == PlannedActionPhase::Release) {
-                outRequest.kind = PollCommitRequestKind::RepeatClear;
-                return true;
-            }
-            if (action.phase == PlannedActionPhase::Press ||
-                action.phase == PlannedActionPhase::Hold) {
-                outRequest.kind = PollCommitRequestKind::RepeatSet;
-                return true;
-            }
-            return false;
-
-        case NativeDigitalPolicyKind::ToggleDebounced:
-            if (action.phase == PlannedActionPhase::Pulse ||
-                action.phase == PlannedActionPhase::Press) {
-                outRequest.mode = PollCommitMode::Toggle;
-                outRequest.kind = PollCommitRequestKind::ToggleFire;
-                return true;
-            }
-            return false;
-
-        case NativeDigitalPolicyKind::None:
-        default:
-            return false;
-        }
+        return NativeButtonCommitTranslationKind::Request;
     }
 
     std::uint64_t NativeButtonCommitBackend::NowUs()

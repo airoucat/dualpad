@@ -398,7 +398,10 @@ target("DualPadNativeButtonCommitTests")
     add_deps("commonlibsse-ng")
     add_syslinks("ole32", "user32")
 
-    add_files("tests/NativeButtonCommitTests.cpp")
+    add_files(
+        "tests/NativeButtonCommitTests.cpp",
+        "src/input/XInputButtonSerialization.cpp",
+        "src/input/backend/NativeActionDescriptor.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")

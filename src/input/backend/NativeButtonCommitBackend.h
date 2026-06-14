@@ -27,6 +27,103 @@ namespace dualpad::input::backend
         Gamepad,
         KeyboardMouse
     };
+#else
+    enum class NativeButtonCommitTranslationKind : std::uint8_t
+    {
+        Request = 0,
+        Noop,
+        Invalid
+    };
+
+    struct NativeButtonCommitTranslation
+    {
+        NativeButtonCommitTranslationKind kind{ NativeButtonCommitTranslationKind::Invalid };
+        PollCommitMode mode{ PollCommitMode::None };
+        PollCommitRequestKind requestKind{ PollCommitRequestKind::None };
+        HeldContributor contributor{ HeldContributor::None };
+    };
+
+    [[nodiscard]] inline NativeButtonCommitTranslation TranslatePlannedActionForNativeButtonCommit(
+        const PlannedAction& action) noexcept
+    {
+        if (action.backend != PlannedBackend::NativeButtonCommit ||
+            action.kind != PlannedActionKind::NativeButton ||
+            action.digitalPolicy == NativeDigitalPolicyKind::None ||
+            action.outputCode == 0) {
+            return {};
+        }
+
+        switch (action.digitalPolicy) {
+        case NativeDigitalPolicyKind::PulseMinDown:
+            if (action.phase == PlannedActionPhase::Pulse ||
+                action.phase == PlannedActionPhase::Press) {
+                return {
+                    .kind = NativeButtonCommitTranslationKind::Request,
+                    .mode = PollCommitMode::Pulse,
+                    .requestKind = PollCommitRequestKind::Pulse
+                };
+            }
+            if (action.phase == PlannedActionPhase::Release) {
+                return { .kind = NativeButtonCommitTranslationKind::Noop };
+            }
+            return {};
+
+        case NativeDigitalPolicyKind::HoldOwner:
+            if (action.phase == PlannedActionPhase::Release) {
+                return {
+                    .kind = NativeButtonCommitTranslationKind::Request,
+                    .mode = PollCommitMode::Hold,
+                    .requestKind = PollCommitRequestKind::HoldClear,
+                    .contributor = HeldContributor::Gamepad
+                };
+            }
+            if (action.phase == PlannedActionPhase::Press ||
+                action.phase == PlannedActionPhase::Hold) {
+                return {
+                    .kind = NativeButtonCommitTranslationKind::Request,
+                    .mode = PollCommitMode::Hold,
+                    .requestKind = PollCommitRequestKind::HoldSet,
+                    .contributor = HeldContributor::Gamepad
+                };
+            }
+            return {};
+
+        case NativeDigitalPolicyKind::RepeatOwner:
+            if (action.phase == PlannedActionPhase::Release) {
+                return {
+                    .kind = NativeButtonCommitTranslationKind::Request,
+                    .mode = PollCommitMode::Repeat,
+                    .requestKind = PollCommitRequestKind::RepeatClear,
+                    .contributor = HeldContributor::Gamepad
+                };
+            }
+            if (action.phase == PlannedActionPhase::Press ||
+                action.phase == PlannedActionPhase::Hold) {
+                return {
+                    .kind = NativeButtonCommitTranslationKind::Request,
+                    .mode = PollCommitMode::Repeat,
+                    .requestKind = PollCommitRequestKind::RepeatSet,
+                    .contributor = HeldContributor::Gamepad
+                };
+            }
+            return {};
+
+        case NativeDigitalPolicyKind::ToggleDebounced:
+            if (action.phase == PlannedActionPhase::Pulse ||
+                action.phase == PlannedActionPhase::Press) {
+                return {
+                    .kind = NativeButtonCommitTranslationKind::Request,
+                    .mode = PollCommitMode::Toggle,
+                    .requestKind = PollCommitRequestKind::ToggleFire
+                };
+            }
+            return {};
+
+        case NativeDigitalPolicyKind::None:
+        default:
+            return {};
+        }
+    }
 #endif
 
     struct CommittedButtonState
@@ -111,7 +208,7 @@ namespace dualpad::input::backend
 
         NativeButtonCommitBackend() = default;
 
-        static bool TranslatePlannedActionToCommitRequest(
+        static NativeButtonCommitTranslationKind TranslatePlannedActionToCommitRequest(
             const PlannedAction& action,
             PollCommitRequest& outRequest);
 
