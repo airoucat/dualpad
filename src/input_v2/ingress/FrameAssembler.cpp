@@ -23,6 +23,19 @@ namespace dualpad::input_v2::ingress
                 kind == IngressKind::ExplicitReset;
         }
 
+        std::uint64_t MergeDownAtUs(
+            const actions::ControlSample& existing,
+            const actions::ControlSample& incoming)
+        {
+            if (existing.downAtUs == 0) {
+                return incoming.downAtUs;
+            }
+            if (incoming.downAtUs == 0) {
+                return existing.downAtUs;
+            }
+            return std::min(existing.downAtUs, incoming.downAtUs);
+        }
+
         void UpsertLatestSample(std::vector<actions::ControlSample>& samples, const actions::ControlSample& sample)
         {
             auto it = std::find_if(
@@ -35,7 +48,15 @@ namespace dualpad::input_v2::ingress
                 samples.push_back(sample);
                 return;
             }
+            const bool pressed = it->pressed || sample.pressed;
+            const bool released = it->released || sample.released;
+            const auto downAtUs = MergeDownAtUs(*it, sample);
+            const auto timestampUs = std::max(it->timestampUs, sample.timestampUs);
             *it = sample;
+            it->pressed = pressed;
+            it->released = released;
+            it->downAtUs = downAtUs;
+            it->timestampUs = timestampUs;
         }
 
         std::string BoolString(bool value)
@@ -406,11 +427,13 @@ namespace dualpad::input_v2::ingress
         if (revision < _currentKey.deviceFamilyRevision) {
             return;
         }
-        if (revision != _currentKey.deviceFamilyRevision) {
-            FactHealth health{};
-            health.boundaryMarkerMismatch = true;
+        if (revision > _currentKey.deviceFamilyRevision) {
+            auto nextKey = _currentKey;
+            nextKey.deviceFamilyRevision = revision;
             FlushWindow(frames);
-            EmitTransition(frames, _currentKey, _currentKey, TransitionReason::ExplicitReset, health);
+            EmitTransition(frames, _currentKey, nextKey, TransitionReason::BoundaryKeyChanged);
+            _currentKey = nextKey;
+            ApplyEventToWindow(event);
             return;
         }
 

@@ -1938,6 +1938,13 @@ namespace
             contextSnapshot.legacyInputContext,
             contextSnapshot.legacyContextEpoch,
             contextSnapshot.contextRevision));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(
+            502,
+            bits.cross,
+            502'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision));
 
         ingress::FrameAssembler assembler;
         const auto frames = assembler.Assemble(hub.Drain());

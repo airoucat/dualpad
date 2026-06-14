@@ -94,3 +94,16 @@ DualPad 启动/首次进入 Menu 时，当前帧的 source evidence 必须优先
 
 ### Detail
 实机调试中旧日志已经证明 HID/parser 可以读到有效手柄状态，但菜单兼容面和 glyph owner 仍可能保持 KeyboardMouse。`PresentationProjection` 原逻辑在 `_published.uiContextId == None && hostMode == Menu` 时先继承 `menuEntryOwner`，即使同一帧已有 `gamepadEvidence/gamepadLease`。启动主菜单没有 gameplay owner 历史时，默认 `menuEntryOwner=KeyboardMouse` 会压过当前手柄证据。修复时应把非 gameplay 的当前 source evidence 放在 menu-entry inheritance 之前；只有没有新证据时才继承 gameplay menu entry owner。同时 live trace 的 `expected_presentation_surface.csv` 要写实际 committed compatibility surface，不能继续用硬编码 KeyboardMouse 当现场证据。
+
+## [LRN-20260615-001] insight
+
+**Logged**: 2026-06-15T00:13:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: build
+
+### Summary
+DualPad 本地验证不要假设 CMake 在 PATH；优先按仓库 CI 使用 `xmake build -y <target>` / `xmake run -y <target>`。
+
+### Detail
+本轮红灯验证时先尝试 `cmake --build ...`，本机 PowerShell PATH 没有 `cmake`。随后又把 `xmake -y build <target>` 写成了错误顺序，xmake 将 target 解析为 invalid argument。仓库事实入口是 `scripts/ci/run_phase8_ci.ps1`，其中 target 构建/运行格式固定为 `xmake build -y DualPadIngressTests` 与 `xmake run -y DualPadIngressTests`。后续 focused 验证应先看 CI 脚本里的实际命令。

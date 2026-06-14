@@ -400,6 +400,53 @@ namespace
         Require(resolved.changes[0].phase == actions::ActionPhase::Press, "live HID press must emit Press");
     }
 
+    void TestCoalescedHeldHidPressSampleTriggersInteractionEngine()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        (void)hub.PushEvent(Manifest(42));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(10, 0x0, 10'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(11, 0x1, 11'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(12, 0x1, 12'000));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        const auto& stable = LastFrame(frames);
+        const auto* sample = FindControlSample(stable.facts, 0x1);
+        Require(sample != nullptr, "coalesced held HID press must retain a latest control sample");
+        Require(sample->down, "coalesced held HID press must keep the button down");
+        Require(sample->pressed, "coalesced held HID press must retain the press edge");
+        Require(sample->downAtUs == 11'000, "coalesced held HID press must retain original downAtUs");
+        Require(sample->timestampUs == 12'000, "coalesced held HID press must keep the latest sample timestamp");
+        const auto kernel = ingress::BuildKernelFrame(stable);
+
+        actions::CompiledActionManifest manifest{};
+        manifest.manifestEpoch = 42;
+        manifest.actions = {
+            actions::ActionDefinition{ .id = "Jump", .valueKind = actions::ActionValueKind::Digital }
+        };
+        manifest.bindings.push_back(actions::CompiledBinding{
+            .actionId = "Jump",
+            .baseSetId = "GameplayBase",
+            .legacyTrigger = input::Trigger{ .type = input::TriggerType::Button, .code = 0x1 }
+        });
+
+        const auto compiled = actions::ActionGraphCompiler::Compile(manifest);
+        Require(compiled.ok, compiled.message.c_str());
+
+        actions::ActionSetStack stack{};
+        stack.baseSetId = "GameplayBase";
+        actions::InteractionEngine engine;
+        actions::InteractionStateStore state;
+        const auto resolved = engine.Resolve(compiled.graph, stack, kernel, state);
+        Require(resolved.changes.size() == 1, "coalesced held HID press must trigger an action phase");
+        Require(resolved.changes[0].actionId == "Jump", "coalesced held HID press must resolve the bound action");
+        Require(resolved.changes[0].phase == actions::ActionPhase::Press, "coalesced held HID press must emit Press");
+    }
+
     void TestManifestPublisherProducesIngressMarker()
     {
         ingress::IngressHub::GetSingleton().ResetForTests();
@@ -862,6 +909,35 @@ namespace
             "ignored stale source evidence must not poison stable frame health");
     }
 
+    void TestMissingDeviceMarkerSourceEvidenceSoftSyncsBoundary()
+    {
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(AssignSeq({
+            Manifest(1),
+            Ui(1, 1),
+            SourceEvidence(5),
+            PadSample(7, true, true, false)
+        }));
+
+        Require(
+            FindTransition(frames, ingress::TransitionReason::ExplicitReset) == nullptr,
+            "missing device marker source evidence must not hard reset repeatedly");
+        const auto* boundary = FindTransition(frames, ingress::TransitionReason::BoundaryKeyChanged);
+        Require(boundary != nullptr, "missing device marker source evidence must soft-sync the boundary");
+        Require(!boundary->transition.requestHardResync, "missing device marker source evidence must not hard reset outputs");
+        const auto& stable = LastStableFrame(frames);
+        Require(
+            stable.boundaryKey.deviceFamilyRevision == 5,
+            "source evidence ahead of a missing marker must advance device boundary revision");
+        Require(
+            stable.facts.sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision == 5,
+            "soft-synced source evidence must publish to the stable fact frame");
+        Require(
+            !stable.facts.health.boundaryMarkerMismatch,
+            "soft-synced source evidence must not poison stable frame health");
+        Require(FindControlSample(stable.facts, 7) != nullptr, "soft-sync must keep following control samples");
+    }
+
     void TestBuildKernelFrameDoesNotAcceptTransition()
     {
         ingress::AssembledFactFrame transition{};
@@ -944,6 +1020,7 @@ int main()
     TestLegacySequenceDiscontinuityProducesSequenceGap();
     TestLiveHidMaskEdgesProducePulseLedger();
     TestLiveHidPressSampleTriggersInteractionEngine();
+    TestCoalescedHeldHidPressSampleTriggersInteractionEngine();
     TestManifestPublisherProducesIngressMarker();
     TestDeviceFamilyProducerProducesMarkerAndPairedSourceEvidence();
     TestLiveGamepadInputPublishesSourceEvidence();
@@ -961,6 +1038,7 @@ int main()
     TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline();
     TestDeviceMarkerMismatchFailsClosed();
     TestStaleSourceEvidenceAfterNewerDeviceMarkerDoesNotHardReset();
+    TestMissingDeviceMarkerSourceEvidenceSoftSyncsBoundary();
     TestBuildKernelFrameDoesNotAcceptTransition();
     TestLegacySnapshotCannotOverrideKernelFacts();
     TestBuildKernelFrameUsesIngressMonotonicTimestamp();
