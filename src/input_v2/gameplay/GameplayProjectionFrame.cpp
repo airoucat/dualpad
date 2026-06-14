@@ -335,6 +335,7 @@ namespace dualpad::input_v2::gameplay
                                 .control = decision.nativeCode,
                                 .phase = change.phase,
                                 .contract = decision.contract,
+                                .lifecyclePolicy = decision.lifecyclePolicy,
                                 .gateAware = true,
                                 .contextRevision = frame.contextRevision
                             }) || overflow;
@@ -357,6 +358,7 @@ namespace dualpad::input_v2::gameplay
                             .control = decision.nativeCode,
                             .activeSourceMask = mask,
                             .contract = decision.contract,
+                            .lifecyclePolicy = decision.lifecyclePolicy,
                             .contextRevision = frame.contextRevision
                         }) || overflow;
                 }

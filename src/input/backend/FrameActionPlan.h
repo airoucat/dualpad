@@ -105,12 +105,15 @@ namespace dualpad::input::backend
         PulseMinDown,
         HoldOwner,
         RepeatOwner,
-        ToggleDebounced
+        ToggleDebounced,
+        DeferredPulse
     };
 
     inline constexpr std::string_view ToString(NativeDigitalPolicyKind policy)
     {
         switch (policy) {
+        case NativeDigitalPolicyKind::DeferredPulse:
+            return "DeferredPulse";
         case NativeDigitalPolicyKind::PulseMinDown:
             return "PulseMinDown";
         case NativeDigitalPolicyKind::HoldOwner:

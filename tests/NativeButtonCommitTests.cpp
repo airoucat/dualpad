@@ -5,6 +5,7 @@
 #include "input/XInputButtonSerialization.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/backend/NativeActionDescriptor.h"
+#include "input/backend/NativeDigitalPolicyResolver.h"
 
 #include <array>
 #include <iostream>
@@ -22,11 +23,17 @@ namespace
         }
     }
 
-    PlannedAction MakePulseMinDownAction(
+    PlannedAction MakePulseAction(
         PlannedActionPhase phase,
+        ActionLifecyclePolicy lifecyclePolicy,
         std::string_view actionId = actions::MenuConfirm,
         NativeControlCode outputCode = NativeControlCode::MenuConfirm)
     {
+        const auto digitalPolicy = ResolveNativeDigitalPolicy(
+            PlannedBackend::NativeButtonCommit,
+            PlannedActionKind::NativeButton,
+            ActionOutputContract::Pulse,
+            lifecyclePolicy);
         return {
             .backend = PlannedBackend::NativeButtonCommit,
             .kind = PlannedActionKind::NativeButton,
@@ -34,12 +41,28 @@ namespace
             .context = InputContext::Menu,
             .actionId = std::string(actionId),
             .contract = ActionOutputContract::Pulse,
-            .lifecyclePolicy = ActionLifecyclePolicy::DeferredPulse,
+            .lifecyclePolicy = lifecyclePolicy,
             .outputCode = static_cast<std::uint32_t>(outputCode),
-            .digitalPolicy = NativeDigitalPolicyKind::PulseMinDown,
-            .minDownMs = 35,
+            .digitalPolicy = digitalPolicy,
+            .minDownMs = ResolveNativeMinDownMs(digitalPolicy),
             .contextEpoch = 42
         };
+    }
+
+    PlannedAction MakeDeferredPulseAction(
+        PlannedActionPhase phase,
+        std::string_view actionId = actions::MenuConfirm,
+        NativeControlCode outputCode = NativeControlCode::MenuConfirm)
+    {
+        return MakePulseAction(phase, ActionLifecyclePolicy::DeferredPulse, actionId, outputCode);
+    }
+
+    PlannedAction MakePulseMinDownAction(
+        PlannedActionPhase phase,
+        std::string_view actionId = actions::Activate,
+        NativeControlCode outputCode = NativeControlCode::Activate)
+    {
+        return MakePulseAction(phase, ActionLifecyclePolicy::MinDownWindowPulse, actionId, outputCode);
     }
 
     void RunNativeDigitalGatePolicyContextTests()
@@ -62,7 +85,7 @@ namespace
 
     void MenuConfirm_Press_QueuesPulse_EmitsXInputA()
     {
-        const auto action = MakePulseMinDownAction(PlannedActionPhase::Press);
+        const auto action = MakeDeferredPulseAction(PlannedActionPhase::Press);
         const auto translation = TranslatePlannedActionForNativeButtonCommit(action);
         Require(
             translation.kind == NativeButtonCommitTranslationKind::Request,
@@ -83,16 +106,34 @@ namespace
         Require((ToXInputButtons(mask) & 0x1000) != 0, "Menu.Confirm cross bit must emit XInput A");
     }
 
+    void MenuConfirm_DeferredPulse_DoesNotUseMinDownWindow()
+    {
+        const auto action = MakeDeferredPulseAction(PlannedActionPhase::Press);
+        Require(
+            action.digitalPolicy == NativeDigitalPolicyKind::DeferredPulse,
+            "Menu.Confirm DeferredPulse lifecycle must resolve to DeferredPulse policy");
+        Require(action.minDownMs == 0, "Menu.Confirm DeferredPulse must not use a min-down window");
+    }
+
+    void GameActivate_MinDownWindowPulse_UsesDefaultMinDown()
+    {
+        const auto action = MakePulseMinDownAction(PlannedActionPhase::Press);
+        Require(
+            action.digitalPolicy == NativeDigitalPolicyKind::PulseMinDown,
+            "Game.Activate MinDownWindowPulse lifecycle must resolve to PulseMinDown policy");
+        Require(action.minDownMs == 40, "Game.Activate MinDownWindowPulse must keep the default min-down window");
+    }
+
     void MenuConfirm_Release_IsNoop_NoTranslateFailed()
     {
-        const auto action = MakePulseMinDownAction(PlannedActionPhase::Release);
+        const auto action = MakeDeferredPulseAction(PlannedActionPhase::Release);
         const auto translation = TranslatePlannedActionForNativeButtonCommit(action);
         Require(
             translation.kind == NativeButtonCommitTranslationKind::Noop,
-            "Menu.Confirm PulseMinDown release must be an explicit no-op");
+            "Menu.Confirm DeferredPulse release must be an explicit no-op");
         Require(
             translation.requestKind == PollCommitRequestKind::None,
-            "PulseMinDown release no-op must not queue a commit request");
+            "DeferredPulse release no-op must not queue a commit request");
     }
 
     void PulseMinDown_Release_DoesNotReturnFalse()
@@ -133,6 +174,8 @@ int main()
     try {
         RunNativeDigitalGatePolicyContextTests();
         MenuConfirm_Press_QueuesPulse_EmitsXInputA();
+        MenuConfirm_DeferredPulse_DoesNotUseMinDownWindow();
+        GameActivate_MinDownWindowPulse_UsesDefaultMinDown();
         MenuConfirm_Release_IsNoop_NoTranslateFailed();
         PulseMinDown_Release_DoesNotReturnFalse();
         PulseMinDown_PressThenRelease_DoesNotStick();

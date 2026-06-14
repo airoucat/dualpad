@@ -33,6 +33,7 @@ namespace dualpad::input::backend
             }
 
             switch (action.digitalPolicy) {
+            case NativeDigitalPolicyKind::DeferredPulse:
             case NativeDigitalPolicyKind::PulseMinDown:
                 return action.phase == PlannedActionPhase::Pulse ||
                     action.phase == PlannedActionPhase::Press;

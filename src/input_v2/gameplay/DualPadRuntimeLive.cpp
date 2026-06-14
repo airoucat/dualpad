@@ -6,6 +6,7 @@
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input/backend/ModEventKeyPool.h"
+#include "input/backend/NativeDigitalPolicyResolver.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 
 namespace dualpad::input_v2::gameplay
@@ -13,15 +14,12 @@ namespace dualpad::input_v2::gameplay
     namespace
     {
         using dualpad::input::backend::ActionOutputContract;
+        using dualpad::input::backend::ActionLifecyclePolicy;
         using dualpad::input::backend::NativeDigitalPolicyKind;
         using dualpad::input::backend::PlannedAction;
         using dualpad::input::backend::PlannedActionKind;
         using dualpad::input::backend::PlannedActionPhase;
         using dualpad::input::backend::PlannedBackend;
-
-        constexpr std::uint32_t kDefaultPulseMinDownMs = 40;
-        constexpr std::uint32_t kDefaultRepeatDelayMs = 350;
-        constexpr std::uint32_t kDefaultRepeatIntervalMs = 75;
 
         PlannedActionPhase ToPlannedPhase(actions::ActionPhase phase)
         {
@@ -42,37 +40,17 @@ namespace dualpad::input_v2::gameplay
             }
         }
 
-        NativeDigitalPolicyKind ResolveDigitalPolicy(ActionOutputContract contract)
-        {
-            switch (contract) {
-            case ActionOutputContract::Hold:
-                return NativeDigitalPolicyKind::HoldOwner;
-            case ActionOutputContract::Repeat:
-                return NativeDigitalPolicyKind::RepeatOwner;
-            case ActionOutputContract::Toggle:
-                return NativeDigitalPolicyKind::ToggleDebounced;
-            case ActionOutputContract::Pulse:
-                return NativeDigitalPolicyKind::PulseMinDown;
-            case ActionOutputContract::Axis:
-            case ActionOutputContract::None:
-            default:
-                return NativeDigitalPolicyKind::None;
-            }
-        }
-
         void ApplyDigitalMetadata(PlannedAction& action, bool gateAware, std::uint32_t contextEpoch)
         {
-            action.digitalPolicy = ResolveDigitalPolicy(action.contract);
+            action.digitalPolicy = dualpad::input::backend::ResolveNativeDigitalPolicy(
+                action.backend,
+                action.kind,
+                action.contract,
+                action.lifecyclePolicy);
             action.gateAware = gateAware;
-            action.minDownMs = action.digitalPolicy == NativeDigitalPolicyKind::PulseMinDown ?
-                kDefaultPulseMinDownMs :
-                0;
-            action.repeatDelayMs = action.digitalPolicy == NativeDigitalPolicyKind::RepeatOwner ?
-                kDefaultRepeatDelayMs :
-                0;
-            action.repeatIntervalMs = action.digitalPolicy == NativeDigitalPolicyKind::RepeatOwner ?
-                kDefaultRepeatIntervalMs :
-                0;
+            action.minDownMs = dualpad::input::backend::ResolveNativeMinDownMs(action.digitalPolicy);
+            action.repeatDelayMs = dualpad::input::backend::ResolveNativeRepeatDelayMs(action.digitalPolicy);
+            action.repeatIntervalMs = dualpad::input::backend::ResolveNativeRepeatIntervalMs(action.digitalPolicy);
             action.contextEpoch = contextEpoch;
         }
 
@@ -81,6 +59,7 @@ namespace dualpad::input_v2::gameplay
             dualpad::input::backend::NativeControlCode control,
             PlannedActionPhase phase,
             ActionOutputContract contract,
+            ActionLifecyclePolicy lifecyclePolicy,
             bool gateAware,
             dualpad::input::InputContext legacyContext,
             std::uint32_t contextEpoch)
@@ -92,6 +71,7 @@ namespace dualpad::input_v2::gameplay
             action.context = legacyContext;
             action.actionId = std::string(actionId);
             action.contract = contract;
+            action.lifecyclePolicy = lifecyclePolicy;
             action.outputCode = static_cast<std::uint32_t>(control);
             ApplyDigitalMetadata(action, gateAware, contextEpoch);
             return action;
@@ -187,6 +167,7 @@ namespace dualpad::input_v2::gameplay
                         command.control,
                         phase,
                         command.contract,
+                        command.lifecyclePolicy,
                         false,
                         _legacyContext,
                         _legacyContextEpoch));
@@ -200,6 +181,7 @@ namespace dualpad::input_v2::gameplay
                         command.control,
                         ToPlannedPhase(command.phase),
                         command.contract,
+                        command.lifecyclePolicy,
                         command.gateAware,
                         _legacyContext,
                         _legacyContextEpoch));

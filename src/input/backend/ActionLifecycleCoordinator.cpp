@@ -3,6 +3,7 @@
 
 #include "input/Action.h"
 #include "input_v2/compat/LegacyInputContextCompat.h"
+#include "input/backend/NativeDigitalPolicyResolver.h"
 #include "input/PadEvent.h"
 
 #include <bit>
@@ -13,64 +14,6 @@ namespace dualpad::input::backend
 
     namespace
     {
-        constexpr std::uint32_t kDefaultPulseMinDownMs = 40;
-        constexpr std::uint32_t kDefaultRepeatDelayMs = 350;
-        constexpr std::uint32_t kDefaultRepeatIntervalMs = 75;
-
-        NativeDigitalPolicyKind ResolveDigitalPolicy(
-            std::string_view actionId,
-            PlannedBackend backend,
-            PlannedActionKind kind,
-            ActionOutputContract contract)
-        {
-            (void)actionId;
-            if (backend != PlannedBackend::NativeButtonCommit ||
-                kind != PlannedActionKind::NativeButton) {
-                return NativeDigitalPolicyKind::None;
-            }
-
-            switch (contract) {
-            case ActionOutputContract::Hold:
-                return NativeDigitalPolicyKind::HoldOwner;
-            case ActionOutputContract::Repeat:
-                return NativeDigitalPolicyKind::RepeatOwner;
-            case ActionOutputContract::Toggle:
-                return NativeDigitalPolicyKind::ToggleDebounced;
-            case ActionOutputContract::Pulse:
-                return NativeDigitalPolicyKind::PulseMinDown;
-            case ActionOutputContract::Axis:
-            case ActionOutputContract::None:
-            default:
-                return NativeDigitalPolicyKind::None;
-            }
-        }
-
-        bool ResolveGateAware(std::string_view actionId, NativeDigitalPolicyKind policy)
-        {
-            if (policy == NativeDigitalPolicyKind::None) {
-                return false;
-            }
-
-            return actionId == actions::Jump ||
-                actionId == actions::Activate ||
-                actionId == actions::Sprint;
-        }
-
-        std::uint32_t ResolveMinDownMs(NativeDigitalPolicyKind policy)
-        {
-            return policy == NativeDigitalPolicyKind::PulseMinDown ? kDefaultPulseMinDownMs : 0;
-        }
-
-        std::uint32_t ResolveRepeatDelayMs(NativeDigitalPolicyKind policy)
-        {
-            return policy == NativeDigitalPolicyKind::RepeatOwner ? kDefaultRepeatDelayMs : 0;
-        }
-
-        std::uint32_t ResolveRepeatIntervalMs(NativeDigitalPolicyKind policy)
-        {
-            return policy == NativeDigitalPolicyKind::RepeatOwner ? kDefaultRepeatIntervalMs : 0;
-        }
-
         bool SawPressEdge(const SyntheticButtonState& button)
         {
             return button.sawPressEdge || button.pressed;
@@ -261,15 +204,15 @@ namespace dualpad::input::backend
         action.outputCode = static_cast<std::uint32_t>(transaction.routingDecision.nativeCode);
         action.timestampUs = transaction.timestampUs;
         action.heldSeconds = transaction.heldSeconds;
-        action.digitalPolicy = ResolveDigitalPolicy(
-            action.actionId,
+        action.digitalPolicy = ResolveNativeDigitalPolicy(
             action.backend,
             action.kind,
-            action.contract);
-        action.gateAware = ResolveGateAware(action.actionId, action.digitalPolicy);
-        action.minDownMs = ResolveMinDownMs(action.digitalPolicy);
-        action.repeatDelayMs = ResolveRepeatDelayMs(action.digitalPolicy);
-        action.repeatIntervalMs = ResolveRepeatIntervalMs(action.digitalPolicy);
+            action.contract,
+            action.lifecyclePolicy);
+        action.gateAware = IsNativeDigitalGateAwareAction(action.actionId, action.digitalPolicy);
+        action.minDownMs = ResolveNativeMinDownMs(action.digitalPolicy);
+        action.repeatDelayMs = ResolveNativeRepeatDelayMs(action.digitalPolicy);
+        action.repeatIntervalMs = ResolveNativeRepeatIntervalMs(action.digitalPolicy);
         action.contextEpoch = transaction.contextEpoch;
         return action;
     }

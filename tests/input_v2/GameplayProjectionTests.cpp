@@ -278,11 +278,46 @@ namespace
         Require(
             projected.gamepadPlan.transientDigital.items[0].control == backend::NativeControlCode::MenuConfirm,
             "Menu.Confirm must keep its native menu control");
+        Require(
+            projected.gamepadPlan.transientDigital.items[0].lifecyclePolicy == backend::ActionLifecyclePolicy::DeferredPulse,
+            "Menu.Confirm must keep DeferredPulse lifecycle through gameplay projection");
         Require(projected.gamepadPlan.sustainedDigital.count == 1, "menu repeat action must enter native sustained output plan");
         Require(
             projected.gamepadPlan.sustainedDigital.items[0].control == backend::NativeControlCode::MenuScrollDown,
             "Menu.ScrollDown must keep its native menu control");
+        Require(
+            projected.gamepadPlan.sustainedDigital.items[0].lifecyclePolicy == backend::ActionLifecyclePolicy::RepeatOwner,
+            "Menu.ScrollDown must keep RepeatOwner lifecycle through gameplay projection");
         Require(projected.gamepadPlan.analog.moveY == -1.0f, "Menu.LeftStick must not be zeroed by non-gameplay ownership gates");
+    }
+
+    void RunGameplayActivateKeepsMinDownWindowLifecycleTests()
+    {
+        auto resolved = Resolved();
+        resolved.changes.push_back(actions::ActionPhaseChange{
+            .actionId = "Game.Activate",
+            .bindingId = 20,
+            .phase = actions::ActionPhase::Press,
+            .timestampUs = 10'000
+        });
+
+        gameplay::GameplayProjectionFrame previous{};
+        previous.digitalOwner = gameplay::ChannelOwner::Gamepad;
+
+        const auto projected = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            resolved,
+            gameplay::GameplayPolicy{ .gameplayContext = true },
+            previous,
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+
+        Require(projected.gamepadPlan.transientDigital.count == 1, "Game.Activate must enter native transient output plan");
+        Require(
+            projected.gamepadPlan.transientDigital.items[0].control == backend::NativeControlCode::Activate,
+            "Game.Activate must keep native Activate control");
+        Require(
+            projected.gamepadPlan.transientDigital.items[0].lifecyclePolicy == backend::ActionLifecyclePolicy::MinDownWindowPulse,
+            "Game.Activate must keep MinDownWindowPulse lifecycle through gameplay projection");
     }
 
     void RunPrimaryPathArbitrationContractTests()
@@ -566,6 +601,7 @@ int main()
         RunRecoveryPlanTests();
         RunProjectionClassificationAndGateTests();
         RunMenuContextGamepadOutputTests();
+        RunGameplayActivateKeepsMinDownWindowLifecycleTests();
         RunPrimaryPathArbitrationContractTests();
         RunOverflowFailClosedTests();
         RunSoftRecoveryDoesNotClearOutputTests();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "input/backend/ActionLifecyclePolicy.h"
 #include "input/backend/ActionOutputContract.h"
 #include "input/backend/NativeControlCode.h"
 #include "input_v2/actions/InteractionEngine.h"
@@ -83,6 +84,7 @@ namespace dualpad::input_v2::gameplay
         dualpad::input::backend::NativeControlCode control{ dualpad::input::backend::NativeControlCode::None };
         actions::ActionPhase phase{ actions::ActionPhase::Press };
         dualpad::input::backend::ActionOutputContract contract{ dualpad::input::backend::ActionOutputContract::None };
+        dualpad::input::backend::ActionLifecyclePolicy lifecyclePolicy{ dualpad::input::backend::ActionLifecyclePolicy::None };
         bool gateAware{ false };
         std::uint32_t contextRevision{ 0 };
     };
@@ -93,6 +95,7 @@ namespace dualpad::input_v2::gameplay
         dualpad::input::backend::NativeControlCode control{ dualpad::input::backend::NativeControlCode::None };
         std::uint8_t activeSourceMask{ 0 };
         dualpad::input::backend::ActionOutputContract contract{ dualpad::input::backend::ActionOutputContract::None };
+        dualpad::input::backend::ActionLifecyclePolicy lifecyclePolicy{ dualpad::input::backend::ActionLifecyclePolicy::None };
         std::uint32_t contextRevision{ 0 };
     };
 
