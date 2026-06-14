@@ -3,12 +3,15 @@
 #include "input_v2/actions/InteractionEngine.h"
 
 #include "input/PadEvent.h"
+#include "input/PadProfile.h"
 
 #include <algorithm>
 #include <cmath>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input_v2::actions
 {
@@ -82,6 +85,87 @@ namespace dualpad::input_v2::actions
                 [&](const ControlPath& candidate) {
                     return IsSamePath(candidate, path);
                 }) != paths.end();
+        }
+
+        std::string ResolveMissContextName(const ActionSetStack& actionSetStack)
+        {
+            if (actionSetStack.baseSetId == "MenuBase") {
+                return "Menu";
+            }
+            if (actionSetStack.baseSetId == "GameplayBase") {
+                return "Gameplay";
+            }
+            return actionSetStack.baseSetId;
+        }
+
+        std::string ResolveMissTriggerName(const ControlPath& path)
+        {
+            if (path.kind != ControlPathKind::DigitalButton) {
+                return ToDebugString(path);
+            }
+
+            const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
+            if (path.code == bits.cross) return "Button:Cross";
+            if (path.code == bits.triangle) return "Button:Triangle";
+            if (path.code == bits.circle) return "Button:Circle";
+            if (path.code == bits.square) return "Button:Square";
+            if (path.code == bits.dpadUp) return "Button:DpadUp";
+            if (path.code == bits.dpadDown) return "Button:DpadDown";
+            if (path.code == bits.dpadLeft) return "Button:DpadLeft";
+            if (path.code == bits.dpadRight) return "Button:DpadRight";
+            return ToDebugString(path);
+        }
+
+        const char* ResolveMissEdgeName(const ControlSample& sample)
+        {
+            if (sample.pressed) {
+                return "Press";
+            }
+            if (sample.released) {
+                return "Release";
+            }
+            return "Down";
+        }
+
+        bool HasPrimaryBindingForPath(
+            const std::vector<const CompiledGraphBinding*>& visibleBindings,
+            const ControlPath& path)
+        {
+            for (const auto* binding : visibleBindings) {
+                if (binding == nullptr || binding->interaction.primaryPathIndex >= binding->paths.size()) {
+                    continue;
+                }
+                if (IsSamePath(binding->paths[binding->interaction.primaryPathIndex], path)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void LogResolveMisses(
+            const CompiledActionGraph& graph,
+            const ActionSetStack& actionSetStack,
+            const KernelFrame& frame,
+            const std::vector<const CompiledGraphBinding*>& visibleBindings)
+        {
+            for (const auto& sample : frame.state.controlSamples) {
+                if (sample.path.kind != ControlPathKind::DigitalButton ||
+                    (!sample.down && !sample.pressed && !sample.released)) {
+                    continue;
+                }
+                if (HasPrimaryBindingForPath(visibleBindings, sample.path)) {
+                    continue;
+                }
+
+                logger::warn(
+                    "[DualPad][ResolveMiss] ctx={} trigger={} mask=0x{:08X} edge={} manifest={} epoch={} reason=NoBindingMatched",
+                    ResolveMissContextName(actionSetStack),
+                    ResolveMissTriggerName(sample.path),
+                    sample.path.code,
+                    ResolveMissEdgeName(sample),
+                    graph.manifestEpoch,
+                    frame.facts.contextRevision);
+            }
         }
 
         bool IsPathActiveForMatch(const ControlSample& sample)
@@ -452,6 +536,7 @@ namespace dualpad::input_v2::actions
         }
 
         const auto visibleBindings = graph.BindingsForActionSet(actionSetStack.baseSetId, actionSetStack.layerIds);
+        LogResolveMisses(graph, actionSetStack, frame, visibleBindings);
         const auto selectedBindings = SelectBindingsForFrame(visibleBindings, frame, stateStore);
         std::unordered_map<ActionId, Axis2DBucket> axis2DBuckets;
         for (const auto* bindingPtr : selectedBindings) {

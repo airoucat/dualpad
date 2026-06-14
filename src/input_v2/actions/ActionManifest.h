@@ -73,6 +73,7 @@ namespace dualpad::input_v2::actions
         std::string controlPath;
         std::string interaction;
         std::vector<std::string> requiredChordPaths; // for Layer semantics
+        std::string bindingSource{ "config" };
 
         // Phase 1 compatibility: normalized legacy Trigger used by import/export tools.
         dualpad::input::Trigger legacyTrigger{};
@@ -98,6 +99,7 @@ namespace dualpad::input_v2::actions
         dualpad::input::InputContext context{ dualpad::input::InputContext::Unknown };
         dualpad::input::Trigger trigger{};
         std::string actionId;
+        std::string bindingSource{ "config" };
     };
 
     struct LegacyBindingProjection

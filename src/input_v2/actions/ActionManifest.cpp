@@ -680,8 +680,14 @@ namespace dualpad::input_v2::actions
             return display;
         }
 
+        struct BindingEntry
+        {
+            std::string actionId;
+            std::string source{ "config" };
+        };
+
         void AddIfMissing(
-            std::unordered_map<Trigger, std::string, TriggerHash>& bindings,
+            std::unordered_map<Trigger, BindingEntry, TriggerHash>& bindings,
             const Trigger& trigger,
             std::string_view actionId,
             std::size_t& inOutAddedCount)
@@ -689,7 +695,10 @@ namespace dualpad::input_v2::actions
             if (bindings.contains(trigger)) {
                 return;
             }
-            bindings.emplace(trigger, std::string(actionId));
+            bindings.emplace(trigger, BindingEntry{
+                .actionId = std::string(actionId),
+                .source = "fallback"
+            });
             ++inOutAddedCount;
         }
 
@@ -710,7 +719,7 @@ namespace dualpad::input_v2::actions
         }
 
         void ApplyStandardFallbackBindings(
-            std::unordered_map<InputContext, std::unordered_map<Trigger, std::string, TriggerHash>>& byContext,
+            std::unordered_map<InputContext, std::unordered_map<Trigger, BindingEntry, TriggerHash>>& byContext,
             std::size_t& outAddedCount)
         {
             using namespace dualpad::input;
@@ -746,9 +755,9 @@ namespace dualpad::input_v2::actions
 
             const auto addBaseMenuBindings = [&](InputContext context) {
                 auto& bindings = byContext[context];
-                AddIfMissing(bindings, MakeButtonTrigger(bits.cross), MenuConfirm, outAddedCount);
-                AddIfMissing(bindings, MakeButtonTrigger(bits.circle), MenuCancel, outAddedCount);
-                AddIfMissing(bindings, MakeButtonTrigger(bits.triangle), MenuDownloadAll, outAddedCount);
+                AddIfMissing(bindings, MakeButtonTrigger(bits.cross), MenuCancel, outAddedCount);
+                AddIfMissing(bindings, MakeButtonTrigger(bits.triangle), MenuConfirm, outAddedCount);
+                AddIfMissing(bindings, MakeButtonTrigger(bits.circle), MenuDownloadAll, outAddedCount);
                 AddIfMissing(bindings, MakeButtonTrigger(bits.dpadUp), MenuScrollUp, outAddedCount);
                 AddIfMissing(bindings, MakeButtonTrigger(bits.dpadDown), MenuScrollDown, outAddedCount);
                 AddIfMissing(bindings, MakeButtonTrigger(bits.dpadLeft), MenuLeft, outAddedCount);
@@ -902,14 +911,14 @@ namespace dualpad::input_v2::actions
         }
 
         std::optional<std::string> FindActionForTrigger(
-            const std::unordered_map<Trigger, std::string, TriggerHash>& bindings,
+            const std::unordered_map<Trigger, BindingEntry, TriggerHash>& bindings,
             const Trigger& trigger)
         {
             const auto it = bindings.find(trigger);
             if (it == bindings.end()) {
                 return std::nullopt;
             }
-            return it->second;
+            return it->second.actionId;
         }
 
         bool IsBaseSectionName(std::string_view canonicalContextName)
@@ -1010,7 +1019,7 @@ namespace dualpad::input_v2::actions
         }
 
         // Per-context binding maps for legacy projection, prior to materialization.
-        std::unordered_map<InputContext, std::unordered_map<Trigger, std::string, TriggerHash>> bindingsByContext;
+        std::unordered_map<InputContext, std::unordered_map<Trigger, BindingEntry, TriggerHash>> bindingsByContext;
 
         // Per-context inheritance (legacy).
         std::unordered_map<InputContext, InputContext> inheritMap;
@@ -1104,7 +1113,10 @@ namespace dualpad::input_v2::actions
                     return result;
                 }
 
-                contextBindings.emplace(parsed.trigger, value);
+                contextBindings.emplace(parsed.trigger, BindingEntry{
+                    .actionId = value,
+                    .source = "config"
+                });
             }
         }
 
@@ -1128,9 +1140,9 @@ namespace dualpad::input_v2::actions
                 const auto parentIt = bindingsByContext.find(parent);
                 if (parentIt != bindingsByContext.end()) {
                     auto& childMap = bindingsByContext[child];
-                    for (const auto& [trigger, actionId] : parentIt->second) {
+                    for (const auto& [trigger, entry] : parentIt->second) {
                         if (!childMap.contains(trigger)) {
-                            childMap.emplace(trigger, actionId);
+                            childMap.emplace(trigger, entry);
                         }
                     }
                 }
@@ -1178,14 +1190,15 @@ namespace dualpad::input_v2::actions
                 std::optional<std::string>(entry->defaultLayerIds.back()) :
                 std::nullopt;
 
-            for (const auto& [trigger, actionId] : bindingMap) {
+            for (const auto& [trigger, bindingEntry] : bindingMap) {
                 CompiledBinding binding{};
-                binding.actionId = actionId;
+                binding.actionId = bindingEntry.actionId;
                 binding.baseSetId = baseSetId;
                 binding.layerId = layerId;
                 binding.deviceFamily = "DualSense";
                 binding.legacyTrigger = trigger;
                 binding.legacyContext = ctx;
+                binding.bindingSource = bindingEntry.source;
 
                 // Best-effort controlPath/interaction for Phase 1 tests and diagnostics.
                 binding.controlPath = std::string(dualpad::input::ToString(trigger.type)) + ":" + std::to_string(trigger.code);
@@ -1203,7 +1216,8 @@ namespace dualpad::input_v2::actions
                 ProjectedLegacyBinding projected{};
                 projected.context = ctx;
                 projected.trigger = trigger;
-                projected.actionId = actionId;
+                projected.actionId = bindingEntry.actionId;
+                projected.bindingSource = bindingEntry.source;
                 result.manifest.legacyBindingProjection.bindings.push_back(std::move(projected));
             }
         }

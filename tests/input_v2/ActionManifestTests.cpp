@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input/Action.h"
+#include "input/PadProfile.h"
 #include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input_v2/actions/ActionManifest.h"
 #include "input_v2/config/LegacyIniImporter.h"
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <algorithm>
 #include <stdexcept>
+#include <optional>
 #include <string_view>
 
 namespace
@@ -56,6 +58,40 @@ void RunActionManifestTests()
     const auto root = FindProjectRoot(std::filesystem::current_path());
     const auto bindings = root / "tests" / "fixtures" / "input_v2" / "valid_bindings.ini";
     const auto policy = root / "tests" / "fixtures" / "input_v2" / "valid_menu_policy.ini";
+    const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
+
+    const auto findProjectedBinding = [](
+        const act::CompiledActionManifest& manifest,
+        dualpad::input::InputContext context,
+        std::uint32_t buttonCode) -> std::optional<act::ProjectedLegacyBinding> {
+        const auto found = std::find_if(
+            manifest.legacyBindingProjection.bindings.begin(),
+            manifest.legacyBindingProjection.bindings.end(),
+            [&](const act::ProjectedLegacyBinding& binding) {
+                return binding.context == context &&
+                    binding.trigger.type == dualpad::input::TriggerType::Button &&
+                    binding.trigger.code == buttonCode;
+            });
+        if (found == manifest.legacyBindingProjection.bindings.end()) {
+            return std::nullopt;
+        }
+        return *found;
+    };
+
+    const auto compileFromText = [&](std::string_view text) {
+        const auto temp = std::filesystem::temp_directory_path() / "dualpad-action-manifest-hotfix";
+        std::filesystem::remove_all(temp);
+        const auto tempBindings = temp / "DualPadBindings.ini";
+        const auto tempPolicy = temp / "DualPadMenuPolicy.ini";
+        WriteFile(tempBindings, text);
+        WriteFile(tempPolicy, "[Policy]\nunknown_menu_policy=track\n");
+
+        const auto imported = cfg::LegacyIniImporter::Import(tempBindings, tempPolicy);
+        Require(imported.ok, imported.message);
+        const auto compiledCatalog = ctx::ContextCatalog::Compile(imported.bundle.menuPolicy, 1);
+        Require(compiledCatalog.ok, compiledCatalog.message);
+        return act::ActionManifest::Compile(compiledCatalog.catalog, imported.bundle.bindings, 1);
+    };
 
     {
         const auto imported = cfg::LegacyIniImporter::Import(bindings, policy);
@@ -125,6 +161,95 @@ void RunActionManifestTests()
             }
         }
         Require(foundCompiledDisplayBinding, "compiled manifest should include top-level display binding");
+
+        const auto cross = findProjectedBinding(
+            compiledManifest.manifest,
+            dualpad::input::InputContext::Menu,
+            bits.cross);
+        Require(cross.has_value(), "MenuCross_ResolvesToCancel_FromCheckedInBindings missing Cross binding");
+        Require(
+            cross->actionId == dualpad::input::actions::MenuCancel,
+            "MenuCross_ResolvesToCancel_FromCheckedInBindings");
+        Require(cross->bindingSource == "config", "Menu Cross checked-in binding source must be config");
+
+        const auto triangle = findProjectedBinding(
+            compiledManifest.manifest,
+            dualpad::input::InputContext::Menu,
+            bits.triangle);
+        Require(triangle.has_value(), "MenuTriangle_ResolvesToConfirm_FromCheckedInBindings missing Triangle binding");
+        Require(
+            triangle->actionId == dualpad::input::actions::MenuConfirm,
+            "MenuTriangle_ResolvesToConfirm_FromCheckedInBindings");
+        Require(triangle->bindingSource == "config", "Menu Triangle checked-in binding source must be config");
+
+        const auto circle = findProjectedBinding(
+            compiledManifest.manifest,
+            dualpad::input::InputContext::Menu,
+            bits.circle);
+        Require(circle.has_value(), "MenuCircle_ResolvesToDownloadAll_FromCheckedInBindings missing Circle binding");
+        Require(
+            circle->actionId == dualpad::input::actions::MenuDownloadAll,
+            "MenuCircle_ResolvesToDownloadAll_FromCheckedInBindings");
+        Require(circle->bindingSource == "config", "Menu Circle checked-in binding source must be config");
+    }
+
+    {
+        const auto compiledManifest = compileFromText(R"ini(
+[Touchpad]
+Mode=Disabled
+)ini");
+        Require(compiledManifest.ok, compiledManifest.message);
+
+        const auto cross = findProjectedBinding(compiledManifest.manifest, dualpad::input::InputContext::Menu, bits.cross);
+        const auto triangle = findProjectedBinding(compiledManifest.manifest, dualpad::input::InputContext::Menu, bits.triangle);
+        const auto circle = findProjectedBinding(compiledManifest.manifest, dualpad::input::InputContext::Menu, bits.circle);
+        Require(cross.has_value() && triangle.has_value() && circle.has_value(), "fallback menu bindings must exist");
+        Require(cross->actionId == dualpad::input::actions::MenuCancel, "FallbackMenuBindingsMatchCheckedInDefaults Cross");
+        Require(triangle->actionId == dualpad::input::actions::MenuConfirm, "FallbackMenuBindingsMatchCheckedInDefaults Triangle");
+        Require(circle->actionId == dualpad::input::actions::MenuDownloadAll, "FallbackMenuBindingsMatchCheckedInDefaults Circle");
+        Require(cross->bindingSource == "fallback", "FallbackMenuBindingsMatchCheckedInDefaults Cross source");
+        Require(triangle->bindingSource == "fallback", "FallbackMenuBindingsMatchCheckedInDefaults Triangle source");
+        Require(circle->bindingSource == "fallback", "FallbackMenuBindingsMatchCheckedInDefaults Circle source");
+    }
+
+    {
+        const auto compiledManifest = compileFromText(R"ini(
+[Touchpad]
+Mode=Disabled
+
+[Menu]
+Button:Cross=Menu.Confirm
+Button:Triangle=Menu.Cancel
+Button:Circle=Menu.DownloadAll
+)ini");
+        Require(compiledManifest.ok, compiledManifest.message);
+
+        const auto cross = findProjectedBinding(compiledManifest.manifest, dualpad::input::InputContext::Menu, bits.cross);
+        Require(cross.has_value(), "ImportedBindingsOverrideFallback missing Cross");
+        Require(cross->actionId == dualpad::input::actions::MenuConfirm, "ImportedBindingsOverrideFallback");
+        Require(cross->bindingSource == "config", "Imported override must retain config source");
+    }
+
+    {
+        const auto compiledManifest = compileFromText(R"ini(
+[Touchpad]
+Mode=Disabled
+
+[Menu]
+Button:Cross=Menu.Cancel
+)ini");
+        Require(compiledManifest.ok, compiledManifest.message);
+
+        const auto cross = findProjectedBinding(compiledManifest.manifest, dualpad::input::InputContext::Menu, bits.cross);
+        const auto triangle = findProjectedBinding(compiledManifest.manifest, dualpad::input::InputContext::Menu, bits.triangle);
+        const auto circle = findProjectedBinding(compiledManifest.manifest, dualpad::input::InputContext::Menu, bits.circle);
+        Require(cross.has_value() && triangle.has_value() && circle.has_value(), "FallbackOnlyFillsMissingTriggers bindings");
+        Require(cross->actionId == dualpad::input::actions::MenuCancel, "FallbackOnlyFillsMissingTriggers Cross action");
+        Require(cross->bindingSource == "config", "FallbackOnlyFillsMissingTriggers Cross source");
+        Require(triangle->actionId == dualpad::input::actions::MenuConfirm, "FallbackOnlyFillsMissingTriggers Triangle action");
+        Require(triangle->bindingSource == "fallback", "FallbackOnlyFillsMissingTriggers Triangle source");
+        Require(circle->actionId == dualpad::input::actions::MenuDownloadAll, "FallbackOnlyFillsMissingTriggers Circle action");
+        Require(circle->bindingSource == "fallback", "FallbackOnlyFillsMissingTriggers Circle source");
     }
 
     {

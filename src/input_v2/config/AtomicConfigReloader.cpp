@@ -2,9 +2,12 @@
 
 #include "input_v2/config/AtomicConfigReloader.h"
 
+#include "input/PadProfile.h"
 #include "input_v2/config/ActionManifestPublisher.h"
 #include "input_v2/config/ManifestValidator.h"
 
+#include <algorithm>
+#include <array>
 #include <cctype>
 #include <fstream>
 #include <format>
@@ -354,6 +357,52 @@ namespace dualpad::input_v2::config
             }
             return out.str();
         }
+
+        std::string MenuBindingTriggerLabel(const dualpad::input::Trigger& trigger)
+        {
+            if (trigger.type != dualpad::input::TriggerType::Button) {
+                return {};
+            }
+
+            const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
+            if (trigger.code == bits.cross) return "Button:Cross";
+            if (trigger.code == bits.triangle) return "Button:Triangle";
+            if (trigger.code == bits.circle) return "Button:Circle";
+            return {};
+        }
+
+        void LogEffectiveMenuBindingDump(
+            const actions::CompiledActionManifest& manifest,
+            std::uint64_t promotedEpoch)
+        {
+            const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
+            constexpr auto menuContext = dualpad::input::InputContext::Menu;
+            const std::array expectedCodes{ bits.cross, bits.triangle, bits.circle };
+
+            for (const auto code : expectedCodes) {
+                const auto found = std::find_if(
+                    manifest.bindings.begin(),
+                    manifest.bindings.end(),
+                    [&](const actions::CompiledBinding& binding) {
+                        return binding.legacyContext == menuContext &&
+                            binding.legacyTrigger.type == dualpad::input::TriggerType::Button &&
+                            binding.legacyTrigger.code == code;
+                    });
+                if (found == manifest.bindings.end()) {
+                    continue;
+                }
+
+                logger::info(
+                    "[DualPad][BindingDump] manifest={} epoch={} ctx=Menu trigger={} action={} source={} binding=baseSet:{} layer:{}",
+                    manifest.manifestEpoch,
+                    promotedEpoch,
+                    MenuBindingTriggerLabel(found->legacyTrigger),
+                    found->actionId,
+                    found->bindingSource,
+                    found->baseSetId,
+                    found->layerId.value_or("<none>"));
+            }
+        }
     }
 
     AtomicConfigReloader& AtomicConfigReloader::GetSingleton()
@@ -658,6 +707,7 @@ namespace dualpad::input_v2::config
 
         outMessage = "ok";
         logger::info("[DualPad][PH1][Reloader] promoted manifest epoch {}", promotedEpoch);
+        LogEffectiveMenuBindingDump(compiled->manifest, promotedEpoch);
         return true;
     }
 

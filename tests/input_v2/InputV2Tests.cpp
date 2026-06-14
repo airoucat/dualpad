@@ -5,6 +5,7 @@
 #include "input/Action.h"
 #include "input/PadProfile.h"
 #include "input/Trigger.h"
+#include "input/backend/NativeActionDescriptor.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/actions/InteractionEngine.h"
@@ -1745,6 +1746,88 @@ namespace
             "live Menu ScrollDown legacy glyph descriptor must preserve the compiled ButtonArt token");
     }
 
+    void RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
+        context::ContextResolver::GetSingleton().ResetForTests();
+        actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
+        prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+        ingress::LiveInputFactProducer::GetSingleton().ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
+        compat.DisableRollback();
+        compat.Commit(presentation::PublishedPresentationState{});
+        compat.ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "test_hook_installed"));
+        dualpad::input::detail::ResetUpstreamRouteInstallSnapshotForTests();
+
+        LoadRuntimeConfigForGameplayBindingTests();
+        const auto contextSnapshot = PublishGenericMenuContext();
+        Require(
+            contextSnapshot.legacyInputContext == dualpad::input::InputContext::Menu,
+            "generic menu context must mirror legacy Menu");
+
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "menu Cross binding test needs active config bundle");
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        hub.PushManifestEpochChanged(bundle->manifestEpoch);
+        ingress::LiveInputFactProducer::GetSingleton().PublishGamepadSourceEvidence(
+            contextSnapshot,
+            499'000);
+        const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(
+            500,
+            0,
+            500'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(
+            501,
+            bits.cross,
+            501'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        bool processedStable = false;
+        gameplay::DualPadRuntimeResult result{};
+        RecordingPollOutputExecutor executor;
+        for (const auto& frame : frames) {
+            result = runtime.ProcessAssembledFrameForTests(frame, executor);
+            processedStable = processedStable || frame.kind == ingress::AssembledFrameKind::Stable;
+        }
+
+        Require(processedStable, "MenuCross_EdgeProducesRuntimePlanAction_MenuCancel needs a stable frame");
+        Require(!result.RuntimeHealthDegraded(), "Menu Cross live frame must not degrade before projection");
+        Require(
+            result.projectionFrame.gamepadPlan.transientDigital.count == 1,
+            "MenuCross_EdgeProducesRuntimePlanAction_MenuCancel must produce one native transient");
+        const auto& command = result.projectionFrame.gamepadPlan.transientDigital.items[0];
+        Require(
+            command.actionId == dualpad::input::actions::MenuCancel,
+            "MenuCross_EdgeProducesRuntimePlanAction_MenuCancel");
+        Require(
+            command.control == dualpad::input::backend::NativeControlCode::MenuCancel,
+            "MenuCancel_HasNativeCommitDescriptor");
+        Require(
+            command.phase == actions::ActionPhase::Press,
+            "Menu Cross edge must produce a Press phase for Menu.Cancel");
+
+        const auto outputMask = dualpad::input::backend::ResolveVirtualPadBitMask(
+            dualpad::input::backend::NativeControlCode::MenuCancel,
+            bits);
+        Require(outputMask != 0, "MenuCancel_WhenRouteActive_ProducesNonZeroAuthoritativePoll output mask");
+    }
+
     void RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -1904,6 +1987,7 @@ int main()
         RunRuntimeTransitionRecoveryContractTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests();
+        RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests();
         RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();
         RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
         return 0;
