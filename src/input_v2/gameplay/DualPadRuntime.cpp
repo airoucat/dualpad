@@ -9,12 +9,67 @@
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
+#include "input/RuntimeConfig.h"
 #include "input/injection/RouteHealthContract.h"
+
+#include <SKSE/Logger.h>
+
+#include <algorithm>
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input_v2::gameplay
 {
     namespace
     {
+        const char* ToString(actions::ActionPhase phase)
+        {
+            switch (phase) {
+            case actions::ActionPhase::Press:
+                return "Press";
+            case actions::ActionPhase::Hold:
+                return "Hold";
+            case actions::ActionPhase::Repeat:
+                return "Repeat";
+            case actions::ActionPhase::Release:
+                return "Release";
+            case actions::ActionPhase::Pulse:
+                return "Pulse";
+            case actions::ActionPhase::Value:
+                return "Value";
+            default:
+                return "Unknown";
+            }
+        }
+
+        const char* ToString(DigitalGateMode mode)
+        {
+            switch (mode) {
+            case DigitalGateMode::Open:
+                return "Open";
+            case DigitalGateMode::SuppressNewTransient:
+                return "SuppressNewTransient";
+            case DigitalGateMode::CancelAndSuppressNewTransient:
+                return "CancelAndSuppressNewTransient";
+            default:
+                return "Unknown";
+            }
+        }
+
+        const char* ToString(RecoveryMode mode)
+        {
+            switch (mode) {
+            case RecoveryMode::None:
+                return "None";
+            case RecoveryMode::SoftResyncOutputs:
+                return "SoftResyncOutputs";
+            case RecoveryMode::HardResetOutputs:
+                return "HardResetOutputs";
+            default:
+                return "Unknown";
+            }
+        }
+
         bool ShouldClearProjectionStickyOwners(const GameplayRecoveryInput& recovery)
         {
             return recovery.softResyncRequested ||
@@ -72,6 +127,72 @@ namespace dualpad::input_v2::gameplay
                 return reasons;
             }
             return AddRuntimeHealthReason(reasons, RuntimeHealthReason::PromptScopeFrozen);
+        }
+
+        bool ShouldLogRuntimePlan()
+        {
+            return input::RuntimeConfig::GetSingleton().LogActionPlan();
+        }
+
+        std::size_t CountPulseSamples(const std::vector<actions::ControlSample>& samples)
+        {
+            std::size_t count = 0;
+            for (const auto& sample : samples) {
+                if (sample.pressed || sample.released) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        void LogRuntimeProjectionPlan(
+            const DualPadRuntimeInput& input,
+            const GameplayProjectionFrame& projection)
+        {
+            if (!ShouldLogRuntimePlan()) {
+                return;
+            }
+
+            const auto& kernel = input.kernel;
+            logger::info(
+                "[DualPad][RuntimePlan] seq={} manifest={} ctxRevision={} legacyCtx={} legacyEpoch={} health={} samples={} pulses={} changes={} values={} recovery={} gate={} sustained={} transient={} helper={} analog=move({:.3f},{:.3f}) look({:.3f},{:.3f}) triggers({:.3f},{:.3f})",
+                kernel.kernelRevision,
+                kernel.facts.manifestEpoch,
+                kernel.facts.contextRevision,
+                input::ToString(input.legacyContext),
+                input.legacyContextEpoch,
+                RuntimeHealthReasonSummary(input.runtimeHealthReasons),
+                kernel.state.controlSamples.size(),
+                CountPulseSamples(kernel.state.controlSamples),
+                input.resolved.changes.size(),
+                input.resolved.values.size(),
+                ToString(projection.recoveryPlan.mode),
+                ToString(projection.gatePlan.transientDigitalGate),
+                projection.gamepadPlan.sustainedDigital.count,
+                projection.gamepadPlan.transientDigital.count,
+                projection.helperPlan.commands.count,
+                projection.gamepadPlan.analog.moveX,
+                projection.gamepadPlan.analog.moveY,
+                projection.gamepadPlan.analog.lookX,
+                projection.gamepadPlan.analog.lookY,
+                projection.gamepadPlan.analog.leftTrigger,
+                projection.gamepadPlan.analog.rightTrigger);
+
+            constexpr std::size_t kMaxActionLogs = 6;
+            const auto limit = (std::min)(input.resolved.changes.size(), kMaxActionLogs);
+            for (std::size_t index = 0; index < limit; ++index) {
+                const auto& change = input.resolved.changes[index];
+                logger::info(
+                    "[DualPad][RuntimePlanAction] seq={} index={} action={} phase={} binding={} ts={} firstEdge={} lastEdge={}",
+                    kernel.kernelRevision,
+                    index,
+                    change.actionId,
+                    ToString(change.phase),
+                    change.bindingId,
+                    change.timestampUs,
+                    change.firstEdgeUs,
+                    change.lastEdgeUs);
+            }
         }
     }
 
@@ -225,6 +346,7 @@ namespace dualpad::input_v2::gameplay
             .runtimeHealthReasons = runtimeHealthReasons,
             .outputTick = kernel.facts.monotonicUs,
             .legacyContext = contextSnapshot.legacyInputContext,
+            .legacyContextEpoch = contextSnapshot.legacyContextEpoch,
             .runtimeHealthDebugReason = envelope.debugReason
         };
     }
@@ -316,6 +438,7 @@ namespace dualpad::input_v2::gameplay
             input.policy,
             previous,
             input.recovery);
+        LogRuntimeProjectionPlan(input, projection);
 
         auto output = _pollOutputAdapter.Apply(projection, executor);
         auto published = _presentationPublisher.GetPublished();

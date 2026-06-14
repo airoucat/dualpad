@@ -22,6 +22,7 @@ namespace dualpad::input
         std::uint64_t sourceTimestampUs{ 0 };
         InputContext context{ InputContext::Gameplay };
         std::uint32_t contextEpoch{ 0 };
+        std::uint32_t contextRevision{ 0 };
         PadState state{};
         PadEventBuffer events{};
         bool overflowed{ false };

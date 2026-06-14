@@ -368,6 +368,9 @@ namespace dualpad::input_v2::ingress
     {
         const auto revision = event.sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision;
         if (_pendingDeviceMarker) {
+            if (revision < _pendingDeviceMarker->deviceFamilyRevision) {
+                return;
+            }
             if (_pendingDeviceMarker->deviceFamilyRevision != revision) {
                 FactHealth health{};
                 health.pendingBoundaryMarkerPair = true;
@@ -382,6 +385,9 @@ namespace dualpad::input_v2::ingress
             return;
         }
 
+        if (revision < _currentKey.deviceFamilyRevision) {
+            return;
+        }
         if (revision != _currentKey.deviceFamilyRevision) {
             FactHealth health{};
             health.boundaryMarkerMismatch = true;

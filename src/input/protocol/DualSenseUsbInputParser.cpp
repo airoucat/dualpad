@@ -110,7 +110,7 @@ namespace dualpad::input
                 return;
             }
 
-            logger::debug(
+            logger::info(
                 "[DualPad][MenuProbe] raw-buttons transport={} report=0x{:02X} seq={} buttons0=0x{:02X} buttons1=0x{:02X} buttons2=0x{:02X} buttons3=0x{:02X} dpadNibble=0x{:X} mask=0x{:08X}",
                 ToString(packet.transport),
                 packet.reportId,

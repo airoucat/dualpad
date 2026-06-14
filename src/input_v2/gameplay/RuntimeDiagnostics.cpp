@@ -241,7 +241,9 @@ namespace dualpad::input_v2::gameplay
 
         if (snapshot.runtimeHealthDegraded) {
             logger::warn(
-                "[DualPad][RuntimeDebug] degraded reasons={} debug='{}' prompt_state={} prompt_reason={} hook_status={} hook_reason='{}' upstream_status={} upstream_reason='{}' overflow='{}'",
+                "[DualPad][RuntimeDebug] degraded frame={} transition={} reasons={} debug='{}' prompt_state={} prompt_reason={} hook_status={} hook_reason='{}' upstream_status={} upstream_reason='{}' overflow='{}'",
+                snapshot.frameKind,
+                snapshot.transitionReason,
                 snapshot.runtimeHealthReasonSummary,
                 snapshot.runtimeHealthDebugReason,
                 snapshot.promptStateName,
@@ -255,7 +257,8 @@ namespace dualpad::input_v2::gameplay
         }
 
         logger::info(
-            "[DualPad][RuntimeDebug] recovered prompt_state={} hook_status={} upstream_status={}",
+            "[DualPad][RuntimeDebug] recovered frame={} prompt_state={} hook_status={} upstream_status={}",
+            snapshot.frameKind,
             snapshot.promptStateName,
             snapshot.hookInstallStatusName,
             snapshot.upstreamRouteInstallStatusName);

@@ -232,6 +232,52 @@ namespace
             "presentation plan engineOwner must follow gameplay projection owner result");
     }
 
+    void RunMenuContextGamepadOutputTests()
+    {
+        auto resolved = Resolved();
+        resolved.changes.push_back(actions::ActionPhaseChange{
+            .actionId = "Menu.Confirm",
+            .bindingId = 10,
+            .phase = actions::ActionPhase::Press,
+            .timestampUs = 10'000
+        });
+        resolved.changes.push_back(actions::ActionPhaseChange{
+            .actionId = "Menu.ScrollDown",
+            .bindingId = 11,
+            .phase = actions::ActionPhase::Press,
+            .timestampUs = 10'000
+        });
+        resolved.values.push_back(actions::ActionValueSnapshot{
+            .actionId = "Menu.LeftStick",
+            .kind = actions::ActionValueKind::Axis2D,
+            .scalar = 1.0f,
+            .x = 0.0f,
+            .y = -1.0f,
+            .timestampUs = 10'000
+        });
+
+        const auto projected = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            resolved,
+            gameplay::GameplayPolicy{ .gameplayContext = false },
+            gameplay::GameplayProjectionFrame{},
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+
+        Require(projected.context == gameplay::LegacyInputContextCompat::Menu, "menu projection must carry Menu legacy context");
+        Require(
+            projected.gatePlan.transientDigitalGate == gameplay::DigitalGateMode::Open,
+            "menu context must not suppress resolved gamepad menu digital output");
+        Require(projected.gamepadPlan.transientDigital.count == 1, "menu digital action must enter native transient output plan");
+        Require(
+            projected.gamepadPlan.transientDigital.items[0].control == backend::NativeControlCode::MenuConfirm,
+            "Menu.Confirm must keep its native menu control");
+        Require(projected.gamepadPlan.sustainedDigital.count == 1, "menu repeat action must enter native sustained output plan");
+        Require(
+            projected.gamepadPlan.sustainedDigital.items[0].control == backend::NativeControlCode::MenuScrollDown,
+            "Menu.ScrollDown must keep its native menu control");
+        Require(projected.gamepadPlan.analog.moveY == -1.0f, "Menu.LeftStick must not be zeroed by non-gameplay ownership gates");
+    }
+
     void RunPrimaryPathArbitrationContractTests()
     {
         const auto keyboardMouseWins = gameplay::ResolvePrimaryPathArbitration(gameplay::PrimaryPathArbitrationInput{
@@ -481,6 +527,7 @@ int main()
         RunFrozenFrameShapeTests();
         RunRecoveryPlanTests();
         RunProjectionClassificationAndGateTests();
+        RunMenuContextGamepadOutputTests();
         RunPrimaryPathArbitrationContractTests();
         RunOverflowFailClosedTests();
         RunPresentationPublisherTests();

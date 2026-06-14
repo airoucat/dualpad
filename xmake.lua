@@ -107,6 +107,8 @@ target("DualPad")
         end
         local debug_ini_src = path.join(os.projectdir(), "config", "DualPadDebug.ini")
         local debug_ini_dst = path.join(mo2_plugins_dir, "DualPadDebug.ini")
+        local bindings_ini_src = path.join(os.projectdir(), "config", "DualPadBindings.ini")
+        local bindings_ini_dst = path.join(mo2_plugins_dir, "DualPadBindings.ini")
         local menu_policy_ini_src = path.join(os.projectdir(), "config", "DualPadMenuPolicy.ini")
         local menu_policy_ini_dst = path.join(mo2_plugins_dir, "DualPadMenuPolicy.ini")
         local controlmap_overlay_src = path.join(
@@ -119,11 +121,15 @@ target("DualPad")
             "PC",
             "controlmap.txt")
         local controlmap_overlay_dst = path.join(mo2_plugins_dir, "DualPadControlMap.txt")
-        if os.isfile(debug_ini_src) and not os.isfile(debug_ini_dst) then
+        if os.isfile(debug_ini_src) then
             os.mkdir(mo2_plugins_dir)
             os.cp(debug_ini_src, debug_ini_dst)
         end
-        if os.isfile(menu_policy_ini_src) and not os.isfile(menu_policy_ini_dst) then
+        if os.isfile(bindings_ini_src) then
+            os.mkdir(mo2_plugins_dir)
+            os.cp(bindings_ini_src, bindings_ini_dst)
+        end
+        if os.isfile(menu_policy_ini_src) then
             os.mkdir(mo2_plugins_dir)
             os.cp(menu_policy_ini_src, menu_policy_ini_dst)
         end
@@ -293,6 +299,8 @@ target("DualPadGameplayProjectionTests")
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
         "src/input/backend/ActionBackendPolicy.cpp",
         "src/input/backend/NativeActionDescriptor.cpp",
+        "src/input/injection/RouteHealthContract.cpp",
+        "src/input_v2/telemetry/UpstreamGamepadHookReplayStub.cpp",
         "src/input/RuntimeConfig.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
@@ -382,6 +390,17 @@ target("DualPadRouteHealthContractTests")
         "tests/RouteHealthContractTests.cpp",
         "src/input/injection/RouteHealthContract.cpp")
     add_headerfiles("tests/**.h")
+    add_includedirs("src")
+    set_pcxxheader("src/pch.h")
+
+target("DualPadNativeButtonCommitTests")
+    set_kind("binary")
+    add_deps("commonlibsse-ng")
+    add_syslinks("ole32", "user32")
+
+    add_files("tests/NativeButtonCommitTests.cpp")
+    add_headerfiles("tests/**.h")
+    add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 

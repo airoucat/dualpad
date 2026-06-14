@@ -16,6 +16,42 @@ namespace dualpad::input
         {
             return value ? "1" : "0";
         }
+
+        bool ShouldEmitPeriodicInputProbe(std::uint64_t sequence)
+        {
+            return sequence <= 20 || (sequence % 120) == 0;
+        }
+
+        bool HasControlStateChanged(const PadState& previous, const PadState& current)
+        {
+            return previous.buttons.digitalMask != current.buttons.digitalMask ||
+                previous.leftStick.rawX != current.leftStick.rawX ||
+                previous.leftStick.rawY != current.leftStick.rawY ||
+                previous.rightStick.rawX != current.rightStick.rawX ||
+                previous.rightStick.rawY != current.rightStick.rawY ||
+                previous.leftTrigger.raw != current.leftTrigger.raw ||
+                previous.rightTrigger.raw != current.rightTrigger.raw;
+        }
+
+        bool HasPacketPrefixChanged(const RawInputPacket& previous, const RawInputPacket& current)
+        {
+            if (!previous.data || !current.data) {
+                return true;
+            }
+
+            constexpr std::size_t kProbeBytes = 32;
+            const auto previousSize = (std::min)(previous.size, kProbeBytes);
+            const auto currentSize = (std::min)(current.size, kProbeBytes);
+            if (previousSize != currentSize) {
+                return true;
+            }
+            for (std::size_t index = 0; index < currentSize; ++index) {
+                if (previous.data[index] != current.data[index]) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     std::uint64_t CaptureInputTimestampUs()
@@ -47,7 +83,11 @@ namespace dualpad::input
             return;
         }
 
-        logger::debug(
+        if (!ShouldEmitPeriodicInputProbe(packet.sequence)) {
+            return;
+        }
+
+        logger::info(
             "[DualPad][Input][Packet] transport={} confidence={} report=0x{:02X} size={} seq={} tsUs={}",
             ToString(packet.transport),
             ToString(packet.transportConfidence),
@@ -63,10 +103,34 @@ namespace dualpad::input
             return;
         }
 
+        static std::array<std::uint8_t, 32> lastPrefix{};
+        static RawInputPacket lastPacket{};
+        static bool hasLastPacket = false;
+
+        RawInputPacket prefixPacket = packet;
+        std::array<std::uint8_t, 32> currentPrefix{};
+        const auto prefixSize = (std::min)(packet.size, currentPrefix.size());
+        for (std::size_t index = 0; index < prefixSize; ++index) {
+            currentPrefix[index] = packet.data[index];
+        }
+        prefixPacket.data = currentPrefix.data();
+        prefixPacket.size = prefixSize;
+
+        if (!ShouldEmitPeriodicInputProbe(packet.sequence) &&
+            hasLastPacket &&
+            !HasPacketPrefixChanged(lastPacket, prefixPacket)) {
+            return;
+        }
+
+        lastPrefix = currentPrefix;
+        lastPacket = prefixPacket;
+        lastPacket.data = lastPrefix.data();
+        hasLastPacket = true;
+
         constexpr char kHex[] = "0123456789ABCDEF";
         std::array<char, 128 * 3 + 1> buffer{};
 
-        const std::size_t clampedSize = (std::min)(packet.size, static_cast<std::size_t>(128));
+        const std::size_t clampedSize = (std::min)(packet.size, static_cast<std::size_t>(32));
         std::size_t cursor = 0;
         for (std::size_t i = 0; i < clampedSize && (cursor + 2) < buffer.size(); ++i) {
             const auto byte = packet.data[i];
@@ -81,7 +145,7 @@ namespace dualpad::input
             buffer[cursor - 1] = '\0';
         }
 
-        logger::debug(
+        logger::info(
             "[DualPad][Input][Hex] transport={} report=0x{:02X} size={} data={}",
             ToString(packet.transport),
             packet.reportId,
@@ -94,19 +158,22 @@ namespace dualpad::input
         if (!IsInputDebugLogEnabled(InputDebugLog::PacketSummary)) {
             return;
         }
+        if (!ShouldEmitPeriodicInputProbe(state.sequence)) {
+            return;
+        }
 
         if (state.transport == TransportType::Bluetooth && state.reportId == 0x01) {
-            logger::debug("[DualPad][Input][Parse] Parsed DualSense BT report 0x01 (partial support)");
+            logger::info("[DualPad][Input][Parse] Parsed DualSense BT report 0x01 (partial support)");
             return;
         }
 
         if (state.transport == TransportType::Bluetooth && state.reportId == 0x31) {
-            logger::debug("[DualPad][Input][Parse] Parsed DualSense BT report 0x31");
+            logger::info("[DualPad][Input][Parse] Parsed DualSense BT report 0x31");
             return;
         }
 
         if (state.transport == TransportType::USB && state.reportId == 0x01) {
-            logger::debug("[DualPad][Input][Parse] Parsed DualSense USB report 0x01");
+            logger::info("[DualPad][Input][Parse] Parsed DualSense USB report 0x01");
         }
     }
 
@@ -116,7 +183,18 @@ namespace dualpad::input
             return;
         }
 
-        logger::debug(
+        static PadState lastState{};
+        static bool hasLastState = false;
+        if (!ShouldEmitPeriodicInputProbe(state.sequence) &&
+            hasLastState &&
+            !HasControlStateChanged(lastState, state)) {
+            return;
+        }
+
+        lastState = state;
+        hasLastState = true;
+
+        logger::info(
             "[DualPad][Input][State] transport={} completeness={} report=0x{:02X} mask=0x{:08X} ls=({:.3f},{:.3f}) rs=({:.3f},{:.3f}) lt={:.3f} rt={:.3f} tp1={}({},{}) tp2={}({},{}) imu={} battery={} valid={}",
             ToString(state.transport),
             ToString(state.parseCompleteness),

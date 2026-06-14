@@ -113,3 +113,23 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: The prior RC hardening restored `xmake-requires.lock` only on GitHub Actions. A local xmake 3.0.7 run can also update the package repository commit without changing package versions, leaving the working tree dirty before `generate_release_artifact_manifest.py --expect-clean`.
 - Related files: `scripts/ci/run_rc_readiness.ps1`, `xmake-requires.lock`
 - Resolution: Changed RC readiness to detect and restore `xmake-requires.lock` churn before the clean manifest step in both local and CI runs.
+
+## ERR-20260613-001
+
+- Logged: 2026-06-13 00:08 CST
+- Priority: low
+- Status: resolved
+- Area: build / xmake artifact discovery
+- Summary: 复查 DInput8 proxy 部署时，先假设本地产物位于 `build\windows\x64\releasedbg\DualPadDInput8Proxy.dll`，该路径不存在。
+- Detail: 当前 xmake target 的实际 proxy 产物由 `xmake show -t DualPadDInput8Proxy` 和 `rg --files build` 确认，部署目标是 `G:\g\SkyrimSE\dinput8.dll`，本地构建产物路径是 `build\bin\DualPadDInput8Proxy\dinput8.dll`。后续不要根据通用 xmake build 目录猜测 proxy 产物路径。
+- Resolution: 已用 `xmake show -t DualPadDInput8Proxy` 与部署目标文件 hash 复核。
+
+## ERR-20260613-002
+
+- Logged: 2026-06-13 00:23 CST
+- Priority: low
+- Status: resolved
+- Area: tests / CommonLibSSE
+- Summary: 新增 standalone native commit 测试时直接构造 `RE::BSFixedString`，测试进程在非 Skyrim 环境中挂住。
+- Detail: `PollCommitCoordinator` 的请求/slot 使用 `RE::BSFixedString`。直接在新的独立测试进程里实例化该类型会依赖 CommonLib/Skyrim 字符串池环境，导致 `DualPadNativeButtonCommitTests` 运行超时并残留进程。后续 standalone contract tests 应优先测试纯函数/纯合同；若必须覆盖 `BSFixedString` 路径，应复用已有 harness 或先建立明确的 test runtime 初始化，而不是临时构造。
+- Resolution: 已终止残留测试进程，并把该目标收缩为 `IsNativeDigitalGateOpenForContext()` 纯合同测试。

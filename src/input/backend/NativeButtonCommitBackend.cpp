@@ -179,11 +179,46 @@ namespace dualpad::input::backend
                 action.contextEpoch);
         }
 
+        if (ShouldLogPollCommit()) {
+            logger::info(
+                "[DualPad][NativeButtonCommit] apply action={} phase={} contract={} digitalPolicy={} gateAware={} actionContext={} actionEpoch={} frameContext={} frameEpoch={} outputCode={}",
+                action.actionId.c_str(),
+                ToString(action.phase),
+                ToString(action.contract),
+                ToString(action.digitalPolicy),
+                action.gateAware,
+                dualpad::input::ToString(action.context),
+                action.contextEpoch,
+                dualpad::input::ToString(_frameContext),
+                _frameContextEpoch,
+                ToString(static_cast<NativeControlCode>(action.outputCode)));
+        }
+
         PollCommitRequest request{};
         if (!TranslatePlannedActionToCommitRequest(action, request)) {
+            if (ShouldLogPollCommit()) {
+                logger::warn(
+                    "[DualPad][NativeButtonCommit] translate_failed action={} phase={} contract={} digitalPolicy={} outputCode={}",
+                    action.actionId.c_str(),
+                    ToString(action.phase),
+                    ToString(action.contract),
+                    ToString(action.digitalPolicy),
+                    ToString(static_cast<NativeControlCode>(action.outputCode)));
+            }
             return false;
         }
-        return _pollCommit.QueueRequest(request);
+        const auto queued = _pollCommit.QueueRequest(request);
+        if (ShouldLogPollCommit()) {
+            logger::info(
+                "[DualPad][NativeButtonCommit] queue action={} kind={} mode={} queued={} requestEpoch={} gateAware={}",
+                request.actionId.c_str(),
+                ToString(request.kind),
+                ToString(request.mode),
+                queued,
+                request.epoch,
+                request.gateAware);
+        }
+        return queued;
     }
 
     void NativeButtonCommitBackend::ForceCancelGateAwareGameplayTransientActions()
@@ -491,8 +526,7 @@ namespace dualpad::input::backend
 
     bool NativeButtonCommitBackend::IsGameplayGateOpen(InputContext context)
     {
-        const auto value = static_cast<std::uint16_t>(context);
-        return value < 100 || value >= 2000;
+        return IsNativeDigitalGateOpenForContext(context);
     }
 
     bool NativeButtonCommitBackend::SlotIsDown(const PollCommitSlot& slot)

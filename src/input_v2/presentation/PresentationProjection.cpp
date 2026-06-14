@@ -78,15 +78,15 @@ namespace dualpad::input_v2::presentation
         if (contextSnapshot.hostMode == context::HostMode::Gameplay) {
             next.owner = gameplay.engineOwner;
             next.reason = PresentationDecisionReason::GameplayEngineOwner;
-        } else if (enteringMenu) {
-            next.owner = gameplay.menuEntryOwner;
-            next.reason = PresentationDecisionReason::GameplayMenuEntryOwner;
         } else if (evidence.gamepadEvidence || evidence.gamepadLease) {
             next.owner = PresentationOwner::Gamepad;
             next.reason = PresentationDecisionReason::MenuSourceEvidence;
         } else if (HasKeyboardMouseEvidence(evidence)) {
             next.owner = PresentationOwner::KeyboardMouse;
             next.reason = PresentationDecisionReason::MenuSourceEvidence;
+        } else if (enteringMenu) {
+            next.owner = gameplay.menuEntryOwner;
+            next.reason = PresentationDecisionReason::GameplayMenuEntryOwner;
         } else {
             next.owner = _published.owner;
             next.reason = PresentationDecisionReason::MenuSourceEvidence;

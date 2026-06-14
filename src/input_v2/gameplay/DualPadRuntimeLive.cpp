@@ -60,7 +60,7 @@ namespace dualpad::input_v2::gameplay
             }
         }
 
-        void ApplyDigitalMetadata(PlannedAction& action, bool gateAware, std::uint32_t contextRevision)
+        void ApplyDigitalMetadata(PlannedAction& action, bool gateAware, std::uint32_t contextEpoch)
         {
             action.digitalPolicy = ResolveDigitalPolicy(action.contract);
             action.gateAware = gateAware;
@@ -73,7 +73,7 @@ namespace dualpad::input_v2::gameplay
             action.repeatIntervalMs = action.digitalPolicy == NativeDigitalPolicyKind::RepeatOwner ?
                 kDefaultRepeatIntervalMs :
                 0;
-            action.contextEpoch = contextRevision;
+            action.contextEpoch = contextEpoch;
         }
 
         PlannedAction BuildNativeAction(
@@ -83,7 +83,7 @@ namespace dualpad::input_v2::gameplay
             ActionOutputContract contract,
             bool gateAware,
             dualpad::input::InputContext legacyContext,
-            std::uint32_t contextRevision)
+            std::uint32_t contextEpoch)
         {
             PlannedAction action{};
             action.backend = PlannedBackend::NativeButtonCommit;
@@ -93,7 +93,7 @@ namespace dualpad::input_v2::gameplay
             action.actionId = std::string(actionId);
             action.contract = contract;
             action.outputCode = static_cast<std::uint32_t>(control);
-            ApplyDigitalMetadata(action, gateAware, contextRevision);
+            ApplyDigitalMetadata(action, gateAware, contextEpoch);
             return action;
         }
 
@@ -130,15 +130,15 @@ namespace dualpad::input_v2::gameplay
         public:
             RuntimePollOutputExecutor(
                 dualpad::input::InputContext legacyContext,
-                std::uint32_t contextRevision,
+                std::uint32_t legacyContextEpoch,
                 std::uint64_t nowUs) :
                 _legacyContext(legacyContext),
-                _contextRevision(contextRevision),
+                _legacyContextEpoch(legacyContextEpoch),
                 _nowUs(nowUs)
             {
                 dualpad::input::backend::NativeButtonCommitBackend::GetSingleton().BeginFrame(
                     _legacyContext,
-                    _contextRevision,
+                    _legacyContextEpoch,
                     _nowUs);
             }
 
@@ -146,7 +146,7 @@ namespace dualpad::input_v2::gameplay
             {
                 auto& native = dualpad::input::backend::NativeButtonCommitBackend::GetSingleton();
                 native.Reset();
-                native.BeginFrame(_legacyContext, _contextRevision, _nowUs);
+                native.BeginFrame(_legacyContext, _legacyContextEpoch, _nowUs);
                 return true;
             }
 
@@ -189,7 +189,7 @@ namespace dualpad::input_v2::gameplay
                         command.contract,
                         false,
                         _legacyContext,
-                        command.contextRevision));
+                        _legacyContextEpoch));
             }
 
             bool ApplyTransientDigital(const NativeTransientCommand& command) override
@@ -202,7 +202,7 @@ namespace dualpad::input_v2::gameplay
                         command.contract,
                         command.gateAware,
                         _legacyContext,
-                        command.contextRevision));
+                        _legacyContextEpoch));
             }
 
             bool ApplyHelperCommand(const HelperOutputCommand& command) override
@@ -268,7 +268,7 @@ namespace dualpad::input_v2::gameplay
 
         private:
             dualpad::input::InputContext _legacyContext{ dualpad::input::InputContext::Gameplay };
-            std::uint32_t _contextRevision{ 0 };
+            std::uint32_t _legacyContextEpoch{ 1 };
             std::uint64_t _nowUs{ 0 };
         };
     }
@@ -293,7 +293,7 @@ namespace dualpad::input_v2::gameplay
 
         RuntimePollOutputExecutor executor(
             input.legacyContext,
-            input.kernel.facts.contextRevision,
+            input.legacyContextEpoch,
             input.kernel.facts.monotonicUs);
         return ProcessGameplayFrameWithExecutor(input, executor);
     }

@@ -23,7 +23,9 @@ namespace dualpad::input
 
         bool MatchesSnapshotContext(const PadEventSnapshot& lhs, const PadEventSnapshot& rhs)
         {
-            return lhs.context == rhs.context && lhs.contextEpoch == rhs.contextEpoch;
+            return lhs.context == rhs.context &&
+                lhs.contextEpoch == rhs.contextEpoch &&
+                lhs.contextRevision == rhs.contextRevision;
         }
 
         void AppendCoalescedEvents(

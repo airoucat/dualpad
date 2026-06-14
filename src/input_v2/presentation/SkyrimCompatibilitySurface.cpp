@@ -12,15 +12,14 @@ namespace dualpad::input_v2::presentation
     namespace
     {
         constexpr REL::ID kIsUsingGamepadId{ 67320 };
-        constexpr std::ptrdiff_t kIsUsingGamepadCallOffset = 0xD;
         constexpr REL::ID kGamepadControlsCursorId{ 67321 };
-        constexpr std::ptrdiff_t kGamepadControlsCursorCallOffset = 0xD;
         constexpr REL::ID kGamepadHandlerVtblId{ 560029 };
         constexpr std::size_t kGamepadIsEnabledVfuncIndex = 0x8;
         constexpr std::ptrdiff_t kGamepadDelegateOffset = 0x08;
         constexpr std::ptrdiff_t kMenuControlsRemapModeOffset = 0x82;
         constexpr auto kSupportedRuntime = SKSE::RUNTIME_SSE_1_5_97;
-        constexpr auto kExpectedCallPatchWindow = REL::make_pattern<"E8 ?? ?? ?? ?? ??">();
+        constexpr auto kExpectedBoolSurfaceEntryWindow =
+            REL::make_pattern<"48 83 EC 28 48 8B 49 70 48 85 C9 74 11">();
 
         bool IsInstalledStatus(HookInstallStatus status)
         {
@@ -47,19 +46,19 @@ namespace dualpad::input_v2::presentation
         }
 
         HookInstallResult VerifyHookSites(
-            std::uintptr_t usingGamepadCallAddress,
-            std::uintptr_t cursorCallAddress,
+            std::uintptr_t usingGamepadAddress,
+            std::uintptr_t cursorAddress,
             std::uintptr_t gamepadHandlerVtblAddress)
         {
-            if (!REL::verify_code(usingGamepadCallAddress, kExpectedCallPatchWindow)) {
+            if (!REL::verify_code(usingGamepadAddress, kExpectedBoolSurfaceEntryWindow)) {
                 return detail::MakeHookInstallResult(
                     HookInstallStatus::SignatureMismatch,
-                    "is_using_gamepad_call_signature_mismatch");
+                    "is_using_gamepad_entry_signature_mismatch");
             }
-            if (!REL::verify_code(cursorCallAddress, kExpectedCallPatchWindow)) {
+            if (!REL::verify_code(cursorAddress, kExpectedBoolSurfaceEntryWindow)) {
                 return detail::MakeHookInstallResult(
                     HookInstallStatus::SignatureMismatch,
-                    "gamepad_cursor_call_signature_mismatch");
+                    "gamepad_cursor_entry_signature_mismatch");
             }
             if (!HasVfuncSlot(gamepadHandlerVtblAddress, kGamepadIsEnabledVfuncIndex)) {
                 return detail::MakeHookInstallResult(
@@ -199,8 +198,8 @@ namespace dualpad::input_v2::presentation
 
         detail::HookInstallProgress progress = detail::HookInstallProgress::NotStarted;
         try {
-            REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId, kIsUsingGamepadCallOffset };
-            REL::Relocation<std::uintptr_t> cursorHook{ kGamepadControlsCursorId, kGamepadControlsCursorCallOffset };
+            REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId };
+            REL::Relocation<std::uintptr_t> cursorHook{ kGamepadControlsCursorId };
             REL::Relocation<std::uintptr_t> gamepadHandlerVtbl{ kGamepadHandlerVtblId };
 
             auto gate = VerifyHookSites(
@@ -216,25 +215,25 @@ namespace dualpad::input_v2::presentation
             }
 
             progress = detail::HookInstallProgress::PatchStarted;
-            const auto originalUsingGamepad = SKSE::GetTrampoline().write_call<6>(
+            const auto originalUsingGamepad = SKSE::GetTrampoline().write_branch<5>(
                 usingGamepadHook.address(),
                 StaticIsUsingGamepadHook);
             if (originalUsingGamepad == 0) {
                 auto result = detail::EvaluateHookPatchFailure(
                     progress,
-                    "is_using_gamepad_patch_failed");
+                    "is_using_gamepad_entry_patch_failed");
                 result = MarkInstallFailed(result);
                 logger::error("[DualPad][SkyrimCompat] Hook patch failed: {}", ToDebugString(result));
                 return result;
             }
 
-            const auto originalCursor = SKSE::GetTrampoline().write_call<6>(
+            const auto originalCursor = SKSE::GetTrampoline().write_branch<5>(
                 cursorHook.address(),
                 StaticIsGamepadCursorHook);
             if (originalCursor == 0) {
                 auto result = detail::EvaluateHookPatchFailure(
                     progress,
-                    "gamepad_cursor_patch_failed");
+                    "gamepad_cursor_entry_patch_failed");
                 result = MarkInstallFailed(result);
                 logger::error("[DualPad][SkyrimCompat] Hook patch partially failed: {}", ToDebugString(result));
                 return result;

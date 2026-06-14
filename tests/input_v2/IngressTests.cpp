@@ -249,6 +249,25 @@ namespace
         Require(stable.facts.controlSamples.size() >= 6, "stable facts must retain non-empty control samples");
     }
 
+    void TestLegacySnapshotAdapterPrefersInputV2ContextRevision()
+    {
+        input::PadEventSnapshot snapshot{};
+        snapshot.sequence = 20;
+        snapshot.firstSequence = 20;
+        snapshot.sourceTimestampUs = 4321;
+        snapshot.contextEpoch = 1;
+        snapshot.contextRevision = 23;
+        snapshot.state.timestampUs = 4321;
+        snapshot.state.sequence = 20;
+
+        const auto converted = ingress::ConvertLegacySnapshotToIngressEvents(snapshot, 19);
+        Require(converted.size() == 2, "snapshot with continuous sequence must produce ui + pad ingress events");
+        Require(converted[0].kind == ingress::IngressKind::UiSnapshot, "first converted event must be UiSnapshot");
+        Require(
+            converted[0].ui.contextRevision == 23,
+            "legacy snapshot adapter must prefer input_v2 contextRevision over legacy contextEpoch");
+    }
+
     void TestLegacySnapshotBatchOverflowRejectsPartialEvents()
     {
         ingress::IngressHub hub{ 1 };
@@ -697,6 +716,36 @@ namespace
         Require(reset->facts.health.boundaryMarkerMismatch, "mismatch health marker required");
     }
 
+    void TestStaleSourceEvidenceAfterNewerDeviceMarkerDoesNotHardReset()
+    {
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(AssignSeq({
+            Manifest(1),
+            Ui(1, 1),
+            DeviceMarker(presentation::DeviceFamily::KeyboardMouse, 1),
+            SourceEvidence(1),
+            DeviceMarker(presentation::DeviceFamily::KeyboardMouse, 2),
+            DeviceMarker(presentation::DeviceFamily::Gamepad, 3),
+            SourceEvidence(2),
+            SourceEvidence(3),
+            PadSample(7, true, true, false)
+        }));
+
+        Require(
+            FindTransition(frames, ingress::TransitionReason::ExplicitReset) == nullptr,
+            "stale older source evidence must be ignored instead of forcing a hard reset");
+        const auto& stable = LastStableFrame(frames);
+        Require(
+            stable.boundaryKey.deviceFamilyRevision == 3,
+            "newer paired device marker must remain the active boundary revision");
+        Require(
+            stable.facts.sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision == 3,
+            "newer source evidence must publish after stale evidence is ignored");
+        Require(
+            !stable.facts.health.boundaryMarkerMismatch,
+            "ignored stale source evidence must not poison stable frame health");
+    }
+
     void TestBuildKernelFrameDoesNotAcceptTransition()
     {
         ingress::AssembledFactFrame transition{};
@@ -773,6 +822,7 @@ int main()
     TestHubAssignsSeqAndEmitsOverflowMarker();
     TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
+    TestLegacySnapshotAdapterPrefersInputV2ContextRevision();
     TestLegacySnapshotBatchOverflowRejectsPartialEvents();
     TestRejectedLegacySnapshotAdvancesWatermarkAsDroppedRange();
     TestLegacySequenceDiscontinuityProducesSequenceGap();
@@ -790,6 +840,7 @@ int main()
     TestFrameAssemblerRejectsMonotonicTimeRegression();
     TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline();
     TestDeviceMarkerMismatchFailsClosed();
+    TestStaleSourceEvidenceAfterNewerDeviceMarkerDoesNotHardReset();
     TestBuildKernelFrameDoesNotAcceptTransition();
     TestLegacySnapshotCannotOverrideKernelFacts();
     TestBuildKernelFrameUsesIngressMonotonicTimestamp();

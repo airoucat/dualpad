@@ -111,6 +111,34 @@ namespace dualpad::input_v2::ingress
         return true;
     }
 
+    bool IngressHub::PushEvents(std::vector<IngressEvent> events)
+    {
+        if (events.empty()) {
+            return true;
+        }
+
+        std::scoped_lock lock(_mutex);
+        const auto available = _capacity > _queue.size() ? _capacity - _queue.size() : 0;
+        if (events.size() > available) {
+            const auto overflowSeq = NextSeqLocked();
+            auto overflowTime = events.front().monotonicUs;
+            if (overflowTime == 0) {
+                overflowTime = NowMonotonicUs();
+            }
+            ReplaceBacklogWithOverflowLocked(overflowSeq, overflowTime, events);
+            return false;
+        }
+
+        for (auto& event : events) {
+            event.seq = NextSeqLocked();
+            if (event.monotonicUs == 0) {
+                event.monotonicUs = NowMonotonicUs();
+            }
+            _queue.push_back(std::move(event));
+        }
+        return true;
+    }
+
     bool IngressHub::PushLocked(IngressEvent event)
     {
         if (_queue.size() >= _capacity) {

@@ -2,6 +2,8 @@
 
 #include "input/injection/RouteHealthContract.h"
 #include "input/injection/PadEventSnapshot.h"
+#include "input/Action.h"
+#include "input/PadProfile.h"
 #include "input/Trigger.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
@@ -169,6 +171,26 @@ namespace
             context::ContextCatalog::BuiltInCatalog());
     }
 
+    context::ResolvedContextSnapshot PublishGenericMenuContext()
+    {
+        menu::ReconciledMenuStack stack{};
+        stack.menuStackRevision = 13;
+        stack.trackedMenus.push_back(menu::TrackedMenuInstance{
+            .instanceId = 2,
+            .menuName = "Main Menu",
+            .menuPtr = 0x110,
+            .delegatePtr = 0x210,
+            .moviePtr = 0x310,
+            .observationOrder = 1,
+            .identityQuality = menu::MenuIdentityQuality::StablePointer,
+            .observedInLastSnapshot = true
+        });
+        return context::ContextResolver::GetSingleton().ResolveAndPublish(
+            stack,
+            context::GameplaySubstate::None,
+            context::ContextCatalog::BuiltInCatalog());
+    }
+
     context::ResolvedContextSnapshot PublishGameplayContext()
     {
         menu::ReconciledMenuStack stack{};
@@ -247,14 +269,18 @@ namespace
     dualpad::input::PadEventSnapshot LiveHidSnapshot(
         std::uint64_t sequence,
         std::uint32_t mask,
-        std::uint64_t timestampUs)
+        std::uint64_t timestampUs,
+        dualpad::input::InputContext context = dualpad::input::InputContext::JournalMenu,
+        std::uint32_t contextEpoch = 7,
+        std::uint32_t contextRevision = 0)
     {
         dualpad::input::PadEventSnapshot snapshot{};
         snapshot.sequence = sequence;
         snapshot.firstSequence = sequence;
         snapshot.sourceTimestampUs = timestampUs;
-        snapshot.context = dualpad::input::InputContext::JournalMenu;
-        snapshot.contextEpoch = 7;
+        snapshot.context = context;
+        snapshot.contextEpoch = contextEpoch;
+        snapshot.contextRevision = contextRevision;
         snapshot.state.sequence = sequence;
         snapshot.state.timestampUs = timestampUs;
         snapshot.state.buttons.digitalMask = mask;
@@ -1623,6 +1649,102 @@ namespace
             "Game.RightTrigger must resolve from frame-bound active config graph");
     }
 
+    void RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
+        context::ContextResolver::GetSingleton().ResetForTests();
+        actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
+        prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+        ingress::LiveInputFactProducer::GetSingleton().ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
+        compat.DisableRollback();
+        compat.Commit(presentation::PublishedPresentationState{});
+        compat.ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "test_hook_installed"));
+        dualpad::input::detail::ResetUpstreamRouteInstallSnapshotForTests();
+
+        LoadRuntimeConfigForGameplayBindingTests();
+        const auto contextSnapshot = PublishGenericMenuContext();
+        Require(
+            contextSnapshot.legacyInputContext == dualpad::input::InputContext::Menu,
+            "generic menu context must mirror legacy Menu");
+        Require(
+            contextSnapshot.actionSetStack.baseSetId == "MenuBase",
+            "generic menu context must use MenuBase action set");
+
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "menu binding test needs active config bundle");
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        hub.PushManifestEpochChanged(bundle->manifestEpoch);
+        ingress::LiveInputFactProducer::GetSingleton().PublishGamepadSourceEvidence(
+            contextSnapshot,
+            399'000);
+        const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(
+            400,
+            0,
+            400'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(
+            401,
+            bits.dpadDown,
+            401'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        bool processedStable = false;
+        gameplay::DualPadRuntimeResult result{};
+        RecordingPollOutputExecutor executor;
+        for (const auto& frame : frames) {
+            result = runtime.ProcessAssembledFrameForTests(frame, executor);
+            processedStable = processedStable || frame.kind == ingress::AssembledFrameKind::Stable;
+        }
+
+        Require(processedStable, "live menu HID snapshots must assemble at least one stable frame");
+        Require(!result.RuntimeHealthDegraded(), "live menu binding frame must not degrade before projection");
+        Require(
+            result.projectionFrame.gamepadPlan.sustainedDigital.count == 1,
+            "live Menu DpadDown must resolve into one sustained native output");
+        Require(
+            result.projectionFrame.gamepadPlan.sustainedDigital.items[0].actionId == dualpad::input::actions::MenuScrollDown,
+            "live Menu DpadDown must resolve to Menu.ScrollDown");
+        Require(
+            result.projectionFrame.gamepadPlan.sustainedDigital.items[0].control ==
+                dualpad::input::backend::NativeControlCode::MenuScrollDown,
+            "Menu.ScrollDown must retain its native menu control");
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
+                presentation::PresentationOwner::Gamepad,
+            "live Menu source evidence must publish Gamepad presentation owner with the resolved native output");
+        Require(
+            presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
+            "live Menu source evidence must publish IsUsingGamepadHook=true with the resolved native output");
+        Require(
+            prompt::PromptRuntimeOwner::GetSingleton().ResolveLegacyGlyphToken(
+                dualpad::input::actions::MenuScrollDown,
+                "Menu") == "360_DPAD_DOWN",
+            "live Menu source evidence must publish a Gamepad prompt scope that resolves Menu.ScrollDown glyphs");
+        const auto scrollGlyph = prompt::PromptRuntimeOwner::GetSingleton().ResolveLegacyGlyph(
+            dualpad::input::actions::MenuScrollDown,
+            "Menu");
+        Require(scrollGlyph.ok, "live Menu ScrollDown legacy glyph descriptor must resolve");
+        Require(
+            scrollGlyph.buttonArtToken == "360_DPAD_DOWN",
+            "live Menu ScrollDown legacy glyph descriptor must preserve the compiled ButtonArt token");
+    }
+
     void RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -1781,6 +1903,7 @@ int main()
         RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();
+        RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests();
         RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();
         RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
         return 0;

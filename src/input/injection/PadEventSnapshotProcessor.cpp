@@ -10,6 +10,7 @@
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/ingress/IngressHub.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace dualpad::input
@@ -76,6 +77,16 @@ namespace dualpad::input
             }
         }
 #endif
+
+        const char* ToString(input_v2::presentation::PresentationOwner owner)
+        {
+            return owner == input_v2::presentation::PresentationOwner::Gamepad ? "Gamepad" : "KeyboardMouse";
+        }
+
+        const char* ToString(input_v2::presentation::CursorOwner owner)
+        {
+            return owner == input_v2::presentation::CursorOwner::Gamepad ? "Gamepad" : "KeyboardMouse";
+        }
     }
 
     PadEventSnapshotProcessor& PadEventSnapshotProcessor::GetSingleton()
@@ -118,6 +129,8 @@ namespace dualpad::input
         }
 
         const auto result = input_v2::gameplay::DualPadRuntime::GetSingleton().ProcessAssembledFrame(frame);
+        input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordRuntimeDebugSnapshot(
+            input_v2::gameplay::DualPadRuntime::GetSingleton().GetLastDebugSnapshot());
         if (frame.kind == input_v2::ingress::AssembledFrameKind::Stable && frame.facts.legacySnapshot) {
             const auto& snapshot = *frame.facts.legacySnapshot;
             auto& pollState = AuthoritativePollState::GetSingleton();
@@ -145,6 +158,15 @@ namespace dualpad::input
             auto gameplayMenuEntryOwner = gameplayPresentation.menuEntryOwner == input_v2::presentation::PresentationOwner::Gamepad ?
                 "Gamepad" :
                 "KeyboardMouse";
+#ifndef DUALPAD_REPLAY_HARNESS
+            const auto& compatibilitySurface = input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton();
+            const auto committedPresentation = compatibilitySurface.GetCommittedState();
+            const bool isUsingGamepad =
+                committedPresentation.owner == input_v2::presentation::PresentationOwner::Gamepad;
+            const bool gamepadControlsCursor =
+                committedPresentation.cursorOwner == input_v2::presentation::CursorOwner::Gamepad;
+            const bool gamepadDeviceEnabled = compatibilitySurface.IsGamepadDeviceEnabledHook(true);
+#endif
 #ifdef DUALPAD_REPLAY_HARNESS
             const bool replayGamepadActivity =
                 snapshot.state.buttons.digitalMask != 0 ||
@@ -165,11 +187,19 @@ namespace dualpad::input
                 input_v2::telemetry::ReplayCompatibilitySurface{
                     .context = snapshot.context,
                     .contextEpoch = snapshot.contextEpoch,
+#ifdef DUALPAD_REPLAY_HARNESS
                     .isUsingGamepad = false,
                     .gamepadControlsCursor = false,
                     .gamepadDeviceEnabled = false,
                     .presentationOwner = "KeyboardMouse",
                     .cursorOwner = "KeyboardMouse",
+#else
+                    .isUsingGamepad = isUsingGamepad,
+                    .gamepadControlsCursor = gamepadControlsCursor,
+                    .gamepadDeviceEnabled = gamepadDeviceEnabled,
+                    .presentationOwner = ToString(committedPresentation.owner),
+                    .cursorOwner = ToString(committedPresentation.cursorOwner),
+#endif
                     .gameplayEngineOwner = gameplayEngineOwner,
                     .gameplayMenuEntryOwner = gameplayMenuEntryOwner
                 });

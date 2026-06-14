@@ -51,6 +51,11 @@ namespace dualpad::input_v2::ingress
             return snapshot.firstSequence != 0 ? snapshot.firstSequence : snapshot.sequence;
         }
 
+        std::uint32_t SnapshotContextRevision(const dualpad::input::PadEventSnapshot& snapshot)
+        {
+            return snapshot.contextRevision != 0 ? snapshot.contextRevision : snapshot.contextEpoch;
+        }
+
         void AppendEventSamples(
             const dualpad::input::PadEventSnapshot& snapshot,
             std::vector<actions::ControlSample>& samples)
@@ -117,7 +122,7 @@ namespace dualpad::input_v2::ingress
         ui.source = IngressSource::LegacyDispatcher;
         ui.monotonicUs = snapshot.sourceTimestampUs;
         ui.ui = UiSnapshotPayload{
-            .contextRevision = snapshot.contextEpoch,
+            .contextRevision = SnapshotContextRevision(snapshot),
             .menuStackRevision = snapshot.contextEpoch
         };
         events.push_back(ui);
@@ -143,6 +148,8 @@ namespace dualpad::input_v2::ingress
     void PublishSourceEvidenceFrameToIngressHub(const presentation::SourceEvidenceFrame& frame)
     {
         auto& hub = IngressHub::GetSingleton();
+        std::vector<IngressEvent> events;
+        events.reserve(frame.records.size());
         for (const auto& record : frame.records) {
             if (record.kind == presentation::SourceEvidenceRecordKind::DeviceFamilyChanged) {
                 IngressEvent marker{};
@@ -153,15 +160,16 @@ namespace dualpad::input_v2::ingress
                     .family = record.deviceFamilyChanged.family,
                     .deviceFamilyRevision = record.deviceFamilyChanged.newRevision
                 };
-                (void)hub.PushEvent(std::move(marker));
+                events.push_back(std::move(marker));
             } else {
                 IngressEvent evidence{};
                 evidence.kind = IngressKind::SourceEvidence;
                 evidence.source = IngressSource::DeviceFamilyPublisher;
                 evidence.monotonicUs = record.sourceEvidence.collectedTick;
                 evidence.sourceEvidence = record.sourceEvidence;
-                (void)hub.PushEvent(std::move(evidence));
+                events.push_back(std::move(evidence));
             }
         }
+        (void)hub.PushEvents(std::move(events));
     }
 }

@@ -291,11 +291,13 @@ namespace dualpad::input_v2::gameplay
         frame.reasons = primaryPath.reasons;
         frame.reasons.recovery = recoveryReason;
 
-        frame.gatePlan.lookGate = frame.lookOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
-        frame.gatePlan.moveGate = frame.moveOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
-        frame.gatePlan.leftTriggerGate = frame.combatOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
-        frame.gatePlan.rightTriggerGate = frame.combatOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
-        if (frame.digitalOwner == ChannelOwner::KeyboardMouse) {
+        if (policy.gameplayContext) {
+            frame.gatePlan.lookGate = frame.lookOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+            frame.gatePlan.moveGate = frame.moveOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+            frame.gatePlan.leftTriggerGate = frame.combatOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+            frame.gatePlan.rightTriggerGate = frame.combatOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+        }
+        if (policy.gameplayContext && frame.digitalOwner == ChannelOwner::KeyboardMouse) {
             frame.gatePlan.transientDigitalGate = previous.digitalOwner == ChannelOwner::Gamepad ?
                 DigitalGateMode::CancelAndSuppressNewTransient :
                 DigitalGateMode::SuppressNewTransient;

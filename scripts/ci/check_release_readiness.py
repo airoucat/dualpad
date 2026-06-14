@@ -78,7 +78,9 @@ def main() -> int:
         "xmake.lua",
         [
             "dualpad_deploy",
-            "if os.isfile(debug_ini_src) and not os.isfile(debug_ini_dst) then",
+            "os.cp(debug_ini_src, debug_ini_dst)",
+            "os.cp(bindings_ini_src, bindings_ini_dst)",
+            "os.cp(menu_policy_ini_src, menu_policy_ini_dst)",
             "DualPadControlMap.txt",
             "DualPadDInput8.ini",
         ],

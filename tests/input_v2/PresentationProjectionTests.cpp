@@ -168,6 +168,34 @@ void RunPresentationProjectionTests()
 
     {
         presentation::PresentationProjection projection;
+
+        auto snapshot = presentation::SourceEvidenceSnapshot{};
+        snapshot.deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{
+            .family = presentation::DeviceFamily::Gamepad,
+            .deviceFamilyRevision = 11,
+            .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+            .publishedTick = 250
+        };
+        snapshot.gamepadEvidence = true;
+        snapshot.gamepadLease = true;
+        snapshot.contextRevision = MenuContext().contextRevision;
+
+        presentation::PublishedGameplayPresentation gameplay{};
+        gameplay.engineOwner = presentation::PresentationOwner::KeyboardMouse;
+        gameplay.menuEntryOwner = presentation::PresentationOwner::KeyboardMouse;
+        gameplay.gameplayPresentationRevision = 0;
+
+        const auto published = projection.Project(snapshot, MenuContext(), gameplay);
+        Require(
+            published.owner == presentation::PresentationOwner::Gamepad,
+            "startup menu gamepad evidence must override the default gameplay menu entry owner");
+        Require(
+            published.reason == presentation::PresentationDecisionReason::MenuSourceEvidence,
+            "startup menu gamepad takeover must be attributed to current source evidence");
+    }
+
+    {
+        presentation::PresentationProjection projection;
         presentation::SkyrimCompatibilitySurface compat;
         presentation::SourceEvidenceSnapshot snapshot{};
         snapshot.deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{

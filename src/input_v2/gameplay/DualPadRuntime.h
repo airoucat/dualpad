@@ -24,6 +24,7 @@ namespace dualpad::input_v2::gameplay
         RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
         std::uint64_t outputTick{ 0 };
         dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Gameplay };
+        std::uint32_t legacyContextEpoch{ 1 };
         std::string runtimeHealthDebugReason;
     };
 

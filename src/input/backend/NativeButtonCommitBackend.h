@@ -40,6 +40,13 @@ namespace dualpad::input::backend
         std::uint64_t pollSequence{ 0 };
     };
 
+    inline constexpr bool IsNativeDigitalGateOpenForContext(InputContext) noexcept
+    {
+        // Gameplay ownership suppression is applied before queueing actions.
+        // The poll commit gate must not block menu or compatibility contexts.
+        return true;
+    }
+
     class NativeButtonCommitBackend final
 #ifndef DUALPAD_REPLAY_HARNESS
         : public IPollCommitEmitter

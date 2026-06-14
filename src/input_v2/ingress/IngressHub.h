@@ -18,6 +18,7 @@ namespace dualpad::input_v2::ingress
         static IngressHub& GetSingleton();
 
         bool PushEvent(IngressEvent event);
+        bool PushEvents(std::vector<IngressEvent> events);
         bool PushPadSnapshot(const dualpad::input::PadEventSnapshot& snapshot);
         void PushManifestEpochChanged(std::uint64_t manifestEpoch);
         void PushSequenceGap();

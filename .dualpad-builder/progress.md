@@ -2739,3 +2739,124 @@
 ## 2026-06-12 07:05:00 +08:00
 
 - PR-C 远端验证通过：PR #26 https://github.com/airoucat/dualpad/pull/26，head `bbfe3befd89990c6fa7d8e1e0d023dc31eea2cf1`。远端 checks：push `phase8` run `27381393993` job `80918707810` pass；push `rc-readiness` run `27381393993` job `80919803848` pass；pull_request `phase8` run `27381404943` job `80918743654` pass；pull_request `rc-readiness` run `27381404943` job `80919873507` pass。待处理：推送本 evidence 记录后等待最终 checks，再 merge PR-C。
+
+## 2026-06-12 23:03:08 +08:00
+
+- 实机 field readiness 热修开始并完成本地部署：用户进游戏反馈手柄不能操控。根因证据：`DualPad.log` 显示 live `DualPadBindings.ini` 为 4 月旧配置，含当前 manifest 不认识的 `Favorites.GroupConfirm`，导致 startup compile fail；同时 1.5.97 Address Library 解析 `REL::ID 67320/67321` 后，当前代码在 `+0xD` 期待 `E8` 直接 call，但实机字节为函数入口内虚表间接调用序列，触发 `is_using_gamepad_call_signature_mismatch` 并 fail-closed。修复：`SkyrimCompatibilitySurface` 改为验证 `IsUsingGamepad` / `GamepadControlsCursor` 函数入口 prologue 并用 `write_branch<5>` 安装入口 hook；`xmake.lua` deploy 改为每次覆盖 `DualPadDebug.ini`、`DualPadBindings.ini`、`DualPadMenuPolicy.ini`。已重新 `xmake build -y DualPad` 并部署到 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`；`xmake build -y DualPadDInput8Proxy` 保持通过并部署 `G:/g/SkyrimSE/dinput8.dll`。已验证并通过：`xmake build/run -y DualPadPresentationProjectionTests`；`xmake build/run -y DualPadInputV2Tests`；live 三份配置 SHA256 与 repo `config/` 对应文件一致。待验证：用户再次进游戏确认手柄操控恢复。
+
+## 2026-06-12 23:10:00 +08:00
+
+- 实机 field readiness 二次热修：用户反馈手柄仍未被转换为游戏输入。新日志显示 `skyrim_compat_hook_status=success`、upstream route installed，旧 hook/config 问题已解除；剩余断点为持续 `ContextRevisionSkew|PromptScopeFrozen`，并出现 `IngressHub` high-water fallback。根因：live HID `PadEventSnapshot` 只携带 legacy `contextEpoch`，`LegacyIngressAdapter` 将其当作 input_v2 `UiSnapshot.contextRevision`，导致 runtime 看到 frame revision 与 `ContextResolver` published revision 不一致并拒绝执行 action graph。TDD 红测：新增 `TestLegacySnapshotAdapterPrefersInputV2ContextRevision`，先确认旧 adapter 会把 revision=23 错降为 legacy epoch=1。修复：`PadEventSnapshot` 新增 `contextRevision`；`HidReader` 同时写入 legacy epoch 与 input_v2 revision；legacy-to-ingress adapter 优先使用 `contextRevision`，无值时回退 `contextEpoch` 保持 replay/旧路径兼容；snapshot coalescing 将 `contextRevision` 纳入上下文一致性判断。已重新 `xmake build -y DualPad` 并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`；已重新 `xmake build -y DualPadDInput8Proxy` 并部署 `G:/g/SkyrimSE/dinput8.dll`。已验证并通过：`xmake build/run -y DualPadIngressTests`；`xmake build/run -y DualPadInputV2Tests`；`xmake build/run -y DualPadPresentationProjectionTests`。待验证：用户再次进游戏确认 `ContextRevisionSkew|PromptScopeFrozen` 消失且手柄输入恢复。
+
+## 2026-06-12 23:14:00 +08:00
+
+- 实机 field debug 日志开关已开启并同步 live：用户反馈仍未恢复，要求打开日志方便后续快速定位。`config/DualPadDebug.ini` 与 live `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPadDebug.ini` 已同步，SHA256 一致。开启项：`log_input_packets`、`log_input_state`、`log_mapping_events`、`log_synthetic_state`、`log_action_plan`、`log_native_injection`、`log_keyboard_injection`、`log_route_health`、`enable_trace_recording`；`log_input_hex` 暂保持 false，避免短时间生成过大的 HID 原始 hex 日志。trace 输出目录配置为 `Data/SKSE/Plugins/DualPadTrace/field-debug-2026-06-12`，已预创建本机目录 `G:/g/SkyrimSE/Data/SKSE/Plugins/DualPadTrace/field-debug-2026-06-12`。验证：`git diff --check` exit 0（仅 Windows 行尾提示）。
+
+## 2026-06-12 23:24:00 +08:00
+
+- 实机 field debug 诊断版已部署：用户再次测试仍反馈手柄没反应。新证据显示 HID reader 已打开 `vid=0x054C pid=0x0DF2`，USB report `0x01 size=64` 持续进入；trace 实际落在 MO2 overwrite：`G:/skyrim_mod_develop/overwrite/SKSE/Plugins/DualPadTrace/field-debug-2026-06-12`。`ingress_snapshot_frames.csv` 与 `processed_snapshot_frames.csv` 有帧且可见轻微 analog drift，但 `digital_mask`、trigger 与 `expected_authoritative_poll.csv` 输出均为 0；`expected_keyboard_bridge.csv` 只有表头。当前断点收敛为：链路已读到 HID packet，但本轮采样未看到有效按键/大摇杆/扳机，需用 raw packet 判定是测试窗口内未产生有效物理输入，还是 DualSense Edge `0x0DF2` 的 parser layout/offset 不匹配。
+- 已把诊断日志升级为 field 可见：`log_input_hex=true`；`PadStateDebugger` 的 packet summary、前 32 字节 hex、parse success、state summary 改为 rate-limited info 日志（前 20 包、每 120 包、或 prefix/control state 变化时输出）；USB/BT parser raw button 字节也改为 info。已重新 `xmake build -y DualPad` 并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`；`xmake build -y DualPadDInput8Proxy` 已部署 `G:/g/SkyrimSE/dinput8.dll`。验证：`xmake run -y DualPadIngressTests` exit 0；`xmake run -y DualPadInputV2Tests` exit 0；`git diff --check` exit 0（仅 Windows 行尾提示）。注意：PDB 复制因目标被占用跳过，DLL 本体已覆盖。
+
+## 2026-06-12 23:34:00 +08:00
+
+- 实机 field readiness 三次热修已部署：用户按新日志版复测后仍反馈手柄没反应。新 trace 证明 HID/parser 已正常读到有效物理输入：`ingress_snapshot_frames.csv` / `processed_snapshot_frames.csv` 中 `digital_mask` 多种非零，左右扳机均到过 `1.0`，左摇杆到过满量程；但 `expected_authoritative_poll.csv` 的 `down_mask`、analog、trigger 仍全为 0。日志同一窗口显示 `AuthoritativePoll ctx=Menu`。根因定位为 `GameplayProjectionFrame` 在 `policy.gameplayContext=false` 时仍沿用 gameplay arbitration gate，把非 gameplay / Menu 上下文的 resolved native gamepad output 清零，导致 Menu action graph 已解析出的 `Menu.*` 数字/轴动作无法进入 `AuthoritativePollState`。
+- TDD 红灯：新增 `RunMenuContextGamepadOutputTests` 后，`xmake build -y DualPadGameplayProjectionTests; xmake run -y DualPadGameplayProjectionTests` 先失败于 `menu context must not suppress resolved gamepad menu digital output`。实现：`ResolveGameplayProjection` 仅在 `policy.gameplayContext=true` 时应用 keyboard/mouse ownership analog zeroing 与 transient digital suppression；Menu/非 gameplay 上下文保持 presentation owner 由 UI 决定，但允许 resolved `Menu.Confirm`、`Menu.ScrollDown`、`Menu.LeftStick` 等 native output 进入 output plan。另补 `DualPadGameplayProjectionTests` 目标缺失的 route health stub/source 链接依赖。已重新 `xmake build -y DualPad` 并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`。验证：`xmake build -y DualPadGameplayProjectionTests; xmake run -y DualPadGameplayProjectionTests` exit 0；`xmake run -y DualPadInputV2Tests` exit 0；`xmake run -y DualPadIngressTests` exit 0；`xmake run -y DualPadPresentationProjectionTests` exit 0；`xmake build -y DualPadDInput8Proxy` exit 0。注意：PDB 复制仍因目标被占用跳过，DLL 本体已覆盖。
+
+## 2026-06-13 00:10:00 +08:00
+
+- 实机 field readiness 四次结构修复已部署：用户复测后仍反馈手柄无反应，并指出上一版像临时止血。重新按 root-cause tracing 复核最新现场证据：HID/parser/processed trace 已有非零 `digital_mask` 与 trigger，但 live `DualPad.log` 中 `PollCommit`/`NativeButtonCommit` 动作日志为 0，`AuthoritativePoll` 全 0，且 runtime 反复 `BoundaryMismatch -> recovered`，poll 序号多次回到 1。结论：上一版 menu gate 只修了 projection 层症状，未覆盖 ingress source-evidence race 与 native commit epoch 合同。
+- 结构修复：
+  - `PublishSourceEvidenceFrameToIngressHub` 改为通过 `IngressHub::PushEvents` 原子批量入队 marker + source evidence，避免 gamepad/keyboard-mouse 双线程证据在 marker/source 之间插队。
+  - `FrameAssembler` 对晚到的旧 `deviceFamilyRevision` source evidence 识别为 stale 并忽略，不再触发 `ExplicitReset` 硬重置；新增 `TestStaleSourceEvidenceAfterNewerDeviceMarkerDoesNotHardReset` 覆盖该 race。
+  - live `RuntimePollOutputExecutor` 的 native commit epoch 改用 `legacyContextEpoch`，不再把 input_v2 `contextRevision` 写入 `PlannedAction.contextEpoch`；避免 Menu 中 `contextRevision != legacyContextEpoch` 时 slot 在 `CommitPollState()` 被立即判 stale。
+  - 补充边界日志：`[DualPad][RuntimePlan]` / `[DualPad][RuntimePlanAction]` 输出 stable input、resolved action 与 projection plan counts；`[DualPad][NativeButtonCommit] apply/translate_failed/queue` 输出 native apply/translate/queue 边界；`RuntimeDebug` 日志增加 `frame` 与 `transition` reason；`PadEventSnapshotProcessor` 开始写 `runtime_debug_snapshot.csv`。
+- 已构建并部署：
+  - `xmake build -y DualPad` exit 0，已部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`，SHA256 `D187DBF202FC02058A2A5DC5B18382E87A9296959FFEAC72CC9BA289863E37B4`。
+  - `xmake build -y DualPadDInput8Proxy` exit 0，`G:/g/SkyrimSE/dinput8.dll` 本轮无内容变化，SHA256 `59667D5D9E2599C51F1F630F83D2B2E7CB08F925B3292F228B2D658D55F0409A`。
+- 本地验证已通过：
+  - `xmake build -y DualPadIngressTests`；`xmake run -y DualPadIngressTests`。
+  - `xmake build -y DualPadGameplayProjectionTests`；`xmake run -y DualPadGameplayProjectionTests`。
+  - `xmake build -y DualPadInputV2Tests`；`xmake run -y DualPadInputV2Tests`。
+  - `xmake build -y DualPadReplayTests`；`xmake run -y DualPadReplayTests`。
+  - `xmake build -y DualPadRouteHealthContractTests`；`xmake run -y DualPadRouteHealthContractTests`。
+  - `git diff --check` exit 0；仅 Windows 行尾提示，无 whitespace error。
+- 待验证：用户进游戏复测。若仍失败，下一轮直接看新增的 `RuntimePlan`、`NativeButtonCommit apply/queue` 和 `runtime_debug_snapshot.csv`，不得再靠猜测加止血条件。
+
+## 2026-06-13 00:12:00 +08:00
+
+- 四次结构修复 closeout 复核：已补 repo-local learning/error 记录，明确后续不得用输出层条件补丁替代 ingress/runtime/native commit 边界证据。已运行 `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`，graphify 输出 `1702 nodes, 3639 edges, 147 communities`。当前状态下重跑验证：`xmake build -y DualPad` exit 0 并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`（PDB 因目标占用跳过，DLL 已覆盖）；`xmake build -y DualPadDInput8Proxy` exit 0 并部署 `G:/g/SkyrimSE/dinput8.dll`；`xmake run -y DualPadIngressTests` exit 0；`xmake run -y DualPadInputV2Tests` exit 0；`git diff --check` exit 0（仅 Windows 行尾提示）。部署版本标识：`DualPad.dll` SHA256 `D187DBF202FC02058A2A5DC5B18382E87A9296959FFEAC72CC9BA289863E37B4`，`dinput8.dll` SHA256 `59667D5D9E2599C51F1F630F83D2B2E7CB08F925B3292F228B2D658D55F0409A`。
+
+## 2026-06-13 00:24:00 +08:00
+
+- 实机 field readiness 五次结构修复已部署：当前 live 日志/trace 未发现 `2026-06-13 00:05` 之后的新实机样本，最新 `DualPad.log` 与 game-root trace 仍停在 `2026-06-12 23:36`，因此继续做代码层剩余边界审计。新根因风险：`Menu.ScrollDown` 等 menu repeat native actions 的 descriptor 为 `gateAware=true`，但 `NativeButtonCommitBackend` 旧的 context gate 对 `InputContext::Menu` 返回 false；即使 projection 已生成 menu native command，`PollCommitCoordinator` 仍会等待 gameplay gate，导致 DPad/滚动类 menu output 不能提交到 XInput poll。修复：新增 `IsNativeDigitalGateOpenForContext()` 合同，明确 gameplay ownership suppression 已在 queue 前处理，poll commit gate 不得阻塞 Menu / Favorites / Console / Cursor 等 context-local native output；`NativeButtonCommitBackend::IsGameplayGateOpen()` 改为使用该合同。
+- TDD/验证：先新增 `DualPadNativeButtonCommitTests` 红灯，确认缺少 native digital gate policy 合同；中途直接构造 `RE::BSFixedString` 的 standalone coordinator 测试在非 Skyrim 环境挂住，已终止残留进程并记录 `.learnings/ERRORS.md`，最终收缩为纯 gate policy 合同测试。已运行并通过：`xmake build -y DualPadNativeButtonCommitTests`；`xmake run -y DualPadNativeButtonCommitTests`；`xmake build/run -y DualPadGameplayProjectionTests`；`xmake build/run -y DualPadInputV2Tests`；`xmake build/run -y DualPadIngressTests`；`xmake build -y DualPad`；`xmake build -y DualPadDInput8Proxy`；`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`（`1707 nodes, 3647 edges, 144 communities`）；`git diff --check` exit 0（仅 Windows 行尾提示）。部署版本标识：`G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll` SHA256 `DF76E39E26C4B6284C9763182D66FF290194250D41BADAD529BB0DE70763A06B`，`G:/g/SkyrimSE/dinput8.dll` SHA256 `59667D5D9E2599C51F1F630F83D2B2E7CB08F925B3292F228B2D658D55F0409A`。
+
+## 2026-06-13 00:28:00 +08:00
+
+- Phase8 接线复核：`DualPadNativeButtonCommitTests` 已接入 `scripts/ci/run_phase8_ci.ps1`，并更新 `scripts/ci/check_release_readiness.py` 以匹配当前部署策略（三份 live config 由 xmake 每次覆盖同步）。验证结果：`python scripts/ci/check_release_readiness.py` exit 0。两次运行 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：第一次在旧 release readiness token 处失败；修复后第二次已通过所有 build/run target（含新增 `DualPadNativeButtonCommitTests`）、docgen、reviewed docs consistency、legacy authority boundary、release readiness、config/prompt/menu/glyph closure；最终停在 `git diff --exit-code -- docs/generated`，因为 docgen 将 generated docs manifest hash 从 `83cf2c598e9c215d` 更新到 `a20d0b8aadef9076`。该 generated docs drift 已保留在工作树中，后续提交时应一并纳入；在未提交/未 staging 当前工作树前，不把完整 Phase8 称为 clean pass。已再次运行 `python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`，输出仍为 `1707 nodes, 3647 edges, 144 communities`。
+
+## 2026-06-14 20:58:00 +08:00
+
+- 实机 field readiness 六次结构修复已部署：用户反馈上一轮仍不行且要求不得继续止血后，本轮先复核现场时间线，确认 `DualPad.log` 与 trace 没有 `2026-06-13 00:05` 后的新样本；旧样本中 HID/parser 已读到非零手柄状态，但 presentation surface trace 在 live 下仍写硬编码 KeyboardMouse，不能作为真实兼容面证据。
+- 新增 TDD 红灯：`DualPadPresentationProjectionTests` 添加 startup Menu 场景，模拟 `_published` 为空、当前帧已有 `gamepadEvidence/gamepadLease`、但 `PublishedGameplayPresentation.menuEntryOwner` 仍为默认 KeyboardMouse。旧逻辑失败于 `startup menu gamepad evidence must override the default gameplay menu entry owner`，证明首次进主菜单时当前手柄证据会被默认 gameplay menu-entry owner 压掉。
+- 结构修复：`PresentationProjection::Project()` 在非 gameplay 上下文中先消费当前 source evidence（gamepad / keyboard-mouse），只有没有新证据时才继承 `gameplay.menuEntryOwner`。这不是在输出层强制手柄，而是修正 presentation owner authority 顺序，避免启动主菜单和菜单 reclaim 被默认 KeyboardMouse 固定。另将 live `expected_presentation_surface.csv` 改为记录 `SkyrimCompatibilitySurface` 的实际 committed state；replay harness 仍保留原兼容预期，避免破坏 phase0 golden 合同。
+- 已构建并部署：
+  - `xmake build -y DualPad` exit 0，已部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`（PDB 因目标占用跳过，DLL 已覆盖），SHA256 `54E8FEB436F779160FE564EE9942CA5D7438341B03507F62C6835EB79C7282BE`。
+  - `xmake build -y DualPadDInput8Proxy` exit 0，已部署/确认 `G:/g/SkyrimSE/dinput8.dll`，SHA256 `59667D5D9E2599C51F1F630F83D2B2E7CB08F925B3292F228B2D658D55F0409A`。
+- 已通过 focused 验证：`xmake build/run -y DualPadPresentationProjectionTests`；`xmake build/run -y DualPadGameplayProjectionTests`；`xmake build/run -y DualPadInputV2Tests`；`xmake build/run -y DualPadIngressTests`；`xmake build/run -y DualPadNativeButtonCommitTests`；`xmake build/run -y DualPadReplayTests`。close-out：`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` exit 0，输出 `1708 nodes, 3651 edges, 150 communities`；`git diff --check` exit 0，仅有 Windows 行尾提示，无 whitespace error。
+- 待实机验证：用户进游戏后先在主菜单按 Cross / Triangle / DPad / 左摇杆，再进 gameplay 按移动/攻击；若仍无响应，优先检查新 trace 的 `expected_presentation_surface.csv`、`runtime_debug_snapshot.csv`、`expected_authoritative_poll.csv` 与日志中的 `[DualPad][RuntimePlan]` / `[DualPad][NativeButtonCommit]` 边界，而不是继续从输出层猜测。
+
+## 2026-06-14 20:59:40 +08:00
+
+- 六次结构修复补强验证：没有新的实机日志样本，继续从当前工作树补 live-style 组合覆盖。`RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests` 现在在真实 `config/DualPadBindings.ini` / `DualPadMenuPolicy.ini` 编译出的 graph 上，先发布 live gamepad source evidence，再推送 Generic Menu 的 baseline snapshot 与 DPadDown snapshot，验证同一 stable frame 同时满足：
+  - `Menu.ScrollDown` 被解析为 sustained native output，native control 保持 `MenuScrollDown`。
+  - committed `SkyrimCompatibilitySurface` owner 为 `Gamepad`。
+  - `IsUsingGamepadHook()` 返回 true。
+- 本轮只补测试覆盖，生产 DLL 未再改动；部署版本仍为 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll` SHA256 `54E8FEB436F779160FE564EE9942CA5D7438341B03507F62C6835EB79C7282BE`，`G:/g/SkyrimSE/dinput8.dll` SHA256 `59667D5D9E2599C51F1F630F83D2B2E7CB08F925B3292F228B2D658D55F0409A`。
+- 已运行并通过：`xmake build -y DualPadInputV2Tests`；`xmake run -y DualPadInputV2Tests`；`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout`（`1708 nodes, 3654 edges, 149 communities`）；`git diff --check` exit 0，仅有 Windows 行尾提示，无 whitespace error。
+
+## 2026-06-14 21:02:20 +08:00
+
+- “手柄没翻译”补强验证：在同一个 live-style Generic Menu frame-envelope 测试中追加 prompt/glyph 断言，要求 runtime 处理 live gamepad source evidence + DPadDown snapshot 后，`PromptRuntimeOwner::ResolveLegacyGlyphToken("Menu.ScrollDown", "Menu")` 返回 `360_DPAD_DOWN`，且 legacy descriptor `ok=true`、`buttonArtToken=360_DPAD_DOWN`。这覆盖了“native output 已解析但 prompt scope / ButtonArt token 没切到 Gamepad”的结构风险。
+- 额外 focused 验证已通过：`xmake build -y DualPadInputV2Tests`；`xmake run -y DualPadInputV2Tests`；`xmake build -y DualPadPromptSnapshotTests`；`xmake run -y DualPadPromptSnapshotTests`；`xmake build -y DualPadGlyphResolutionCompatTests`；`xmake run -y DualPadGlyphResolutionCompatTests`。
+- close-out：`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` exit 0，输出 `1708 nodes, 3656 edges, 149 communities`；`git diff --check` exit 0，仅有 Windows 行尾提示，无 whitespace error。
+- 部署版本未变化：`G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll` SHA256 `54E8FEB436F779160FE564EE9942CA5D7438341B03507F62C6835EB79C7282BE`，`G:/g/SkyrimSE/dinput8.dll` SHA256 `59667D5D9E2599C51F1F630F83D2B2E7CB08F925B3292F228B2D658D55F0409A`。最新实机日志仍停在 `2026/6/12 23:36:31`，所以本轮仍不能把 goal 判定完成。
+
+## 2026-06-14 21:08:00 +08:00
+
+- 继续执行宽门禁复核：运行 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1 *> build/phase8-latest.log`，进程 `$LASTEXITCODE=1`。日志中的所有 build/run/doc/release readiness/config closure 步骤均已跑到最后，唯一 `command failed` 为最终 `git diff --exit-code -- docs/generated`。
+- 失败原因仍是已知 generated docs drift：`python scripts/dev/generate_dualpad_docs.py` 重新生成 `docs/generated/*_zh.md`，manifest hash 从 `83cf2c598e9c215d` 更新为 `a20d0b8aadef9076`，因此当前未提交工作树下不能把 Phase8 记为 clean pass。该 drift 与本轮 field readiness 代码/配置改动保持在同一工作树，后续如提交应一并纳入。
+- 复核日志开关：`config/DualPadDebug.ini` 与已部署的 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPadDebug.ini` 内容一致，`log_input_packets`、`log_input_hex`、`log_input_state`、`log_mapping_events`、`log_synthetic_state`、`log_action_plan`、`log_native_injection`、`log_keyboard_injection`、`log_route_health`、`enable_trace_recording`、`trace_record_glyph_queries` 均为 `true`。部署 DLL 未变化，仍为 SHA256 `54E8FEB436F779160FE564EE9942CA5D7438341B03507F62C6835EB79C7282BE`；最新实机 `DualPad.log` 仍停在 `2026/6/12 23:36:31`，尚无本轮 DLL 的进游戏样本。
+
+## 2026-06-14 21:11:00 +08:00
+
+- 为避免后续实机样本继续混入旧 `field-debug-2026-06-12` trace session，将 `config/DualPadDebug.ini` 的 `trace_session` 改为 `field-debug-2026-06-14-rc20-live` 并运行 `xmake build -y DualPad`。构建 exit 0，DLL 已部署；PDB 因目标占用跳过。已核对 repo 配置与 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPadDebug.ini` 均指向新 trace session，且 `enable_trace_recording=true`、`trace_record_glyph_queries=true`、`log_action_plan=true`、`log_native_injection=true`、`log_route_health=true`。新 trace 目录 `G:/skyrim_mod_develop/overwrite/SKSE/Plugins/DualPadTrace/field-debug-2026-06-14-rc20-live` 当前不存在；下一次实机启动若写入该目录即可证明采样来自本轮配置。
+- 计划条目差距复核：`rg` 确认 PR-A 的 `rc-readiness` / `DualPadManifestCompilerTests` / release manifest 新命名标记存在；PR-B1 的 `ContextEventSink -> ScaleformGlyphBridge::OnMenuOpened/OnMenuClosed` 与 per-menu delegate map 存在；PR-B2 的 upstream install status / route health / `HookInstallFailed` / overlay gate 存在；PR-B3 的 `ParsedIniFile` / broken INI fail-closed 路径存在。
+- 本轮 gate 验证均 exit 0：`python scripts/ci/check_rc_readiness_closeout.py`；`python scripts/ci/check_config_prompt_menu_glyph_closure.py`；`python scripts/ci/check_reviewed_docs_consistency.py`；`python scripts/ci/check_release_readiness.py`；`xmake build/run -y DualPadManifestCompilerTests`；`xmake build/run -y DualPadRouteHealthContractTests`；`xmake build/run -y DualPadPromptSnapshotTests`；`xmake build/run -y DualPadInputV2Tests`；`python -m json.tool .dualpad-builder/feature_list.json`；`python -m json.tool .dualpad-builder/sprint_plan.json`；`git diff --check`（仅 Windows 行尾提示）。
+- 按仓库 close-out 规则重建 graphify：`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` exit 0，输出 `1708 nodes, 3656 edges, 149 communities`。最终核对：部署 DLL SHA256 仍为 `54E8FEB436F779160FE564EE9942CA5D7438341B03507F62C6835EB79C7282BE`；`DualPadDebug.ini` 已部署为 `trace_session=field-debug-2026-06-14-rc20-live`；实机 `DualPad.log` 仍停在 `2026/6/12 23:36:31`；新 trace 目录仍不存在，尚无本轮配置的进游戏样本。
+
+## 2026-06-14 21:15:00 +08:00
+
+- 新增只读现场样本摘要工具：`scripts/dev/summarize_dualpad_field_capture.py`。该脚本读取 `DualPad.log` 与单个 `DualPadTrace` session，汇总 Skyrim compat hook、upstream hook、route health、HID input state、runtime plan、native commit、trace CSV 行数、authoritative poll、presentation owner 与 glyph 结果，并给出 `first_breakpoint`。用途是下一次实机反馈后快速定位断在输入、ingress、runtime plan、native commit、presentation owner 还是 glyph resolution，而不是继续手工扫大日志。
+- 用旧样本验证工具：`python scripts/dev/summarize_dualpad_field_capture.py --log C:/Users/xuany/Documents/My Games/Skyrim Special Edition/SKSE/DualPad.log --trace-dir G:/skyrim_mod_develop/overwrite/SKSE/Plugins/DualPadTrace/field-debug-2026-06-12` exit 0。输出显示旧样本 `skyrim_compat_success=True`、`upstream_hook_installed=True`、`route_health=486 active_fresh`、`input_nonzero_mask_lines=2414`，但 `expected_presentation_surface.csv` 的 `gamepad_owner_rows=0`，`first_breakpoint=presentation_owner`；同时旧样本没有当前版 `[DualPad][RuntimePlan]` / `[DualPad][NativeButtonCommit]` 标记，证明它不能替代本轮 DLL 的实机证据。
+- 用新 session 空样本验证工具：非 strict 运行 `field-debug-2026-06-14-rc20-live` exit 0 并报告 `first_breakpoint=trace_missing`；strict 运行 exit 2，输出已写入 `build/field-capture-missing-strict.log`。基础验证：`python -m py_compile scripts/dev/summarize_dualpad_field_capture.py` exit 0；`git diff --check` exit 0（仅 Windows 行尾提示）；`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` exit 0，输出 `1719 nodes, 3685 edges, 147 communities`。
+
+## 2026-06-14 21:19:00 +08:00
+
+- 增强 `scripts/dev/summarize_dualpad_field_capture.py` 的日志字段解析：现在除了 marker 计数，还会提取 `upstream_poll_active_lines`、`runtime_plan_active_lines`、`runtime_plan_actions`、`native_commit_stages`、`native_commit_actions`、`native_queue_false`、`native_translate_failed`。下一次实机日志若出现 `RuntimePlanAction` 但没有 `NativeButtonCommit`，或 native queue/translate 失败，脚本会把 `first_breakpoint` 指向 native commit 边界。
+- 重新用旧 `field-debug-2026-06-12` 样本验证：exit 0，仍报告 `first_breakpoint=presentation_owner`，并额外识别 `upstream_poll_active_lines=64`、`runtime_plan_actions={}`、`native_commit_stages={}`，说明旧样本只适合证明旧断点，不含当前版 runtime/native commit 日志。新 session strict 验证仍 exit 2，`first_breakpoint=trace_missing`。
+- 用 `build/field-capture-synthetic` 临时合成一个最小当前版日志/trace：包含 `RuntimePlanAction action=Menu.ScrollDown`、`NativeButtonCommit apply/queue/poll`、Gamepad presentation 与成功 glyph。运行 `python scripts/dev/summarize_dualpad_field_capture.py --strict --log build/field-capture-synthetic/DualPad.log --trace-dir build/field-capture-synthetic` exit 0，输出 `first_breakpoint=none`、`runtime_plan_actions={'Menu.ScrollDown': 1}`、`native_commit_stages={'apply': 1, 'queue': 1, 'poll': 1}`、`native_commit_actions={'Menu.ScrollDown': 3}`。
+- 验证：`python -m py_compile scripts/dev/summarize_dualpad_field_capture.py` exit 0；`git diff --check` exit 0（仅 Windows 行尾提示）；`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` exit 0，输出 `1720 nodes, 3687 edges, 146 communities`。清理了 `py_compile` 生成的 `scripts/dev/__pycache__`。
+
+## 2026-06-14 21:18:04 +08:00（阻塞审计）
+
+- 复核本机外部状态：`C:/Users/xuany/Documents/My Games/Skyrim Special Edition/SKSE/DualPad.log` 仍停在 `2026/6/12 23:36:31`；`G:/skyrim_mod_develop/overwrite/SKSE/Plugins/DualPadTrace/field-debug-2026-06-14-rc20-live` 仍不存在。也就是说，还没有本轮 DLL / debug config 的真实进游戏样本。
+- 当前已部署版本仍为 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll` SHA256 `54E8FEB436F779160FE564EE9942CA5D7438341B03507F62C6835EB79C7282BE`，且已部署 `DualPadDebug.ini` 指向 `trace_session=field-debug-2026-06-14-rc20-live` 并开启 `log_action_plan` / `log_native_injection` / `log_route_health` / `enable_trace_recording`。
+- 阻塞原因：同一阻塞条件已连续多轮重复。没有新实机样本时，无法证明“进游戏手柄能操控 / glyph 已正确翻译”，也无法基于当前版本继续定位新的断点。下一步必须来自一次新的 Skyrim 进程实测；实测后运行 `python scripts/dev/summarize_dualpad_field_capture.py --log "C:/Users/xuany/Documents/My Games/Skyrim Special Edition/SKSE/DualPad.log" --trace-dir "G:/skyrim_mod_develop/overwrite/SKSE/Plugins/DualPadTrace/field-debug-2026-06-14-rc20-live"`。
+
+## 2026-06-14 22:47:00 +08:00
+
+- 用户新反馈：本轮部署后“还是不行”。这次已有新实机样本：`DualPad.log` LastWriteTime `2026/6/14 22:44:10`，长度 `7618618`；`G:/skyrim_mod_develop/overwrite/SKSE/Plugins/DualPadTrace/field-debug-2026-06-14-rc20-live` 已生成 trace CSV。
+- 运行 `python scripts/dev/summarize_dualpad_field_capture.py --log "C:/Users/xuany/Documents/My Games/Skyrim Special Edition/SKSE/DualPad.log" --trace-dir "G:/skyrim_mod_develop/overwrite/SKSE/Plugins/DualPadTrace/field-debug-2026-06-14-rc20-live"`，输出 `first_breakpoint=native_commit_translate`。关键证据：`skyrim_compat_success=True`、`upstream_hook_installed=True`、`route_health=1075 active_fresh`、`input_nonzero_mask_lines=3236`、`runtime_plan=1133`、`runtime_plan_action=763`、`native_button_commit=43`、`expected_presentation_surface.csv rows=1641 gamepad_owner_rows=1641`。
+- 本轮不再是旧的 presentation owner 断点：presentation 已全程 Gamepad；trace 中 `glyph_queries.csv` / `expected_glyph_results.csv` 行数仍为 0，说明本次没有触发 glyph API 查询。native commit 侧出现一次翻译失败：`[DualPad][NativeButtonCommit] translate_failed action=Menu.Confirm phase=Release contract=Pulse digitalPolicy=PulseMinDown outputCode=Menu.Confirm`。同时已有成功排队/提交样本：`Menu.ScrollDown`、`Menu.Confirm Press`、`Menu.Right` 均出现 `apply` / `queue queued=true` / `poll managed=true down=true`。
+- 当前结论：本轮实机断点收窄到 native commit 的 release/translate 语义或后续虚拟手柄提交与 Skyrim 消费之间的边界，不能再按 presentation owner / hook install / route health 方向继续猜。
