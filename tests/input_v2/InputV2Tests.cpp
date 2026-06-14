@@ -1947,7 +1947,7 @@ namespace
             contextSnapshot.contextRevision));
 
         ingress::FrameAssembler assembler;
-        const auto frames = assembler.Assemble(hub.Drain());
+        auto frames = assembler.Assemble(hub.Drain());
         bool processedStable = false;
         gameplay::DualPadRuntimeResult result{};
         RecordingPollOutputExecutor executor;
@@ -1976,6 +1976,27 @@ namespace
             dualpad::input::backend::NativeControlCode::MenuCancel,
             bits);
         Require(outputMask != 0, "MenuCancel_WhenRouteActive_ProducesNonZeroAuthoritativePoll output mask");
+
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(
+            503,
+            bits.cross,
+            503'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision));
+        frames = assembler.Assemble(hub.Drain());
+        bool processedHeldStable = false;
+        gameplay::DualPadRuntimeResult heldResult{};
+        for (const auto& frame : frames) {
+            heldResult = runtime.ProcessAssembledFrameForTests(frame, executor);
+            processedHeldStable = processedHeldStable || frame.kind == ingress::AssembledFrameKind::Stable;
+        }
+
+        Require(processedHeldStable, "MenuCross_HeldFrameDoesNotRepeatMenuCancel needs a stable frame");
+        Require(!heldResult.RuntimeHealthDegraded(), "Menu Cross held frame must not degrade before projection");
+        Require(
+            heldResult.projectionFrame.gamepadPlan.transientDigital.count == 0,
+            "MenuCross_HeldFrameDoesNotRepeatMenuCancel must not emit another native transient");
     }
 
     void RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests()

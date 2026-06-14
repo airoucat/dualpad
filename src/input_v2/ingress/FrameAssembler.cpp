@@ -36,6 +36,21 @@ namespace dualpad::input_v2::ingress
             return std::min(existing.downAtUs, incoming.downAtUs);
         }
 
+        FactFrame BuildDurableCarryFacts(FactFrame facts)
+        {
+            for (auto& sample : facts.controlSamples) {
+                sample.pressed = false;
+                sample.released = false;
+                if (!sample.down) {
+                    sample.downAtUs = 0;
+                }
+            }
+            facts.pulseLedger.clear();
+            facts.health = FactHealth{};
+            facts.overflowCompaction.reset();
+            return facts;
+        }
+
         void UpsertLatestSample(std::vector<actions::ControlSample>& samples, const actions::ControlSample& sample)
         {
             auto it = std::find_if(
@@ -201,7 +216,7 @@ namespace dualpad::input_v2::ingress
         _window.firstMonotonicUs = event.monotonicUs;
         _window.lastMonotonicUs = event.monotonicUs;
         _window.key = _currentKey;
-        _window.facts = _latestFacts;
+        _window.facts = BuildDurableCarryFacts(_latestFacts);
         ApplyFactsFromBoundaryKey(_window.facts, _currentKey);
         _window.facts.monotonicUs = event.monotonicUs;
     }
@@ -352,6 +367,7 @@ namespace dualpad::input_v2::ingress
             .boundaryKey = _window.key,
             .facts = _window.facts
         });
+        _latestFacts = BuildDurableCarryFacts(_window.facts);
         _window = Window{};
     }
 

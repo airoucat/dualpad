@@ -447,6 +447,71 @@ namespace
         Require(resolved.changes[0].phase == actions::ActionPhase::Press, "coalesced held HID press must emit Press");
     }
 
+    void TestPublishedPressEdgeDoesNotCarryIntoNextStableFrame()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        (void)hub.PushEvent(Manifest(42));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(20, 0x0, 20'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(21, 0x1, 21'000));
+
+        ingress::FrameAssembler assembler;
+        auto frames = assembler.Assemble(hub.Drain());
+        const auto& pressStable = LastFrame(frames);
+        const auto* pressSample = FindControlSample(pressStable.facts, 0x1);
+        Require(pressSample != nullptr, "first stable frame must carry the pressed control sample");
+        Require(pressSample->pressed, "first stable frame must publish the press edge");
+        Require(FindPulse(pressStable.facts, 0x1, true, false) != nullptr, "first stable frame must publish the press pulse");
+
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(22, 0x1, 22'000));
+        frames = assembler.Assemble(hub.Drain());
+        const auto& heldStable = LastFrame(frames);
+        const auto* heldSample = FindControlSample(heldStable.facts, 0x1);
+        Require(heldSample != nullptr, "held stable frame must carry the held control sample");
+        Require(heldSample->down, "held stable frame must preserve button down state");
+        Require(!heldSample->pressed, "published press edge must not carry into the next stable frame");
+        Require(!heldSample->released, "held stable frame must not synthesize release");
+        Require(heldStable.facts.pulseLedger.empty(), "published press pulse must not carry into the next stable frame");
+    }
+
+    void TestPublishedReleaseEdgeDoesNotCarryIntoNextStableFrame()
+    {
+        auto& producer = ingress::LiveInputFactProducer::GetSingleton();
+        producer.ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        (void)hub.PushEvent(Manifest(42));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(30, 0x0, 30'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(31, 0x1, 31'000));
+
+        ingress::FrameAssembler assembler;
+        (void)assembler.Assemble(hub.Drain());
+
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(32, 0x0, 32'000));
+        auto frames = assembler.Assemble(hub.Drain());
+        const auto& releaseStable = LastFrame(frames);
+        const auto* releaseSample = FindControlSample(releaseStable.facts, 0x1);
+        Require(releaseSample != nullptr, "release stable frame must carry the released control sample");
+        Require(!releaseSample->down, "release stable frame must mark the button up");
+        Require(!releaseSample->pressed, "release stable frame must not keep the prior press edge");
+        Require(releaseSample->released, "release stable frame must publish the release edge");
+        Require(FindPulse(releaseStable.facts, 0x1, false, true) != nullptr, "release stable frame must publish the release pulse");
+
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(33, 0x0, 33'000));
+        frames = assembler.Assemble(hub.Drain());
+        const auto& idleStable = LastFrame(frames);
+        const auto* idleSample = FindControlSample(idleStable.facts, 0x1);
+        Require(idleSample != nullptr, "idle stable frame may retain the latest up control sample");
+        Require(!idleSample->down, "idle stable frame must keep the button up");
+        Require(!idleSample->pressed, "published press edge must not carry into idle");
+        Require(!idleSample->released, "published release edge must not carry into idle");
+        Require(idleStable.facts.pulseLedger.empty(), "published release pulse must not carry into idle");
+    }
+
     void TestManifestPublisherProducesIngressMarker()
     {
         ingress::IngressHub::GetSingleton().ResetForTests();
@@ -1021,6 +1086,8 @@ int main()
     TestLiveHidMaskEdgesProducePulseLedger();
     TestLiveHidPressSampleTriggersInteractionEngine();
     TestCoalescedHeldHidPressSampleTriggersInteractionEngine();
+    TestPublishedPressEdgeDoesNotCarryIntoNextStableFrame();
+    TestPublishedReleaseEdgeDoesNotCarryIntoNextStableFrame();
     TestManifestPublisherProducesIngressMarker();
     TestDeviceFamilyProducerProducesMarkerAndPairedSourceEvidence();
     TestLiveGamepadInputPublishesSourceEvidence();
