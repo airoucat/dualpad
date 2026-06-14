@@ -27,7 +27,12 @@ LOG_PATTERNS = {
     "runtime_plan_action": "[DualPad][RuntimePlanAction]",
     "native_button_commit": "[DualPad][NativeButtonCommit]",
     "runtime_debug": "[DualPad][RuntimeDebug]",
+    "controlmap_overlay": "[DualPad][ControlMapOverlay]",
+    "sequence_gap": "[DualPad][SequenceGap]",
 }
+
+
+MAX_CREDIBLE_CONTROLMAP_MAPPINGS = 100_000
 
 
 TRACE_FILES = [
@@ -196,6 +201,15 @@ def summarize_log(path: Path | None) -> dict[str, Any]:
             "native_commit_actions": {},
             "native_queue_false": 0,
             "native_translate_failed": 0,
+            "hook_installed": False,
+            "hid_raw_buttons_seen": False,
+            "cross_raw_seen": False,
+            "menu_cancel_plan_seen": False,
+            "menu_confirm_release_translate_failed_count": 0,
+            "sequence_gap_count": 0,
+            "hard_reset_outputs_count": 0,
+            "impossible_controlmap_mapping_count": 0,
+            "controlmap_mapping_counts": [],
             "last_lines": {},
         }
     )
@@ -210,6 +224,7 @@ def summarize_log(path: Path | None) -> dict[str, Any]:
     mask_re = re.compile(r"mask=0x([0-9A-Fa-f]+)")
     analog_re = re.compile(r"(?:ls|rs)=\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)|(?:lt|rt)=(-?\d+(?:\.\d+)?)")
     runtime_plan_counts_re = re.compile(r"\b(sustained|transient|helper)=(\d+)")
+    controlmap_mappings_re = re.compile(r"\bmappings=(\d+)")
     runtime_plan_analog_re = re.compile(
         r"analog=move\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\) "
         r"look\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\) "
@@ -226,8 +241,23 @@ def summarize_log(path: Path | None) -> dict[str, Any]:
                 summary["skyrim_compat_success"] = True
             if "[DualPad][UpstreamGamepad]" in line and "Installed official Poll XInput call-site hook" in line:
                 summary["upstream_hook_installed"] = True
+                summary["hook_installed"] = True
             if "[DualPad][UpstreamGamepad]" in line and "Poll thunk" in line and "active=true" in line:
                 summary["upstream_poll_active_lines"] += 1
+            if "[DualPad][SequenceGap]" in line or "transition=sequence_gap" in line:
+                summary["sequence_gap_count"] += 1
+            if "recovery=HardResetOutputs" in line:
+                summary["hard_reset_outputs_count"] += 1
+            if "[DualPad][ControlMapOverlay]" in line:
+                impossible_mapping_line = "impossible mapping count" in line
+                mapping_match = controlmap_mappings_re.search(line)
+                if mapping_match:
+                    mapping_count = int(mapping_match.group(1))
+                    summary["controlmap_mapping_counts"].append(mapping_count)
+                    if mapping_count > MAX_CREDIBLE_CONTROLMAP_MAPPINGS:
+                        impossible_mapping_line = True
+                if impossible_mapping_line:
+                    summary["impossible_controlmap_mapping_count"] += 1
             if "[DualPad][RouteHealth]" in line:
                 match = route_state_re.search(line)
                 if match:
@@ -245,8 +275,11 @@ def summarize_log(path: Path | None) -> dict[str, Any]:
                 action = extract_field(line, "action")
                 if action:
                     runtime_plan_actions[action] += 1
+                    if action == "Menu.Cancel":
+                        summary["menu_cancel_plan_seen"] = True
             if "[DualPad][NativeButtonCommit]" in line:
                 action = extract_field(line, "action")
+                phase = extract_field(line, "phase")
                 if action:
                     native_commit_actions[action] += 1
                 if "Suppressed gameplay digital" in line:
@@ -254,6 +287,8 @@ def summarize_log(path: Path | None) -> dict[str, Any]:
                 elif " translate_failed " in line:
                     native_commit_stages["translate_failed"] += 1
                     summary["native_translate_failed"] += 1
+                    if action == "Menu.Confirm" and phase == "Release":
+                        summary["menu_confirm_release_translate_failed_count"] += 1
                 elif " apply " in line:
                     native_commit_stages["apply"] += 1
                 elif " queue " in line:
@@ -268,8 +303,13 @@ def summarize_log(path: Path | None) -> dict[str, Any]:
                     native_commit_stages["other"] += 1
             if "[DualPad][Input][State]" in line:
                 mask_match = mask_re.search(line)
-                if mask_match and int(mask_match.group(1), 16) != 0:
-                    summary["input_nonzero_mask_lines"] += 1
+                if mask_match:
+                    mask = int(mask_match.group(1), 16)
+                    if mask != 0:
+                        summary["input_nonzero_mask_lines"] += 1
+                        summary["hid_raw_buttons_seen"] = True
+                    if (mask & 0x00000002) != 0:
+                        summary["cross_raw_seen"] = True
                 if any(is_nonzero_number(value) for groups in analog_re.findall(line) for value in groups if value):
                     summary["input_analog_active_lines"] += 1
 
@@ -335,6 +375,10 @@ def assess(log_summary: dict[str, Any], trace_summary: dict[str, Any]) -> dict[s
         warnings.append("Processed frames contain digital input, but authoritative poll stayed inactive.")
         if breakpoint == "none":
             breakpoint = "authoritative_poll"
+    if log_summary.get("cross_raw_seen") and not log_summary.get("menu_cancel_plan_seen"):
+        warnings.append("Cross raw input was seen, but no RuntimePlanAction action=Menu.Cancel was captured.")
+        if breakpoint == "none":
+            breakpoint = "menu_cancel_plan_missing"
     if presentation.get("rows", 0) > 0 and presentation.get("gamepad_owner_rows", 0) == 0:
         warnings.append("Presentation surface never reported Gamepad owner.")
         if breakpoint == "none":
@@ -347,10 +391,22 @@ def assess(log_summary: dict[str, Any], trace_summary: dict[str, Any]) -> dict[s
         warnings.append("NativeButtonCommit translate_failed markers were captured.")
         if breakpoint == "none":
             breakpoint = "native_commit_translate"
+    if log_summary.get("menu_confirm_release_translate_failed_count", 0) > 0:
+        warnings.append("Menu.Confirm phase=Release translated as failed in NativeButtonCommit.")
+        if breakpoint == "none":
+            breakpoint = "native_commit_translate"
     if log_summary.get("native_queue_false", 0) > 0:
         warnings.append("NativeButtonCommit queue returned queued=false.")
         if breakpoint == "none":
             breakpoint = "native_commit_queue"
+    if log_summary.get("hard_reset_outputs_count", 0) > 0:
+        warnings.append("HardResetOutputs recovery markers were captured; check for a reset storm.")
+        if breakpoint == "none":
+            breakpoint = "hard_reset_outputs"
+    if log_summary.get("impossible_controlmap_mapping_count", 0) > 0:
+        warnings.append("ControlMapOverlay reported an impossible mapping count.")
+        if breakpoint == "none":
+            breakpoint = "controlmap_mapping_count"
     if glyph_queries.get("rows", 0) > 0 and glyph_results.get("glyph_ok_rows", 0) == 0:
         warnings.append("Glyph queries were captured, but no successful glyph result rows were captured.")
         if breakpoint == "none":
@@ -392,7 +448,11 @@ def print_text(summary: dict[str, Any]) -> None:
         print(f"  {name}: {count}")
     print(f"  skyrim_compat_success: {log.get('skyrim_compat_success')}")
     print(f"  upstream_hook_installed: {log.get('upstream_hook_installed')}")
+    print(f"  hook_installed: {log.get('hook_installed')}")
     print(f"  route_states: {log.get('route_states')}")
+    print(f"  hid_raw_buttons_seen: {log.get('hid_raw_buttons_seen')}")
+    print(f"  cross_raw_seen: {log.get('cross_raw_seen')}")
+    print(f"  menu_cancel_plan_seen: {log.get('menu_cancel_plan_seen')}")
     print(f"  input_nonzero_mask_lines: {log.get('input_nonzero_mask_lines')}")
     print(f"  input_analog_active_lines: {log.get('input_analog_active_lines')}")
     print(f"  upstream_poll_active_lines: {log.get('upstream_poll_active_lines')}")
@@ -402,6 +462,11 @@ def print_text(summary: dict[str, Any]) -> None:
     print(f"  native_commit_actions: {log.get('native_commit_actions')}")
     print(f"  native_queue_false: {log.get('native_queue_false')}")
     print(f"  native_translate_failed: {log.get('native_translate_failed')}")
+    print(f"  menu_confirm_release_translate_failed_count: {log.get('menu_confirm_release_translate_failed_count')}")
+    print(f"  sequence_gap_count: {log.get('sequence_gap_count')}")
+    print(f"  hard_reset_outputs_count: {log.get('hard_reset_outputs_count')}")
+    print(f"  impossible_controlmap_mapping_count: {log.get('impossible_controlmap_mapping_count')}")
+    print(f"  controlmap_mapping_counts: {log.get('controlmap_mapping_counts')}")
     print("")
     print("trace files:")
     for name, item in trace["files"].items():

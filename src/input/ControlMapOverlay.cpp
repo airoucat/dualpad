@@ -4,7 +4,9 @@
 #include <SKSE/SKSE.h>
 #include <SKSE/Version.h>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <string>
 
 #include "input/RuntimeConfig.h"
@@ -35,8 +37,19 @@ namespace dualpad::input
         constexpr auto kParseControlMapOffset = REL::Offset(0x0C13570);
         constexpr auto kResolveLinkedMappingsOffset = REL::Offset(0x0C120B0);
         constexpr auto kFreeBSTArrayOffset = REL::Offset(0x0C04EC0);
+        constexpr std::uint64_t kMaxCredibleControlMapMappings = 100'000;
+        constexpr std::array<std::uint32_t, 3> kCountedDeviceSlots{ 0, 1, 2 };
 
         thread_local OverlayStage g_overlayStage = OverlayStage::Idle;
+
+        struct MappingCountSummary
+        {
+            std::uint32_t contextCount{ 0 };
+            std::uint64_t mappingCount{ 0 };
+            bool impossible{ false };
+            std::size_t contextIndex{ 0 };
+            std::uint32_t deviceSlot{ 0 };
+        };
 
         const char* ToString(OverlayStage stage)
         {
@@ -104,6 +117,34 @@ namespace dualpad::input
             return removedCount;
         }
 
+        MappingCountSummary CountControlMapMappings(ControlMap& controlMap)
+        {
+            MappingCountSummary summary{};
+            constexpr auto kContextCount = static_cast<std::size_t>(ControlMap::InputContextID::kTotal);
+            for (std::size_t contextIndex = 0; contextIndex < kContextCount; ++contextIndex) {
+                auto* context = controlMap.controlMap[contextIndex];
+                if (!context) {
+                    continue;
+                }
+
+                ++summary.contextCount;
+                for (const auto deviceSlot : kCountedDeviceSlots) {
+                    const auto deviceMappings = static_cast<std::uint64_t>(
+                        context->deviceMappings[deviceSlot].size());
+                    if (deviceMappings > kMaxCredibleControlMapMappings ||
+                        summary.mappingCount > kMaxCredibleControlMapMappings - deviceMappings) {
+                        summary.impossible = true;
+                        summary.contextIndex = contextIndex;
+                        summary.deviceSlot = deviceSlot;
+                        summary.mappingCount = (std::max)(summary.mappingCount, deviceMappings);
+                        return summary;
+                    }
+                    summary.mappingCount += deviceMappings;
+                }
+            }
+            return summary;
+        }
+
         bool ApplyOverlayInternal(const std::filesystem::path& overlayPath, std::size_t& filteredHotkeyMappings)
         {
             auto* controlMap = ControlMap::GetSingleton();
@@ -136,25 +177,23 @@ namespace dualpad::input
             }
 
             g_overlayStage = OverlayStage::CountMappings;
-            std::size_t contextCount = 0;
-            std::size_t mappingCount = 0;
-            constexpr auto kContextCount = static_cast<std::size_t>(ControlMap::InputContextID::kTotal);
-            for (std::size_t contextIndex = 0; contextIndex < kContextCount; ++contextIndex) {
-                auto* context = controlMap->controlMap[contextIndex];
-                if (!context) {
-                    continue;
-                }
-
-                ++contextCount;
-                for (std::uint32_t device = 0; device < RE::INPUT_DEVICE::kTotal; ++device) {
-                    mappingCount += context->deviceMappings[device].size();
-                }
+            const auto mappingSummary = CountControlMapMappings(*controlMap);
+            if (mappingSummary.impossible ||
+                mappingSummary.mappingCount > kMaxCredibleControlMapMappings) {
+                logger::error(
+                    "[DualPad][ControlMapOverlay] impossible mapping count contexts={} mappings={} max={} contextIndex={} deviceSlot={} customRemapSkipped=true failClosed=true",
+                    mappingSummary.contextCount,
+                    mappingSummary.mappingCount,
+                    kMaxCredibleControlMapMappings,
+                    mappingSummary.contextIndex,
+                    mappingSummary.deviceSlot);
+                return false;
             }
 
             logger::info(
                 "[DualPad][ControlMapOverlay] Applied native runtime controlmap reload: contexts={} mappings={} customRemapSkipped=true",
-                contextCount,
-                mappingCount);
+                mappingSummary.contextCount,
+                mappingSummary.mappingCount);
             logger::info(
                 "[DualPad][ControlMapOverlay] ControlMap mappings are now owned by {}",
                 overlayPathUtf8);
