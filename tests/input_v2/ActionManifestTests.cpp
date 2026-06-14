@@ -134,6 +134,17 @@ void RunActionManifestTests()
         Require(!actionIt->outputDescriptorId.empty(), "action output descriptor id should be explicit");
         Require(!actionIt->promptHintId.empty(), "action prompt hint id should be explicit");
 
+        const auto menuStickIt = std::find_if(
+            compiledManifest.manifest.actions.begin(),
+            compiledManifest.manifest.actions.end(),
+            [](const act::ActionDefinition& action) {
+                return action.id == "Menu.LeftStick";
+            });
+        Require(menuStickIt != compiledManifest.manifest.actions.end(), "Menu.LeftStick action metadata should exist");
+        Require(
+            menuStickIt->valueKind == act::ActionValueKind::Axis2D,
+            "Menu.LeftStick must be a two-dimensional native axis action");
+
         const auto descriptorIt = std::find_if(
             compiledManifest.manifest.outputDescriptors.begin(),
             compiledManifest.manifest.outputDescriptors.end(),

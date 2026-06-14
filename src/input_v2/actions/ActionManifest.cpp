@@ -6,6 +6,7 @@
 #include "input/IniParseHelpers.h"
 #include "input/PadProfile.h"
 #include "input/PadEvent.h"
+#include "input/backend/NativeActionDescriptor.h"
 #include "input_v2/context/ContextCatalog.h"
 #include "input_v2/config/LegacyIniImporter.h"
 
@@ -553,6 +554,16 @@ namespace dualpad::input_v2::actions
 
         ActionValueKind InferActionValueKind(std::string_view actionId)
         {
+            if (const auto* nativeDescriptor = dualpad::input::backend::FindNativeActionDescriptor(actionId)) {
+                switch (nativeDescriptor->kind) {
+                case dualpad::input::backend::PlannedActionKind::NativeAxis2D:
+                    return ActionValueKind::Axis2D;
+                case dualpad::input::backend::PlannedActionKind::NativeAxis1D:
+                    return ActionValueKind::Axis1D;
+                default:
+                    break;
+                }
+            }
             if (actionId == "Game.Move" ||
                 actionId == "Game.Look" ||
                 actionId == dualpad::input::actions::MapLook ||

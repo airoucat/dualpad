@@ -149,6 +149,10 @@ local ph1_manifest_compiler_files = {
     "src/input_v2/config/ActionManifestPublisher.cpp"
 }
 
+local native_action_descriptor_files = {
+    "src/input/backend/NativeActionDescriptor.cpp"
+}
+
 local ph2_context_resolver_files = {
     "src/input_v2/menu/UiMenuObserver.cpp",
     "src/input_v2/menu/MenuInstanceRegistry.cpp",
@@ -216,6 +220,7 @@ target("DualPadManifestCompilerTests")
         "tests/input_v2/ManifestCompilerTestsMain.cpp",
         "tests/input_v2/ManifestValidatorTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(native_action_descriptor_files))
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_headerfiles("tests/**.h")
@@ -230,6 +235,7 @@ target("DualPadContextResolverTests")
 
     add_files("tests/input_v2/ContextResolverTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(native_action_descriptor_files))
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
@@ -245,6 +251,7 @@ target("DualPadPresentationProjectionTests")
 
     add_files("tests/input_v2/PresentationProjectionTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(native_action_descriptor_files))
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
@@ -314,6 +321,7 @@ target("DualPadPromptSnapshotTests")
 
     add_files("tests/input_v2/PromptSnapshotTests.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(native_action_descriptor_files))
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph6_prompt_files))
@@ -332,6 +340,7 @@ target("DualPadIngressTests")
     add_files("tests/input_v2/IngressTests.cpp")
     add_files(table.unpack(ph7_ingress_files))
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(native_action_descriptor_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
@@ -416,6 +425,7 @@ target("DualPadGlyphResolutionCompatTests")
         "tests/GlyphResolutionCompatTests.cpp",
         "src/input/glyph/GlyphResolutionCompat.cpp")
     add_files(table.unpack(ph1_manifest_compiler_files))
+    add_files(table.unpack(native_action_descriptor_files))
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph6_prompt_files))
     add_files(table.unpack(ph7_ingress_files))

@@ -1889,6 +1889,79 @@ namespace
             "live Menu ScrollDown legacy glyph descriptor must preserve the compiled ButtonArt token");
     }
 
+    void RunRuntimeFrameEnvelopeResolvesMenuLeftStickAsAxis2DTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+        config::AtomicConfigReloader::GetSingleton().ResetForTests();
+        context::ContextResolver::GetSingleton().ResetForTests();
+        actions::CompiledActionGraphPublisher::GetRuntimeOwner().ResetForTests();
+        prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
+        ingress::LiveInputFactProducer::GetSingleton().ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
+        compat.DisableRollback();
+        compat.Commit(presentation::PublishedPresentationState{});
+        compat.ForceInstallResultForTests(
+            presentation::detail::MakeHookInstallResult(
+                presentation::HookInstallStatus::Success,
+                "test_hook_installed"));
+        dualpad::input::detail::ResetUpstreamRouteInstallSnapshotForTests();
+
+        LoadRuntimeConfigForGameplayBindingTests();
+        const auto contextSnapshot = PublishGenericMenuContext();
+        Require(
+            contextSnapshot.legacyInputContext == dualpad::input::InputContext::Menu,
+            "generic menu context must mirror legacy Menu for stick projection");
+
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "menu stick binding test needs active config bundle");
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        hub.PushManifestEpochChanged(bundle->manifestEpoch);
+        ingress::LiveInputFactProducer::GetSingleton().PublishGamepadSourceEvidence(
+            contextSnapshot,
+            449'000);
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(
+            450,
+            0,
+            450'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision));
+
+        auto stickSnapshot = LiveHidSnapshot(
+            451,
+            0,
+            451'000,
+            contextSnapshot.legacyInputContext,
+            contextSnapshot.legacyContextEpoch,
+            contextSnapshot.contextRevision);
+        stickSnapshot.state.leftStick.x = 0.25f;
+        stickSnapshot.state.leftStick.y = -0.75f;
+        (void)hub.PushPadSnapshot(stickSnapshot);
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        bool processedStable = false;
+        gameplay::DualPadRuntimeResult result{};
+        RecordingPollOutputExecutor executor;
+        for (const auto& frame : frames) {
+            result = runtime.ProcessAssembledFrameForTests(frame, executor);
+            processedStable = processedStable || frame.kind == ingress::AssembledFrameKind::Stable;
+        }
+
+        Require(processedStable, "menu left stick projection needs a stable frame");
+        Require(!result.RuntimeHealthDegraded(), "menu left stick frame must not degrade before projection");
+        Require(
+            result.projectionFrame.gamepadPlan.analog.moveX == 0.25f,
+            "Menu.LeftStick X must project to native moveX from checked-in bindings");
+        Require(
+            result.projectionFrame.gamepadPlan.analog.moveY == -0.75f,
+            "Menu.LeftStick Y must project to native moveY from checked-in bindings");
+    }
+
     void RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -2161,6 +2234,7 @@ int main()
         RunContextEpochChangeHardResetsOnceTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests();
+        RunRuntimeFrameEnvelopeResolvesMenuLeftStickAsAxis2DTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests();
         RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();
         RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
