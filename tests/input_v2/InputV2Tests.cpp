@@ -288,7 +288,18 @@ namespace
         return snapshot;
     }
 
+    ingress::AssembledFactFrame HardTransitionFrame(
+        std::uint64_t seq,
+        ingress::TransitionReason reason);
+
     ingress::AssembledFactFrame HardTransitionFrame(std::uint64_t seq)
+    {
+        return HardTransitionFrame(seq, ingress::TransitionReason::QueueOverflow);
+    }
+
+    ingress::AssembledFactFrame HardTransitionFrame(
+        std::uint64_t seq,
+        ingress::TransitionReason reason)
     {
         ingress::AssembledFactFrame frame{};
         frame.kind = ingress::AssembledFrameKind::Transition;
@@ -298,9 +309,32 @@ namespace
         frame.transition = ingress::TransitionFrameMeta{
             .from = ingress::IngressBoundaryKey{ 42, 1, 11, 1 },
             .to = frame.boundaryKey,
-            .reason = ingress::TransitionReason::QueueOverflow,
+            .reason = reason,
             .requestHardResync = true,
             .flushPendingPulseEdges = true
+        };
+        return frame;
+    }
+
+    ingress::AssembledFactFrame SoftSequenceGapTransitionFrame(std::uint64_t seq)
+    {
+        ingress::AssembledFactFrame frame{};
+        frame.kind = ingress::AssembledFrameKind::Transition;
+        frame.firstSeq = seq;
+        frame.lastSeq = seq;
+        frame.boundaryKey = ingress::IngressBoundaryKey{ 42, 1, 11, 2 };
+        frame.facts.manifestEpoch = frame.boundaryKey.manifestEpoch;
+        frame.facts.contextRevision = frame.boundaryKey.contextRevision;
+        frame.facts.menuStackRevision = frame.boundaryKey.menuStackRevision;
+        frame.facts.deviceFamilyRevision = frame.boundaryKey.deviceFamilyRevision;
+        frame.facts.health.sequenceGap = true;
+        frame.transition = ingress::TransitionFrameMeta{
+            .from = ingress::IngressBoundaryKey{ 42, 1, 11, 2 },
+            .to = frame.boundaryKey,
+            .reason = ingress::TransitionReason::SequenceGap,
+            .requestSoftResync = true,
+            .requestHardResync = false,
+            .flushPendingPulseEdges = false
         };
         return frame;
     }
@@ -1597,6 +1631,115 @@ namespace
             "next stable frame after hard transition must commit recovery clean baseline after apply");
     }
 
+    bool HasStep(
+        const std::vector<gameplay::PollOutputApplyStep>& steps,
+        gameplay::PollOutputApplyStep expected)
+    {
+        return std::find(steps.begin(), steps.end(), expected) != steps.end();
+    }
+
+    void RunRuntimeSoftSequenceGapDoesNotClearAuthoritativePollTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        RecordingPollOutputExecutor transitionExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(
+            SoftSequenceGapTransitionFrame(220),
+            transitionExecutor);
+        Require(
+            transitionExecutor.steps.empty(),
+            "TransitionFrame_DoesNotDispatchActions for soft sequence gap");
+
+        RecordingPollOutputExecutor stableExecutor;
+        const auto stable = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                221,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    2210)),
+            stableExecutor);
+        Require(stable.output.outputApplySucceeded, "stable frame after soft sequence gap must apply output");
+        Require(
+            !HasStep(stableExecutor.steps, gameplay::PollOutputApplyStep::ClearNativeOutput),
+            "RuntimeSnapshotSeqGap_WithoutBoundaryChange_DoesNotClearAuthoritativePoll");
+        Require(
+            !HasStep(stableExecutor.steps, gameplay::PollOutputApplyStep::ClearHelperOutput),
+            "SoftGap must not clear helper output");
+        Require(
+            !HasStep(stableExecutor.steps, gameplay::PollOutputApplyStep::ClearSustainedDigitalAggregator),
+            "SoftGap must not clear sustained output");
+        Require(
+            !HasStep(stableExecutor.steps, gameplay::PollOutputApplyStep::ClearProjectionStickyOwners),
+            "SoftGap must not clear projection sticky owners");
+        Require(
+            HasStep(stableExecutor.steps, gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline),
+            "soft sequence gap must commit clean recovery baseline after a clean stable frame");
+    }
+
+    void RunHardRecoveryConsumesPendingResetOnceTests(
+        ingress::TransitionReason reason,
+        std::string_view assertionName)
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        RecordingPollOutputExecutor transitionExecutor;
+        (void)runtime.ProcessAssembledFrameForTests(
+            HardTransitionFrame(230, reason),
+            transitionExecutor);
+        Require(transitionExecutor.steps.empty(), "TransitionFrame_DoesNotDispatchActions for hard recovery");
+
+        RecordingPollOutputExecutor firstStableExecutor;
+        const auto firstStable = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                231,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    2310)),
+            firstStableExecutor);
+        Require(firstStable.output.outputApplySucceeded, "first stable frame after hard recovery must apply output");
+        Require(
+            HasStep(firstStableExecutor.steps, gameplay::PollOutputApplyStep::ClearNativeOutput),
+            assertionName);
+
+        RecordingPollOutputExecutor secondStableExecutor;
+        const auto secondStable = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                232,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    2320)),
+            secondStableExecutor);
+        Require(secondStable.output.outputApplySucceeded, "second stable frame after hard recovery must apply output");
+        Require(
+            !HasStep(secondStableExecutor.steps, gameplay::PollOutputApplyStep::ClearNativeOutput),
+            assertionName);
+        Require(
+            !HasStep(secondStableExecutor.steps, gameplay::PollOutputApplyStep::ClearSustainedDigitalAggregator),
+            "hard recovery pending clear must be consumed after one stable frame");
+    }
+
+    void RunManifestEpochChangeHardResetsOnceTests()
+    {
+        RunHardRecoveryConsumesPendingResetOnceTests(
+            ingress::TransitionReason::ManifestEpochChanged,
+            "ManifestEpochChange_HardResetsOnce");
+    }
+
+    void RunContextEpochChangeHardResetsOnceTests()
+    {
+        RunHardRecoveryConsumesPendingResetOnceTests(
+            ingress::TransitionReason::ExplicitReset,
+            "ContextEpochChange_HardResetsOnce");
+    }
+
     void RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -1985,6 +2128,9 @@ int main()
         RunRuntimeDisabledUpstreamRouteDoesNotFailClosedTests();
         RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
+        RunRuntimeSoftSequenceGapDoesNotClearAuthoritativePollTests();
+        RunManifestEpochChangeHardResetsOnceTests();
+        RunContextEpochChangeHardResetsOnceTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests();

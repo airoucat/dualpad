@@ -93,7 +93,11 @@ namespace dualpad::input_v2::ingress
             firstSequence != 0 &&
             firstSequence != lastObservedSequence + 1) {
             auto gap = MakeSequenceGapEvent();
+            gap.source = IngressSource::LegacyDispatcher;
             gap.monotonicUs = snapshot.sourceTimestampUs;
+            gap.sequenceGap.expected = lastObservedSequence + 1;
+            gap.sequenceGap.actual = firstSequence;
+            gap.sequenceGap.droppedByCompaction = snapshot.coalesced;
             events.push_back(gap);
         }
 
@@ -111,7 +115,7 @@ namespace dualpad::input_v2::ingress
             events.push_back(overflow);
         }
 
-        if (snapshot.coalesced || snapshot.crossContextMismatch) {
+        if (snapshot.crossContextMismatch) {
             auto reset = MakeExplicitResetEvent();
             reset.monotonicUs = snapshot.sourceTimestampUs;
             events.push_back(reset);

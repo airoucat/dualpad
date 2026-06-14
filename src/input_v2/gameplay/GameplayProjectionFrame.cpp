@@ -247,7 +247,8 @@ namespace dualpad::input_v2::gameplay
         } else if (frame.recoveryPlan.mode == RecoveryMode::HardResetOutputs) {
             frame.reasons.recovery = GameplayReasonCode::HardReset;
         }
-        frame.helperPlan.enqueueBridgeResetBeforeApply = frame.recoveryPlan.mode != RecoveryMode::None;
+        frame.helperPlan.enqueueBridgeResetBeforeApply =
+            frame.recoveryPlan.resetKeyboardHelperBackend;
 
         bool hasTransientGamepadDigital = false;
         for (const auto& change : resolved.changes) {

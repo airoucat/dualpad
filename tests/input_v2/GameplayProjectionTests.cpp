@@ -145,12 +145,19 @@ namespace
             .cleanFrame = true
         });
         Require(soft.mode == gameplay::RecoveryMode::SoftResyncOutputs, "soft resync must map to SoftResyncOutputs");
-        Require(soft.resetNativeCommitBackend, "soft resync must reset native output");
-        Require(soft.resetKeyboardHelperBackend, "soft resync must reset helper output");
-        Require(soft.resetSustainedDigitalAggregator, "soft resync must reset sustained aggregator");
-        Require(soft.clearProjectionStickyOwners, "soft resync must clear projection sticky owners");
-        Require(!soft.clearRecoveryBaseline, "soft resync must not clear recovery baseline");
+        Require(!soft.resetNativeCommitBackend, "SequenceGapWithoutDroppedDigitalEdges_IsSoftGap must not reset native output");
+        Require(!soft.resetKeyboardHelperBackend, "SoftGap must not reset helper output");
+        Require(!soft.resetSustainedDigitalAggregator, "SoftGap must not reset sustained aggregator");
+        Require(!soft.clearProjectionStickyOwners, "SoftGap must not clear projection sticky owners");
+        Require(!soft.clearRecoveryBaseline, "SoftGap must not clear recovery baseline");
         Require(soft.commitCleanRecoveryBaselineAfterApply, "clean soft resync frame must commit clean baseline after apply");
+
+        const auto softOrder = gameplay::BuildRecoveryExecutionPlan(soft);
+        const std::vector<gameplay::RecoveryExecutionStep> expectedSoft{
+            gameplay::RecoveryExecutionStep::ApplyOutputPlans,
+            gameplay::RecoveryExecutionStep::CommitCleanRecoveryBaseline
+        };
+        Require(softOrder == expectedSoft, "SoftGap must not enqueue output-clear recovery steps");
 
         const auto hard = gameplay::BuildRecoveryPlan(gameplay::GameplayRecoveryInput{
             .hardResetRequested = true,
@@ -381,6 +388,37 @@ namespace
         Require(projected.reasons.recovery == gameplay::GameplayReasonCode::HardReset, "overflow must explain hard reset recovery");
     }
 
+    void RunSoftRecoveryDoesNotClearOutputTests()
+    {
+        const auto projected = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            Resolved(),
+            gameplay::GameplayPolicy{},
+            gameplay::GameplayProjectionFrame{},
+            gameplay::GameplayRecoveryInput{
+                .softResyncRequested = true,
+                .sequenceGapObserved = true,
+                .cleanFrame = true
+            });
+
+        Require(projected.recoveryPlan.mode == gameplay::RecoveryMode::SoftResyncOutputs, "SoftGap must remain a soft recovery");
+        Require(!projected.recoveryPlan.resetNativeCommitBackend, "SoftGap must not clear native output");
+        Require(!projected.recoveryPlan.resetKeyboardHelperBackend, "SoftGap must not clear helper output");
+        Require(!projected.recoveryPlan.resetSustainedDigitalAggregator, "SoftGap must not clear sustained output");
+        Require(!projected.helperPlan.enqueueBridgeResetBeforeApply, "SoftGap must not enqueue helper bridge reset");
+
+        gameplay::PollOutputAdapter adapter;
+        RecordingPollOutputExecutor executor;
+        const auto result = adapter.Apply(projected, executor);
+        Require(result.outputApplySucceeded, "soft recovery frame must still apply output plans");
+        const std::vector<gameplay::PollOutputApplyStep> expected{
+            gameplay::PollOutputApplyStep::ApplyGatePlan,
+            gameplay::PollOutputApplyStep::PublishAnalogState,
+            gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline
+        };
+        Require(executor.steps == expected, "RuntimeSnapshotSeqGap_WithoutBoundaryChange_DoesNotClearAuthoritativePoll");
+    }
+
     void RunPresentationPublisherTests()
     {
         gameplay::GameplayPresentationPublisher publisher;
@@ -530,6 +568,7 @@ int main()
         RunMenuContextGamepadOutputTests();
         RunPrimaryPathArbitrationContractTests();
         RunOverflowFailClosedTests();
+        RunSoftRecoveryDoesNotClearOutputTests();
         RunPresentationPublisherTests();
         RunPollOutputAdapterExecutionTests();
         RunDualPadRuntimePublisherSeamTests();

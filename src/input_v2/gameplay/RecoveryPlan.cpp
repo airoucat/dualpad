@@ -16,11 +16,13 @@ namespace dualpad::input_v2::gameplay
         }
 
         plan.mode = hardReset ? RecoveryMode::HardResetOutputs : RecoveryMode::SoftResyncOutputs;
-        plan.resetNativeCommitBackend = true;
-        plan.resetKeyboardHelperBackend = true;
-        plan.resetSustainedDigitalAggregator = true;
-        plan.clearProjectionStickyOwners = true;
-        plan.clearRecoveryBaseline = hardReset;
+        if (hardReset) {
+            plan.resetNativeCommitBackend = true;
+            plan.resetKeyboardHelperBackend = true;
+            plan.resetSustainedDigitalAggregator = true;
+            plan.clearProjectionStickyOwners = true;
+            plan.clearRecoveryBaseline = true;
+        }
         plan.commitCleanRecoveryBaselineAfterApply = input.cleanFrame;
         return plan;
     }

@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <sstream>
 
+namespace logger = SKSE::log;
+
 namespace dualpad::input_v2::ingress
 {
     namespace
@@ -39,6 +41,17 @@ namespace dualpad::input_v2::ingress
         std::string BoolString(bool value)
         {
             return value ? "true" : "false";
+        }
+
+        void LogDeviceSequenceGap(const IngressEvent& event)
+        {
+            logger::warn(
+                "[DualPad][SequenceGap] source=device_report expected={} actual={} droppedByCompaction={} pendingBefore={} pendingAfter={} recovery=SoftGap",
+                event.sequenceGap.expected,
+                event.sequenceGap.actual,
+                event.sequenceGap.droppedByCompaction,
+                event.sequenceGap.pendingBefore,
+                event.sequenceGap.pendingAfter);
         }
 
         OverflowCompactionDebugSummary BuildOverflowCompactionDebugSummary(
@@ -90,11 +103,16 @@ namespace dualpad::input_v2::ingress
             }
 
             if (IsHealthMarker(event.kind)) {
+                if (event.kind == IngressKind::SequenceGap) {
+                    if (event.source == IngressSource::LegacyDispatcher) {
+                        LogDeviceSequenceGap(event);
+                    }
+                    continue;
+                }
+
                 FlushWindow(frames);
                 auto reason = TransitionReason::ExplicitReset;
-                if (event.kind == IngressKind::SequenceGap) {
-                    reason = TransitionReason::SequenceGap;
-                } else if (event.kind == IngressKind::QueueOverflow) {
+                if (event.kind == IngressKind::QueueOverflow) {
                     reason = TransitionReason::QueueOverflow;
                 }
                 EmitTransition(frames, _currentKey, _currentKey, reason);
@@ -345,7 +363,7 @@ namespace dualpad::input_v2::ingress
                 .reason = reason,
                 .requestSoftResync = soft,
                 .requestHardResync = hard,
-                .flushPendingPulseEdges = hard || soft
+                .flushPendingPulseEdges = hard
             }
         });
     }

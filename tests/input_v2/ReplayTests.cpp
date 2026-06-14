@@ -122,7 +122,7 @@ namespace
         Require(frames.back().boundaryKey.manifestEpoch == 2, "stable frame after reload uses marker payload epoch");
     }
 
-    void TestReplaySequenceGapDoesNotReachStableConsumer()
+    void TestReplaySequenceGapMarkerIsDiagnosticOnly()
     {
         ingress::FrameAssembler assembler;
         auto gap = ingress::MakeSequenceGapEvent();
@@ -137,9 +137,10 @@ namespace
         });
 
         const auto* gapFrame = FindTransition(frames, ingress::TransitionReason::SequenceGap);
-        Require(gapFrame != nullptr, "gap must be transition");
-        Require(!ingress::ShouldDispatchToInteractionEngine(*gapFrame), "gap transition must not dispatch to interaction engine");
-        Require(ToGameplayRecoveryInput(*gapFrame).sequenceGapObserved, "gap recovery marker must be preserved");
+        Require(gapFrame == nullptr, "device report gap marker must not become a runtime recovery transition");
+        for (const auto& frame : frames) {
+            Require(!frame.facts.health.sequenceGap, "device report gap marker must not poison stable health");
+        }
     }
 }
 
@@ -147,7 +148,7 @@ int main()
 {
     TestPhase0MandatoryReplayCoverageRemainsTenScenarios();
     TestManifestReloadReplayProducesHardResetTransition();
-    TestReplaySequenceGapDoesNotReachStableConsumer();
+    TestReplaySequenceGapMarkerIsDiagnosticOnly();
     std::cout << "DualPadReplayTests passed\n";
     return 0;
 }

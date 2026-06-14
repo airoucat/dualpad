@@ -72,9 +72,7 @@ namespace dualpad::input_v2::gameplay
 
         bool ShouldClearProjectionStickyOwners(const GameplayRecoveryInput& recovery)
         {
-            return recovery.softResyncRequested ||
-                recovery.hardResetRequested ||
-                recovery.sequenceGapObserved ||
+            return recovery.hardResetRequested ||
                 recovery.explicitResetRequested;
         }
 

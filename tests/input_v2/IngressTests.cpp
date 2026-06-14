@@ -157,6 +157,19 @@ namespace
         return nullptr;
     }
 
+    const actions::ControlSample* FindControlSample(
+        const ingress::FactFrame& facts,
+        std::uint32_t code)
+    {
+        for (const auto& sample : facts.controlSamples) {
+            if (sample.path.kind == actions::ControlPathKind::DigitalButton &&
+                sample.path.code == code) {
+                return &sample;
+            }
+        }
+        return nullptr;
+    }
+
     void TestHubAssignsSeqAndEmitsOverflowMarker()
     {
         ingress::IngressHub hub{ 2 };
@@ -318,6 +331,8 @@ namespace
         const auto converted = ingress::ConvertLegacySnapshotToIngressEvents(snapshot, 10);
         Require(!converted.empty(), "converted events must not be empty");
         Require(converted[0].kind == ingress::IngressKind::SequenceGap, "last observed 10 then first 12 must produce SequenceGap");
+        Require(converted[0].sequenceGap.expected == 11, "SequenceGap must capture expected device report seq");
+        Require(converted[0].sequenceGap.actual == 12, "SequenceGap must capture actual device report seq");
     }
 
     void TestLiveHidMaskEdgesProducePulseLedger()
@@ -606,12 +621,113 @@ namespace
 
         const auto* gap = FindTransition(frames, ingress::TransitionReason::SequenceGap);
         const auto* overflow = FindTransition(frames, ingress::TransitionReason::QueueOverflow);
-        Require(gap != nullptr, "sequence gap transition required");
-        Require(gap->transition.requestSoftResync, "sequence gap must soft resync");
-        Require(ToGameplayRecoveryInput(*gap).softResyncRequested, "sequence gap maps to gameplay recovery input");
+        Require(gap == nullptr, "device report SequenceGap marker must stay diagnostic and not dispatch recovery transition");
         Require(overflow != nullptr, "queue overflow transition required");
         Require(overflow->transition.requestHardResync, "queue overflow must hard reset");
         Require(ToGameplayRecoveryInput(*overflow).hardResetRequested, "queue overflow maps to hard recovery input");
+    }
+
+    void TestDeviceReportSequenceGapIsSoftDiagnosticAndKeepsDigitalEdge()
+    {
+        ingress::LiveInputFactProducer::GetSingleton().ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        (void)hub.PushEvent(Manifest(42));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(1, 0x0, 1'000));
+        (void)hub.PushPadSnapshot(LiveHidSnapshot(3, 0x1, 3'000));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        Require(
+            FindTransition(frames, ingress::TransitionReason::SequenceGap) == nullptr,
+            "SequenceGapWithoutDroppedDigitalEdges_IsSoftGap");
+        const auto& stable = LastStableFrame(frames);
+        Require(!stable.facts.health.sequenceGap, "device report gap must not poison stable frame recovery health");
+        const auto* press = FindPulse(stable.facts, 0x1, true, false);
+        Require(press != nullptr, "device report gap must preserve digital press edge");
+        Require(press->timestampUs == 3'000, "preserved digital edge must keep the latest HID timestamp");
+    }
+
+    void TestCoalescedHidReportsDoNotHardResetOutputs()
+    {
+        ingress::LiveInputFactProducer::GetSingleton().ResetForTests();
+
+        input::PadEventSnapshot snapshot = LiveHidSnapshot(8, 0x1, 8'000);
+        snapshot.firstSequence = 6;
+        snapshot.coalesced = true;
+
+        const auto converted = ingress::ConvertLegacySnapshotToIngressEvents(snapshot, 5);
+        for (const auto& event : converted) {
+            Require(
+                event.kind != ingress::IngressKind::ExplicitReset,
+                "CoalescedHidReports_DoNotHardResetOutputs");
+        }
+
+        auto events = converted;
+        events.insert(events.begin(), Manifest(42));
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(AssignSeq(std::move(events)));
+        Require(
+            FindTransition(frames, ingress::TransitionReason::ExplicitReset) == nullptr,
+            "coalesced HID reports must not emit explicit reset");
+        Require(
+            FindTransition(frames, ingress::TransitionReason::QueueOverflow) == nullptr,
+            "coalesced HID reports must not emit hard overflow recovery");
+        const auto& stable = LastStableFrame(frames);
+        Require(stable.facts.health.coalescedSnapshot, "coalesced stable frame must retain diagnostic health bit");
+        Require(FindPulse(stable.facts, 0x1, true, false) != nullptr, "CoalescedGap must preserve digital edge");
+    }
+
+    void TestRuntimeSnapshotSeqGapWithoutBoundaryChangeIsSoftTransition()
+    {
+        auto events = AssignSeq({
+            Manifest(42),
+            PadSample(0x1, true, true, false),
+            PadSample(0x1, false, false, true)
+        });
+        events[2].seq = events[1].seq + 2;
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(events);
+        const auto* gap = FindTransition(frames, ingress::TransitionReason::SequenceGap);
+        Require(gap != nullptr, "runtime snapshot seq gap must remain visible as a runtime transition");
+        Require(gap->transition.requestSoftResync, "runtime snapshot seq gap must soft resync");
+        Require(!gap->transition.requestHardResync, "runtime snapshot seq gap must not hard reset outputs");
+        Require(!gap->transition.flushPendingPulseEdges, "SoftGap must not flush pending pulse edges");
+
+        const auto recovery = ToGameplayRecoveryInput(*gap);
+        Require(recovery.sequenceGapObserved, "runtime snapshot seq gap must map to recovery input");
+        Require(recovery.softResyncRequested, "runtime snapshot seq gap recovery input must be soft");
+        Require(!recovery.hardResetRequested, "runtime snapshot seq gap recovery input must not be hard");
+    }
+
+    void TestAxisOnlyCoalescingDoesNotClearHeldButton()
+    {
+        ingress::LiveInputFactProducer::GetSingleton().ResetForTests();
+        ingress::IngressHub::GetSingleton().ResetForTests();
+
+        auto held = LiveHidSnapshot(1, 0x1, 1'000);
+        auto axisOnly = LiveHidSnapshot(2, 0x1, 2'000);
+        axisOnly.coalesced = true;
+        axisOnly.state.leftStick.x = 0.5f;
+
+        auto& hub = ingress::IngressHub::GetSingleton();
+        (void)hub.PushEvent(Manifest(42));
+        (void)hub.PushPadSnapshot(held);
+        (void)hub.PushPadSnapshot(axisOnly);
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(hub.Drain());
+        Require(
+            FindTransition(frames, ingress::TransitionReason::ExplicitReset) == nullptr,
+            "AxisOnlyCoalescing_DoesNotClearHeldButton must not hard reset");
+        const auto& stable = LastStableFrame(frames);
+        const auto* heldSample = FindControlSample(stable.facts, 0x1);
+        Require(heldSample != nullptr, "axis-only coalescing must retain held digital sample");
+        Require(heldSample->down, "axis-only coalescing must not clear held digital down state");
+        Require(!heldSample->released, "axis-only coalescing must not synthesize release");
     }
 
     void TestFrameAssemblerDoesNotSortOutOfOrderEvents()
@@ -836,6 +952,10 @@ int main()
     TestStableMergeKeepsPulseLedger();
     TestBoundaryChangeFlushesStableThenTransition();
     TestRecoveryMarkersMapFailClosed();
+    TestDeviceReportSequenceGapIsSoftDiagnosticAndKeepsDigitalEdge();
+    TestCoalescedHidReportsDoNotHardResetOutputs();
+    TestRuntimeSnapshotSeqGapWithoutBoundaryChangeIsSoftTransition();
+    TestAxisOnlyCoalescingDoesNotClearHeldButton();
     TestFrameAssemblerDoesNotSortOutOfOrderEvents();
     TestFrameAssemblerRejectsMonotonicTimeRegression();
     TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline();

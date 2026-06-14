@@ -5,6 +5,7 @@
 #include "input_v2/ingress/IngressBoundaryKey.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -82,6 +83,15 @@ namespace dualpad::input_v2::ingress
         bool droppedLegacySnapshot{ false };
     };
 
+    struct SequenceGapPayload
+    {
+        std::uint64_t expected{ 0 };
+        std::uint64_t actual{ 0 };
+        bool droppedByCompaction{ false };
+        std::size_t pendingBefore{ 0 };
+        std::size_t pendingAfter{ 0 };
+    };
+
     struct IngressEvent
     {
         std::uint64_t seq{ 0 };
@@ -95,6 +105,7 @@ namespace dualpad::input_v2::ingress
         ManifestEpochChangedPayload manifest;
         DeviceFamilyChangedPayload deviceFamily;
         QueueOverflowPayload overflow;
+        SequenceGapPayload sequenceGap;
     };
 
     IngressEvent MakeSequenceGapEvent();
