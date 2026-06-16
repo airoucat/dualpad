@@ -60,7 +60,7 @@ def main() -> int:
     context_catalog = read("docs/generated/context_catalog_zh.md")
     for marker in [
         "| `BarterMenu` | `Menu` | 0 |",
-        "| `FavoritesMenu` | `Menu` | 14 |",
+        "| `FavoritesMenu` | `Menu` | 12 |",
         "| `MessageBoxMenu` | `Menu` | 0 |",
     ]:
         if marker not in context_catalog:
@@ -70,12 +70,18 @@ def main() -> int:
     prompt_matrix = read("docs/generated/prompt_matrix_zh.md")
     for marker in [
         "| `FavoritesMenu` | `Favorites.Accept` | `Button:Cross` |",
+        "| `FavoritesMenu` | `Favorites.ToggleFocus` | `Button:Triangle` |",
+        "| `FavoritesMenu` | `Favorites.GroupConfirm` | `Button:L1` |",
         "| `FavoritesMenu` | `Favorites.LeftStick` | `Axis:LeftStickX` |",
     ]:
         if marker not in action_sets:
             failures.append(f"docs/generated/action_sets_zh.md: missing FavoritesMenu action marker {marker!r}")
     if "| `FavoritesMenu` | `Favorites.Accept` | `Button:Cross` | `Ok` |" not in prompt_matrix:
         failures.append("docs/generated/prompt_matrix_zh.md: missing visible FavoritesMenu prompt marker.")
+    if "| `FavoritesMenu` | `Favorites.ToggleFocus` | `Button:Triangle` | `Ok` |" not in prompt_matrix:
+        failures.append("docs/generated/prompt_matrix_zh.md: missing FavoritesMenu ToggleFocus prompt marker.")
+    if "| `FavoritesMenu` | `Menu.Confirm` | `Button:Triangle` |" in action_sets:
+        failures.append("docs/generated/action_sets_zh.md: FavoritesMenu Triangle must not map to Menu.Confirm.")
     if "Favorites.LeftStick" in prompt_matrix:
         failures.append("docs/generated/prompt_matrix_zh.md: axis prompt must remain hidden from visible prompt matrix.")
 

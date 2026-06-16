@@ -123,6 +123,25 @@ void RunContextResolverTests()
         const auto stack = registry.ReconcileAndPublish(
             menu::ObservedMenuSnapshot{
                 .completeness = menu::ObserverCompleteness::Complete,
+                .nodes = { Node(0x6200, "FavoritesMenu", 7) }
+            },
+            catalog);
+        const auto resolved = resolver.ResolveAndPublish(stack, ctx::GameplaySubstate::None, catalog);
+        Require(resolved.uiContextId == ctx::UiContextId::Favorites, "stable FavoritesMenu must resolve from compiled catalog");
+        Require(resolved.legacyInputContext == InputContext::FavoritesMenu, "stable FavoritesMenu must mirror legacy FavoritesMenu");
+        Require(resolved.actionSetStack.baseSetId == "MenuBase", "FavoritesMenu should retain MenuBase");
+        Require(
+            resolved.actionSetStack.layerIds == std::vector<std::string>{ "FavoritesLayer" },
+            "FavoritesMenu should publish the Favorites layer");
+        Require(resolved.presentationPolicyId == "FavoritesMenu", "FavoritesMenu policy must come from catalog");
+    }
+
+    {
+        menu::MenuInstanceRegistry registry;
+        ctx::ContextResolver resolver;
+        const auto stack = registry.ReconcileAndPublish(
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Complete,
                 .nodes = { Node(0x6000, "JournalMenu", 7) }
             },
             catalog);

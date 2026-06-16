@@ -133,3 +133,36 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: 新增 standalone native commit 测试时直接构造 `RE::BSFixedString`，测试进程在非 Skyrim 环境中挂住。
 - Detail: `PollCommitCoordinator` 的请求/slot 使用 `RE::BSFixedString`。直接在新的独立测试进程里实例化该类型会依赖 CommonLib/Skyrim 字符串池环境，导致 `DualPadNativeButtonCommitTests` 运行超时并残留进程。后续 standalone contract tests 应优先测试纯函数/纯合同；若必须覆盖 `BSFixedString` 路径，应复用已有 harness 或先建立明确的 test runtime 初始化，而不是临时构造。
 - Resolution: 已终止残留测试进程，并把该目标收缩为 `IsNativeDigitalGateOpenForContext()` 纯合同测试。
+
+## ERR-20260615-001
+
+- Logged: 2026-06-15 22:20 CST
+- Priority: high
+- Status: resolved
+- Area: runtime / native menu injection
+- Summary: `route_menu_confirm_input_event_accept_probe` 直接向 `BSInputEventQueue` 追加 Accept ButtonEvent 后，实机按 Triangle 闪退。
+- Detail: 最新 `DualPad.log` 在 `[DualPad][NativeButtonCommit] apply action=Menu.Confirm phase=Press ... outputCode=Menu.Confirm` 后立刻截断，未打印 `route_input_event_accept` 成功或失败日志；未发现额外 crash dump。该 probe 与仓库正式契约冲突：当前 native 主线是 `AuthoritativePollState -> XInputStateBridge -> Skyrim Poll`，不是 direct `ButtonEvent/InputEventQueue` 拼接。
+- Related files: `src/input/backend/NativeButtonCommitBackend.cpp`, `docs/backend_routing_decisions.md`, `docs/mapping_snapshot_atomicity_audit_and_injection_contract_zh.md`
+- Resolution: 已从代码、测试和 `DualPadDebug.ini` 移除 direct `BSInputEventQueue` probe；后续菜单确认问题必须回到 poll-owned virtual XInput current-state 与旧基线时序差异排查。
+
+## ERR-20260615-002
+
+- Logged: 2026-06-15 22:58 CST
+- Priority: medium
+- Status: open
+- Area: tooling / IDA
+- Summary: 在 Codex PowerShell 中直接用 IDA 9.3 CLI 查询 `SkyrimSE.exe.i64` 未能产生脚本报告。
+- Detail: `idat.exe -A -S... SkyrimSE.exe.i64` 首次超时且残留 `idat` 进程；改窄脚本后 `idat.exe` 和 `ida.exe` 都快速退出但没有生成脚本 report，也没有可靠 stdout/log。已删除本轮临时查询文件；不能把这次命令行尝试当作完成的 IDA 取证。
+- Related files: `G:/g/SkyrimSE/SkyrimSE.exe.i64`, `docs/gameplay_ui_owner_code_ida_refactor_plan_zh.md`, `docs/ui_input_ownership_arbitration_plan_zh.md`
+- Suggested fix: 后续若要自动化 IDA 查询，先用已知最小脚本验证 IDAPython 启动方式，或直接打开已有 `.i64` 在 GUI/IDA MCP 中查询固定 RVA，再把输出落到 repo-local 诊断文档。
+
+## ERR-20260616-001
+
+- Logged: 2026-06-16 23:19 CST
+- Priority: medium
+- Status: resolved
+- Area: tooling / Codex MCP / IDA
+- Summary: Codex 中已配置 IDA MCP，但当前会话无法发现 IDA 工具。
+- Detail: `~/.codex/config.toml` 中的 IDA MCP `command` 指向过期的 Microsoft Store Python 版本目录；`ida-pro-mcp` 段还包含当前 `ida_pro_mcp.server.py` 不支持的 `--unsafe` 参数；同时 `service_tier = "default"` 会让 `codex mcp list` 直接报 schema 错误，导致无法验证 MCP 配置。
+- Resolution: 将两个 IDA MCP 段的 `command` 改为当前可执行的用户级 Python shim，移除 `--unsafe`，并将 `service_tier` 改为当前 schema 接受的 `flex`。已验证 `ida_pro_mcp` 可 import，`tools/list` 能返回 `decompile`、`disasm`、`xrefs_to`、`py_eval` 等工具，且 `codex mcp list` 显示 `ida-pro-mcp` 与 `ida-pro-mcp-stdio` 均为 enabled。
+- Related files: `C:/Users/xuany/.codex/config.toml`

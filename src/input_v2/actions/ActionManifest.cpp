@@ -438,6 +438,12 @@ namespace dualpad::input_v2::actions
                 FavoritesUp,
                 FavoritesDown,
                 FavoritesLeftStick,
+                FavoritesToggleFocus,
+                FavoritesGroupConfirm,
+                FavoritesGroupToggle,
+                FavoritesGroupUse,
+                FavoritesSaveEquipState,
+                FavoritesSetGroupIcon,
 
                 // Item menu.
                 ItemLeftEquip,
@@ -810,13 +816,22 @@ namespace dualpad::input_v2::actions
             AddIfMissing(byContext[InputContext::DialogueMenu], MakeButtonTrigger(bits.dpadUp), DialoguePreviousOption, outAddedCount);
             AddIfMissing(byContext[InputContext::DialogueMenu], MakeButtonTrigger(bits.dpadDown), DialogueNextOption, outAddedCount);
 
+            {
+                auto& favorites = byContext[InputContext::FavoritesMenu];
+                AddIfMissing(favorites, MakeButtonTrigger(bits.cross), FavoritesAccept, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.circle), FavoritesCancel, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.dpadUp), FavoritesUp, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.dpadDown), FavoritesDown, outAddedCount);
+                AddIfMissing(favorites, MakeAxisTrigger(PadAxisId::LeftStickX), FavoritesLeftStick, outAddedCount);
+                AddIfMissing(favorites, MakeAxisTrigger(PadAxisId::LeftStickY), FavoritesLeftStick, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.triangle), FavoritesToggleFocus, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.l1), FavoritesGroupConfirm, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.r3), FavoritesGroupToggle, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.square), FavoritesGroupUse, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.create), FavoritesSaveEquipState, outAddedCount);
+                AddIfMissing(favorites, MakeButtonTrigger(bits.r2Button), FavoritesSetGroupIcon, outAddedCount);
+            }
             addBaseMenuBindings(InputContext::FavoritesMenu);
-            AddIfMissing(byContext[InputContext::FavoritesMenu], MakeButtonTrigger(bits.cross), FavoritesAccept, outAddedCount);
-            AddIfMissing(byContext[InputContext::FavoritesMenu], MakeButtonTrigger(bits.circle), FavoritesCancel, outAddedCount);
-            AddIfMissing(byContext[InputContext::FavoritesMenu], MakeButtonTrigger(bits.dpadUp), FavoritesUp, outAddedCount);
-            AddIfMissing(byContext[InputContext::FavoritesMenu], MakeButtonTrigger(bits.dpadDown), FavoritesDown, outAddedCount);
-            AddIfMissing(byContext[InputContext::FavoritesMenu], MakeAxisTrigger(PadAxisId::LeftStickX), FavoritesLeftStick, outAddedCount);
-            AddIfMissing(byContext[InputContext::FavoritesMenu], MakeAxisTrigger(PadAxisId::LeftStickY), FavoritesLeftStick, outAddedCount);
 
             addBaseMenuBindings(InputContext::JournalMenu);
             AddIfMissing(byContext[InputContext::JournalMenu], MakeButtonTrigger(bits.square), JournalXButton, outAddedCount);

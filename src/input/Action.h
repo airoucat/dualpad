@@ -57,6 +57,12 @@ namespace dualpad::input
         inline constexpr std::string_view FavoritesUp = "Favorites.Up";
         inline constexpr std::string_view FavoritesDown = "Favorites.Down";
         inline constexpr std::string_view FavoritesLeftStick = "Favorites.LeftStick";
+        inline constexpr std::string_view FavoritesToggleFocus = "Favorites.ToggleFocus";
+        inline constexpr std::string_view FavoritesGroupConfirm = "Favorites.GroupConfirm";
+        inline constexpr std::string_view FavoritesGroupToggle = "Favorites.GroupToggle";
+        inline constexpr std::string_view FavoritesGroupUse = "Favorites.GroupUse";
+        inline constexpr std::string_view FavoritesSaveEquipState = "Favorites.SaveEquipState";
+        inline constexpr std::string_view FavoritesSetGroupIcon = "Favorites.SetGroupIcon";
 
         inline constexpr std::string_view ItemLeftEquip = "Item.LeftEquip";
         inline constexpr std::string_view ItemRightEquip = "Item.RightEquip";

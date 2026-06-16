@@ -21,6 +21,50 @@ namespace dualpad::input_v2::presentation
         constexpr auto kExpectedBoolSurfaceEntryWindow =
             REL::make_pattern<"48 83 EC 28 48 8B 49 70 48 85 C9 74 11">();
 
+        const char* ToLogString(PresentationOwner owner)
+        {
+            return owner == PresentationOwner::Gamepad ? "Gamepad" : "KeyboardMouse";
+        }
+
+        const char* ToLogString(NavigationOwner owner)
+        {
+            switch (owner) {
+            case NavigationOwner::Gamepad:
+                return "Gamepad";
+            case NavigationOwner::KeyboardMouse:
+                return "KeyboardMouse";
+            case NavigationOwner::None:
+            default:
+                return "None";
+            }
+        }
+
+        const char* ToLogString(CursorOwner owner)
+        {
+            return owner == CursorOwner::Gamepad ? "Gamepad" : "KeyboardMouse";
+        }
+
+        std::uint32_t ToDirtyBits(PresentationDirtyFlags flags)
+        {
+            return static_cast<std::uint32_t>(static_cast<std::uint8_t>(flags));
+        }
+
+        bool NotifyMenuPresentationChanged(RE::IMenu& menu)
+        {
+            if (!menu.uiMovie) {
+                return false;
+            }
+
+            RE::GFxValue callback;
+            if (!menu.uiMovie->GetVariable(&callback, "_root.DualPad_OnPresentationChanged") ||
+                callback.IsUndefined()) {
+                return false;
+            }
+
+            menu.uiMovie->InvokeNoReturn("_root.DualPad_OnPresentationChanged", nullptr, 0);
+            return true;
+        }
+
         bool IsInstalledStatus(HookInstallStatus status)
         {
             return status == HookInstallStatus::Success ||
@@ -316,8 +360,30 @@ namespace dualpad::input_v2::presentation
         if (!presentationDirty || _committed.epoch == 0 || _committed.epoch == _lastRefreshEpoch) {
             return false;
         }
+
         _lastRefreshEpoch = _committed.epoch;
         return true;
+    }
+
+    bool SkyrimCompatibilitySurface::RefreshMenusIfNeeded()
+    {
+        if (!ShouldRefreshMenus()) {
+            return false;
+        }
+
+        const auto queued = QueueMenuRefreshTask();
+        const auto state = GetCommittedState();
+        logger::debug(
+            "[DualPad][SkyrimCompat] menu_refresh_request queued={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X} contextRevision={} gameplayPresentationRevision={}",
+            queued,
+            ToLogString(state.owner),
+            ToLogString(state.navigationOwner),
+            ToLogString(state.cursorOwner),
+            state.epoch,
+            ToDirtyBits(state.dirty),
+            state.contextRevision,
+            state.gameplayPresentationRevision);
+        return queued;
     }
 
     PresentationParityRecord SkyrimCompatibilitySurface::CompareShadowParity(
@@ -383,6 +449,13 @@ namespace dualpad::input_v2::presentation
         _installResult = HookInstallResult{};
     }
 
+    void SkyrimCompatibilitySurface::ResetRefreshStateForTests()
+    {
+        std::scoped_lock lock(_mutex);
+        _lastRefreshEpoch = 0;
+        _refreshQueued = false;
+    }
+
     bool SkyrimCompatibilitySurface::TryBeginInstall()
     {
         std::scoped_lock lock(_mutex);
@@ -391,6 +464,29 @@ namespace dualpad::input_v2::presentation
         }
         _installState = detail::BeginInstall(_installState);
         return true;
+    }
+
+    bool SkyrimCompatibilitySurface::QueueMenuRefreshTask()
+    {
+        {
+            std::scoped_lock lock(_mutex);
+            if (_refreshQueued) {
+                return false;
+            }
+            _refreshQueued = true;
+        }
+
+        if (auto* taskInterface = SKSE::GetTaskInterface(); taskInterface) {
+            taskInterface->AddUITask(DoRefreshMenus);
+            return true;
+        }
+
+        {
+            std::scoped_lock lock(_mutex);
+            _refreshQueued = false;
+        }
+        logger::debug("[DualPad][SkyrimCompat] menu_refresh_skipped reason=no_skse_task_interface");
+        return false;
     }
 
     HookInstallResult SkyrimCompatibilitySurface::MarkInstallResultLocked(const HookInstallResult& result)
@@ -450,5 +546,42 @@ namespace dualpad::input_v2::presentation
         }
 
         return true;
+    }
+
+    void SkyrimCompatibilitySurface::DoRefreshMenus()
+    {
+        auto& surface = GetSingleton();
+        std::size_t refreshed = 0;
+        std::size_t notified = 0;
+
+        if (auto* ui = RE::UI::GetSingleton(); ui) {
+            for (auto& menu : ui->menuStack) {
+                if (!menu) {
+                    continue;
+                }
+
+                menu->RefreshPlatform();
+                ++refreshed;
+                if (NotifyMenuPresentationChanged(*menu)) {
+                    ++notified;
+                }
+            }
+        }
+
+        {
+            std::scoped_lock lock(surface._mutex);
+            surface._refreshQueued = false;
+        }
+
+        const auto state = surface.GetCommittedState();
+        logger::debug(
+            "[DualPad][SkyrimCompat] menu_refresh_done menus={} notified={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X}",
+            refreshed,
+            notified,
+            ToLogString(state.owner),
+            ToLogString(state.navigationOwner),
+            ToLogString(state.cursorOwner),
+            state.epoch,
+            ToDirtyBits(state.dirty));
     }
 }

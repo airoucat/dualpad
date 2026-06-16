@@ -4,10 +4,49 @@
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"
 
+namespace logger = SKSE::log;
+
 namespace dualpad::input_v2::context
 {
     namespace
     {
+        const char* ToString(menu::ObserverCompleteness completeness)
+        {
+            switch (completeness) {
+            case menu::ObserverCompleteness::Complete:
+                return "Complete";
+            case menu::ObserverCompleteness::Partial:
+                return "Partial";
+            case menu::ObserverCompleteness::Unavailable:
+            default:
+                return "Unavailable";
+            }
+        }
+
+        void LogObservedMenuSnapshot(const menu::ObservedMenuSnapshot& observed)
+        {
+            logger::debug(
+                "[DualPad][MenuSnapshot] eventSeq={} lastEvent={} opening={} completeness={} nodes={}",
+                observed.eventSequence,
+                observed.lastEventMenuName.empty() ? "<none>" : observed.lastEventMenuName,
+                observed.lastEventOpening,
+                ToString(observed.completeness),
+                observed.nodes.size());
+
+            for (const auto& node : observed.nodes) {
+                logger::debug(
+                    "[DualPad][MenuSnapshotNode] order={} name={} ptr=0x{:016X} flags=0x{:08X} inputContext={} depth={} delegate=0x{:016X} movie=0x{:016X}",
+                    node.observationOrder,
+                    node.menuName,
+                    static_cast<unsigned long long>(node.menuPtr),
+                    node.menuFlagsValue,
+                    node.inputContextValue,
+                    node.depthPriority,
+                    static_cast<unsigned long long>(node.delegatePtr),
+                    static_cast<unsigned long long>(node.moviePtr));
+            }
+        }
+
         const CompiledContextCatalog& ActiveCatalog()
         {
             auto active = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
@@ -81,6 +120,7 @@ namespace dualpad::input_v2::context
         auto observed = observer.GetPublishedSnapshot();
         if (observer.IsDirty()) {
             observed = observer.Capture();
+            LogObservedMenuSnapshot(observed);
             observer.Publish(observed);
         }
 

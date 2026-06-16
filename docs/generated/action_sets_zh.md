@@ -6,7 +6,7 @@
 
 - source config root: `config/`
 - replay root: `tests/replay/golden/`
-- manifest hash: `b2e89a9603efcaaa`
+- manifest hash: `1d5e22d96aa42057`
 - trace schema version: `1`
 - generator version / command: `DualPadDocGen/phase8b-v1`, `xmake run DualPadDocGen`
 
@@ -68,17 +68,15 @@
 | `FavoritesMenu` | `Favorites.Accept` | `Button:Cross` |
 | `FavoritesMenu` | `Favorites.Cancel` | `Button:Circle` |
 | `FavoritesMenu` | `Favorites.Down` | `Button:DpadDown` |
+| `FavoritesMenu` | `Favorites.GroupConfirm` | `Button:L1` |
+| `FavoritesMenu` | `Favorites.GroupToggle` | `Button:R3` |
+| `FavoritesMenu` | `Favorites.GroupUse` | `Button:Square` |
 | `FavoritesMenu` | `Favorites.LeftStick` | `Axis:LeftStickX` |
 | `FavoritesMenu` | `Favorites.LeftStick` | `Axis:LeftStickY` |
+| `FavoritesMenu` | `Favorites.SaveEquipState` | `Button:Create` |
+| `FavoritesMenu` | `Favorites.SetGroupIcon` | `Button:R2Button` |
+| `FavoritesMenu` | `Favorites.ToggleFocus` | `Button:Triangle` |
 | `FavoritesMenu` | `Favorites.Up` | `Button:DpadUp` |
-| `FavoritesMenu` | `Game.Jump` | `Button:Square` |
-| `FavoritesMenu` | `Game.ReadyWeapon` | `Button:L3` |
-| `FavoritesMenu` | `Game.Sprint` | `Button:R3` |
-| `FavoritesMenu` | `Game.TogglePOV` | `Button:Options` |
-| `FavoritesMenu` | `Game.Wait` | `Button:Create` |
-| `FavoritesMenu` | `Menu.Confirm` | `Button:Triangle` |
-| `FavoritesMenu` | `Menu.Left` | `Button:L1` |
-| `FavoritesMenu` | `Menu.Right` | `Button:R1` |
 | `Gameplay` | `Game.Activate` | `Button:Triangle` |
 | `Gameplay` | `Game.Favorites` | `Button:DpadUp` |
 | `Gameplay` | `Game.Hotkey1` | `Button:DpadLeft` |

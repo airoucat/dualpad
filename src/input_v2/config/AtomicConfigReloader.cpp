@@ -368,6 +368,11 @@ namespace dualpad::input_v2::config
             if (trigger.code == bits.cross) return "Button:Cross";
             if (trigger.code == bits.triangle) return "Button:Triangle";
             if (trigger.code == bits.circle) return "Button:Circle";
+            if (trigger.code == bits.l1) return "Button:L1";
+            if (trigger.code == bits.r3) return "Button:R3";
+            if (trigger.code == bits.square) return "Button:Square";
+            if (trigger.code == bits.create) return "Button:Create";
+            if (trigger.code == bits.r2Button) return "Button:R2Button";
             return {};
         }
 
@@ -376,32 +381,46 @@ namespace dualpad::input_v2::config
             std::uint64_t promotedEpoch)
         {
             const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
-            constexpr auto menuContext = dualpad::input::InputContext::Menu;
-            const std::array expectedCodes{ bits.cross, bits.triangle, bits.circle };
+            const std::array menuCodes{ bits.cross, bits.triangle, bits.circle };
+            const std::array favoritesCodes{
+                bits.triangle,
+                bits.l1,
+                bits.r3,
+                bits.square,
+                bits.create,
+                bits.r2Button
+            };
 
-            for (const auto code : expectedCodes) {
-                const auto found = std::find_if(
-                    manifest.bindings.begin(),
-                    manifest.bindings.end(),
-                    [&](const actions::CompiledBinding& binding) {
-                        return binding.legacyContext == menuContext &&
-                            binding.legacyTrigger.type == dualpad::input::TriggerType::Button &&
-                            binding.legacyTrigger.code == code;
-                    });
-                if (found == manifest.bindings.end()) {
-                    continue;
+            const auto dumpForContext = [&](dualpad::input::InputContext context, const auto& expectedCodes) {
+                const auto contextName = dualpad::input::ToString(context);
+                for (const auto code : expectedCodes) {
+                    const auto found = std::find_if(
+                        manifest.bindings.begin(),
+                        manifest.bindings.end(),
+                        [&](const actions::CompiledBinding& binding) {
+                            return binding.legacyContext == context &&
+                                binding.legacyTrigger.type == dualpad::input::TriggerType::Button &&
+                                binding.legacyTrigger.code == code;
+                        });
+                    if (found == manifest.bindings.end()) {
+                        continue;
+                    }
+
+                    logger::info(
+                        "[DualPad][BindingDump] manifest={} epoch={} ctx={} trigger={} action={} source={} binding=baseSet:{} layer:{}",
+                        manifest.manifestEpoch,
+                        promotedEpoch,
+                        contextName,
+                        MenuBindingTriggerLabel(found->legacyTrigger),
+                        found->actionId,
+                        found->bindingSource,
+                        found->baseSetId,
+                        found->layerId.value_or("<none>"));
                 }
+            };
 
-                logger::info(
-                    "[DualPad][BindingDump] manifest={} epoch={} ctx=Menu trigger={} action={} source={} binding=baseSet:{} layer:{}",
-                    manifest.manifestEpoch,
-                    promotedEpoch,
-                    MenuBindingTriggerLabel(found->legacyTrigger),
-                    found->actionId,
-                    found->bindingSource,
-                    found->baseSetId,
-                    found->layerId.value_or("<none>"));
-            }
+            dumpForContext(dualpad::input::InputContext::Menu, menuCodes);
+            dumpForContext(dualpad::input::InputContext::FavoritesMenu, favoritesCodes);
         }
     }
 

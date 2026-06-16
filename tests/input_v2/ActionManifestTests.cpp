@@ -2,6 +2,7 @@
 
 #include "input/Action.h"
 #include "input/PadProfile.h"
+#include "input/backend/NativeActionDescriptor.h"
 #include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input_v2/actions/ActionManifest.h"
 #include "input_v2/config/LegacyIniImporter.h"
@@ -58,6 +59,8 @@ void RunActionManifestTests()
     const auto root = FindProjectRoot(std::filesystem::current_path());
     const auto bindings = root / "tests" / "fixtures" / "input_v2" / "valid_bindings.ini";
     const auto policy = root / "tests" / "fixtures" / "input_v2" / "valid_menu_policy.ini";
+    const auto repoBindings = root / "config" / "DualPadBindings.ini";
+    const auto repoPolicy = root / "config" / "DualPadMenuPolicy.ini";
     const auto& bits = dualpad::input::GetPadBits(dualpad::input::GetActivePadProfile());
 
     const auto findProjectedBinding = [](
@@ -205,6 +208,40 @@ void RunActionManifestTests()
     }
 
     {
+        const auto imported = cfg::LegacyIniImporter::Import(repoBindings, repoPolicy);
+        Require(imported.ok, imported.message);
+
+        const auto compiledCatalog = ctx::ContextCatalog::Compile(imported.bundle.menuPolicy, 7);
+        Require(compiledCatalog.ok, compiledCatalog.message);
+
+        const auto compiledManifest = act::ActionManifest::Compile(compiledCatalog.catalog, imported.bundle.bindings, 7);
+        Require(compiledManifest.ok, compiledManifest.message);
+
+        const auto triangle = findProjectedBinding(
+            compiledManifest.manifest,
+            dualpad::input::InputContext::FavoritesMenu,
+            bits.triangle);
+        Require(triangle.has_value(), "FavoritesMenu checked-in Triangle binding missing");
+        Require(
+            triangle->actionId == dualpad::input::actions::FavoritesToggleFocus,
+            "FavoritesMenu Triangle must resolve to Favorites.ToggleFocus from checked-in config");
+        Require(triangle->bindingSource == "config", "FavoritesMenu Triangle checked-in source must be config");
+
+        const auto l1 = findProjectedBinding(
+            compiledManifest.manifest,
+            dualpad::input::InputContext::FavoritesMenu,
+            bits.l1);
+        Require(l1.has_value(), "FavoritesMenu checked-in L1 binding missing");
+        Require(
+            l1->actionId == dualpad::input::actions::FavoritesGroupConfirm,
+            "FavoritesMenu L1 must resolve to Favorites.GroupConfirm from checked-in config");
+
+        Require(
+            dualpad::input::backend::FindNativeActionDescriptor(dualpad::input::actions::FavoritesToggleFocus) == nullptr,
+            "Favorites.ToggleFocus must not emit native A/Accept without the page broker");
+    }
+
+    {
         const auto compiledManifest = compileFromText(R"ini(
 [Touchpad]
 Mode=Disabled
@@ -221,6 +258,16 @@ Mode=Disabled
         Require(cross->bindingSource == "fallback", "FallbackMenuBindingsMatchCheckedInDefaults Cross source");
         Require(triangle->bindingSource == "fallback", "FallbackMenuBindingsMatchCheckedInDefaults Triangle source");
         Require(circle->bindingSource == "fallback", "FallbackMenuBindingsMatchCheckedInDefaults Circle source");
+
+        const auto favoritesTriangle = findProjectedBinding(
+            compiledManifest.manifest,
+            dualpad::input::InputContext::FavoritesMenu,
+            bits.triangle);
+        Require(favoritesTriangle.has_value(), "Fallback FavoritesMenu Triangle binding must exist");
+        Require(
+            favoritesTriangle->actionId == dualpad::input::actions::FavoritesToggleFocus,
+            "Fallback FavoritesMenu Triangle must not inherit Menu.Confirm");
+        Require(favoritesTriangle->bindingSource == "fallback", "Fallback FavoritesMenu Triangle source");
     }
 
     {

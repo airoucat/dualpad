@@ -11,11 +11,13 @@ namespace dualpad::input_v2::menu
         return instance;
     }
 
-    void UiMenuObserver::MarkMenuEvent(std::string_view, bool)
+    void UiMenuObserver::MarkMenuEvent(std::string_view menuName, bool opening)
     {
         std::scoped_lock lock(_mutex);
         _dirty = true;
         ++_eventSequence;
+        _lastEventMenuName = menuName;
+        _lastEventOpening = opening;
     }
 
     bool UiMenuObserver::IsDirty() const
@@ -36,6 +38,8 @@ namespace dualpad::input_v2::menu
         {
             std::scoped_lock lock(_mutex);
             snapshot.eventSequence = _eventSequence;
+            snapshot.lastEventMenuName = _lastEventMenuName;
+            snapshot.lastEventOpening = _lastEventOpening;
         }
 
         auto* ui = RE::UI::GetSingleton();
@@ -102,6 +106,8 @@ namespace dualpad::input_v2::menu
         std::scoped_lock lock(_mutex);
         _dirty = false;
         _eventSequence = 0;
+        _lastEventMenuName.clear();
+        _lastEventOpening = false;
         _published = ObservedMenuSnapshot{};
     }
 }

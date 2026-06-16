@@ -32,6 +32,8 @@ namespace dualpad::input_v2::menu
         ObserverCompleteness completeness{ ObserverCompleteness::Complete };
         std::vector<ObservedMenuNode> nodes;
         std::uint64_t eventSequence{ 0 };
+        std::string lastEventMenuName;
+        bool lastEventOpening{ false };
     };
 
     class UiMenuObserver
@@ -52,6 +54,8 @@ namespace dualpad::input_v2::menu
         mutable std::mutex _mutex;
         bool _dirty{ false };
         std::uint64_t _eventSequence{ 0 };
+        std::string _lastEventMenuName;
+        bool _lastEventOpening{ false };
         ObservedMenuSnapshot _published{};
     };
 }

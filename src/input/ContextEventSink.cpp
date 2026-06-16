@@ -66,6 +66,11 @@ namespace dualpad::input
             return RE::BSEventNotifyControl::kContinue;
         }
 
+        logger::debug(
+            "[DualPad][MenuEvent] name={} opening={}",
+            event->menuName.c_str(),
+            event->opening);
+
         auto& observer = dualpad::input_v2::menu::UiMenuObserver::GetSingleton();
         observer.MarkMenuEvent(event->menuName.c_str(), event->opening);
 

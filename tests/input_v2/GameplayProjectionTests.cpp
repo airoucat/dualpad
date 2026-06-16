@@ -281,6 +281,9 @@ namespace
         Require(
             projected.gamepadPlan.transientDigital.items[0].lifecyclePolicy == backend::ActionLifecyclePolicy::DeferredPulse,
             "Menu.Confirm must keep DeferredPulse lifecycle through gameplay projection");
+        Require(
+            !projected.gamepadPlan.transientDigital.items[0].gateAware,
+            "Menu.Confirm must not be marked gate-aware in menu projection");
         Require(projected.gamepadPlan.sustainedDigital.count == 1, "menu repeat action must enter native sustained output plan");
         Require(
             projected.gamepadPlan.sustainedDigital.items[0].control == backend::NativeControlCode::MenuScrollDown,
@@ -318,6 +321,9 @@ namespace
         Require(
             projected.gamepadPlan.transientDigital.items[0].lifecyclePolicy == backend::ActionLifecyclePolicy::MinDownWindowPulse,
             "Game.Activate must keep MinDownWindowPulse lifecycle through gameplay projection");
+        Require(
+            projected.gamepadPlan.transientDigital.items[0].gateAware,
+            "Game.Activate must remain gate-aware in gameplay projection");
     }
 
     void RunPrimaryPathArbitrationContractTests()

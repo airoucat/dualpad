@@ -5,6 +5,7 @@
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/ModEventKeyPool.h"
 #include "input/backend/NativeActionDescriptor.h"
+#include "input/backend/NativeDigitalPolicyResolver.h"
 
 #include <algorithm>
 #include <cmath>
@@ -328,6 +329,11 @@ namespace dualpad::input_v2::gameplay
             if (decision.backend == PlannedBackend::NativeButtonCommit) {
                 if (IsTransientContract(decision.contract)) {
                     if (frame.gatePlan.transientDigitalGate == DigitalGateMode::Open) {
+                        const auto digitalPolicy = dualpad::input::backend::ResolveNativeDigitalPolicy(
+                            decision.backend,
+                            decision.kind,
+                            decision.contract,
+                            decision.lifecyclePolicy);
                         overflow = !TryAppend(
                             frame.gamepadPlan.transientDigital,
                             NativeTransientCommand{
@@ -336,7 +342,9 @@ namespace dualpad::input_v2::gameplay
                                 .phase = change.phase,
                                 .contract = decision.contract,
                                 .lifecyclePolicy = decision.lifecyclePolicy,
-                                .gateAware = true,
+                                .gateAware = dualpad::input::backend::IsNativeDigitalGateAwareAction(
+                                    change.actionId,
+                                    digitalPolicy),
                                 .contextRevision = frame.contextRevision
                             }) || overflow;
                     }

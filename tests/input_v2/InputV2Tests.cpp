@@ -455,6 +455,23 @@ namespace
             Require(
                 button.matchPolicy == actions::BindingMatchPolicy::PreferExactThenSubset,
                 "Button lowering must preserve legacy subset fallback only for button-like bindings");
+            const auto& axis = compiled.graph.bindings[3];
+            Require(axis.modifiers.size() == 1, "Axis lowering must attach one neutral deadzone modifier");
+            Require(
+                axis.modifiers[0].kind == actions::BindingModifierKind::Deadzone,
+                "Axis lowering modifier must be a deadzone");
+            Require(
+                axis.modifiers[0].primary > (1.0f / 255.0f),
+                "Axis neutral deadzone must suppress one-step HID neutral quantization");
+            Require(
+                axis.modifiers[0].primary > 0.012f,
+                "Axis neutral deadzone must suppress field-observed menu stick drift");
+            Require(
+                axis.modifiers[0].primary < 0.10f,
+                "Axis neutral deadzone must stay below deliberate menu stick movement");
+            Require(
+                axis.modifiers[0].primary < 0.25f,
+                "Axis neutral deadzone must stay below intentional menu stick movement");
 
             auto holdTapGestureManifest = ManifestWithActions();
             holdTapGestureManifest.bindings.push_back(Binding("Jump", Trigger(dualpad::input::TriggerType::Hold, 10)));
@@ -785,6 +802,109 @@ namespace
 
         state.Reset();
         {
+            auto neutralAxisManifest = ManifestWithActions();
+            neutralAxisManifest.bindings.push_back(Binding(
+                "Game.Look",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickX))));
+            neutralAxisManifest.bindings.push_back(Binding(
+                "Game.Look",
+                Trigger(
+                    dualpad::input::TriggerType::Axis,
+                    static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickY))));
+            const auto neutralAxisCompiled = actions::ActionGraphCompiler::Compile(neutralAxisManifest);
+            Require(neutralAxisCompiled.ok, neutralAxisCompiled.message);
+
+            actions::LegacyInteractionInputFrame neutralLegacy{};
+            neutralLegacy.manifestEpoch = 42;
+            neutralLegacy.contextRevision = 7;
+            neutralLegacy.monotonicUs = 1'700;
+            neutralLegacy.samples = {
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickX), 1.0f / 255.0f, 1'700),
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickY), -1.0f / 255.0f, 1'700)
+            };
+            const auto neutralFrame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(neutralLegacy);
+            const auto neutralResolved = engine.Resolve(neutralAxisCompiled.graph, stack, neutralFrame, state);
+            Require(
+                neutralResolved.values.empty(),
+                "one-step HID neutral quantization must not emit an Axis2D value");
+            Require(
+                neutralResolved.changes.empty(),
+                "one-step HID neutral quantization must not emit a Value phase change");
+
+            actions::LegacyInteractionInputFrame fieldDriftLegacy{};
+            fieldDriftLegacy.manifestEpoch = 42;
+            fieldDriftLegacy.contextRevision = 7;
+            fieldDriftLegacy.monotonicUs = 1'712;
+            fieldDriftLegacy.samples = {
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickX), 0.0f, 1'712),
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickY), -0.012f, 1'712)
+            };
+            const auto fieldDriftFrame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(fieldDriftLegacy);
+            const auto fieldDriftResolved = engine.Resolve(neutralAxisCompiled.graph, stack, fieldDriftFrame, state);
+            Require(
+                fieldDriftResolved.values.empty(),
+                "field-observed left-stick neutral drift must not emit an Axis2D value");
+            Require(
+                fieldDriftResolved.changes.empty(),
+                "field-observed left-stick neutral drift must not emit a Value phase change");
+
+            actions::LegacyInteractionInputFrame smallIntentionalLegacy{};
+            smallIntentionalLegacy.manifestEpoch = 42;
+            smallIntentionalLegacy.contextRevision = 7;
+            smallIntentionalLegacy.monotonicUs = 1'718;
+            smallIntentionalLegacy.samples = {
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickX), 0.05f, 1'718),
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickY), -0.05f, 1'718)
+            };
+            const auto smallIntentionalFrame =
+                actions::LegacyInteractionInputAdapter::BuildKernelFrame(smallIntentionalLegacy);
+            const auto smallIntentionalResolved = engine.Resolve(
+                neutralAxisCompiled.graph,
+                stack,
+                smallIntentionalFrame,
+                state);
+            Require(
+                smallIntentionalResolved.values.size() == 1,
+                "small deliberate menu stick movement above drift deadzone must still emit Axis2D value");
+            Require(
+                smallIntentionalResolved.changes.size() == 1,
+                "small deliberate menu stick movement above drift deadzone must still emit Value phase change");
+            Require(
+                smallIntentionalResolved.values[0].x == 0.05f,
+                "small deliberate menu stick X must survive neutral deadzone");
+            Require(
+                smallIntentionalResolved.values[0].y == -0.05f,
+                "small deliberate menu stick Y must survive neutral deadzone");
+            state.Reset();
+
+            actions::LegacyInteractionInputFrame intentionalLegacy{};
+            intentionalLegacy.manifestEpoch = 42;
+            intentionalLegacy.contextRevision = 7;
+            intentionalLegacy.monotonicUs = 1'725;
+            intentionalLegacy.samples = {
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickX), 0.25f, 1'725),
+                AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickY), -0.25f, 1'725)
+            };
+            const auto intentionalFrame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(intentionalLegacy);
+            const auto intentionalResolved = engine.Resolve(neutralAxisCompiled.graph, stack, intentionalFrame, state);
+            Require(
+                intentionalResolved.values.size() == 1,
+                "intentional menu stick movement above neutral deadzone must still emit Axis2D value");
+            Require(
+                intentionalResolved.changes.size() == 1,
+                "intentional menu stick movement above neutral deadzone must still emit Value phase change");
+            Require(
+                intentionalResolved.values[0].x == 0.25f,
+                "intentional menu stick X must survive neutral deadzone");
+            Require(
+                intentionalResolved.values[0].y == -0.25f,
+                "intentional menu stick Y must survive neutral deadzone");
+        }
+
+        state.Reset();
+        {
             auto fallbackManifest = ManifestWithActions();
             fallbackManifest.bindings.push_back(Binding("Jump", Trigger(dualpad::input::TriggerType::Button, 11)));
             const auto fallbackCompiled = actions::ActionGraphCompiler::Compile(fallbackManifest);
@@ -978,6 +1098,9 @@ namespace
         const auto& committedAfterStable =
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
         Require(committedAfterStable.epoch > 0, "stable assembled frame must update SkyrimCompatibilitySurface committed epoch");
+        Require(
+            !presentation::SkyrimCompatibilitySurface::GetSingleton().ShouldRefreshMenus(),
+            "stable presentation publish must consume the menu platform refresh request");
 
         const auto scopeAfterStable = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
         Require(scopeAfterStable.state == prompt::PromptScopeState::Ready, "prompt scope must become ready after presentation publish");
@@ -1807,6 +1930,7 @@ namespace
         auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compat.DisableRollback();
         compat.Commit(presentation::PublishedPresentationState{});
+        compat.ResetRefreshStateForTests();
         compat.ForceInstallResultForTests(
             presentation::detail::MakeHookInstallResult(
                 presentation::HookInstallStatus::Success,

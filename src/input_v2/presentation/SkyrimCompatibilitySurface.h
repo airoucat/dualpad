@@ -137,6 +137,7 @@ namespace dualpad::input_v2::presentation
         bool GamepadControlsCursorHook() const;
         bool IsGamepadDeviceEnabledHook(bool remapMode) const;
         bool ShouldRefreshMenus();
+        bool RefreshMenusIfNeeded();
         PresentationParityRecord CompareShadowParity(
             const LegacyCompatibilitySurface& legacy,
             bool remapMode) const;
@@ -145,13 +146,16 @@ namespace dualpad::input_v2::presentation
         HookInstallResult GetInstallResult() const;
         void ForceInstallResultForTests(const HookInstallResult& result);
         void ResetInstallStateForTests();
+        void ResetRefreshStateForTests();
 
     private:
         static bool StaticIsUsingGamepadHook();
         static bool StaticIsGamepadCursorHook();
         static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
+        static void DoRefreshMenus();
 
         bool TryBeginInstall();
+        bool QueueMenuRefreshTask();
         HookInstallResult MarkInstallResultLocked(const HookInstallResult& result);
         HookInstallResult MarkInstallSucceeded();
         HookInstallResult MarkInstallFailed(const HookInstallResult& result);
@@ -160,6 +164,7 @@ namespace dualpad::input_v2::presentation
         mutable std::mutex _mutex;
         PublishedPresentationState _committed{};
         std::uint32_t _lastRefreshEpoch{ 0 };
+        bool _refreshQueued{ false };
         detail::InstallState _installState{ detail::InstallState::NotInstalled };
         HookInstallResult _installResult{};
     };

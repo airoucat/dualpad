@@ -107,3 +107,42 @@ DualPad 本地验证不要假设 CMake 在 PATH；优先按仓库 CI 使用 `xma
 
 ### Detail
 本轮红灯验证时先尝试 `cmake --build ...`，本机 PowerShell PATH 没有 `cmake`。随后又把 `xmake -y build <target>` 写成了错误顺序，xmake 将 target 解析为 invalid argument。仓库事实入口是 `scripts/ci/run_phase8_ci.ps1`，其中 target 构建/运行格式固定为 `xmake build -y DualPadIngressTests` 与 `xmake run -y DualPadIngressTests`。后续 focused 验证应先看 CI 脚本里的实际命令。
+
+## [LRN-20260615-002] insight
+
+**Logged**: 2026-06-15T22:13:47+08:00
+**Priority**: high
+**Status**: pending
+**Area**: backend
+
+### Summary
+DualPad 菜单确认不能把 dinput8 `DIK_E` 键盘桥当作 gamepad `Accept` 的等价替代入口。
+
+### Detail
+本轮实机 A/B 中，`Menu.Confirm` 已正常生成 RuntimePlanAction，`KeyboardHelperBackend` 也成功向 dinput8 发送 12 次 `DIK_E(0x12)` press/release，`G:/g/SkyrimSE/DualPadDInput8.log` 确认 `Device::GetDeviceData` 消费了 bridge event，但游戏菜单仍无确认反应。因此在菜单 native output 断链里，KeyboardHelper / DirectInput 键盘桥只能作为诊断证伪工具，不能作为正式 `Menu.Confirm` 修复路径。随后 direct `BSInputEventQueue` Accept probe 在实机闪退，且 `docs/backend_routing_decisions.md` / `docs/mapping_snapshot_atomicity_audit_and_injection_contract_zh.md` 明确禁止把 direct `ButtonEvent/InputEventQueue` 拼接恢复为主线；后续应回到旧基线的 poll-owned virtual XInput current-state 语义，比较当前与 `0d2c93a` 的 poll 时序、context/controlmap overlay 和菜单模式消费者差异。
+
+## [LRN-20260615-003] insight
+
+**Logged**: 2026-06-15T22:58:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: backend
+
+### Summary
+DualPad 菜单“Triangle 确认导致下移”不能再默认归因于输出 D-pad Down 或未 deadzone 的左摇杆轴量。
+
+### Detail
+用户复测 deadzone 版后仍下移，最新 `DualPad.log` 的首个 Triangle 窗口已经证明：raw `mask=0x00000008` 只生成 `RuntimePlanAction action=Menu.Confirm phase=Press`；`AuthoritativePoll` 输出 `xinputButtons=0x1000`，`move=(0.000,0.000)`；`UpstreamGamepad` 输出 `buttons=0x1000 lx=0 ly=0 rx=0 ry=0`；没有 `Menu.ScrollDown`，也没有 `xinputButtons=0x0002`。因此后续排查应转向 Skyrim/Scaleform 对 `Accept` 的菜单消费链、ControlMap context/linked mapping、pulse 时序或菜单平台状态，而不是继续在 resolver、D-pad 或 axis deadzone 上加补丁。
+
+## [LRN-20260616-001] insight
+
+**Logged**: 2026-06-16T23:56:09+08:00
+**Priority**: high
+**Status**: pending
+**Area**: runtime / menu presentation
+
+### Summary
+DualPad 回看旧基线时必须确认保留下来的 helper 是否仍有调用点，尤其是菜单 platform refresh 这类跨旧 runtime 和 `input_v2` 的兼容语义。
+
+### Detail
+主菜单 Triangle 首次下移问题中，`SkyrimCompatibilitySurface::ShouldRefreshMenus()` 在 `input_v2` 仍存在，容易误以为 PH8 迁移保留了旧刷新语义；但历史 grep 证明 `261869b` 删除 `InputModalityTracker` 时也删除了唯一调用链：`ShouldRefreshMenus() -> RefreshMenus() -> menu->RefreshPlatform() -> _root.DualPad_OnPresentationChanged()`。后续遇到“旧基线可用、当前不可用”的菜单兼容问题时，不能只比较数据结构和 helper 实现，必须用 `git grep <old> <symbol>` 与 `git grep HEAD <symbol>` 验证调用链是否仍闭合。

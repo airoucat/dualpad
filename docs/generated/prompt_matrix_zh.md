@@ -6,7 +6,7 @@
 
 - source config root: `config/`
 - replay root: `tests/replay/golden/`
-- manifest hash: `b2e89a9603efcaaa`
+- manifest hash: `1d5e22d96aa42057`
 - trace schema version: `1`
 - generator version / command: `DualPadDocGen/phase8b-v1`, `xmake run DualPadDocGen`
 
@@ -70,15 +70,13 @@
 | `FavoritesMenu` | `Favorites.Accept` | `Button:Cross` | `Ok` | `ExactScope` | `None` | `DualSense` |
 | `FavoritesMenu` | `Favorites.Cancel` | `Button:Circle` | `Ok` | `ExactScope` | `None` | `DualSense` |
 | `FavoritesMenu` | `Favorites.Down` | `Button:DpadDown` | `Ok` | `ExactScope` | `None` | `DualSense` |
+| `FavoritesMenu` | `Favorites.GroupConfirm` | `Button:L1` | `Ok` | `ExactScope` | `None` | `DualSense` |
+| `FavoritesMenu` | `Favorites.GroupToggle` | `Button:R3` | `Ok` | `ExactScope` | `None` | `DualSense` |
+| `FavoritesMenu` | `Favorites.GroupUse` | `Button:Square` | `Ok` | `ExactScope` | `None` | `DualSense` |
+| `FavoritesMenu` | `Favorites.SaveEquipState` | `Button:Create` | `Ok` | `ExactScope` | `None` | `DualSense` |
+| `FavoritesMenu` | `Favorites.SetGroupIcon` | `Button:R2Button` | `Ok` | `ExactScope` | `None` | `DualSense` |
+| `FavoritesMenu` | `Favorites.ToggleFocus` | `Button:Triangle` | `Ok` | `ExactScope` | `None` | `DualSense` |
 | `FavoritesMenu` | `Favorites.Up` | `Button:DpadUp` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Game.Jump` | `Button:Square` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Game.ReadyWeapon` | `Button:L3` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Game.Sprint` | `Button:R3` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Game.TogglePOV` | `Button:Options` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Game.Wait` | `Button:Create` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Menu.Confirm` | `Button:Triangle` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Menu.Left` | `Button:L1` | `Ok` | `ExactScope` | `None` | `DualSense` |
-| `FavoritesMenu` | `Menu.Right` | `Button:R1` | `Ok` | `ExactScope` | `None` | `DualSense` |
 | `Gameplay` | `Game.Activate` | `Button:Triangle` | `Ok` | `ExactScope` | `None` | `DualSense` |
 | `Gameplay` | `Game.Favorites` | `Button:DpadUp` | `Ok` | `ExactScope` | `None` | `DualSense` |
 | `Gameplay` | `Game.Hotkey1` | `Button:DpadLeft` | `Ok` | `ExactScope` | `None` | `DualSense` |

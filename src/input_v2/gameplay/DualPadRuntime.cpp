@@ -382,7 +382,9 @@ namespace dualpad::input_v2::gameplay
             frame.facts.sourceEvidence,
             envelope.config.context,
             result.gameplayPresentation);
-        presentation::SkyrimCompatibilitySurface::GetSingleton().Commit(published);
+        auto& compatibilitySurface = presentation::SkyrimCompatibilitySurface::GetSingleton();
+        compatibilitySurface.Commit(published);
+        compatibilitySurface.RefreshMenusIfNeeded();
         if (result.RuntimeHealthDegraded()) {
             return;
         }

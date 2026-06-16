@@ -2,6 +2,9 @@
 #include "input_v2/context/ContextResolver.h"
 
 #include <format>
+#include <sstream>
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input_v2::context
 {
@@ -39,6 +42,62 @@ namespace dualpad::input_v2::context
                 lhs.presentationPolicyId == rhs.presentationPolicyId &&
                 lhs.legacyInputContext == rhs.legacyInputContext &&
                 lhs.legacyContextEpoch == rhs.legacyContextEpoch;
+        }
+
+        const char* ToString(HostMode mode)
+        {
+            switch (mode) {
+            case HostMode::Menu:
+                return "Menu";
+            case HostMode::Gameplay:
+            default:
+                return "Gameplay";
+            }
+        }
+
+        const char* ToString(menu::MenuIdentityQuality quality)
+        {
+            switch (quality) {
+            case menu::MenuIdentityQuality::StablePointer:
+                return "StablePointer";
+            case menu::MenuIdentityQuality::FingerprintRebound:
+                return "FingerprintRebound";
+            case menu::MenuIdentityQuality::DegradedIdentity:
+            default:
+                return "DegradedIdentity";
+            }
+        }
+
+        std::string Join(const std::vector<std::string>& values)
+        {
+            if (values.empty()) {
+                return "<none>";
+            }
+
+            std::ostringstream out;
+            for (std::size_t i = 0; i < values.size(); ++i) {
+                if (i > 0) {
+                    out << ',';
+                }
+                out << values[i];
+            }
+            return out.str();
+        }
+
+        std::string ContextName(const CompiledContextCatalog& catalog, UiContextId id)
+        {
+            if (const auto* entry = ContextCatalog::FindById(catalog, id)) {
+                return entry->canonicalContextName;
+            }
+            return std::format("UiContext#{}", static_cast<std::uint16_t>(id));
+        }
+
+        std::string TopMenuName(const menu::ReconciledMenuStack& menuStack)
+        {
+            if (menuStack.trackedMenus.empty()) {
+                return "<none>";
+            }
+            return menuStack.trackedMenus.front().menuName;
         }
     }
 
@@ -104,6 +163,20 @@ namespace dualpad::input_v2::context
 
         if (!HasSameResolutionFields(_published, next)) {
             next.contextRevision = _published.contextRevision + 1;
+            logger::debug(
+                "[DualPad][ContextResolve] revision={} host={} topMenu={} topInstance={} identity={} uiContext={} legacyCtx={} legacyEpoch={} menuStackRevision={} actionBase={} layers={} policy={}",
+                next.contextRevision,
+                ToString(next.hostMode),
+                TopMenuName(menuStack),
+                next.topMenuInstanceId.value_or(0),
+                ToString(next.identityQuality),
+                ContextName(catalog, next.uiContextId),
+                dualpad::input::ToString(next.legacyInputContext),
+                next.legacyContextEpoch,
+                next.menuStackRevision,
+                next.actionSetStack.baseSetId.empty() ? "<none>" : next.actionSetStack.baseSetId,
+                Join(next.actionSetStack.layerIds),
+                next.presentationPolicyId.empty() ? "<none>" : next.presentationPolicyId);
             _published = next;
         }
         return _published;

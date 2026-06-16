@@ -18,11 +18,15 @@ namespace dualpad::input_v2::actions
         struct LoweredLegacyBinding
         {
             std::vector<ControlPath> paths;
+            std::vector<BindingModifier> modifiers;
             InteractionSpec interaction;
             BindingMatchPolicy matchPolicy{ BindingMatchPolicy::ExactOnly };
             DisplayBindingMode defaultDisplayMode{ DisplayBindingMode::Primary };
             bool legacyTokenRenderable{ true };
         };
+
+        // Field captures show idle DualSense stick drift around 0.012 reaching native menu navigation.
+        constexpr float kLegacyAxisNeutralDeadzone = 0.02f;
 
         struct DuplicateShapeOwner
         {
@@ -216,6 +220,12 @@ namespace dualpad::input_v2::actions
                 return true;
             case TriggerType::Axis:
                 lowered.paths = { AxisPath(trigger.code) };
+                lowered.modifiers = {
+                    BindingModifier{
+                        .kind = BindingModifierKind::Deadzone,
+                        .primary = kLegacyAxisNeutralDeadzone
+                    }
+                };
                 lowered.interaction.kind = InteractionKind::Value;
                 lowered.defaultDisplayMode = DisplayBindingMode::Hidden;
                 lowered.matchPolicy = BindingMatchPolicy::ExactOnly;
@@ -343,6 +353,7 @@ namespace dualpad::input_v2::actions
             binding.actionId = manifestBinding.actionId;
             binding.actionSetId = manifestBinding.layerId.value_or(manifestBinding.baseSetId);
             binding.paths = lowered.paths;
+            binding.modifiers = lowered.modifiers;
             binding.interaction = lowered.interaction;
             binding.matchPolicy = lowered.matchPolicy;
             binding.primaryDisplayBindingId = binding.bindingId;

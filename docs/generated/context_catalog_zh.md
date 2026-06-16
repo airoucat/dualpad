@@ -6,7 +6,7 @@
 
 - source config root: `config/`
 - replay root: `tests/replay/golden/`
-- manifest hash: `b2e89a9603efcaaa`
+- manifest hash: `1d5e22d96aa42057`
 - trace schema version: `1`
 - generator version / command: `DualPadDocGen/phase8b-v1`, `xmake run DualPadDocGen`
 
@@ -28,7 +28,7 @@
 | `DebugOverlay` | `<none>` | 13 |
 | `DialogueMenu` | `Menu` | 2 |
 | `Favor` | `<none>` | 1 |
-| `FavoritesMenu` | `Menu` | 14 |
+| `FavoritesMenu` | `Menu` | 12 |
 | `Gameplay` | `<none>` | 21 |
 | `GiftMenu` | `Menu` | 0 |
 | `InventoryMenu` | `Menu` | 1 |

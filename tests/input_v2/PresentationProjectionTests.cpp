@@ -254,6 +254,45 @@ void RunPresentationProjectionTests()
     }
 
     {
+        presentation::SkyrimCompatibilitySurface compat;
+        compat.ResetRefreshStateForTests();
+
+        presentation::PublishedPresentationState menuGamepad{};
+        menuGamepad.owner = presentation::PresentationOwner::Gamepad;
+        menuGamepad.navigationOwner = presentation::NavigationOwner::Gamepad;
+        menuGamepad.cursorOwner = presentation::CursorOwner::Gamepad;
+        menuGamepad.contextRevision = 10;
+        menuGamepad.epoch = 1;
+        menuGamepad.dirty = presentation::PresentationDirtyFlags::Owner;
+        compat.Commit(menuGamepad);
+
+        Require(
+            compat.ShouldRefreshMenus(),
+            "dirty owner presentation publish must request one menu platform refresh");
+        Require(
+            !compat.ShouldRefreshMenus(),
+            "same presentation epoch must not request duplicate menu platform refreshes");
+
+        presentation::PublishedPresentationState contextOnly = menuGamepad;
+        contextOnly.contextRevision = 11;
+        contextOnly.epoch = 2;
+        contextOnly.dirty = presentation::PresentationDirtyFlags::Context;
+        compat.Commit(contextOnly);
+        Require(
+            !compat.ShouldRefreshMenus(),
+            "context-only presentation dirty must not refresh menu platform state");
+
+        presentation::PublishedPresentationState policyChange = contextOnly;
+        policyChange.presentationPolicyId = "MenuPolicyChanged";
+        policyChange.epoch = 3;
+        policyChange.dirty = presentation::PresentationDirtyFlags::Policy;
+        compat.Commit(policyChange);
+        Require(
+            compat.ShouldRefreshMenus(),
+            "policy dirty presentation publish must refresh menu platform state");
+    }
+
+    {
         const auto site = presentation::detail::MakeVfuncPatchSite(0x1000, 0x8);
         Require(
             site.relocationBase == 0x1000,
