@@ -106,6 +106,20 @@ namespace
         return state;
     }
 
+    presentation::PublishedPresentationState FavoritesPresentation()
+    {
+        presentation::PublishedPresentationState state{};
+        state.family = presentation::DeviceFamily::Gamepad;
+        state.uiContextId = context::UiContextId::Favorites;
+        state.actionSetStack = actions::ActionSetStack{
+            .baseSetId = "MenuBase",
+            .layerIds = { "FavoritesLayer" },
+            .scopeAnchorIds = { "MenuBase", "FavoritesLayer" }
+        };
+        state.epoch = 8;
+        return state;
+    }
+
     prompt::PublishedPromptScope JournalScope()
     {
         prompt::PromptProjection projection;
@@ -346,6 +360,34 @@ namespace
         Require(invalid.failureReason == "UnknownContext", "invalid context must expose UnknownContext");
     }
 
+    void RunFavoritesPagePromptAvailabilityTests()
+    {
+        auto& owner = prompt::PromptRuntimeOwner::GetSingleton();
+        owner.ResetForTests();
+        LoadRuntimeConfigForPromptTests();
+
+        owner.PublishPresentationState(FavoritesPresentation(), BaselineFromActiveRuntime());
+
+        const auto descriptor = owner.Resolve(prompt::PromptQuery{
+            .actionId = "Favorites.ToggleFocus",
+            .selectorKind = prompt::PromptScopeSelectorKind::ExplicitContextName,
+            .contextName = "FavoritesMenu"
+        });
+        Require(
+            descriptor.status == prompt::PromptQueryStatus::HiddenOnly,
+            "FavoritesPageActions_AreHiddenWhenBrokerUnavailable");
+        Require(!descriptor.primary, "Favorites page broker actions must not publish active prompt candidates");
+
+        const auto nativeAction = owner.Resolve(prompt::PromptQuery{
+            .actionId = "Favorites.Accept",
+            .selectorKind = prompt::PromptScopeSelectorKind::ExplicitContextName,
+            .contextName = "FavoritesMenu"
+        });
+        Require(nativeAction.ok, "broker-independent Favorites native actions must remain prompt-visible");
+
+        owner.ResetForTests();
+    }
+
     void RunPromptRuntimeOwnerEpochSkewTests()
     {
         auto& owner = prompt::PromptRuntimeOwner::GetSingleton();
@@ -485,6 +527,7 @@ int main()
         RunPromptRuntimeOwnerReloadInterleavingTests();
         RunPromptRuntimeOwnerEpochSkewTests();
         RunPromptRuntimeOwnerTests();
+        RunFavoritesPagePromptAvailabilityTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

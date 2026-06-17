@@ -4,8 +4,10 @@
 
 #include "input_v2/presentation/PresentationProjection.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -126,6 +128,9 @@ namespace dualpad::input_v2::presentation
     class SkyrimCompatibilitySurface
     {
     public:
+        using MenuRefreshTask = void (*)();
+        using MenuRefreshTaskSink = std::function<bool(MenuRefreshTask)>;
+
         static SkyrimCompatibilitySurface& GetSingleton();
 
         HookInstallResult Install();
@@ -145,6 +150,10 @@ namespace dualpad::input_v2::presentation
         PublishedPresentationState GetCommittedState() const;
         HookInstallResult GetInstallResult() const;
         void ForceInstallResultForTests(const HookInstallResult& result);
+        void ForceOriginalHookOutputsForTests(const LegacyCompatibilitySurface& legacy);
+        void ForceHooksEnabledForTests(bool enabled);
+        void SetMenuRefreshTaskSinkForTests(MenuRefreshTaskSink sink);
+        void CompleteQueuedRefreshForTests();
         void ResetInstallStateForTests();
         void ResetRefreshStateForTests();
 
@@ -156,6 +165,11 @@ namespace dualpad::input_v2::presentation
 
         bool TryBeginInstall();
         bool QueueMenuRefreshTask();
+        bool HasPendingMenuRefreshLocked() const;
+        std::string RefreshKeyLocked() const;
+        bool CallOriginalIsUsingGamepad() const;
+        bool CallOriginalGamepadControlsCursor() const;
+        bool CallOriginalGamepadDeviceEnabled(RE::BSPCGamepadDeviceHandler* device) const;
         HookInstallResult MarkInstallResultLocked(const HookInstallResult& result);
         HookInstallResult MarkInstallSucceeded();
         HookInstallResult MarkInstallFailed(const HookInstallResult& result);
@@ -163,9 +177,22 @@ namespace dualpad::input_v2::presentation
 
         mutable std::mutex _mutex;
         PublishedPresentationState _committed{};
-        std::uint32_t _lastRefreshEpoch{ 0 };
+        std::uint32_t _lastRefreshQueuedEpoch{ 0 };
+        std::uint32_t _lastRefreshCompletedEpoch{ 0 };
+        std::string _lastRefreshQueuedKey;
+        std::string _lastRefreshCompletedKey;
         bool _refreshQueued{ false };
+        MenuRefreshTaskSink _refreshTaskSinkForTests;
         detail::InstallState _installState{ detail::InstallState::NotInstalled };
         HookInstallResult _installResult{};
+        std::atomic_bool _hooksEnabled{ true };
+        std::atomic<std::uintptr_t> _originalUsingGamepadTarget{ 0 };
+        std::atomic<std::uintptr_t> _originalCursorTarget{ 0 };
+        std::atomic<std::uintptr_t> _originalDeviceEnabledTarget{ 0 };
+        LegacyCompatibilitySurface _originalHookOutputs{
+            .isUsingGamepad = true,
+            .gamepadControlsCursor = true,
+            .gamepadDeviceEnabled = true
+        };
     };
 }

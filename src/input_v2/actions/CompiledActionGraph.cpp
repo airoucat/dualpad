@@ -324,8 +324,10 @@ namespace dualpad::input_v2::actions
         result.graph.actions = manifest.actions;
 
         std::unordered_set<std::string> knownActions;
+        std::unordered_map<std::string, ActionExecutionAvailability> availabilityByAction;
         for (const auto& action : manifest.actions) {
             knownActions.insert(action.id);
+            availabilityByAction[action.id] = action.executionAvailability;
         }
 
         std::map<std::string, DuplicateShapeOwner> seenBindingShapes;
@@ -412,6 +414,12 @@ namespace dualpad::input_v2::actions
                         return result;
                     }
                 }
+            }
+            if (const auto availability = availabilityByAction.find(binding.actionId);
+                availability != availabilityByAction.end() &&
+                availability->second != ActionExecutionAvailability::Available) {
+                display.mode = DisplayBindingMode::Hidden;
+                display.legacyTokenRenderable = false;
             }
 
             const auto priorityKey =

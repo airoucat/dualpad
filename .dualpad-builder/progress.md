@@ -3011,3 +3011,25 @@
 
 - 正式提交前补跑完整 `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`。第一次运行 build/test/readiness 均通过，但 `DualPadDocGen` 将 generated docs 的 manifest hash 从 `2a8a6ec08b2cb618` 更新为 `1d5e22d96aa42057`，导致最后 `git diff --exit-code -- docs/generated` 失败；已将生成文档 hash 更新 amend 进同一提交。
 - 第二次完整 `scripts/ci/run_phase8_ci.ps1` exit 0：所有 build/run 目标、`generate_dualpad_docs.py`、reviewed docs consistency、legacy authority boundary、release readiness、config/prompt/menu/glyph closure 和 `docs/generated` clean gate 均通过。PDB copy 仍因目标文件占用被跳过，DLL 已正常部署。
+
+## 2026-06-17 22:30:00 +08:00
+
+- `[RC20][Hostile Hardening] Harden menu platform refresh hook and context refresh semantics` 基于 `4e4dc99` 收口为正式 hardening：
+  - runtime health reason 拆分为 `UpstreamXInputRouteFailed`、`SkyrimCompatSurfaceHookFailed`、`SkyrimCompatSurfacePartialInstall`，并新增 `MenuObserverPartial`、`MenuObserverUnavailable`、`MenuIdentityDegraded`；Skyrim compat hook failure 默认只降级 presentation health，不再自动禁用 HID/action/native/prompt。
+  - `SkyrimCompatibilitySurface` partial install 现在先禁用 hook thunks，逐站点保存 original target；只有所有 hook site 安装完成后才启用 thunks。partial/signature/unsupported 仍作为 install attempt failure 阻止继续 patch 和 silent retry，但不等同 runtime fail-closed。
+  - menu platform refresh 改为按 presentation key 去重，并区分 queued/completed epoch；同 owner 下 top tracked menu/context/action-set/policy 变化仍会 queue refresh，队列不可用不会消费 pending epoch，prompt scope 先 publish 再执行 refresh callback。
+  - observer partial/unavailable 不再静默落回 Gameplay；缺失 top name 时使用 `UnknownTrackedMenu` / weak event-name degraded sentinel，runtime health 显式记录 degraded observer 状态。
+  - Favorites 页面级动作增加 executable availability metadata；在 page broker 缺失时不发布为 active prompt，保留 broker-independent Favorites native prompt。
+- 代码清理中修正一处正式化漏洞：`IsHookInstallFailure()` 现在只表达 fail-closed 语义，因此 install gate 不能再用它判断签名失败；已新增独立 install-attempt failure 判断，避免 signature mismatch 继续进入 patch。
+- Focused 验证：
+  - `xmake run -y DualPadPresentationProjectionTests`、`DualPadContextResolverTests`、`DualPadManifestCompilerTests`、`DualPadPromptSnapshotTests`、`DualPadInputV2Tests`：exit 0。
+  - 覆盖 required cases：`CompatSurfacePartialInstall_DoesNotForceKeyboardMode`、`CompatSurfaceUnsupportedRuntime_DegradesPresentationOnly`、`OpeningNewMenuWithSameOwner_RefreshesPlatformOnce`、`SwitchingMenuContextWithSameOwner_QueuesPlatformRefresh`、`RefreshQueueUnavailable_DoesNotConsumeEpoch`、`ObserverPartialMissingTopName_ResolvesUnknownTrackedMenuNotGameplay`、`ObserverUnavailable_DoesNotDispatchGameplayActions`、`FavoritesPageActions_AreHiddenWhenBrokerUnavailable`、`PromptStatePublishedBeforeRefreshCallback`。
+- Close-out 验证：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：首次在 `docs/generated` clean gate 停止，因为 `DualPadDocGen` 将 manifest hash 更新为 `18f7f6228462fdb6`；暂存 generated docs 后重跑 exit 0。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest`：pre-commit 阶段按预期在 release artifact manifest `--expect-clean` 停止，因为本轮代码仍有 tracked diff。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1`：exit 0；覆盖内嵌 Phase8、replay harness、phase0 trace diff、builder JSON、reviewed docs consistency、legacy authority boundary、release readiness、config/prompt/menu/glyph closure、RC readiness closeout、`DualPadDInput8Proxy` build、release artifact manifest、graphify rebuild 与 `git diff --check`。
+  - phase0 replay diff 10 个场景均为 `no diff`；graphify rebuild 输出 `1792 nodes / 4029 edges / 146 communities`。
+  - `git diff --check` exit 0；仅有 Windows 行尾提示，无 whitespace error。
+- 构建部署：
+  - `xmake build -y DualPad` 已生成并部署 `DualPad.dll` 到本机 MO2 插件目录；`DualPad.pdb` 因目标文件占用跳过复制。
+  - `xmake build -y DualPadDInput8Proxy` 已生成并部署 `dinput8.dll` 到本机 Skyrim 目录；`dinput8.pdb` 因目标文件占用跳过复制。

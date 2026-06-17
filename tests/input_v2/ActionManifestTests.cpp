@@ -239,6 +239,17 @@ void RunActionManifestTests()
         Require(
             dualpad::input::backend::FindNativeActionDescriptor(dualpad::input::actions::FavoritesToggleFocus) == nullptr,
             "Favorites.ToggleFocus must not emit native A/Accept without the page broker");
+
+        const auto favoritesToggleAction = std::find_if(
+            compiledManifest.manifest.actions.begin(),
+            compiledManifest.manifest.actions.end(),
+            [](const act::ActionDefinition& action) {
+                return action.id == dualpad::input::actions::FavoritesToggleFocus;
+            });
+        Require(favoritesToggleAction != compiledManifest.manifest.actions.end(), "Favorites.ToggleFocus action metadata missing");
+        Require(
+            favoritesToggleAction->executionAvailability == act::ActionExecutionAvailability::UnavailableWithoutPageBroker,
+            "FavoritesPageActions_AreHiddenWhenBrokerUnavailable metadata");
     }
 
     {

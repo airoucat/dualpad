@@ -41,6 +41,8 @@ namespace dualpad::input_v2::context
         UiContextId uiContextId{ UiContextId::None };
         std::optional<menu::MenuInstanceId> topMenuInstanceId;
         menu::MenuIdentityQuality identityQuality{ menu::MenuIdentityQuality::StablePointer };
+        menu::ObserverCompleteness menuObserverCompleteness{ menu::ObserverCompleteness::Complete };
+        bool menuIdentityDegraded{ false };
         std::uint32_t menuStackRevision{ 0 };
         actions::ActionSetStack actionSetStack;
         PresentationPolicyId presentationPolicyId;

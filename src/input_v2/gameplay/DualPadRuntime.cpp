@@ -15,6 +15,7 @@
 #include <SKSE/Logger.h>
 
 #include <algorithm>
+#include <optional>
 
 namespace logger = SKSE::log;
 
@@ -121,10 +122,48 @@ namespace dualpad::input_v2::gameplay
 
         RuntimeHealthReasonMask AddPromptScopeFrozenForDegradedStableFrame(RuntimeHealthReasonMask reasons)
         {
-            if (reasons == RuntimeHealthMask(RuntimeHealthReason::None)) {
+            const bool promptBlocking =
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::GraphUnavailable) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::ManifestEpochSkew) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::ContextRevisionSkew) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::QueueOverflow) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::SequenceGap) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::BoundaryMismatch) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::UpstreamXInputRouteFailed) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::HookInstallFailed);
+            if (!promptBlocking) {
                 return reasons;
             }
             return AddRuntimeHealthReason(reasons, RuntimeHealthReason::PromptScopeFrozen);
+        }
+
+        bool ShouldFailClosedRuntimeOutput(RuntimeHealthReasonMask reasons)
+        {
+            return HasRuntimeHealthReason(reasons, RuntimeHealthReason::UpstreamXInputRouteFailed) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::HookInstallFailed);
+        }
+
+        bool ShouldPublishPromptScope(RuntimeHealthReasonMask reasons)
+        {
+            return !HasRuntimeHealthReason(reasons, RuntimeHealthReason::PromptScopeFrozen);
+        }
+
+        std::optional<RuntimeHealthReason> SkyrimCompatHealthReason(
+            presentation::HookInstallStatus status)
+        {
+            switch (status) {
+            case presentation::HookInstallStatus::PartialInstall:
+                return RuntimeHealthReason::SkyrimCompatSurfacePartialInstall;
+            case presentation::HookInstallStatus::UnsupportedRuntime:
+            case presentation::HookInstallStatus::SignatureMismatch:
+            case presentation::HookInstallStatus::Failed:
+                return RuntimeHealthReason::SkyrimCompatSurfaceHookFailed;
+            case presentation::HookInstallStatus::NotAttempted:
+            case presentation::HookInstallStatus::Success:
+            case presentation::HookInstallStatus::AlreadyInstalled:
+            default:
+                return std::nullopt;
+            }
         }
 
         bool ShouldLogRuntimePlan()
@@ -259,17 +298,37 @@ namespace dualpad::input_v2::gameplay
         if (upstreamRoute.configured && upstreamRoute.failed) {
             envelope.healthReasons = AddRuntimeHealthReason(
                 envelope.healthReasons,
-                RuntimeHealthReason::HookInstallFailed);
+                RuntimeHealthReason::UpstreamXInputRouteFailed);
             envelope.debugReason = std::string(upstreamRoute.debugReason);
         }
         const auto hookInstall = presentation::SkyrimCompatibilitySurface::GetSingleton().GetInstallResult();
-        if (presentation::IsHookInstallFailure(hookInstall)) {
+        if (const auto reason = SkyrimCompatHealthReason(hookInstall.status)) {
             envelope.healthReasons = AddRuntimeHealthReason(
                 envelope.healthReasons,
-                RuntimeHealthReason::HookInstallFailed);
+                *reason);
             if (envelope.debugReason.empty()) {
                 envelope.debugReason = presentation::ToDebugString(hookInstall);
             }
+        }
+        switch (envelope.config.context.menuObserverCompleteness) {
+        case menu::ObserverCompleteness::Partial:
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::MenuObserverPartial);
+            break;
+        case menu::ObserverCompleteness::Unavailable:
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::MenuObserverUnavailable);
+            break;
+        case menu::ObserverCompleteness::Complete:
+        default:
+            break;
+        }
+        if (envelope.config.context.menuIdentityDegraded) {
+            envelope.healthReasons = AddRuntimeHealthReason(
+                envelope.healthReasons,
+                RuntimeHealthReason::MenuIdentityDegraded);
         }
         return envelope;
     }
@@ -384,18 +443,17 @@ namespace dualpad::input_v2::gameplay
             result.gameplayPresentation);
         auto& compatibilitySurface = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compatibilitySurface.Commit(published);
-        compatibilitySurface.RefreshMenusIfNeeded();
-        if (result.RuntimeHealthDegraded()) {
-            return;
+        if (ShouldPublishPromptScope(result.runtimeHealthReasons)) {
+            prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(
+                published,
+                prompt::PromptRuntimeBaseline{
+                    .manifestEpoch = envelope.config.manifestEpoch,
+                    .configGeneration = envelope.config.configGeneration,
+                    .bundle = envelope.config.bundle,
+                    .graph = envelope.config.graph
+                });
         }
-        prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(
-            published,
-            prompt::PromptRuntimeBaseline{
-                .manifestEpoch = envelope.config.manifestEpoch,
-                .configGeneration = envelope.config.configGeneration,
-                .bundle = envelope.config.bundle,
-                .graph = envelope.config.graph
-            });
+        compatibilitySurface.RefreshMenusIfNeeded();
     }
 
     void DualPadRuntime::PublishRuntimeDebugSnapshot(
@@ -418,7 +476,7 @@ namespace dualpad::input_v2::gameplay
         const DualPadRuntimeInput& input,
         IPollOutputExecutor& executor)
     {
-        if (HasRuntimeHealthReason(input.runtimeHealthReasons, RuntimeHealthReason::HookInstallFailed)) {
+        if (ShouldFailClosedRuntimeOutput(input.runtimeHealthReasons)) {
             const auto runtimeHealthReasons = AddPromptScopeFrozenForDegradedStableFrame(input.runtimeHealthReasons);
             return DualPadRuntimeResult{
                 .projectionFrame = GameplayProjectionFrame{},

@@ -73,6 +73,11 @@ namespace dualpad::input_v2::menu
                 return lhs.instanceId < rhs.instanceId;
             });
         }
+
+        bool HasWeakMenuEvent(const ObservedMenuSnapshot& snapshot)
+        {
+            return snapshot.lastEventOpening && !snapshot.lastEventMenuName.empty();
+        }
     }
 
     MenuInstanceRegistry& MenuInstanceRegistry::GetSingleton()
@@ -138,6 +143,23 @@ namespace dualpad::input_v2::menu
         const context::CompiledContextCatalog& catalog)
     {
         if (snapshot.completeness == ObserverCompleteness::Unavailable) {
+            ReconciledMenuStack next = _published;
+            next.lastCompleteness = ObserverCompleteness::Unavailable;
+            if (next.trackedMenus.empty() && HasWeakMenuEvent(snapshot)) {
+                const auto candidateRevision = _published.menuStackRevision + 1;
+                next.trackedMenus.push_back(TrackedMenuInstance{
+                    .instanceId = AllocateId(),
+                    .menuName = snapshot.lastEventMenuName,
+                    .identityQuality = MenuIdentityQuality::DegradedIdentity,
+                    .firstSeenRevision = candidateRevision,
+                    .lastSeenRevision = candidateRevision,
+                    .observedInLastSnapshot = false
+                });
+            }
+            if (!SamePublishedShape(_published, next)) {
+                next.menuStackRevision = _published.menuStackRevision + 1;
+                _published = std::move(next);
+            }
             return _published;
         }
 
@@ -218,6 +240,17 @@ namespace dualpad::input_v2::menu
             else {
                 upsert(next.trackedMenus, node, false);
             }
+        }
+
+        if (next.trackedMenus.empty() && snapshot.completeness == ObserverCompleteness::Partial && HasWeakMenuEvent(snapshot)) {
+            next.trackedMenus.push_back(TrackedMenuInstance{
+                .instanceId = AllocateId(),
+                .menuName = snapshot.lastEventMenuName,
+                .identityQuality = MenuIdentityQuality::DegradedIdentity,
+                .firstSeenRevision = candidateRevision,
+                .lastSeenRevision = candidateRevision,
+                .observedInLastSnapshot = false
+            });
         }
 
         if (snapshot.completeness == ObserverCompleteness::Complete) {

@@ -40,6 +40,12 @@ namespace dualpad::input_v2::actions
         Unknown
     };
 
+    enum class ActionExecutionAvailability : std::uint8_t
+    {
+        Available = 0,
+        UnavailableWithoutPageBroker
+    };
+
     struct ActionDefinition
     {
         std::string id;
@@ -48,6 +54,7 @@ namespace dualpad::input_v2::actions
         std::string outputDescriptorId;
         std::string promptHintId;
         ActionDomain domain{ ActionDomain::Unknown };
+        ActionExecutionAvailability executionAvailability{ ActionExecutionAvailability::Available };
     };
 
     struct OutputDescriptor

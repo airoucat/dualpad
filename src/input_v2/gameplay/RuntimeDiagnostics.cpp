@@ -100,6 +100,18 @@ namespace dualpad::input_v2::gameplay
             return "PromptScopeFrozen";
         case RuntimeHealthReason::HookInstallFailed:
             return "HookInstallFailed";
+        case RuntimeHealthReason::UpstreamXInputRouteFailed:
+            return "UpstreamXInputRouteFailed";
+        case RuntimeHealthReason::SkyrimCompatSurfaceHookFailed:
+            return "SkyrimCompatSurfaceHookFailed";
+        case RuntimeHealthReason::SkyrimCompatSurfacePartialInstall:
+            return "SkyrimCompatSurfacePartialInstall";
+        case RuntimeHealthReason::MenuObserverPartial:
+            return "MenuObserverPartial";
+        case RuntimeHealthReason::MenuObserverUnavailable:
+            return "MenuObserverUnavailable";
+        case RuntimeHealthReason::MenuIdentityDegraded:
+            return "MenuIdentityDegraded";
         default:
             return "Unknown";
         }
@@ -157,6 +169,12 @@ namespace dualpad::input_v2::gameplay
                  RuntimeHealthReason::SequenceGap,
                  RuntimeHealthReason::BoundaryMismatch,
                  RuntimeHealthReason::PromptScopeFrozen,
+                 RuntimeHealthReason::UpstreamXInputRouteFailed,
+                 RuntimeHealthReason::SkyrimCompatSurfaceHookFailed,
+                 RuntimeHealthReason::SkyrimCompatSurfacePartialInstall,
+                 RuntimeHealthReason::MenuObserverPartial,
+                 RuntimeHealthReason::MenuObserverUnavailable,
+                 RuntimeHealthReason::MenuIdentityDegraded,
                  RuntimeHealthReason::HookInstallFailed }) {
             if (HasRuntimeHealthReason(mask, reason)) {
                 names.emplace_back(ToString(reason));

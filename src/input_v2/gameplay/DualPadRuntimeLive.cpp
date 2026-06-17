@@ -54,6 +54,12 @@ namespace dualpad::input_v2::gameplay
             action.contextEpoch = contextEpoch;
         }
 
+        bool ShouldFailClosedRuntimeOutput(RuntimeHealthReasonMask reasons)
+        {
+            return HasRuntimeHealthReason(reasons, RuntimeHealthReason::UpstreamXInputRouteFailed) ||
+                HasRuntimeHealthReason(reasons, RuntimeHealthReason::HookInstallFailed);
+        }
+
         PlannedAction BuildNativeAction(
             std::string_view actionId,
             dualpad::input::backend::NativeControlCode control,
@@ -257,7 +263,7 @@ namespace dualpad::input_v2::gameplay
 
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrame(const DualPadRuntimeInput& input)
     {
-        if (HasRuntimeHealthReason(input.runtimeHealthReasons, RuntimeHealthReason::HookInstallFailed)) {
+        if (ShouldFailClosedRuntimeOutput(input.runtimeHealthReasons)) {
             auto runtimeHealthReasons = input.runtimeHealthReasons;
             if (runtimeHealthReasons != RuntimeHealthMask(RuntimeHealthReason::None)) {
                 runtimeHealthReasons = AddRuntimeHealthReason(

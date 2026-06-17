@@ -349,6 +349,11 @@ namespace
         auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compat.DisableRollback();
         compat.Commit(presentation::PublishedPresentationState{});
+        compat.ResetRefreshStateForTests();
+        compat.SetMenuRefreshTaskSinkForTests([](auto) {
+            presentation::SkyrimCompatibilitySurface::GetSingleton().CompleteQueuedRefreshForTests();
+            return true;
+        });
         compat.ForceInstallResultForTests(
             presentation::detail::MakeHookInstallResult(
                 presentation::HookInstallStatus::Success,
@@ -1121,6 +1126,35 @@ namespace
             "stable gamepad evidence must update IsUsingGamepadHook through committed input_v2 state");
     }
 
+    void RunPromptStatePublishedBeforeRefreshCallbackTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        bool promptReadyBeforeRefreshCallback = false;
+        presentation::SkyrimCompatibilitySurface::GetSingleton().SetMenuRefreshTaskSinkForTests([&](auto) {
+            const auto scope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
+            promptReadyBeforeRefreshCallback =
+                scope.state == prompt::PromptScopeState::Ready &&
+                scope.uiContextId == context::UiContextId::Journal;
+            presentation::SkyrimCompatibilitySurface::GetSingleton().CompleteQueuedRefreshForTests();
+            return true;
+        });
+
+        RecordingPollOutputExecutor executor;
+        const auto result = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                104,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    104'000)),
+            executor);
+        Require(result.output.outputApplySucceeded, "prompt-before-refresh setup must publish a stable frame");
+        Require(promptReadyBeforeRefreshCallback, "PromptStatePublishedBeforeRefreshCallback");
+    }
+
     void RunRuntimeLiveStyleGamepadPublishTests()
     {
         gameplay::DualPadRuntime runtime;
@@ -1318,7 +1352,12 @@ namespace
                  gameplay::RuntimeHealthReason::SequenceGap,
                  gameplay::RuntimeHealthReason::BoundaryMismatch,
                  gameplay::RuntimeHealthReason::PromptScopeFrozen,
-                 gameplay::RuntimeHealthReason::HookInstallFailed }) {
+                 gameplay::RuntimeHealthReason::UpstreamXInputRouteFailed,
+                 gameplay::RuntimeHealthReason::SkyrimCompatSurfaceHookFailed,
+                 gameplay::RuntimeHealthReason::SkyrimCompatSurfacePartialInstall,
+                 gameplay::RuntimeHealthReason::MenuObserverPartial,
+                 gameplay::RuntimeHealthReason::MenuObserverUnavailable,
+                 gameplay::RuntimeHealthReason::MenuIdentityDegraded }) {
             mask = gameplay::AddRuntimeHealthReason(mask, reason);
         }
 
@@ -1342,7 +1381,12 @@ namespace
                  "SequenceGap",
                  "BoundaryMismatch",
                  "PromptScopeFrozen",
-                 "HookInstallFailed" }) {
+                 "UpstreamXInputRouteFailed",
+                 "SkyrimCompatSurfaceHookFailed",
+                 "SkyrimCompatSurfacePartialInstall",
+                 "MenuObserverPartial",
+                 "MenuObserverUnavailable",
+                 "MenuIdentityDegraded" }) {
             Require(Contains(snapshot.runtimeHealthReasonNames, expected), "reason mask projection missed a reason name");
         }
         Require(
@@ -1365,7 +1409,7 @@ namespace
             .frame = frame,
             .runtimeHealthReasons = gameplay::AddRuntimeHealthReason(
                 gameplay::RuntimeHealthMask(gameplay::RuntimeHealthReason::PromptScopeFrozen),
-                gameplay::RuntimeHealthReason::HookInstallFailed),
+                gameplay::RuntimeHealthReason::SkyrimCompatSurfaceHookFailed),
             .runtimeHealthDebugReason = "unsupported_runtime_1.6.640",
             .outputApplySucceeded = false,
             .hookInstall = presentation::detail::MakeHookInstallResult(
@@ -1484,16 +1528,17 @@ namespace
             "debug snapshot prompt freeze reason must include manifest skew");
     }
 
-    void RunRuntimeHookInstallFailureFailClosedTests()
+    void AssertSkyrimCompatSurfaceFailureDegradesPresentationOnly(
+        presentation::HookInstallStatus status,
+        gameplay::RuntimeHealthReason expectedReason,
+        std::string_view debugReason)
     {
         gameplay::DualPadRuntime runtime;
         ResetRuntimeSurfaceState(runtime);
 
         const auto beforeScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
         presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
-            presentation::detail::MakeHookInstallResult(
-                presentation::HookInstallStatus::SignatureMismatch,
-                "is_using_gamepad_call_signature_mismatch"));
+            presentation::detail::MakeHookInstallResult(status, debugReason));
 
         RecordingPollOutputExecutor executor;
         const auto result = runtime.ProcessAssembledFrameForTests(
@@ -1506,41 +1551,54 @@ namespace
                     97'000)),
             executor);
 
-        Require(result.RuntimeHealthDegraded(), "hook install failure must surface as degraded runtime health");
+        Require(result.RuntimeHealthDegraded(), "SkyrimCompatSurface failure must surface as degraded runtime health");
         Require(
             gameplay::HasRuntimeHealthReason(
                 result.runtimeHealthReasons,
-                gameplay::RuntimeHealthReason::HookInstallFailed),
-            "hook install failure must expose HookInstallFailed");
+                expectedReason),
+            "SkyrimCompatSurface failure must expose split runtime health reason");
         Require(
-            gameplay::HasRuntimeHealthReason(
+            !gameplay::HasRuntimeHealthReason(
                 result.runtimeHealthReasons,
                 gameplay::RuntimeHealthReason::PromptScopeFrozen),
-            "hook install failure must expose prompt freeze in the reason mask");
+            "SkyrimCompatSurface failure must not freeze prompt scope by default");
         Require(
-            result.runtimeHealthDebugReason.find("signature_mismatch") != std::string::npos,
-            "hook install failure must carry debug reason for U1.8 diagnostics");
-        Require(executor.steps.empty(), "hook install failure must not call native/prompt/action output executor");
-        Require(!result.output.outputApplySucceeded, "hook install failure must not report output apply success");
+            result.runtimeHealthDebugReason.find(debugReason) != std::string::npos,
+            "SkyrimCompatSurface failure must carry debug reason");
+        Require(!executor.steps.empty(), "SkyrimCompatSurface failure must not disable native/action output");
+        Require(result.output.outputApplySucceeded, "SkyrimCompatSurface failure must report output apply success");
         Require(
             result.projectionFrame.gamepadPlan.transientDigital.count == 0 &&
                 result.projectionFrame.helperPlan.commands.count == 0,
-            "hook install failure must not expose resolved action commands");
+            "empty test graph must still resolve no action commands");
 
         const auto afterScope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
         Require(
-            afterScope.promptScopeRevision == beforeScope.promptScopeRevision,
-            "hook install failure must not publish a new prompt scope");
+            afterScope.promptScopeRevision > beforeScope.promptScopeRevision,
+            "SkyrimCompatSurface failure must still publish prompt scope");
+        Require(afterScope.state == prompt::PromptScopeState::Ready, "SkyrimCompatSurface failure must keep prompt scope ready");
         const auto& debug = runtime.GetLastDebugSnapshot();
-        Require(debug.hookInstallStatusName == "signature_mismatch", "debug snapshot must expose hook status");
+        Require(debug.hookInstallStatusName == presentation::ToString(status), "debug snapshot must expose hook status");
         Require(
-            debug.hookInstallDebugReason == "is_using_gamepad_call_signature_mismatch",
+            debug.hookInstallDebugReason == debugReason,
             "debug snapshot must expose hook debug reason");
-        Require(debug.promptState == gameplay::RuntimePromptDebugState::Frozen, "hook failure must freeze prompt in debug snapshot");
+        Require(debug.promptState == gameplay::RuntimePromptDebugState::Ready, "SkyrimCompatSurface failure must not freeze prompt in debug snapshot");
         presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
             presentation::detail::MakeHookInstallResult(
                 presentation::HookInstallStatus::Success,
                 "test_hook_installed"));
+    }
+
+    void RunRuntimeSkyrimCompatSurfaceFailurePresentationOnlyTests()
+    {
+        AssertSkyrimCompatSurfaceFailureDegradesPresentationOnly(
+            presentation::HookInstallStatus::PartialInstall,
+            gameplay::RuntimeHealthReason::SkyrimCompatSurfacePartialInstall,
+            "exception_after_patch_started");
+        AssertSkyrimCompatSurfaceFailureDegradesPresentationOnly(
+            presentation::HookInstallStatus::UnsupportedRuntime,
+            gameplay::RuntimeHealthReason::SkyrimCompatSurfaceHookFailed,
+            "unsupported_runtime_1.6.640");
     }
 
     void AssertUpstreamRouteFailureFailsClosed(
@@ -1575,8 +1633,8 @@ namespace
         Require(
             gameplay::HasRuntimeHealthReason(
                 result.runtimeHealthReasons,
-                gameplay::RuntimeHealthReason::HookInstallFailed),
-            "upstream route install failure must expose HookInstallFailed");
+                gameplay::RuntimeHealthReason::UpstreamXInputRouteFailed),
+            "upstream route install failure must expose UpstreamXInputRouteFailed");
         Require(
             gameplay::HasRuntimeHealthReason(
                 result.runtimeHealthReasons,
@@ -1647,8 +1705,8 @@ namespace
         Require(
             !gameplay::HasRuntimeHealthReason(
                 result.runtimeHealthReasons,
-                gameplay::RuntimeHealthReason::HookInstallFailed),
-            "disabled upstream route must not expose HookInstallFailed");
+                gameplay::RuntimeHealthReason::UpstreamXInputRouteFailed),
+            "disabled upstream route must not expose UpstreamXInputRouteFailed");
         Require(
             result.runtimeHealthDebugReason.empty(),
             "disabled upstream route must not set runtime health debug reason");
@@ -1661,6 +1719,72 @@ namespace
             "disabled upstream route must not be marked failed in debug snapshot");
 
         dualpad::input::detail::ResetUpstreamRouteInstallSnapshotForTests();
+    }
+
+    void RunRuntimeMenuObserverDegradedHealthTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+
+        auto degradedMenu = context::ResolvedContextSnapshot{};
+        degradedMenu.hostMode = context::HostMode::Menu;
+        degradedMenu.uiContextId = context::UiContextId::UnknownTrackedMenu;
+        degradedMenu.actionSetStack = actions::ActionSetStack{
+            .baseSetId = "MenuBase",
+            .layerIds = { "UnknownTrackedMenuLayer" },
+            .scopeAnchorIds = { "MenuBase", "UnknownTrackedMenuLayer" }
+        };
+        degradedMenu.presentationPolicyId = "Menu";
+        degradedMenu.contextRevision = 70;
+        degradedMenu.menuStackRevision = 71;
+        degradedMenu.legacyInputContext = dualpad::input::InputContext::Menu;
+        degradedMenu.legacyContextEpoch = 2;
+        degradedMenu.menuObserverCompleteness = menu::ObserverCompleteness::Partial;
+        context::ContextResolver::GetSingleton().PublishSnapshotForReplayTests(degradedMenu);
+
+        RecordingPollOutputExecutor partialExecutor;
+        const auto partial = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                102,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    2,
+                    true,
+                    102'000)),
+            partialExecutor);
+        Require(partial.RuntimeHealthDegraded(), "Observer Partial must mark runtime health degraded");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                partial.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::MenuObserverPartial),
+            "Observer Partial must expose MenuObserverPartial");
+        Require(partial.output.outputApplySucceeded, "Observer Partial must not disable native output");
+        Require(
+            degradedMenu.actionSetStack.baseSetId == "MenuBase",
+            "Observer partial degraded menu snapshot must not dispatch GameplayBase actions");
+
+        degradedMenu.contextRevision = 72;
+        degradedMenu.menuStackRevision = 73;
+        degradedMenu.menuObserverCompleteness = menu::ObserverCompleteness::Unavailable;
+        context::ContextResolver::GetSingleton().PublishSnapshotForReplayTests(degradedMenu);
+
+        RecordingPollOutputExecutor unavailableExecutor;
+        const auto unavailable = runtime.ProcessAssembledFrameForTests(
+            StableMenuFrame(
+                103,
+                SourceEvidence(
+                    presentation::DeviceFamily::Gamepad,
+                    3,
+                    true,
+                    103'000)),
+            unavailableExecutor);
+        Require(unavailable.RuntimeHealthDegraded(), "Observer Unavailable must mark runtime health degraded");
+        Require(
+            gameplay::HasRuntimeHealthReason(
+                unavailable.runtimeHealthReasons,
+                gameplay::RuntimeHealthReason::MenuObserverUnavailable),
+            "ObserverUnavailable_DoesNotDispatchGameplayActions must expose MenuObserverUnavailable");
+        Require(unavailable.output.outputApplySucceeded, "Observer Unavailable must not disable native output");
     }
 
     void RunRuntimePresentationUsesFrameBoundContextTests()
@@ -2027,6 +2151,11 @@ namespace
         auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compat.DisableRollback();
         compat.Commit(presentation::PublishedPresentationState{});
+        compat.ResetRefreshStateForTests();
+        compat.SetMenuRefreshTaskSinkForTests([](auto) {
+            presentation::SkyrimCompatibilitySurface::GetSingleton().CompleteQueuedRefreshForTests();
+            return true;
+        });
         compat.ForceInstallResultForTests(
             presentation::detail::MakeHookInstallResult(
                 presentation::HookInstallStatus::Success,
@@ -2100,6 +2229,11 @@ namespace
         auto& compat = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compat.DisableRollback();
         compat.Commit(presentation::PublishedPresentationState{});
+        compat.ResetRefreshStateForTests();
+        compat.SetMenuRefreshTaskSinkForTests([](auto) {
+            presentation::SkyrimCompatibilitySurface::GetSingleton().CompleteQueuedRefreshForTests();
+            return true;
+        });
         compat.ForceInstallResultForTests(
             presentation::detail::MakeHookInstallResult(
                 presentation::HookInstallStatus::Success,
@@ -2343,14 +2477,16 @@ int main()
         RunInteractionEngineTests();
         RunLegacyLifecycleBridgeTests();
         RunRuntimePublishedSurfacePipelineTests();
+        RunPromptStatePublishedBeforeRefreshCallbackTests();
         RunRuntimeLiveStyleGamepadPublishTests();
         RunRuntimeLiveKeyboardMouseEvidenceProducerTests();
         RunRuntimeGraphSkewHealthTests();
         RunRuntimeDiagnosticsProjectionTests();
         RunRuntimeDegradedFramePromptPublishContractTests();
-        RunRuntimeHookInstallFailureFailClosedTests();
+        RunRuntimeSkyrimCompatSurfaceFailurePresentationOnlyTests();
         RunRuntimeUpstreamRouteInstallFailureFailClosedTests();
         RunRuntimeDisabledUpstreamRouteDoesNotFailClosedTests();
+        RunRuntimeMenuObserverDegradedHealthTests();
         RunRuntimePresentationUsesFrameBoundContextTests();
         RunRuntimeTransitionRecoveryContractTests();
         RunRuntimeSoftSequenceGapDoesNotClearAuthoritativePollTests();

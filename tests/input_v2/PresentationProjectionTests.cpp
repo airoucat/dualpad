@@ -256,6 +256,12 @@ void RunPresentationProjectionTests()
     {
         presentation::SkyrimCompatibilitySurface compat;
         compat.ResetRefreshStateForTests();
+        std::size_t queuedRefreshes = 0;
+        compat.SetMenuRefreshTaskSinkForTests([&](auto) {
+            ++queuedRefreshes;
+            compat.CompleteQueuedRefreshForTests();
+            return true;
+        });
 
         presentation::PublishedPresentationState menuGamepad{};
         menuGamepad.owner = presentation::PresentationOwner::Gamepad;
@@ -267,20 +273,27 @@ void RunPresentationProjectionTests()
         compat.Commit(menuGamepad);
 
         Require(
-            compat.ShouldRefreshMenus(),
-            "dirty owner presentation publish must request one menu platform refresh");
+            compat.RefreshMenusIfNeeded(),
+            "OpeningNewMenuWithSameOwner_RefreshesPlatformOnce owner dirty must queue platform refresh");
+        Require(queuedRefreshes == 1, "OpeningNewMenuWithSameOwner_RefreshesPlatformOnce queued count");
         Require(
-            !compat.ShouldRefreshMenus(),
-            "same presentation epoch must not request duplicate menu platform refreshes");
+            !compat.RefreshMenusIfNeeded(),
+            "identical presentation epoch must not queue duplicate menu platform refreshes");
+        Require(queuedRefreshes == 1, "identical epoch must not spam platform refresh");
 
         presentation::PublishedPresentationState contextOnly = menuGamepad;
+        contextOnly.uiContextId = dualpad::input_v2::context::UiContextId::Journal;
         contextOnly.contextRevision = 11;
+        contextOnly.actionSetStack.baseSetId = "MenuBase";
+        contextOnly.actionSetStack.layerIds = { "JournalLayer" };
+        contextOnly.actionSetStack.scopeAnchorIds = { "MenuBase", "JournalLayer" };
         contextOnly.epoch = 2;
         contextOnly.dirty = presentation::PresentationDirtyFlags::Context;
         compat.Commit(contextOnly);
         Require(
-            !compat.ShouldRefreshMenus(),
-            "context-only presentation dirty must not refresh menu platform state");
+            compat.RefreshMenusIfNeeded(),
+            "SwitchingMenuContextWithSameOwner_QueuesPlatformRefresh");
+        Require(queuedRefreshes == 2, "context-only refresh must queue exactly once");
 
         presentation::PublishedPresentationState policyChange = contextOnly;
         policyChange.presentationPolicyId = "MenuPolicyChanged";
@@ -288,8 +301,40 @@ void RunPresentationProjectionTests()
         policyChange.dirty = presentation::PresentationDirtyFlags::Policy;
         compat.Commit(policyChange);
         Require(
-            compat.ShouldRefreshMenus(),
+            compat.RefreshMenusIfNeeded(),
             "policy dirty presentation publish must refresh menu platform state");
+        Require(queuedRefreshes == 3, "policy refresh must queue exactly once");
+
+        presentation::PublishedPresentationState actionSetChange = policyChange;
+        actionSetChange.actionSetStack.layerIds = { "FavoritesLayer" };
+        actionSetChange.actionSetStack.scopeAnchorIds = { "MenuBase", "FavoritesLayer" };
+        actionSetChange.epoch = 4;
+        actionSetChange.dirty = presentation::PresentationDirtyFlags::ActionSets;
+        compat.Commit(actionSetChange);
+        Require(
+            compat.RefreshMenusIfNeeded(),
+            "action-set/prompt-affecting presentation publish must queue platform refresh");
+        Require(queuedRefreshes == 4, "action-set refresh must queue exactly once");
+
+        compat.ResetRefreshStateForTests();
+        compat.SetMenuRefreshTaskSinkForTests([](auto) {
+            return false;
+        });
+        presentation::PublishedPresentationState unavailable = menuGamepad;
+        unavailable.epoch = 10;
+        unavailable.dirty = presentation::PresentationDirtyFlags::Owner;
+        compat.Commit(unavailable);
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "RefreshQueueUnavailable_DoesNotConsumeEpoch first queue attempt must fail");
+        compat.SetMenuRefreshTaskSinkForTests([&](auto) {
+            ++queuedRefreshes;
+            compat.CompleteQueuedRefreshForTests();
+            return true;
+        });
+        Require(
+            compat.RefreshMenusIfNeeded(),
+            "RefreshQueueUnavailable_DoesNotConsumeEpoch retry must still see the same pending epoch");
     }
 
     {
@@ -320,7 +365,7 @@ void RunPresentationProjectionTests()
             presentation::HookInstallStatus::UnsupportedRuntime,
             "unsupported_runtime_1.6.640");
         Require(!unsupported.installed, "unsupported runtime hook result must not be installed");
-        Require(presentation::IsHookInstallFailure(unsupported), "unsupported runtime must fail closed");
+        Require(!presentation::IsHookInstallFailure(unsupported), "CompatSurfaceUnsupportedRuntime_DegradesPresentationOnly");
         Require(
             presentation::ToDebugString(unsupported).find("unsupported_runtime") != std::string::npos,
             "unsupported runtime hook result must expose debug reason");
@@ -329,7 +374,7 @@ void RunPresentationProjectionTests()
             presentation::HookInstallStatus::SignatureMismatch,
             "is_using_gamepad_call_signature_mismatch");
         Require(!mismatch.installed, "signature mismatch hook result must not be installed");
-        Require(presentation::IsHookInstallFailure(mismatch), "signature mismatch must fail closed");
+        Require(!presentation::IsHookInstallFailure(mismatch), "SkyrimCompatSurface hook mismatch must not fail closed by default");
 
         const auto alreadyInstalled = presentation::detail::MakeHookInstallResult(
             presentation::HookInstallStatus::AlreadyInstalled,
@@ -341,7 +386,7 @@ void RunPresentationProjectionTests()
             presentation::detail::HookInstallProgress::NotStarted,
             "exception_before_patch_started");
         Require(failed.status == presentation::HookInstallStatus::Failed, "pre-patch exception must be failed");
-        Require(presentation::IsHookInstallFailure(failed), "failed hook install must fail closed");
+        Require(!presentation::IsHookInstallFailure(failed), "SkyrimCompatSurface failed hook install must not fail closed by default");
 
         const auto partial = presentation::detail::EvaluateHookPatchFailure(
             presentation::detail::HookInstallProgress::PatchStarted,
@@ -349,7 +394,21 @@ void RunPresentationProjectionTests()
         Require(
             partial.status == presentation::HookInstallStatus::PartialInstall,
             "post-patch exception must be partial install");
-        Require(presentation::IsHookInstallFailure(partial), "partial hook install must fail closed");
+        Require(!presentation::IsHookInstallFailure(partial), "SkyrimCompatSurface partial install must not fail closed by default");
+
+        presentation::SkyrimCompatibilitySurface compat;
+        compat.Commit(presentation::PublishedPresentationState{});
+        compat.ForceOriginalHookOutputsForTests(presentation::LegacyCompatibilitySurface{
+            .isUsingGamepad = true,
+            .gamepadControlsCursor = true,
+            .gamepadDeviceEnabled = true
+        });
+        compat.ForceHooksEnabledForTests(false);
+        Require(compat.IsUsingGamepadHook(), "CompatSurfacePartialInstall_DoesNotForceKeyboardMode isUsingGamepad");
+        Require(compat.GamepadControlsCursorHook(), "CompatSurfacePartialInstall_DoesNotForceKeyboardMode cursor");
+        Require(compat.IsGamepadDeviceEnabledHook(true), "CompatSurfacePartialInstall_DoesNotForceKeyboardMode device enabled");
+        compat.ForceHooksEnabledForTests(true);
+        Require(!compat.IsUsingGamepadHook(), "enabled SkyrimCompat hooks should read committed input_v2 state");
 
         Require(
             presentation::detail::EvaluateHookInstallGate(true, true).status ==

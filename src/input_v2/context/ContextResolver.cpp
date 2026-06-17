@@ -37,6 +37,8 @@ namespace dualpad::input_v2::context
                 lhs.uiContextId == rhs.uiContextId &&
                 lhs.topMenuInstanceId == rhs.topMenuInstanceId &&
                 lhs.identityQuality == rhs.identityQuality &&
+                lhs.menuObserverCompleteness == rhs.menuObserverCompleteness &&
+                lhs.menuIdentityDegraded == rhs.menuIdentityDegraded &&
                 lhs.menuStackRevision == rhs.menuStackRevision &&
                 lhs.actionSetStack == rhs.actionSetStack &&
                 lhs.presentationPolicyId == rhs.presentationPolicyId &&
@@ -115,6 +117,7 @@ namespace dualpad::input_v2::context
         ResolvedContextSnapshot next{};
         next.gameplaySubstate = gameplaySubstate;
         next.menuStackRevision = menuStack.menuStackRevision;
+        next.menuObserverCompleteness = menuStack.lastCompleteness;
         next.legacyContextEpoch = _published.legacyContextEpoch == 0 ? 1 : _published.legacyContextEpoch;
 
         if (!menuStack.trackedMenus.empty()) {
@@ -122,12 +125,19 @@ namespace dualpad::input_v2::context
             next.hostMode = HostMode::Menu;
             next.topMenuInstanceId = top.instanceId;
             next.identityQuality = top.identityQuality;
+            next.menuIdentityDegraded = top.identityQuality == menu::MenuIdentityQuality::DegradedIdentity;
 
             auto resolved = ContextCatalog::ResolveMenuName(catalog, top.menuName);
             if (!resolved || top.identityQuality == menu::MenuIdentityQuality::DegradedIdentity) {
                 resolved = UiContextId::UnknownTrackedMenu;
             }
             next.uiContextId = *resolved;
+        }
+        else if (menuStack.lastCompleteness != menu::ObserverCompleteness::Complete) {
+            next.hostMode = HostMode::Menu;
+            next.identityQuality = menu::MenuIdentityQuality::DegradedIdentity;
+            next.menuIdentityDegraded = true;
+            next.uiContextId = UiContextId::UnknownTrackedMenu;
         }
         else {
             next.hostMode = HostMode::Gameplay;

@@ -5,6 +5,8 @@
 #include <REL/Pattern.h>
 #include <SKSE/Version.h>
 
+#include <sstream>
+
 namespace logger = SKSE::log;
 
 namespace dualpad::input_v2::presentation
@@ -73,6 +75,12 @@ namespace dualpad::input_v2::presentation
 
         bool IsFailClosedStatus(HookInstallStatus status)
         {
+            (void)status;
+            return false;
+        }
+
+        bool IsInstallAttemptFailureStatus(HookInstallStatus status)
+        {
             return status == HookInstallStatus::UnsupportedRuntime ||
                 status == HookInstallStatus::SignatureMismatch ||
                 status == HookInstallStatus::Failed ||
@@ -87,6 +95,16 @@ namespace dualpad::input_v2::presentation
             const auto* slot = reinterpret_cast<const std::uintptr_t*>(
                 vtableBase + (sizeof(std::uintptr_t) * index));
             return slot && *slot != 0;
+        }
+
+        bool HasRefreshRelevantDirty(PresentationDirtyFlags flags)
+        {
+            return HasDirtyFlag(flags, PresentationDirtyFlags::Family) ||
+                HasDirtyFlag(flags, PresentationDirtyFlags::Owner) ||
+                HasDirtyFlag(flags, PresentationDirtyFlags::Cursor) ||
+                HasDirtyFlag(flags, PresentationDirtyFlags::Context) ||
+                HasDirtyFlag(flags, PresentationDirtyFlags::ActionSets) ||
+                HasDirtyFlag(flags, PresentationDirtyFlags::Policy);
         }
 
         HookInstallResult VerifyHookSites(
@@ -228,6 +246,11 @@ namespace dualpad::input_v2::presentation
             return result;
         }
 
+        _hooksEnabled.store(false, std::memory_order_release);
+        _originalUsingGamepadTarget.store(0, std::memory_order_release);
+        _originalCursorTarget.store(0, std::memory_order_release);
+        _originalDeviceEnabledTarget.store(0, std::memory_order_release);
+
         if (REL::Module::get().version() != kSupportedRuntime) {
             auto result = detail::EvaluateHookInstallGate(
                 false,
@@ -250,7 +273,7 @@ namespace dualpad::input_v2::presentation
                 usingGamepadHook.address(),
                 cursorHook.address(),
                 gamepadHandlerVtbl.address());
-            if (IsHookInstallFailure(gate)) {
+            if (IsInstallAttemptFailureStatus(gate.status)) {
                 gate = MarkInstallFailed(gate);
                 logger::error(
                     "[DualPad][SkyrimCompat] Hook signature gate failed: {}",
@@ -270,6 +293,7 @@ namespace dualpad::input_v2::presentation
                 logger::error("[DualPad][SkyrimCompat] Hook patch failed: {}", ToDebugString(result));
                 return result;
             }
+            _originalUsingGamepadTarget.store(originalUsingGamepad, std::memory_order_release);
 
             const auto originalCursor = SKSE::GetTrampoline().write_branch<5>(
                 cursorHook.address(),
@@ -282,6 +306,7 @@ namespace dualpad::input_v2::presentation
                 logger::error("[DualPad][SkyrimCompat] Hook patch partially failed: {}", ToDebugString(result));
                 return result;
             }
+            _originalCursorTarget.store(originalCursor, std::memory_order_release);
 
             const auto patchSite = detail::MakeVfuncPatchSite(
                 gamepadHandlerVtbl.address(),
@@ -298,6 +323,7 @@ namespace dualpad::input_v2::presentation
                 logger::error("[DualPad][SkyrimCompat] Hook patch partially failed: {}", ToDebugString(result));
                 return result;
             }
+            _originalDeviceEnabledTarget.store(originalEnabledHook, std::memory_order_release);
 
             auto result = MarkInstallSucceeded();
             logger::info(
@@ -333,16 +359,25 @@ namespace dualpad::input_v2::presentation
 
     bool SkyrimCompatibilitySurface::IsUsingGamepadHook() const
     {
+        if (!_hooksEnabled.load(std::memory_order_acquire)) {
+            return CallOriginalIsUsingGamepad();
+        }
         return GetCommittedState().owner == PresentationOwner::Gamepad;
     }
 
     bool SkyrimCompatibilitySurface::GamepadControlsCursorHook() const
     {
+        if (!_hooksEnabled.load(std::memory_order_acquire)) {
+            return CallOriginalGamepadControlsCursor();
+        }
         return GetCommittedState().cursorOwner == CursorOwner::Gamepad;
     }
 
     bool SkyrimCompatibilitySurface::IsGamepadDeviceEnabledHook(bool remapMode) const
     {
+        if (!_hooksEnabled.load(std::memory_order_acquire)) {
+            return CallOriginalGamepadDeviceEnabled(nullptr);
+        }
         if (!remapMode) {
             return true;
         }
@@ -352,17 +387,7 @@ namespace dualpad::input_v2::presentation
     bool SkyrimCompatibilitySurface::ShouldRefreshMenus()
     {
         std::scoped_lock lock(_mutex);
-        const bool presentationDirty =
-            HasDirtyFlag(_committed.dirty, PresentationDirtyFlags::Family) ||
-            HasDirtyFlag(_committed.dirty, PresentationDirtyFlags::Owner) ||
-            HasDirtyFlag(_committed.dirty, PresentationDirtyFlags::Cursor) ||
-            HasDirtyFlag(_committed.dirty, PresentationDirtyFlags::Policy);
-        if (!presentationDirty || _committed.epoch == 0 || _committed.epoch == _lastRefreshEpoch) {
-            return false;
-        }
-
-        _lastRefreshEpoch = _committed.epoch;
-        return true;
+        return HasPendingMenuRefreshLocked();
     }
 
     bool SkyrimCompatibilitySurface::RefreshMenusIfNeeded()
@@ -435,11 +460,40 @@ namespace dualpad::input_v2::presentation
         _installResult = result;
         if (result.installed) {
             _installState = detail::InstallState::Installed;
-        } else if (result.failClosed) {
+        } else if (IsInstallAttemptFailureStatus(result.status)) {
             _installState = detail::InstallState::Failed;
         } else {
             _installState = detail::InstallState::NotInstalled;
         }
+        _hooksEnabled.store(result.installed, std::memory_order_release);
+    }
+
+    void SkyrimCompatibilitySurface::ForceOriginalHookOutputsForTests(const LegacyCompatibilitySurface& legacy)
+    {
+        std::scoped_lock lock(_mutex);
+        _originalHookOutputs = legacy;
+        _originalUsingGamepadTarget.store(0, std::memory_order_release);
+        _originalCursorTarget.store(0, std::memory_order_release);
+        _originalDeviceEnabledTarget.store(0, std::memory_order_release);
+    }
+
+    void SkyrimCompatibilitySurface::ForceHooksEnabledForTests(bool enabled)
+    {
+        _hooksEnabled.store(enabled, std::memory_order_release);
+    }
+
+    void SkyrimCompatibilitySurface::SetMenuRefreshTaskSinkForTests(MenuRefreshTaskSink sink)
+    {
+        std::scoped_lock lock(_mutex);
+        _refreshTaskSinkForTests = std::move(sink);
+    }
+
+    void SkyrimCompatibilitySurface::CompleteQueuedRefreshForTests()
+    {
+        std::scoped_lock lock(_mutex);
+        _lastRefreshCompletedEpoch = _committed.epoch;
+        _lastRefreshCompletedKey = RefreshKeyLocked();
+        _refreshQueued = false;
     }
 
     void SkyrimCompatibilitySurface::ResetInstallStateForTests()
@@ -447,13 +501,21 @@ namespace dualpad::input_v2::presentation
         std::scoped_lock lock(_mutex);
         _installState = detail::InstallState::NotInstalled;
         _installResult = HookInstallResult{};
+        _hooksEnabled.store(true, std::memory_order_release);
+        _originalUsingGamepadTarget.store(0, std::memory_order_release);
+        _originalCursorTarget.store(0, std::memory_order_release);
+        _originalDeviceEnabledTarget.store(0, std::memory_order_release);
     }
 
     void SkyrimCompatibilitySurface::ResetRefreshStateForTests()
     {
         std::scoped_lock lock(_mutex);
-        _lastRefreshEpoch = 0;
+        _lastRefreshQueuedEpoch = 0;
+        _lastRefreshCompletedEpoch = 0;
+        _lastRefreshQueuedKey.clear();
+        _lastRefreshCompletedKey.clear();
         _refreshQueued = false;
+        _refreshTaskSinkForTests = {};
     }
 
     bool SkyrimCompatibilitySurface::TryBeginInstall()
@@ -468,25 +530,98 @@ namespace dualpad::input_v2::presentation
 
     bool SkyrimCompatibilitySurface::QueueMenuRefreshTask()
     {
+        MenuRefreshTaskSink testSink;
         {
             std::scoped_lock lock(_mutex);
-            if (_refreshQueued) {
+            if (!HasPendingMenuRefreshLocked()) {
                 return false;
             }
             _refreshQueued = true;
+            _lastRefreshQueuedEpoch = _committed.epoch;
+            _lastRefreshQueuedKey = RefreshKeyLocked();
+            testSink = _refreshTaskSinkForTests;
         }
 
-        if (auto* taskInterface = SKSE::GetTaskInterface(); taskInterface) {
+        bool queued = false;
+        if (testSink) {
+            queued = testSink(DoRefreshMenus);
+        } else if (auto* taskInterface = SKSE::GetTaskInterface(); taskInterface) {
             taskInterface->AddUITask(DoRefreshMenus);
+            queued = true;
+        }
+
+        if (queued) {
             return true;
         }
 
         {
             std::scoped_lock lock(_mutex);
             _refreshQueued = false;
+            _lastRefreshQueuedEpoch = 0;
+            _lastRefreshQueuedKey.clear();
         }
         logger::debug("[DualPad][SkyrimCompat] menu_refresh_skipped reason=no_skse_task_interface");
         return false;
+    }
+
+    bool SkyrimCompatibilitySurface::HasPendingMenuRefreshLocked() const
+    {
+        if (_refreshQueued || _committed.epoch == 0 || !HasRefreshRelevantDirty(_committed.dirty)) {
+            return false;
+        }
+
+        const auto key = RefreshKeyLocked();
+        return key != _lastRefreshQueuedKey && key != _lastRefreshCompletedKey;
+    }
+
+    std::string SkyrimCompatibilitySurface::RefreshKeyLocked() const
+    {
+        std::ostringstream out;
+        out << _committed.epoch
+            << "|ctx=" << _committed.contextRevision
+            << "|ui=" << static_cast<std::uint16_t>(_committed.uiContextId)
+            << "|gameplay=" << _committed.gameplayPresentationRevision
+            << "|policy=" << _committed.presentationPolicyId
+            << "|base=" << _committed.actionSetStack.baseSetId
+            << "|layers=";
+        for (const auto& layer : _committed.actionSetStack.layerIds) {
+            out << layer << ',';
+        }
+        out << "|anchors=";
+        for (const auto& anchor : _committed.actionSetStack.scopeAnchorIds) {
+            out << anchor << ',';
+        }
+        return out.str();
+    }
+
+    bool SkyrimCompatibilitySurface::CallOriginalIsUsingGamepad() const
+    {
+        using Hook = bool (*)();
+        if (const auto target = _originalUsingGamepadTarget.load(std::memory_order_acquire); target != 0) {
+            return reinterpret_cast<Hook>(target)();
+        }
+        std::scoped_lock lock(_mutex);
+        return _originalHookOutputs.isUsingGamepad;
+    }
+
+    bool SkyrimCompatibilitySurface::CallOriginalGamepadControlsCursor() const
+    {
+        using Hook = bool (*)();
+        if (const auto target = _originalCursorTarget.load(std::memory_order_acquire); target != 0) {
+            return reinterpret_cast<Hook>(target)();
+        }
+        std::scoped_lock lock(_mutex);
+        return _originalHookOutputs.gamepadControlsCursor;
+    }
+
+    bool SkyrimCompatibilitySurface::CallOriginalGamepadDeviceEnabled(RE::BSPCGamepadDeviceHandler* device) const
+    {
+        using Hook = bool (*)(RE::BSPCGamepadDeviceHandler*);
+        if (const auto target = _originalDeviceEnabledTarget.load(std::memory_order_acquire); target != 0) {
+            return reinterpret_cast<Hook>(target)(device);
+        }
+        std::scoped_lock lock(_mutex);
+        return _originalHookOutputs.gamepadDeviceEnabled;
     }
 
     HookInstallResult SkyrimCompatibilitySurface::MarkInstallResultLocked(const HookInstallResult& result)
@@ -499,6 +634,7 @@ namespace dualpad::input_v2::presentation
     {
         std::scoped_lock lock(_mutex);
         _installState = detail::CompleteInstall(_installState);
+        _hooksEnabled.store(true, std::memory_order_release);
         return MarkInstallResultLocked(
             detail::MakeHookInstallResult(HookInstallStatus::Success, "installed"));
     }
@@ -507,6 +643,7 @@ namespace dualpad::input_v2::presentation
     {
         std::scoped_lock lock(_mutex);
         _installState = detail::FailInstall(_installState);
+        _hooksEnabled.store(false, std::memory_order_release);
         return MarkInstallResultLocked(result);
     }
 
@@ -528,6 +665,11 @@ namespace dualpad::input_v2::presentation
 
     bool SkyrimCompatibilitySurface::StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device)
     {
+        auto& surface = GetSingleton();
+        if (!surface._hooksEnabled.load(std::memory_order_acquire)) {
+            return surface.CallOriginalGamepadDeviceEnabled(device);
+        }
+
         const auto isEnabled = device != nullptr &&
             *reinterpret_cast<void* const*>(reinterpret_cast<const std::uint8_t*>(device) + kGamepadDelegateOffset) != nullptr;
         if (!isEnabled) {
@@ -542,7 +684,7 @@ namespace dualpad::input_v2::presentation
             *reinterpret_cast<const bool*>(reinterpret_cast<const std::uint8_t*>(menuControls) + kMenuControlsRemapModeOffset);
 
         if (playerRemapMode || menuRemapMode) {
-            return GetSingleton().IsGamepadDeviceEnabledHook(true);
+            return surface.IsGamepadDeviceEnabledHook(true);
         }
 
         return true;
@@ -570,6 +712,8 @@ namespace dualpad::input_v2::presentation
 
         {
             std::scoped_lock lock(surface._mutex);
+            surface._lastRefreshCompletedEpoch = surface._committed.epoch;
+            surface._lastRefreshCompletedKey = surface.RefreshKeyLocked();
             surface._refreshQueued = false;
         }
 

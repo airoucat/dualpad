@@ -647,6 +647,20 @@ namespace dualpad::input_v2::actions
             return "MenuDigital";
         }
 
+        ActionExecutionAvailability ExecutionAvailabilityFor(std::string_view actionId)
+        {
+            using namespace dualpad::input::actions;
+            if (actionId == FavoritesToggleFocus ||
+                actionId == FavoritesGroupConfirm ||
+                actionId == FavoritesGroupToggle ||
+                actionId == FavoritesGroupUse ||
+                actionId == FavoritesSaveEquipState ||
+                actionId == FavoritesSetGroupIcon) {
+                return ActionExecutionAvailability::UnavailableWithoutPageBroker;
+            }
+            return ActionExecutionAvailability::Available;
+        }
+
         ActionDefinition MakeActionDefinition(std::string_view actionId)
         {
             ActionDefinition action{};
@@ -656,6 +670,7 @@ namespace dualpad::input_v2::actions
             action.contract = ContractFor(action.id, action.valueKind, action.domain);
             action.outputDescriptorId = OutputDescriptorIdFor(action.id, action.valueKind, action.domain);
             action.promptHintId = std::string("prompt.") + action.id;
+            action.executionAvailability = ExecutionAvailabilityFor(action.id);
             return action;
         }
 

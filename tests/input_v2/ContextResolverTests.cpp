@@ -261,6 +261,59 @@ void RunContextResolverTests()
     }
 
     {
+        auto& tick = ctx::ContextRefreshTick::GetSingleton();
+        tick.ResetForTests();
+
+        const auto partial = tick.RefreshObservedForTests(
+            tick.BeginFrame(),
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Partial,
+                .nodes = {},
+                .eventSequence = 10,
+                .lastEventMenuName = "InventoryMenu",
+                .lastEventOpening = true
+            },
+            InputContext::Gameplay,
+            catalog);
+        Require(
+            partial.hostMode == ctx::HostMode::Menu,
+            "ObserverPartialMissingTopName_ResolvesUnknownTrackedMenuNotGameplay host mode");
+        Require(
+            partial.uiContextId == ctx::UiContextId::UnknownTrackedMenu,
+            "ObserverPartialMissingTopName_ResolvesUnknownTrackedMenuNotGameplay context id");
+        Require(
+            partial.legacyInputContext == InputContext::Menu,
+            "ObserverPartialMissingTopName_ResolvesUnknownTrackedMenuNotGameplay legacy mirror");
+        Require(
+            partial.actionSetStack.baseSetId == "MenuBase",
+            "ObserverPartialMissingTopName_ResolvesUnknownTrackedMenuNotGameplay must not claim GameplayBase");
+
+        const auto unavailable = tick.RefreshObservedForTests(
+            tick.BeginFrame(),
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Unavailable,
+                .nodes = {},
+                .eventSequence = 11,
+                .lastEventMenuName = "InventoryMenu",
+                .lastEventOpening = true
+            },
+            InputContext::Gameplay,
+            catalog);
+        Require(
+            unavailable.hostMode == ctx::HostMode::Menu,
+            "ObserverUnavailable_DoesNotDispatchGameplayActions host mode");
+        Require(
+            unavailable.uiContextId == ctx::UiContextId::UnknownTrackedMenu,
+            "ObserverUnavailable_DoesNotDispatchGameplayActions context id");
+        Require(
+            unavailable.actionSetStack.baseSetId == "MenuBase",
+            "ObserverUnavailable_DoesNotDispatchGameplayActions action set");
+        Require(
+            unavailable.legacyInputContext == InputContext::Menu,
+            "ObserverUnavailable_DoesNotDispatchGameplayActions legacy mirror");
+    }
+
+    {
         ctx::ShadowCompareRecord expected{
             .topMenuInstanceId = 1,
             .identityQuality = menu::MenuIdentityQuality::StablePointer,

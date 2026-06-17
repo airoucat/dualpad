@@ -25,7 +25,13 @@ namespace dualpad::input_v2::gameplay
         SequenceGap = 1u << 4,
         BoundaryMismatch = 1u << 5,
         PromptScopeFrozen = 1u << 6,
-        HookInstallFailed = 1u << 7
+        HookInstallFailed = 1u << 7,
+        UpstreamXInputRouteFailed = 1u << 8,
+        SkyrimCompatSurfaceHookFailed = 1u << 9,
+        SkyrimCompatSurfacePartialInstall = 1u << 10,
+        MenuObserverPartial = 1u << 11,
+        MenuObserverUnavailable = 1u << 12,
+        MenuIdentityDegraded = 1u << 13
     };
 
     using RuntimeHealthReasonMask = std::uint32_t;
