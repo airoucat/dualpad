@@ -3033,3 +3033,20 @@
 - 构建部署：
   - `xmake build -y DualPad` 已生成并部署 `DualPad.dll` 到本机 MO2 插件目录；`DualPad.pdb` 因目标文件占用跳过复制。
   - `xmake build -y DualPadDInput8Proxy` 已生成并部署 `dinput8.dll` 到本机 Skyrim 目录；`dinput8.pdb` 因目标文件占用跳过复制。
+
+## 2026-06-17 22:53:00 +08:00
+
+- 用户实机反馈：进游戏后右摇杆转动明显卡顿，按 DPadUp 打开 Favorites 菜单时 Skyrim 闪退。Windows WER 最新记录为 `SkyrimSE.exe` 在 `ucrtbase.dll` 触发 `0xc0000409`，WER archive 只有 `Report.wer`，没有 minidump。
+- 复核最新 `DualPad.log`：raw HID 输入正常，高幅右摇杆 raw 样本充足，但 upstream authoritative poll 只有约 60Hz；日志中 `Input][Hex` 约 19884 行、`Input][State` 约 8898 行、`pending_max_before=271`，说明当前 playtest 仍开启高频 input/action/route trace，足以造成 HID reader 到 XInput poll 间的队列积压和体感卡顿。
+- 同一日志中 DPadUp raw `mask=0x00010000` 生成 `RuntimePlanAction action=Game.Favorites`，随后 `NativeButtonCommit` 输出 `xinputButtons=0x0001`，日志很快停止且没有后续 `FavoritesMenu` snapshot。结合当前恢复的 `RefreshPlatform()` 异步菜单刷新，正式根因假设收敛为：Gameplay / degraded context dirty 状态也可能排队 menu platform refresh，延迟 UI task 在 FavoritesMenu 打开途中遍历半初始化 menu stack 并调用 `RefreshPlatform()`。
+- 修复：`SkyrimCompatibilitySurface` 新增显式 tracked menu 白名单；`RefreshMenusIfNeeded()` 只允许稳定、已识别菜单上下文排队平台刷新，`Gameplay`、`UnknownTrackedMenu`、gameplay substates、`PassthroughOverlay` 都不再排队。UI task 执行时再次读取 committed state；若已不在稳定菜单上下文则清队列并 debug 记录 `menu_refresh_skipped`。遍历 menu stack 时跳过 `nullptr` 与 `uiMovie == nullptr` 的菜单，避免对未就绪 Scaleform movie 调 `RefreshPlatform()`。
+- 为降低 playtest 输入延迟，将 `config/DualPadDebug.ini` 的高频默认采集关闭：input packet/hex/state、mapping、synthetic state、action plan、native/keyboard injection、route health、replay trace 与 glyph query trace 均默认 `false`；保留按需手动开启的注释。
+- 覆盖与部署：`xmake run -y DualPadPresentationProjectionTests`、`DualPadContextResolverTests`、`DualPadGameplayProjectionTests`、`DualPadNativeButtonCommitTests`、`DualPadManifestCompilerTests` 均 exit 0；`xmake build -y DualPad` exit 0 并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`，LastWriteTime `2026/6/17 22:52:30`。live `DualPadDebug.ini` SHA256 与 repo `config/DualPadDebug.ini` 一致，所有高频日志开关已确认 `false`。`DualPad.pdb` 仍因目标占用跳过复制，不影响 DLL 部署。
+- 本轮为实机复测构建，暂未提交/推送；待用户确认右摇杆卡顿与 Favorites 打开闪退结果后再收口提交。
+
+## 2026-06-17 23:02:00 +08:00
+
+- 用户复测后主菜单首次下移回归，并指出上一轮闪退修法可能根本不对。复核代码与 catalog 后确认：上一轮把 `UiContextId::UnknownTrackedMenu` 误建模为 degraded unknown；但 `ContextCatalog` 明确把 `Main Menu`、`Credits Menu`、`Loading Menu` 等稳定 generic Menu 也映射到 `UnknownTrackedMenu`。因此将 `UnknownTrackedMenu` 整体排除出 menu platform refresh 会切断主菜单旧基线所需的 `RefreshPlatform()`。
+- 修正模型：`UnknownTrackedMenu` 只是 generic `Menu` context id，不等同于 degraded。真正应阻止 refresh 的条件来自 `ResolvedContextSnapshot` 的 `menuObserverCompleteness != Complete` 或 `menuIdentityDegraded == true`。`PresentationProjection` 现在把这两个字段转发到 `PublishedPresentationState`，`SkyrimCompatibilitySurface` 用 `IsRefreshableMenuPresentation()` 判断是否允许 queue / execute platform refresh。
+- 保留上一轮 crash hardening 中合理部分：UI task 执行时仍跳过 `nullptr` 和 `uiMovie == nullptr` 的半初始化 menu；如果 queued task 执行时 presentation 已变成 unstable/degraded，会清队列并 debug 记录 `menu_refresh_skipped reason=unstable_menu_context`。但稳定 `UnknownTrackedMenu` / Main Menu 会重新 queue refresh。
+- 覆盖与部署：新增测试覆盖 `StableGenericMenu_QueuesPlatformRefresh`、degraded Unknown 不刷新，以及 observer completeness / degraded identity 从 `ContextResolver` 经 `PresentationProjection` 传到 compat surface。已运行 `xmake run -y DualPadPresentationProjectionTests`、`DualPadContextResolverTests`、`DualPadGameplayProjectionTests`、`DualPadNativeButtonCommitTests`、`DualPadManifestCompilerTests`、`DualPadInputV2Tests`，均 exit 0。`git diff --check` exit 0，仅 Windows 行尾提示。`xmake build -y DualPad` exit 0 并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`，LastWriteTime `2026/6/17 23:00:58`；live `DualPadDebug.ini` SHA256 与 repo 一致。

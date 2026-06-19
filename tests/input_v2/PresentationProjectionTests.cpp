@@ -196,6 +196,34 @@ void RunPresentationProjectionTests()
 
     {
         presentation::PresentationProjection projection;
+
+        auto snapshot = presentation::SourceEvidenceSnapshot{};
+        snapshot.deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{
+            .family = presentation::DeviceFamily::Gamepad,
+            .deviceFamilyRevision = 12,
+            .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+            .publishedTick = 260
+        };
+        snapshot.gamepadEvidence = true;
+        snapshot.contextRevision = MenuContext().contextRevision;
+
+        auto degradedContext = MenuContext();
+        degradedContext.uiContextId = dualpad::input_v2::context::UiContextId::UnknownTrackedMenu;
+        degradedContext.menuObserverCompleteness = dualpad::input_v2::menu::ObserverCompleteness::Partial;
+        degradedContext.menuIdentityDegraded = true;
+
+        presentation::PublishedGameplayPresentation gameplay{};
+        const auto published = projection.Project(snapshot, degradedContext, gameplay);
+        Require(
+            published.menuObserverCompleteness == dualpad::input_v2::menu::ObserverCompleteness::Partial,
+            "PresentationProjection must forward observer completeness for refresh safety");
+        Require(
+            published.menuIdentityDegraded,
+            "PresentationProjection must forward degraded menu identity for refresh safety");
+    }
+
+    {
+        presentation::PresentationProjection projection;
         presentation::SkyrimCompatibilitySurface compat;
         presentation::SourceEvidenceSnapshot snapshot{};
         snapshot.deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{
@@ -267,6 +295,7 @@ void RunPresentationProjectionTests()
         menuGamepad.owner = presentation::PresentationOwner::Gamepad;
         menuGamepad.navigationOwner = presentation::NavigationOwner::Gamepad;
         menuGamepad.cursorOwner = presentation::CursorOwner::Gamepad;
+        menuGamepad.uiContextId = dualpad::input_v2::context::UiContextId::Journal;
         menuGamepad.contextRevision = 10;
         menuGamepad.epoch = 1;
         menuGamepad.dirty = presentation::PresentationDirtyFlags::Owner;
@@ -281,40 +310,80 @@ void RunPresentationProjectionTests()
             "identical presentation epoch must not queue duplicate menu platform refreshes");
         Require(queuedRefreshes == 1, "identical epoch must not spam platform refresh");
 
+        presentation::PublishedPresentationState gameplayOwnerDirty = menuGamepad;
+        gameplayOwnerDirty.uiContextId = dualpad::input_v2::context::UiContextId::None;
+        gameplayOwnerDirty.contextRevision = 11;
+        gameplayOwnerDirty.epoch = 2;
+        gameplayOwnerDirty.dirty = presentation::PresentationDirtyFlags::Owner;
+        compat.Commit(gameplayOwnerDirty);
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "GameplayOwnerDirty_DoesNotQueueMenuPlatformRefresh");
+        Require(queuedRefreshes == 1, "gameplay owner dirty must not queue a stale menu refresh task");
+
+        presentation::PublishedPresentationState stableGenericMenu = menuGamepad;
+        stableGenericMenu.uiContextId = dualpad::input_v2::context::UiContextId::UnknownTrackedMenu;
+        stableGenericMenu.menuObserverCompleteness = dualpad::input_v2::menu::ObserverCompleteness::Complete;
+        stableGenericMenu.menuIdentityDegraded = false;
+        stableGenericMenu.contextRevision = 12;
+        stableGenericMenu.actionSetStack.baseSetId = "MenuBase";
+        stableGenericMenu.actionSetStack.layerIds = { "UnknownTrackedMenuLayer" };
+        stableGenericMenu.actionSetStack.scopeAnchorIds = { "MenuBase", "UnknownTrackedMenuLayer" };
+        stableGenericMenu.presentationPolicyId = "Menu";
+        stableGenericMenu.epoch = 3;
+        stableGenericMenu.dirty = presentation::PresentationDirtyFlags::Context;
+        compat.Commit(stableGenericMenu);
+        Require(
+            compat.RefreshMenusIfNeeded(),
+            "StableGenericMenu_QueuesPlatformRefresh");
+        Require(queuedRefreshes == 2, "stable generic Main Menu context must refresh platform state");
+
+        presentation::PublishedPresentationState degradedUnknownMenu = stableGenericMenu;
+        degradedUnknownMenu.menuObserverCompleteness = dualpad::input_v2::menu::ObserverCompleteness::Partial;
+        degradedUnknownMenu.menuIdentityDegraded = true;
+        degradedUnknownMenu.contextRevision = 13;
+        degradedUnknownMenu.epoch = 4;
+        degradedUnknownMenu.dirty = presentation::PresentationDirtyFlags::Context;
+        compat.Commit(degradedUnknownMenu);
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "ObserverDegradedUnknownMenu_DoesNotQueuePlatformRefresh");
+        Require(queuedRefreshes == 2, "degraded unknown menu must wait for a stable tracked menu before refresh");
+
         presentation::PublishedPresentationState contextOnly = menuGamepad;
-        contextOnly.uiContextId = dualpad::input_v2::context::UiContextId::Journal;
-        contextOnly.contextRevision = 11;
+        contextOnly.uiContextId = dualpad::input_v2::context::UiContextId::Favorites;
+        contextOnly.contextRevision = 14;
         contextOnly.actionSetStack.baseSetId = "MenuBase";
-        contextOnly.actionSetStack.layerIds = { "JournalLayer" };
-        contextOnly.actionSetStack.scopeAnchorIds = { "MenuBase", "JournalLayer" };
-        contextOnly.epoch = 2;
+        contextOnly.actionSetStack.layerIds = { "FavoritesLayer" };
+        contextOnly.actionSetStack.scopeAnchorIds = { "MenuBase", "FavoritesLayer" };
+        contextOnly.epoch = 5;
         contextOnly.dirty = presentation::PresentationDirtyFlags::Context;
         compat.Commit(contextOnly);
         Require(
             compat.RefreshMenusIfNeeded(),
             "SwitchingMenuContextWithSameOwner_QueuesPlatformRefresh");
-        Require(queuedRefreshes == 2, "context-only refresh must queue exactly once");
+        Require(queuedRefreshes == 3, "context-only refresh must queue exactly once");
 
         presentation::PublishedPresentationState policyChange = contextOnly;
         policyChange.presentationPolicyId = "MenuPolicyChanged";
-        policyChange.epoch = 3;
+        policyChange.epoch = 6;
         policyChange.dirty = presentation::PresentationDirtyFlags::Policy;
         compat.Commit(policyChange);
         Require(
             compat.RefreshMenusIfNeeded(),
             "policy dirty presentation publish must refresh menu platform state");
-        Require(queuedRefreshes == 3, "policy refresh must queue exactly once");
+        Require(queuedRefreshes == 4, "policy refresh must queue exactly once");
 
         presentation::PublishedPresentationState actionSetChange = policyChange;
         actionSetChange.actionSetStack.layerIds = { "FavoritesLayer" };
         actionSetChange.actionSetStack.scopeAnchorIds = { "MenuBase", "FavoritesLayer" };
-        actionSetChange.epoch = 4;
+        actionSetChange.epoch = 7;
         actionSetChange.dirty = presentation::PresentationDirtyFlags::ActionSets;
         compat.Commit(actionSetChange);
         Require(
             compat.RefreshMenusIfNeeded(),
             "action-set/prompt-affecting presentation publish must queue platform refresh");
-        Require(queuedRefreshes == 4, "action-set refresh must queue exactly once");
+        Require(queuedRefreshes == 5, "action-set refresh must queue exactly once");
 
         compat.ResetRefreshStateForTests();
         compat.SetMenuRefreshTaskSinkForTests([](auto) {

@@ -65,6 +65,8 @@ namespace dualpad::input_v2::presentation
         next.family = evidence.deviceFamilyEvidence.family;
         next.deviceFamilyRevision = evidence.deviceFamilyEvidence.deviceFamilyRevision;
         next.uiContextId = contextSnapshot.uiContextId;
+        next.menuObserverCompleteness = contextSnapshot.menuObserverCompleteness;
+        next.menuIdentityDegraded = contextSnapshot.menuIdentityDegraded;
         next.actionSetStack = contextSnapshot.actionSetStack;
         next.presentationPolicyId = contextSnapshot.presentationPolicyId;
         next.contextRevision = contextSnapshot.contextRevision;

@@ -107,6 +107,65 @@ namespace dualpad::input_v2::presentation
                 HasDirtyFlag(flags, PresentationDirtyFlags::Policy);
         }
 
+        bool IsMenuPresentationContext(context::UiContextId id)
+        {
+            switch (id) {
+            case context::UiContextId::UnknownTrackedMenu:
+            case context::UiContextId::Inventory:
+            case context::UiContextId::Magic:
+            case context::UiContextId::Map:
+            case context::UiContextId::Journal:
+            case context::UiContextId::Dialogue:
+            case context::UiContextId::Favorites:
+            case context::UiContextId::Tween:
+            case context::UiContextId::Container:
+            case context::UiContextId::Barter:
+            case context::UiContextId::Training:
+            case context::UiContextId::LevelUp:
+            case context::UiContextId::RaceSex:
+            case context::UiContextId::StatsMenu:
+            case context::UiContextId::SkillMenu:
+            case context::UiContextId::BookMenu:
+            case context::UiContextId::MessageBox:
+            case context::UiContextId::Quantity:
+            case context::UiContextId::Gift:
+            case context::UiContextId::Creations:
+            case context::UiContextId::Console:
+            case context::UiContextId::ItemMenu:
+            case context::UiContextId::DebugText:
+            case context::UiContextId::MapMenuContext:
+            case context::UiContextId::Stats:
+            case context::UiContextId::Cursor:
+            case context::UiContextId::Book:
+            case context::UiContextId::DebugOverlay:
+            case context::UiContextId::TFCMode:
+            case context::UiContextId::DebugMapMenu:
+            case context::UiContextId::Lockpicking:
+            case context::UiContextId::Favor:
+                return true;
+            case context::UiContextId::None:
+            case context::UiContextId::Combat:
+            case context::UiContextId::Sneaking:
+            case context::UiContextId::Riding:
+            case context::UiContextId::Werewolf:
+            case context::UiContextId::VampireLord:
+            case context::UiContextId::Death:
+            case context::UiContextId::Bleedout:
+            case context::UiContextId::Ragdoll:
+            case context::UiContextId::KillMove:
+            case context::UiContextId::PassthroughOverlay:
+            default:
+                return false;
+            }
+        }
+
+        bool IsRefreshableMenuPresentation(const PublishedPresentationState& state)
+        {
+            return IsMenuPresentationContext(state.uiContextId) &&
+                state.menuObserverCompleteness == menu::ObserverCompleteness::Complete &&
+                !state.menuIdentityDegraded;
+        }
+
         HookInstallResult VerifyHookSites(
             std::uintptr_t usingGamepadAddress,
             std::uintptr_t cursorAddress,
@@ -566,7 +625,10 @@ namespace dualpad::input_v2::presentation
 
     bool SkyrimCompatibilitySurface::HasPendingMenuRefreshLocked() const
     {
-        if (_refreshQueued || _committed.epoch == 0 || !HasRefreshRelevantDirty(_committed.dirty)) {
+        if (_refreshQueued ||
+            _committed.epoch == 0 ||
+            !IsRefreshableMenuPresentation(_committed) ||
+            !HasRefreshRelevantDirty(_committed.dirty)) {
             return false;
         }
 
@@ -695,10 +757,32 @@ namespace dualpad::input_v2::presentation
         auto& surface = GetSingleton();
         std::size_t refreshed = 0;
         std::size_t notified = 0;
+        std::size_t skippedNotReady = 0;
+
+        const auto stateAtStart = surface.GetCommittedState();
+        if (!IsRefreshableMenuPresentation(stateAtStart)) {
+            {
+                std::scoped_lock lock(surface._mutex);
+                surface._refreshQueued = false;
+            }
+            logger::debug(
+                "[DualPad][SkyrimCompat] menu_refresh_skipped reason=unstable_menu_context uiContext={} completeness={} degraded={} epoch={} dirty=0x{:02X}",
+                static_cast<std::uint16_t>(stateAtStart.uiContextId),
+                static_cast<unsigned>(stateAtStart.menuObserverCompleteness),
+                stateAtStart.menuIdentityDegraded,
+                stateAtStart.epoch,
+                ToDirtyBits(stateAtStart.dirty));
+            return;
+        }
 
         if (auto* ui = RE::UI::GetSingleton(); ui) {
             for (auto& menu : ui->menuStack) {
                 if (!menu) {
+                    ++skippedNotReady;
+                    continue;
+                }
+                if (!menu->uiMovie) {
+                    ++skippedNotReady;
                     continue;
                 }
 
@@ -719,9 +803,10 @@ namespace dualpad::input_v2::presentation
 
         const auto state = surface.GetCommittedState();
         logger::debug(
-            "[DualPad][SkyrimCompat] menu_refresh_done menus={} notified={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X}",
+            "[DualPad][SkyrimCompat] menu_refresh_done menus={} notified={} skippedNotReady={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X}",
             refreshed,
             notified,
+            skippedNotReady,
             ToLogString(state.owner),
             ToLogString(state.navigationOwner),
             ToLogString(state.cursorOwner),

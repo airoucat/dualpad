@@ -85,6 +85,8 @@ namespace dualpad::input_v2::presentation
         CursorOwner cursorOwner{ CursorOwner::KeyboardMouse };
         PointerIntent pointerIntent{ PointerIntent::None };
         context::UiContextId uiContextId{ context::UiContextId::None };
+        menu::ObserverCompleteness menuObserverCompleteness{ menu::ObserverCompleteness::Complete };
+        bool menuIdentityDegraded{ false };
         actions::ActionSetStack actionSetStack;
         context::PresentationPolicyId presentationPolicyId;
         std::uint32_t contextRevision{ 0 };
