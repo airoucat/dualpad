@@ -20,6 +20,7 @@ namespace dualpad::input_v2::presentation
         constexpr std::ptrdiff_t kGamepadDelegateOffset = 0x08;
         constexpr std::ptrdiff_t kMenuControlsRemapModeOffset = 0x82;
         constexpr auto kSupportedRuntime = SKSE::RUNTIME_SSE_1_5_97;
+        constexpr std::uint8_t kMaxDeferredAttempts = 3;
         constexpr auto kExpectedBoolSurfaceEntryWindow =
             REL::make_pattern<"48 83 EC 28 48 8B 49 70 48 85 C9 74 11">();
 
@@ -539,6 +540,7 @@ namespace dualpad::input_v2::presentation
         _lastRefreshCompletedKey.clear();
         _refreshInFlight.reset();
         _refreshPendingLatest.reset();
+        _refreshDeferredHeld.reset();
         _refreshTaskSinkForTests = {};
     }
 
@@ -584,7 +586,9 @@ namespace dualpad::input_v2::presentation
         {
             std::scoped_lock lock(_mutex);
             if (_refreshInFlight && _refreshInFlight->serial == request.serial) {
-                _refreshPendingLatest = request;
+                if (!_refreshPendingLatest) {
+                    _refreshPendingLatest = request;
+                }
                 _refreshInFlight.reset();
                 _lastRefreshQueuedEpoch = 0;
                 _lastRefreshQueuedKey.clear();
@@ -603,16 +607,34 @@ namespace dualpad::input_v2::presentation
     {
         if (!IsRefreshableMenuPresentation(_committed)) {
             _refreshPendingLatest.reset();
+            _refreshDeferredHeld.reset();
             return;
         }
+        const auto key = MakeRefreshKey(_committed);
+        if (key == _lastRefreshCompletedKey) {
+            if (_refreshDeferredHeld && _refreshDeferredHeld->key == key) {
+                _refreshDeferredHeld.reset();
+            }
+            return;
+        }
+
+        if (_refreshDeferredHeld) {
+            if (_refreshDeferredHeld->key != key) {
+                _refreshDeferredHeld.reset();
+            } else if (!_refreshInFlight && !_refreshPendingLatest) {
+                auto retry = *_refreshDeferredHeld;
+                retry.serial = ++_nextRefreshSerial;
+                retry.deferredAttempts = kMaxDeferredAttempts;
+                _refreshPendingLatest = std::move(retry);
+                _refreshDeferredHeld.reset();
+                return;
+            }
+        }
+
         if (_committed.epoch == 0 || !HasRefreshRelevantDirty(_committed.dirty)) {
             return;
         }
 
-        const auto key = MakeRefreshKey(_committed);
-        if (key == _lastRefreshCompletedKey) {
-            return;
-        }
         if (_refreshInFlight && _refreshInFlight->key == key) {
             return;
         }
@@ -695,8 +717,8 @@ namespace dualpad::input_v2::presentation
         std::size_t notified,
         std::size_t skippedNotReady)
     {
-        constexpr std::uint8_t kMaxDeferredAttempts = 3;
         bool scheduleNext = false;
+        bool heldDeferred = false;
         std::uint8_t nextAttempt = request.deferredAttempts;
         {
             std::scoped_lock lock(_mutex);
@@ -712,6 +734,9 @@ namespace dualpad::input_v2::presentation
             if (result == MenuRefreshExecutionResult::Completed) {
                 _lastRefreshCompletedEpoch = request.epoch;
                 _lastRefreshCompletedKey = request.key;
+                if (_refreshDeferredHeld && _refreshDeferredHeld->key == request.key) {
+                    _refreshDeferredHeld.reset();
+                }
             } else if (result == MenuRefreshExecutionResult::DeferredNotReady) {
                 if (request.deferredAttempts < kMaxDeferredAttempts) {
                     auto retry = request;
@@ -721,16 +746,40 @@ namespace dualpad::input_v2::presentation
                     if (!_refreshPendingLatest || _refreshPendingLatest->key == request.key) {
                         _refreshPendingLatest = std::move(retry);
                     }
-                } else {
-                    logger::warn(
-                        "[DualPad][SkyrimCompat] menu_refresh_deferred_exhausted serial={} epoch={} key='{}'",
-                        request.serial,
-                        request.epoch,
-                        request.key);
+                } else if (!_refreshPendingLatest) {
+                    auto held = request;
+                    held.deferredAttempts = kMaxDeferredAttempts;
+                    _refreshDeferredHeld = std::move(held);
+                    heldDeferred = true;
                 }
+            } else if (_refreshDeferredHeld && _refreshDeferredHeld->key == request.key) {
+                _refreshDeferredHeld.reset();
+            }
+
+            if (_refreshPendingLatest && _refreshDeferredHeld) {
+                _refreshDeferredHeld.reset();
+            }
+
+            if (!IsRefreshableMenuPresentation(_committed)) {
+                _refreshDeferredHeld.reset();
+            } else if (_refreshDeferredHeld &&
+                MakeRefreshKey(_committed) != _refreshDeferredHeld->key) {
+                _refreshDeferredHeld.reset();
+            }
+
+            if (heldDeferred && !_refreshDeferredHeld) {
+                heldDeferred = false;
             }
 
             scheduleNext = _refreshPendingLatest.has_value();
+        }
+
+        if (heldDeferred) {
+            logger::debug(
+                "[DualPad][SkyrimCompat] menu_refresh_deferred_held serial={} epoch={} key='{}'",
+                request.serial,
+                request.epoch,
+                request.key);
         }
 
         logger::debug(

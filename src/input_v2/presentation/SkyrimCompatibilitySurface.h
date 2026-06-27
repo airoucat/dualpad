@@ -212,6 +212,7 @@ namespace dualpad::input_v2::presentation
         std::string _lastRefreshCompletedKey;
         std::optional<MenuRefreshRequest> _refreshInFlight;
         std::optional<MenuRefreshRequest> _refreshPendingLatest;
+        std::optional<MenuRefreshRequest> _refreshDeferredHeld;
         MenuRefreshTaskSink _refreshTaskSinkForTests;
         detail::InstallState _installState{ detail::InstallState::NotInstalled };
         HookInstallResult _installResult{};

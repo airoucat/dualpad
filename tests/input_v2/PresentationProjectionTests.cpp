@@ -530,14 +530,55 @@ void RunPresentationProjectionTests()
         Require(
             !compat.RefreshMenusIfNeeded(),
             "MenuRefresh_DeferredNotReady must not spin after exhausting bounded deferred retries");
-        compat.Commit(state);
+        auto stableTickWithoutDirty = state;
+        stableTickWithoutDirty.dirty = presentation::PresentationDirtyFlags::None;
+        compat.Commit(stableTickWithoutDirty);
         Require(
             compat.RefreshMenusIfNeeded(),
-            "MenuRefresh_DeferredNotReady must not mark the request completed before a later ready retry");
-        Require(queuedRefreshes == 5, "later ready retry must be able to requeue the same deferred intent");
+            "MenuRefresh_DeferredNotReady must preserve held intent across a later stable tick without dirty");
+        Require(queuedRefreshes == 5, "held deferred intent must requeue once on the later stable tick");
         compat.CompleteQueuedRefreshForTests();
         compat.SetMenuRefreshTaskSinkForTests({});
         compat.ResetRefreshStateForTests();
+    }
+
+    {
+        presentation::SkyrimCompatibilitySurface compat;
+        compat.ResetRefreshStateForTests();
+        std::size_t queueAttempts = 0;
+        std::size_t successfulQueues = 0;
+
+        auto first = EligibleMenuPresentation(41, 50);
+        first.dirty = presentation::PresentationDirtyFlags::Owner;
+        auto second = EligibleMenuPresentation(42, 51);
+        second.actionSetStack.layerIds = { "MenuLayer", "PromptLayer" };
+        second.actionSetStack.scopeAnchorIds = { "MenuBase", "MenuLayer", "PromptLayer" };
+        second.dirty = presentation::PresentationDirtyFlags::ActionSets;
+
+        compat.SetMenuRefreshTaskSinkForTests([&](auto) {
+            ++queueAttempts;
+            compat.Commit(second);
+            return false;
+        });
+        compat.Commit(first);
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_QueueFailureDoesNotOverwriteNewerPendingLatest first queue attempt must fail");
+
+        compat.SetMenuRefreshTaskSinkForTests([&](auto) {
+            ++queueAttempts;
+            ++successfulQueues;
+            return true;
+        });
+        Require(
+            compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_QueueFailureDoesNotOverwriteNewerPendingLatest must retain the newer pending request");
+        Require(queueAttempts == 2, "queue failure retry must only schedule the retained newer request");
+        Require(successfulQueues == 1, "newer pending request must be successfully queued once");
+        compat.CompleteQueuedRefreshForTests();
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_QueueFailureDoesNotOverwriteNewerPendingLatest must not resurrect the failed stale request");
     }
 
     {
