@@ -46,6 +46,25 @@ namespace dualpad::input_v2::presentation
             return owner == CursorOwner::Gamepad ? "Gamepad" : "KeyboardMouse";
         }
 
+        const char* ToLogString(MenuRefreshEligibility eligibility)
+        {
+            switch (eligibility) {
+            case MenuRefreshEligibility::NotMenu:
+                return "NotMenu";
+            case MenuRefreshEligibility::EligibleStableMenu:
+                return "EligibleStableMenu";
+            case MenuRefreshEligibility::ObserverPartial:
+                return "ObserverPartial";
+            case MenuRefreshEligibility::ObserverUnavailable:
+                return "ObserverUnavailable";
+            case MenuRefreshEligibility::IdentityDegraded:
+                return "IdentityDegraded";
+            case MenuRefreshEligibility::NoStableTarget:
+            default:
+                return "NoStableTarget";
+            }
+        }
+
         std::uint32_t ToDirtyBits(PresentationDirtyFlags flags)
         {
             return static_cast<std::uint32_t>(static_cast<std::uint8_t>(flags));
@@ -105,65 +124,6 @@ namespace dualpad::input_v2::presentation
                 HasDirtyFlag(flags, PresentationDirtyFlags::Context) ||
                 HasDirtyFlag(flags, PresentationDirtyFlags::ActionSets) ||
                 HasDirtyFlag(flags, PresentationDirtyFlags::Policy);
-        }
-
-        bool IsMenuPresentationContext(context::UiContextId id)
-        {
-            switch (id) {
-            case context::UiContextId::UnknownTrackedMenu:
-            case context::UiContextId::Inventory:
-            case context::UiContextId::Magic:
-            case context::UiContextId::Map:
-            case context::UiContextId::Journal:
-            case context::UiContextId::Dialogue:
-            case context::UiContextId::Favorites:
-            case context::UiContextId::Tween:
-            case context::UiContextId::Container:
-            case context::UiContextId::Barter:
-            case context::UiContextId::Training:
-            case context::UiContextId::LevelUp:
-            case context::UiContextId::RaceSex:
-            case context::UiContextId::StatsMenu:
-            case context::UiContextId::SkillMenu:
-            case context::UiContextId::BookMenu:
-            case context::UiContextId::MessageBox:
-            case context::UiContextId::Quantity:
-            case context::UiContextId::Gift:
-            case context::UiContextId::Creations:
-            case context::UiContextId::Console:
-            case context::UiContextId::ItemMenu:
-            case context::UiContextId::DebugText:
-            case context::UiContextId::MapMenuContext:
-            case context::UiContextId::Stats:
-            case context::UiContextId::Cursor:
-            case context::UiContextId::Book:
-            case context::UiContextId::DebugOverlay:
-            case context::UiContextId::TFCMode:
-            case context::UiContextId::DebugMapMenu:
-            case context::UiContextId::Lockpicking:
-            case context::UiContextId::Favor:
-                return true;
-            case context::UiContextId::None:
-            case context::UiContextId::Combat:
-            case context::UiContextId::Sneaking:
-            case context::UiContextId::Riding:
-            case context::UiContextId::Werewolf:
-            case context::UiContextId::VampireLord:
-            case context::UiContextId::Death:
-            case context::UiContextId::Bleedout:
-            case context::UiContextId::Ragdoll:
-            case context::UiContextId::KillMove:
-            case context::UiContextId::PassthroughOverlay:
-            default:
-                return false;
-            }
-        }
-
-        bool IsRefreshableMenuPresentation(const PublishedPresentationState& state)
-        {
-            return IsMenuPresentationContext(state.uiContextId) &&
-                state.menuObserverCompleteness == menu::ObserverCompleteness::Complete &&
-                !state.menuIdentityDegraded;
         }
 
         HookInstallResult VerifyHookSites(
@@ -405,6 +365,7 @@ namespace dualpad::input_v2::presentation
     {
         std::scoped_lock lock(_mutex);
         _committed = state;
+        CaptureMenuRefreshIntentLocked();
     }
 
     void SkyrimCompatibilitySurface::EnableRollback(const LegacyCompatibilitySurface& legacy)
@@ -446,28 +407,28 @@ namespace dualpad::input_v2::presentation
     bool SkyrimCompatibilitySurface::ShouldRefreshMenus()
     {
         std::scoped_lock lock(_mutex);
-        return HasPendingMenuRefreshLocked();
+        return HasSchedulableMenuRefreshLocked();
     }
 
     bool SkyrimCompatibilitySurface::RefreshMenusIfNeeded()
     {
-        if (!ShouldRefreshMenus()) {
+        const auto queued = QueueMenuRefreshTask();
+        if (!queued) {
             return false;
         }
 
-        const auto queued = QueueMenuRefreshTask();
         const auto state = GetCommittedState();
         logger::debug(
-            "[DualPad][SkyrimCompat] menu_refresh_request queued={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X} contextRevision={} gameplayPresentationRevision={}",
-            queued,
+            "[DualPad][SkyrimCompat] menu_refresh_request queued=true owner={} navigationOwner={} cursorOwner={} eligibility={} epoch={} dirty=0x{:02X} contextRevision={} gameplayPresentationRevision={}",
             ToLogString(state.owner),
             ToLogString(state.navigationOwner),
             ToLogString(state.cursorOwner),
+            ToLogString(state.menuRefreshEligibility),
             state.epoch,
             ToDirtyBits(state.dirty),
             state.contextRevision,
             state.gameplayPresentationRevision);
-        return queued;
+        return true;
     }
 
     PresentationParityRecord SkyrimCompatibilitySurface::CompareShadowParity(
@@ -549,10 +510,12 @@ namespace dualpad::input_v2::presentation
 
     void SkyrimCompatibilitySurface::CompleteQueuedRefreshForTests()
     {
-        std::scoped_lock lock(_mutex);
-        _lastRefreshCompletedEpoch = _committed.epoch;
-        _lastRefreshCompletedKey = RefreshKeyLocked();
-        _refreshQueued = false;
+        CompleteRefreshRequestForTests(MenuRefreshExecutionResult::Completed);
+    }
+
+    void SkyrimCompatibilitySurface::DeferQueuedRefreshForTests()
+    {
+        CompleteRefreshRequestForTests(MenuRefreshExecutionResult::DeferredNotReady);
     }
 
     void SkyrimCompatibilitySurface::ResetInstallStateForTests()
@@ -569,11 +532,13 @@ namespace dualpad::input_v2::presentation
     void SkyrimCompatibilitySurface::ResetRefreshStateForTests()
     {
         std::scoped_lock lock(_mutex);
+        _nextRefreshSerial = 0;
         _lastRefreshQueuedEpoch = 0;
         _lastRefreshCompletedEpoch = 0;
         _lastRefreshQueuedKey.clear();
         _lastRefreshCompletedKey.clear();
-        _refreshQueued = false;
+        _refreshInFlight.reset();
+        _refreshPendingLatest.reset();
         _refreshTaskSinkForTests = {};
     }
 
@@ -590,14 +555,17 @@ namespace dualpad::input_v2::presentation
     bool SkyrimCompatibilitySurface::QueueMenuRefreshTask()
     {
         MenuRefreshTaskSink testSink;
+        MenuRefreshRequest request;
         {
             std::scoped_lock lock(_mutex);
-            if (!HasPendingMenuRefreshLocked()) {
+            if (!HasSchedulableMenuRefreshLocked()) {
                 return false;
             }
-            _refreshQueued = true;
-            _lastRefreshQueuedEpoch = _committed.epoch;
-            _lastRefreshQueuedKey = RefreshKeyLocked();
+            _refreshInFlight = *_refreshPendingLatest;
+            _refreshPendingLatest.reset();
+            request = *_refreshInFlight;
+            _lastRefreshQueuedEpoch = request.epoch;
+            _lastRefreshQueuedKey = request.key;
             testSink = _refreshTaskSinkForTests;
         }
 
@@ -615,45 +583,168 @@ namespace dualpad::input_v2::presentation
 
         {
             std::scoped_lock lock(_mutex);
-            _refreshQueued = false;
-            _lastRefreshQueuedEpoch = 0;
-            _lastRefreshQueuedKey.clear();
+            if (_refreshInFlight && _refreshInFlight->serial == request.serial) {
+                _refreshPendingLatest = request;
+                _refreshInFlight.reset();
+                _lastRefreshQueuedEpoch = 0;
+                _lastRefreshQueuedKey.clear();
+            }
         }
         logger::debug("[DualPad][SkyrimCompat] menu_refresh_skipped reason=no_skse_task_interface");
         return false;
     }
 
-    bool SkyrimCompatibilitySurface::HasPendingMenuRefreshLocked() const
+    bool SkyrimCompatibilitySurface::HasSchedulableMenuRefreshLocked() const
     {
-        if (_refreshQueued ||
-            _committed.epoch == 0 ||
-            !IsRefreshableMenuPresentation(_committed) ||
-            !HasRefreshRelevantDirty(_committed.dirty)) {
-            return false;
-        }
-
-        const auto key = RefreshKeyLocked();
-        return key != _lastRefreshQueuedKey && key != _lastRefreshCompletedKey;
+        return _refreshPendingLatest.has_value() && !_refreshInFlight.has_value();
     }
 
-    std::string SkyrimCompatibilitySurface::RefreshKeyLocked() const
+    void SkyrimCompatibilitySurface::CaptureMenuRefreshIntentLocked()
+    {
+        if (!IsRefreshableMenuPresentation(_committed)) {
+            _refreshPendingLatest.reset();
+            return;
+        }
+        if (_committed.epoch == 0 || !HasRefreshRelevantDirty(_committed.dirty)) {
+            return;
+        }
+
+        const auto key = MakeRefreshKey(_committed);
+        if (key == _lastRefreshCompletedKey) {
+            return;
+        }
+        if (_refreshInFlight && _refreshInFlight->key == key) {
+            return;
+        }
+        if (_refreshPendingLatest && _refreshPendingLatest->key == key) {
+            return;
+        }
+
+        _refreshPendingLatest = MakeRefreshRequestLocked();
+    }
+
+    SkyrimCompatibilitySurface::MenuRefreshRequest SkyrimCompatibilitySurface::MakeRefreshRequestLocked(
+        std::uint8_t deferredAttempts)
+    {
+        return MenuRefreshRequest{
+            .serial = ++_nextRefreshSerial,
+            .epoch = _committed.epoch,
+            .key = MakeRefreshKey(_committed),
+            .deferredAttempts = deferredAttempts
+        };
+    }
+
+    bool SkyrimCompatibilitySurface::IsRefreshableMenuPresentation(const PublishedPresentationState& state)
+    {
+        return state.menuRefreshEligibility == MenuRefreshEligibility::EligibleStableMenu;
+    }
+
+    std::string SkyrimCompatibilitySurface::MakeRefreshKey(const PublishedPresentationState& state)
     {
         std::ostringstream out;
-        out << _committed.epoch
-            << "|ctx=" << _committed.contextRevision
-            << "|ui=" << static_cast<std::uint16_t>(_committed.uiContextId)
-            << "|gameplay=" << _committed.gameplayPresentationRevision
-            << "|policy=" << _committed.presentationPolicyId
-            << "|base=" << _committed.actionSetStack.baseSetId
+        out << state.epoch
+            << "|ctx=" << state.contextRevision
+            << "|ui=" << static_cast<std::uint16_t>(state.uiContextId)
+            << "|eligibility=" << static_cast<unsigned>(state.menuRefreshEligibility)
+            << "|gameplay=" << state.gameplayPresentationRevision
+            << "|policy=" << state.presentationPolicyId
+            << "|base=" << state.actionSetStack.baseSetId
             << "|layers=";
-        for (const auto& layer : _committed.actionSetStack.layerIds) {
+        for (const auto& layer : state.actionSetStack.layerIds) {
             out << layer << ',';
         }
         out << "|anchors=";
-        for (const auto& anchor : _committed.actionSetStack.scopeAnchorIds) {
+        for (const auto& anchor : state.actionSetStack.scopeAnchorIds) {
             out << anchor << ',';
         }
         return out.str();
+    }
+
+    const char* SkyrimCompatibilitySurface::ToString(MenuRefreshExecutionResult result)
+    {
+        switch (result) {
+        case MenuRefreshExecutionResult::Completed:
+            return "Completed";
+        case MenuRefreshExecutionResult::DeferredNotReady:
+            return "DeferredNotReady";
+        case MenuRefreshExecutionResult::Superseded:
+        default:
+            return "Superseded";
+        }
+    }
+
+    void SkyrimCompatibilitySurface::CompleteRefreshRequestForTests(MenuRefreshExecutionResult result)
+    {
+        MenuRefreshRequest request;
+        {
+            std::scoped_lock lock(_mutex);
+            if (!_refreshInFlight) {
+                return;
+            }
+            request = *_refreshInFlight;
+        }
+        const auto refreshed = result == MenuRefreshExecutionResult::Completed ? 1U : 0U;
+        const auto skippedNotReady = result == MenuRefreshExecutionResult::DeferredNotReady ? 1U : 0U;
+        CompleteRefreshRequest(request, result, refreshed, 0, skippedNotReady);
+    }
+
+    void SkyrimCompatibilitySurface::CompleteRefreshRequest(
+        const MenuRefreshRequest& request,
+        MenuRefreshExecutionResult result,
+        std::size_t refreshed,
+        std::size_t notified,
+        std::size_t skippedNotReady)
+    {
+        constexpr std::uint8_t kMaxDeferredAttempts = 3;
+        bool scheduleNext = false;
+        std::uint8_t nextAttempt = request.deferredAttempts;
+        {
+            std::scoped_lock lock(_mutex);
+            if (!_refreshInFlight || _refreshInFlight->serial != request.serial) {
+                logger::debug(
+                    "[DualPad][SkyrimCompat] menu_refresh_stale serial={} result={}",
+                    request.serial,
+                    ToString(result));
+                return;
+            }
+
+            _refreshInFlight.reset();
+            if (result == MenuRefreshExecutionResult::Completed) {
+                _lastRefreshCompletedEpoch = request.epoch;
+                _lastRefreshCompletedKey = request.key;
+            } else if (result == MenuRefreshExecutionResult::DeferredNotReady) {
+                if (request.deferredAttempts < kMaxDeferredAttempts) {
+                    auto retry = request;
+                    retry.serial = ++_nextRefreshSerial;
+                    retry.deferredAttempts = static_cast<std::uint8_t>(request.deferredAttempts + 1);
+                    nextAttempt = retry.deferredAttempts;
+                    if (!_refreshPendingLatest || _refreshPendingLatest->key == request.key) {
+                        _refreshPendingLatest = std::move(retry);
+                    }
+                } else {
+                    logger::warn(
+                        "[DualPad][SkyrimCompat] menu_refresh_deferred_exhausted serial={} epoch={} key='{}'",
+                        request.serial,
+                        request.epoch,
+                        request.key);
+                }
+            }
+
+            scheduleNext = _refreshPendingLatest.has_value();
+        }
+
+        logger::debug(
+            "[DualPad][SkyrimCompat] menu_refresh_complete serial={} result={} refreshed={} notified={} skippedNotReady={} retryAttempt={}",
+            request.serial,
+            ToString(result),
+            refreshed,
+            notified,
+            skippedNotReady,
+            nextAttempt);
+
+        if (scheduleNext) {
+            (void)QueueMenuRefreshTask();
+        }
     }
 
     bool SkyrimCompatibilitySurface::CallOriginalIsUsingGamepad() const
@@ -758,23 +849,37 @@ namespace dualpad::input_v2::presentation
         std::size_t refreshed = 0;
         std::size_t notified = 0;
         std::size_t skippedNotReady = 0;
+        MenuRefreshRequest request;
+
+        {
+            std::scoped_lock lock(surface._mutex);
+            if (!surface._refreshInFlight) {
+                logger::debug("[DualPad][SkyrimCompat] menu_refresh_skipped reason=no_inflight_request");
+                return;
+            }
+            request = *surface._refreshInFlight;
+        }
 
         const auto stateAtStart = surface.GetCommittedState();
-        if (!IsRefreshableMenuPresentation(stateAtStart)) {
-            {
-                std::scoped_lock lock(surface._mutex);
-                surface._refreshQueued = false;
-            }
+        if (!IsRefreshableMenuPresentation(stateAtStart) ||
+            MakeRefreshKey(stateAtStart) != request.key) {
             logger::debug(
-                "[DualPad][SkyrimCompat] menu_refresh_skipped reason=unstable_menu_context uiContext={} completeness={} degraded={} epoch={} dirty=0x{:02X}",
+                "[DualPad][SkyrimCompat] menu_refresh_skipped reason=superseded serial={} uiContext={} eligibility={} epoch={} dirty=0x{:02X}",
+                request.serial,
                 static_cast<std::uint16_t>(stateAtStart.uiContextId),
-                static_cast<unsigned>(stateAtStart.menuObserverCompleteness),
-                stateAtStart.menuIdentityDegraded,
+                ToLogString(stateAtStart.menuRefreshEligibility),
                 stateAtStart.epoch,
                 ToDirtyBits(stateAtStart.dirty));
+            surface.CompleteRefreshRequest(
+                request,
+                MenuRefreshExecutionResult::Superseded,
+                refreshed,
+                notified,
+                skippedNotReady);
             return;
         }
 
+        bool uiReady = false;
         if (auto* ui = RE::UI::GetSingleton(); ui) {
             for (auto& menu : ui->menuStack) {
                 if (!menu) {
@@ -792,25 +897,30 @@ namespace dualpad::input_v2::presentation
                     ++notified;
                 }
             }
+            uiReady = true;
         }
 
-        {
-            std::scoped_lock lock(surface._mutex);
-            surface._lastRefreshCompletedEpoch = surface._committed.epoch;
-            surface._lastRefreshCompletedKey = surface.RefreshKeyLocked();
-            surface._refreshQueued = false;
+        auto result = MenuRefreshExecutionResult::Completed;
+        const auto stateAtEnd = surface.GetCommittedState();
+        if (!IsRefreshableMenuPresentation(stateAtEnd) ||
+            MakeRefreshKey(stateAtEnd) != request.key) {
+            result = MenuRefreshExecutionResult::Superseded;
+        } else if (!uiReady || refreshed == 0 || skippedNotReady > 0) {
+            result = MenuRefreshExecutionResult::DeferredNotReady;
         }
 
-        const auto state = surface.GetCommittedState();
         logger::debug(
-            "[DualPad][SkyrimCompat] menu_refresh_done menus={} notified={} skippedNotReady={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X}",
+            "[DualPad][SkyrimCompat] menu_refresh_done serial={} result={} menus={} notified={} skippedNotReady={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X}",
+            request.serial,
+            ToString(result),
             refreshed,
             notified,
             skippedNotReady,
-            ToLogString(state.owner),
-            ToLogString(state.navigationOwner),
-            ToLogString(state.cursorOwner),
-            state.epoch,
-            ToDirtyBits(state.dirty));
+            ToLogString(stateAtEnd.owner),
+            ToLogString(stateAtEnd.navigationOwner),
+            ToLogString(stateAtEnd.cursorOwner),
+            stateAtEnd.epoch,
+            ToDirtyBits(stateAtEnd.dirty));
+        surface.CompleteRefreshRequest(request, result, refreshed, notified, skippedNotReady);
     }
 }

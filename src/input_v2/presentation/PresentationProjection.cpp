@@ -37,6 +37,33 @@ namespace dualpad::input_v2::presentation
                 evidence.mouseButtonEvidence ||
                 evidence.mouseMoveEvidence;
         }
+
+        MenuRefreshEligibility DeriveMenuRefreshEligibility(
+            const context::ResolvedContextSnapshot& contextSnapshot)
+        {
+            if (contextSnapshot.hostMode != context::HostMode::Menu) {
+                return MenuRefreshEligibility::NotMenu;
+            }
+
+            switch (contextSnapshot.menuObserverCompleteness) {
+            case menu::ObserverCompleteness::Unavailable:
+                return MenuRefreshEligibility::ObserverUnavailable;
+            case menu::ObserverCompleteness::Partial:
+                return MenuRefreshEligibility::ObserverPartial;
+            case menu::ObserverCompleteness::Complete:
+                break;
+            }
+
+            if (contextSnapshot.identityQuality == menu::MenuIdentityQuality::DegradedIdentity) {
+                return MenuRefreshEligibility::IdentityDegraded;
+            }
+
+            if (!contextSnapshot.topMenuInstanceId.has_value()) {
+                return MenuRefreshEligibility::NoStableTarget;
+            }
+
+            return MenuRefreshEligibility::EligibleStableMenu;
+        }
     }
 
     PresentationDirtyFlags operator|(PresentationDirtyFlags lhs, PresentationDirtyFlags rhs)
@@ -65,8 +92,7 @@ namespace dualpad::input_v2::presentation
         next.family = evidence.deviceFamilyEvidence.family;
         next.deviceFamilyRevision = evidence.deviceFamilyEvidence.deviceFamilyRevision;
         next.uiContextId = contextSnapshot.uiContextId;
-        next.menuObserverCompleteness = contextSnapshot.menuObserverCompleteness;
-        next.menuIdentityDegraded = contextSnapshot.menuIdentityDegraded;
+        next.menuRefreshEligibility = DeriveMenuRefreshEligibility(contextSnapshot);
         next.actionSetStack = contextSnapshot.actionSetStack;
         next.presentationPolicyId = contextSnapshot.presentationPolicyId;
         next.contextRevision = contextSnapshot.contextRevision;
@@ -107,7 +133,9 @@ namespace dualpad::input_v2::presentation
         if (next.cursorOwner != _published.cursorOwner || next.pointerIntent != _published.pointerIntent) {
             dirty |= PresentationDirtyFlags::Cursor;
         }
-        if (next.uiContextId != _published.uiContextId || next.contextRevision != _published.contextRevision) {
+        if (next.uiContextId != _published.uiContextId ||
+            next.contextRevision != _published.contextRevision ||
+            next.menuRefreshEligibility != _published.menuRefreshEligibility) {
             dirty |= PresentationDirtyFlags::Context;
         }
         if (next.actionSetStack != _published.actionSetStack) {

@@ -1,5 +1,28 @@
 # DualPad Builder Progress
 
+## 2026-06-27 12:27:00 +08:00
+
+- `[RC20][Hostile Hardening] menu refresh eligibility / async readiness follow-up` 按外部 review NACK 项继续收口：
+  - `PresentationProjection` 新增并发布 `MenuRefreshEligibility`，由 `ResolvedContextSnapshot` 的 `hostMode`、`menuObserverCompleteness`、`identityQuality` 与 `topMenuInstanceId` 派生；`SkyrimCompatibilitySurface` 不再维护 `UiContextId` 菜单白名单，也不再直接消费 observer completeness / degraded bool。
+  - `SkyrimCompatibilitySurface` 的 menu refresh 改为显式请求状态机：`inFlight`、`pendingLatest`、serial 和 captured key 分离；任务完成只能完成它实际捕获的 request key，飞行中提交的新 request 会锁存为 pending latest，旧 task stale / superseded 不得冒领新状态。
+  - `RefreshPlatform` 执行结果区分 `Completed`、`DeferredNotReady`、`Superseded`；`RE::UI` 缺失、零刷新或半初始化 menu 会走 bounded Deferred retry，Deferred 不写 completed key，后续 ready tick 可以重新排队同一 intent。
+  - 测试覆盖 `MenuRefreshEligibility` 矩阵、stable generic `UnknownTrackedMenu`、in-flight / pending latest 竞态、completion ownership、queue failure 不消费 request、Deferred bounded retry 与未完成重试。
+- RC readiness 首次复跑失败于 phase0 replay：`03_main_menu_glyph` 的 `glyph_queries.csv` actual 只有 header，golden 有 1 行。根因定位为实机性能修正把 `trace_record_glyph_queries=false` 写入默认现场配置后，replay-only `ScaleformGlyphBridge::ReplayResolveActionGlyph()` 也被该现场 trace gate 关闭。修复为 replay-only resolver 始终记录 replay session glyph query，live trace gate 仍保持关闭。
+- Focused 验证：
+  - `xmake run -y DualPadPresentationProjectionTests`：exit 0。
+  - `xmake run -y DualPadInputV2Tests`：exit 0。
+  - `xmake run -y DualPadReplayHarnessTests`：exit 0。
+  - `xmake run -y DualPadReplayHarness -- --batch tests/replay/golden/phase0 --mode dispatcher --output-root build/replay`：exit 0，输出 `batch dispatcher runtime replay matched scenarios=10`。
+  - `python scripts/dev/dualpad_trace_diff.py --batch tests/replay/golden/phase0 --actual-root build/replay --report-root build/replay-diff`：exit 0，10 个 phase0 场景均 `no diff`。
+- Close-out 验证：
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1`：exit 0；构建/运行 Phase 8 canonical targets、`DualPadPresentationProjectionTests`、`DualPadDocGen`，并通过 generated docs、reviewed docs consistency、legacy authority boundary、release readiness、config/prompt/menu/glyph closure 与 `docs/generated` clean gate。
+  - `powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1`：exit 0；覆盖内嵌 Phase8、ReplayHarness、phase0 trace diff、builder JSON、reviewed docs consistency、legacy boundary、release readiness、U4 contract gate、RC readiness closeout、`DualPadDInput8Proxy` build、release artifact manifest、graphify rebuild 与 `git diff --check`。
+  - graphify rebuild 输出 `1800 nodes / 4054 edges / 147 communities`。
+  - `git diff --check` 仅输出 Windows 行尾提示，无 whitespace error。
+- 构建部署：
+  - `xmake build -y DualPad` 已部署 `DualPad.dll` 到本机 MO2 插件目录；`DualPad.pdb` 因目标文件占用跳过复制。
+  - `xmake build -y DualPadDInput8Proxy` 已部署 `dinput8.dll` 到本机 Skyrim 目录；`dinput8.pdb` 因目标文件占用跳过复制。
+
 ## 2026-06-07 22:18:13 CST
 
 - `DP5-RC20` U2 Legacy boundary collapse 基于 `main` merge commit `376462f` 开始推进：

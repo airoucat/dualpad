@@ -2,7 +2,6 @@
 
 #include "input/glyph/ScaleformGlyphBridge.h"
 
-#include "input/RuntimeConfig.h"
 #include "input_v2/prompt/ScaleformPromptAdapter.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
@@ -36,12 +35,10 @@ namespace dualpad::input::glyph
         const auto resolution = input_v2::prompt::ScaleformPromptAdapter::GetSingleton().ResolveCompatForReplay(
             actionId,
             contextName);
-        if (RuntimeConfig::GetSingleton().TraceRecordGlyphQueries()) {
-            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordGlyphResult(
-                actionId,
-                contextName,
-                resolution);
-        }
+        input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordGlyphResult(
+            actionId,
+            contextName,
+            resolution);
         return resolution;
     }
 

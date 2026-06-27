@@ -67,6 +67,16 @@ namespace dualpad::input_v2::presentation
         Policy = 1 << 5
     };
 
+    enum class MenuRefreshEligibility : std::uint8_t
+    {
+        NotMenu = 0,
+        EligibleStableMenu,
+        ObserverPartial,
+        ObserverUnavailable,
+        IdentityDegraded,
+        NoStableTarget
+    };
+
     struct PublishedGameplayPresentation
     {
         PresentationOwner engineOwner{ PresentationOwner::KeyboardMouse };
@@ -85,8 +95,7 @@ namespace dualpad::input_v2::presentation
         CursorOwner cursorOwner{ CursorOwner::KeyboardMouse };
         PointerIntent pointerIntent{ PointerIntent::None };
         context::UiContextId uiContextId{ context::UiContextId::None };
-        menu::ObserverCompleteness menuObserverCompleteness{ menu::ObserverCompleteness::Complete };
-        bool menuIdentityDegraded{ false };
+        MenuRefreshEligibility menuRefreshEligibility{ MenuRefreshEligibility::NotMenu };
         actions::ActionSetStack actionSetStack;
         context::PresentationPolicyId presentationPolicyId;
         std::uint32_t contextRevision{ 0 };

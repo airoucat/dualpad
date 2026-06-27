@@ -41,7 +41,31 @@ namespace
         context.presentationPolicyId = "PolicyOnlyPH2MayChoose";
         context.contextRevision = 8;
         context.menuStackRevision = 4;
+        context.topMenuInstanceId = 1;
         return context;
+    }
+
+    dualpad::input_v2::presentation::PublishedPresentationState EligibleMenuPresentation(
+        std::uint32_t epoch,
+        std::uint32_t contextRevision,
+        dualpad::input_v2::context::UiContextId uiContextId =
+            dualpad::input_v2::context::UiContextId::Journal)
+    {
+        dualpad::input_v2::presentation::PublishedPresentationState state{};
+        state.owner = dualpad::input_v2::presentation::PresentationOwner::Gamepad;
+        state.navigationOwner = dualpad::input_v2::presentation::NavigationOwner::Gamepad;
+        state.cursorOwner = dualpad::input_v2::presentation::CursorOwner::Gamepad;
+        state.uiContextId = uiContextId;
+        state.menuRefreshEligibility =
+            dualpad::input_v2::presentation::MenuRefreshEligibility::EligibleStableMenu;
+        state.contextRevision = contextRevision;
+        state.actionSetStack.baseSetId = "MenuBase";
+        state.actionSetStack.layerIds = { "MenuLayer" };
+        state.actionSetStack.scopeAnchorIds = { "MenuBase", "MenuLayer" };
+        state.presentationPolicyId = "Menu";
+        state.epoch = epoch;
+        state.dirty = dualpad::input_v2::presentation::PresentationDirtyFlags::Context;
+        return state;
     }
 }
 
@@ -210,16 +234,49 @@ void RunPresentationProjectionTests()
         auto degradedContext = MenuContext();
         degradedContext.uiContextId = dualpad::input_v2::context::UiContextId::UnknownTrackedMenu;
         degradedContext.menuObserverCompleteness = dualpad::input_v2::menu::ObserverCompleteness::Partial;
+        degradedContext.identityQuality = dualpad::input_v2::menu::MenuIdentityQuality::DegradedIdentity;
         degradedContext.menuIdentityDegraded = true;
 
         presentation::PublishedGameplayPresentation gameplay{};
         const auto published = projection.Project(snapshot, degradedContext, gameplay);
         Require(
-            published.menuObserverCompleteness == dualpad::input_v2::menu::ObserverCompleteness::Partial,
-            "PresentationProjection must forward observer completeness for refresh safety");
+            published.menuRefreshEligibility == presentation::MenuRefreshEligibility::ObserverPartial,
+            "PresentationProjection must publish observer partial refresh eligibility");
+
+        auto stableContext = MenuContext();
+        stableContext.uiContextId = dualpad::input_v2::context::UiContextId::UnknownTrackedMenu;
+        const auto stableGeneric = projection.Project(snapshot, stableContext, gameplay);
         Require(
-            published.menuIdentityDegraded,
-            "PresentationProjection must forward degraded menu identity for refresh safety");
+            stableGeneric.menuRefreshEligibility == presentation::MenuRefreshEligibility::EligibleStableMenu,
+            "stable generic menu identity must remain eligible for platform refresh");
+
+        auto unavailableContext = MenuContext();
+        unavailableContext.menuObserverCompleteness =
+            dualpad::input_v2::menu::ObserverCompleteness::Unavailable;
+        const auto unavailable = projection.Project(snapshot, unavailableContext, gameplay);
+        Require(
+            unavailable.menuRefreshEligibility == presentation::MenuRefreshEligibility::ObserverUnavailable,
+            "observer unavailable must publish a distinct menu refresh ineligibility reason");
+
+        auto identityDegradedContext = MenuContext();
+        identityDegradedContext.identityQuality =
+            dualpad::input_v2::menu::MenuIdentityQuality::DegradedIdentity;
+        const auto identityDegraded = projection.Project(snapshot, identityDegradedContext, gameplay);
+        Require(
+            identityDegraded.menuRefreshEligibility == presentation::MenuRefreshEligibility::IdentityDegraded,
+            "degraded menu identity must publish a distinct menu refresh ineligibility reason");
+
+        auto noStableTargetContext = MenuContext();
+        noStableTargetContext.topMenuInstanceId.reset();
+        const auto noStableTarget = projection.Project(snapshot, noStableTargetContext, gameplay);
+        Require(
+            noStableTarget.menuRefreshEligibility == presentation::MenuRefreshEligibility::NoStableTarget,
+            "complete menu snapshots without a stable target must not be refresh eligible");
+
+        const auto notMenu = projection.Project(snapshot, GameplayContext(), gameplay);
+        Require(
+            notMenu.menuRefreshEligibility == presentation::MenuRefreshEligibility::NotMenu,
+            "gameplay contexts must publish NotMenu refresh eligibility");
     }
 
     {
@@ -296,6 +353,7 @@ void RunPresentationProjectionTests()
         menuGamepad.navigationOwner = presentation::NavigationOwner::Gamepad;
         menuGamepad.cursorOwner = presentation::CursorOwner::Gamepad;
         menuGamepad.uiContextId = dualpad::input_v2::context::UiContextId::Journal;
+        menuGamepad.menuRefreshEligibility = presentation::MenuRefreshEligibility::EligibleStableMenu;
         menuGamepad.contextRevision = 10;
         menuGamepad.epoch = 1;
         menuGamepad.dirty = presentation::PresentationDirtyFlags::Owner;
@@ -312,6 +370,7 @@ void RunPresentationProjectionTests()
 
         presentation::PublishedPresentationState gameplayOwnerDirty = menuGamepad;
         gameplayOwnerDirty.uiContextId = dualpad::input_v2::context::UiContextId::None;
+        gameplayOwnerDirty.menuRefreshEligibility = presentation::MenuRefreshEligibility::NotMenu;
         gameplayOwnerDirty.contextRevision = 11;
         gameplayOwnerDirty.epoch = 2;
         gameplayOwnerDirty.dirty = presentation::PresentationDirtyFlags::Owner;
@@ -323,8 +382,7 @@ void RunPresentationProjectionTests()
 
         presentation::PublishedPresentationState stableGenericMenu = menuGamepad;
         stableGenericMenu.uiContextId = dualpad::input_v2::context::UiContextId::UnknownTrackedMenu;
-        stableGenericMenu.menuObserverCompleteness = dualpad::input_v2::menu::ObserverCompleteness::Complete;
-        stableGenericMenu.menuIdentityDegraded = false;
+        stableGenericMenu.menuRefreshEligibility = presentation::MenuRefreshEligibility::EligibleStableMenu;
         stableGenericMenu.contextRevision = 12;
         stableGenericMenu.actionSetStack.baseSetId = "MenuBase";
         stableGenericMenu.actionSetStack.layerIds = { "UnknownTrackedMenuLayer" };
@@ -339,8 +397,7 @@ void RunPresentationProjectionTests()
         Require(queuedRefreshes == 2, "stable generic Main Menu context must refresh platform state");
 
         presentation::PublishedPresentationState degradedUnknownMenu = stableGenericMenu;
-        degradedUnknownMenu.menuObserverCompleteness = dualpad::input_v2::menu::ObserverCompleteness::Partial;
-        degradedUnknownMenu.menuIdentityDegraded = true;
+        degradedUnknownMenu.menuRefreshEligibility = presentation::MenuRefreshEligibility::ObserverPartial;
         degradedUnknownMenu.contextRevision = 13;
         degradedUnknownMenu.epoch = 4;
         degradedUnknownMenu.dirty = presentation::PresentationDirtyFlags::Context;
@@ -404,6 +461,83 @@ void RunPresentationProjectionTests()
         Require(
             compat.RefreshMenusIfNeeded(),
             "RefreshQueueUnavailable_DoesNotConsumeEpoch retry must still see the same pending epoch");
+    }
+
+    {
+        presentation::SkyrimCompatibilitySurface compat;
+        compat.ResetRefreshStateForTests();
+        std::size_t queuedRefreshes = 0;
+        compat.SetMenuRefreshTaskSinkForTests([&](auto) {
+            ++queuedRefreshes;
+            return true;
+        });
+
+        auto first = EligibleMenuPresentation(1, 20);
+        first.dirty = presentation::PresentationDirtyFlags::Owner;
+        compat.Commit(first);
+        Require(
+            compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_InFlightRequest must queue the first refresh request");
+        Require(queuedRefreshes == 1, "first refresh request must be in flight");
+
+        auto second = EligibleMenuPresentation(2, 21);
+        second.actionSetStack.layerIds = { "MenuLayer", "PromptLayer" };
+        second.actionSetStack.scopeAnchorIds = { "MenuBase", "MenuLayer", "PromptLayer" };
+        second.dirty = presentation::PresentationDirtyFlags::ActionSets;
+        compat.Commit(second);
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_InFlightRequest must not start a second task while the first is in flight");
+        Require(queuedRefreshes == 1, "pending latest request must be latched, not started immediately");
+
+        compat.CompleteQueuedRefreshForTests();
+        Require(
+            queuedRefreshes == 2,
+            "MenuRefresh_PendingLatest must queue after the executed request completes");
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_PendingLatest must be in flight after it is scheduled");
+
+        compat.CompleteQueuedRefreshForTests();
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_CompletionOwnership must not requeue once the captured latest request completes");
+        Require(queuedRefreshes == 2, "completed latest request must not be duplicated");
+    }
+
+    {
+        presentation::SkyrimCompatibilitySurface compat;
+        compat.ResetRefreshStateForTests();
+        std::size_t queuedRefreshes = 0;
+        compat.SetMenuRefreshTaskSinkForTests([&](auto) {
+            ++queuedRefreshes;
+            return true;
+        });
+
+        auto state = EligibleMenuPresentation(30, 40);
+        state.dirty = presentation::PresentationDirtyFlags::Owner;
+        compat.Commit(state);
+        Require(
+            compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_NoUiSingletonReady must queue the initial refresh request");
+        compat.DeferQueuedRefreshForTests();
+        compat.DeferQueuedRefreshForTests();
+        compat.DeferQueuedRefreshForTests();
+        compat.DeferQueuedRefreshForTests();
+        Require(
+            queuedRefreshes == 4,
+            "MenuRefresh_DeferredNotReady must retry readiness with a bounded attempt count");
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_DeferredNotReady must not spin after exhausting bounded deferred retries");
+        compat.Commit(state);
+        Require(
+            compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_DeferredNotReady must not mark the request completed before a later ready retry");
+        Require(queuedRefreshes == 5, "later ready retry must be able to requeue the same deferred intent");
+        compat.CompleteQueuedRefreshForTests();
+        compat.SetMenuRefreshTaskSinkForTests({});
+        compat.ResetRefreshStateForTests();
     }
 
     {

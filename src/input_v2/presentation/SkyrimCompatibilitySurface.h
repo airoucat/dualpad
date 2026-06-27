@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -154,6 +155,7 @@ namespace dualpad::input_v2::presentation
         void ForceHooksEnabledForTests(bool enabled);
         void SetMenuRefreshTaskSinkForTests(MenuRefreshTaskSink sink);
         void CompleteQueuedRefreshForTests();
+        void DeferQueuedRefreshForTests();
         void ResetInstallStateForTests();
         void ResetRefreshStateForTests();
 
@@ -163,10 +165,36 @@ namespace dualpad::input_v2::presentation
         static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
         static void DoRefreshMenus();
 
+        struct MenuRefreshRequest
+        {
+            std::uint64_t serial{ 0 };
+            std::uint32_t epoch{ 0 };
+            std::string key;
+            std::uint8_t deferredAttempts{ 0 };
+        };
+
+        enum class MenuRefreshExecutionResult : std::uint8_t
+        {
+            Completed = 0,
+            DeferredNotReady,
+            Superseded
+        };
+
         bool TryBeginInstall();
         bool QueueMenuRefreshTask();
-        bool HasPendingMenuRefreshLocked() const;
-        std::string RefreshKeyLocked() const;
+        bool HasSchedulableMenuRefreshLocked() const;
+        void CaptureMenuRefreshIntentLocked();
+        MenuRefreshRequest MakeRefreshRequestLocked(std::uint8_t deferredAttempts = 0);
+        static bool IsRefreshableMenuPresentation(const PublishedPresentationState& state);
+        static std::string MakeRefreshKey(const PublishedPresentationState& state);
+        static const char* ToString(MenuRefreshExecutionResult result);
+        void CompleteRefreshRequestForTests(MenuRefreshExecutionResult result);
+        void CompleteRefreshRequest(
+            const MenuRefreshRequest& request,
+            MenuRefreshExecutionResult result,
+            std::size_t refreshed,
+            std::size_t notified,
+            std::size_t skippedNotReady);
         bool CallOriginalIsUsingGamepad() const;
         bool CallOriginalGamepadControlsCursor() const;
         bool CallOriginalGamepadDeviceEnabled(RE::BSPCGamepadDeviceHandler* device) const;
@@ -177,11 +205,13 @@ namespace dualpad::input_v2::presentation
 
         mutable std::mutex _mutex;
         PublishedPresentationState _committed{};
+        std::uint64_t _nextRefreshSerial{ 0 };
         std::uint32_t _lastRefreshQueuedEpoch{ 0 };
         std::uint32_t _lastRefreshCompletedEpoch{ 0 };
         std::string _lastRefreshQueuedKey;
         std::string _lastRefreshCompletedKey;
-        bool _refreshQueued{ false };
+        std::optional<MenuRefreshRequest> _refreshInFlight;
+        std::optional<MenuRefreshRequest> _refreshPendingLatest;
         MenuRefreshTaskSink _refreshTaskSinkForTests;
         detail::InstallState _installState{ detail::InstallState::NotInstalled };
         HookInstallResult _installResult{};

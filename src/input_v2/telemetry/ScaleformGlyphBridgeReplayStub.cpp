@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 
-#include "input/RuntimeConfig.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace dualpad::input::glyph
@@ -29,12 +28,10 @@ namespace dualpad::input::glyph
         std::string_view contextName)
     {
         const auto resolution = ResolveActionGlyphCompat(actionId, contextName);
-        if (RuntimeConfig::GetSingleton().TraceRecordGlyphQueries()) {
-            input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordGlyphResult(
-                actionId,
-                contextName,
-                resolution);
-        }
+        input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordGlyphResult(
+            actionId,
+            contextName,
+            resolution);
         return resolution;
     }
 
