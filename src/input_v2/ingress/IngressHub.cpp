@@ -5,7 +5,9 @@
 #include "input_v2/ingress/LegacyIngressAdapter.h"
 #include "input_v2/ingress/LiveInputFactProducer.h"
 
+#include <algorithm>
 #include <chrono>
+#include <limits>
 
 namespace dualpad::input_v2::ingress
 {
@@ -165,6 +167,7 @@ namespace dualpad::input_v2::ingress
         }
         _queue.clear();
         _queue.push_back(overflow);
+        _pendingLegacySnapshots = 0;
     }
 
     bool IngressHub::PushPadSnapshot(const dualpad::input::PadEventSnapshot& snapshot)
@@ -221,10 +224,25 @@ namespace dualpad::input_v2::ingress
 
     std::vector<IngressEvent> IngressHub::Drain()
     {
+        return Drain(std::numeric_limits<std::size_t>::max());
+    }
+
+    std::vector<IngressEvent> IngressHub::Drain(std::size_t maxEvents)
+    {
         std::scoped_lock lock(_mutex);
-        auto drained = std::move(_queue);
-        _queue.clear();
-        _pendingLegacySnapshots = 0;
+        const auto count = std::min(maxEvents, _queue.size());
+        std::vector<IngressEvent> drained;
+        drained.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            auto event = std::move(_queue.front());
+            _queue.pop_front();
+            if (event.kind == IngressKind::PadSnapshot &&
+                event.pad.legacySnapshot.has_value() &&
+                _pendingLegacySnapshots != 0) {
+                --_pendingLegacySnapshots;
+            }
+            drained.push_back(std::move(event));
+        }
         return drained;
     }
 

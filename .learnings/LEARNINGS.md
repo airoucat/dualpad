@@ -159,3 +159,16 @@ DualPad 异步 menu refresh key 只能包含会产生 refresh-relevant dirty 的
 
 ### Detail
 冷启动 Main Menu 首次 Triangle/Y 仍下移的现场日志显示：首个 `[MenuRefreshTrace] event=request` 捕获 `epoch=1 dirty=0x3F gameplayPresentationRevision=1`，UI task 执行时 committed state 已变成同一 presentation epoch/context 但 `gameplayPresentationRevision=2 dirty=0x00`，旧 key 因包含 gameplay revision 被判 `Superseded`，导致第一次 `Menu.Confirm` 的 `xinputButtons=0x1000` 在任何 `result=Completed` 前发出。后续设计异步 request key 时，key 字段必须和 dirty/eligibility 语义一致；若字段变化不会触发 dirty，就不应让它使 in-flight request stale。对于 `DeferredNotReady` held intent，也不能在相同 key 的每个 stable tick 上重排，否则会形成 refresh storm。
+
+## [LRN-20260711-001] workflow
+
+**Logged**: 2026-07-11T00:53:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tooling / PowerShell / ripgrep
+
+### Summary
+Windows PowerShell 不会替 `rg` 展开 `path/*.cpp` 形式的文件参数；应搜索目录并用 `-g` 传 glob。
+
+### Detail
+在 PowerShell 中多次使用 `rg pattern src/input/Foo.*` 时，未展开的 `*` 被传给 Windows 文件 API 并报“文件名、目录名或卷标语法不正确”。稳定写法是 `rg pattern src/input -g 'Foo.*'`，或明确列出具体文件。该规则适用于本仓库所有 `rg` 复查命令。

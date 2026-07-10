@@ -43,28 +43,6 @@ namespace dualpad::input
             }
         }
 
-        bool ShouldForceTaskFallback(
-            bool framePumpEnabled,
-            std::size_t pendingCount,
-            std::size_t highWatermark,
-            std::uint64_t stalePollWindowMs)
-        {
-            if (!framePumpEnabled) {
-                return true;
-            }
-
-            if (pendingCount < highWatermark) {
-                return false;
-            }
-
-            auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
-            if (!upstreamHook.IsRouteActive()) {
-                return false;
-            }
-
-            return !upstreamHook.HasRecentPollCallActivity(stalePollWindowMs);
-        }
-
         DrainTelemetryContext BuildDrainTelemetryContext(DrainReason reason, std::uint64_t stalePollWindowMs)
         {
             auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
@@ -137,36 +115,16 @@ namespace dualpad::input
     void PadEventSnapshotDispatcher::SubmitSnapshot(const PadEventSnapshot& snapshot)
     {
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
-        const auto pendingCountBeforeQueue = hub.PendingLegacySnapshotCount();
+        const auto pendingCountBeforeQueue = hub.PendingCount();
         (void)hub.PushPadSnapshot(snapshot);
-        const auto pendingCountAfterQueue = hub.PendingLegacySnapshotCount();
+        const auto pendingCountAfterQueue = hub.PendingCount();
 
         input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordDispatcherSubmit(
             snapshot,
             pendingCountBeforeQueue,
             pendingCountAfterQueue);
 
-        const auto framePumpEnabled = _framePumpEnabled.load(std::memory_order_acquire);
-        const bool shouldScheduleTask =
-            framePumpEnabled &&
-            pendingCountAfterQueue >= kUpstreamTaskFallbackHighWatermark &&
-            !_replayManualDrainActive.load(std::memory_order_acquire) &&
-            !_drainTaskQueued.exchange(true, std::memory_order_acq_rel);
-
-        if (shouldScheduleTask) {
-            ScheduleDrainTask();
-            const auto telemetry = BuildDrainTelemetryContext(
-                DrainReason::TaskFallbackHighWater,
-                kUpstreamTaskFallbackPollStaleMs);
-            logger::warn(
-                "[DualPad][IngressHub] Scheduled high-water fallback drain task pending={} threshold={} stalePollWindowMs={} routeState={} lastPollAgeMs={} hookInstalled={}",
-                pendingCountAfterQueue,
-                kUpstreamTaskFallbackHighWatermark,
-                kUpstreamTaskFallbackPollStaleMs,
-                ToString(telemetry.routeState),
-                FormatLastPollAgeMs(telemetry),
-                telemetry.hookInstalled);
-        }
+        (void)TryScheduleDrainTask();
     }
 
     void PadEventSnapshotDispatcher::SubmitReset()
@@ -177,10 +135,10 @@ namespace dualpad::input
     }
 
     std::size_t PadEventSnapshotDispatcher::DrainOnMainThread(
-        std::size_t maxSnapshots,
+        std::size_t maxEvents,
         const DrainTelemetryContext* telemetryContext)
     {
-        if (maxSnapshots == 0) {
+        if (maxEvents == 0) {
             return 0;
         }
 
@@ -188,60 +146,50 @@ namespace dualpad::input
         contextRefresh.RefreshOnMainThread(contextRefresh.BeginFrame());
 
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
-        const auto pendingBefore = hub.PendingLegacySnapshotCount();
-        auto events = hub.Drain();
+        const auto pendingBefore = hub.PendingCount();
+        auto events = hub.Drain(maxEvents);
+        const auto drainedEventCount = events.size();
         auto frames = RuntimeFrameAssembler().Assemble(events);
         for (const auto& frame : frames) {
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
 
-        const auto processedCount = frames.size();
         const auto pendingAfterDrain = hub.PendingCount();
-        if (pendingAfterDrain == 0) {
-            _drainTaskQueued.store(false, std::memory_order_release);
-        }
 
         if (telemetryContext) {
-            LogDrainTelemetry(*telemetryContext, maxSnapshots, processedCount, pendingBefore, pendingAfterDrain);
+            LogDrainTelemetry(*telemetryContext, maxEvents, drainedEventCount, pendingBefore, pendingAfterDrain);
         }
 
-        return processedCount;
+        return drainedEventCount;
     }
 
     std::size_t PadEventSnapshotDispatcher::DrainForReplay(
-        std::size_t maxSnapshots,
+        std::size_t maxEvents,
         const DrainTelemetryContext* telemetryContext,
         ReplayDrainSink sink,
         void* context)
     {
-        if (maxSnapshots == 0 || sink == nullptr) {
+        if (maxEvents == 0 || sink == nullptr) {
             return 0;
         }
 
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
-        const auto pendingBefore = hub.PendingLegacySnapshotCount();
-        auto events = hub.Drain();
+        const auto pendingBefore = hub.PendingCount();
+        auto events = hub.Drain(maxEvents);
+        const auto drainedEventCount = events.size();
         const auto frames = RuntimeFrameAssembler().Assemble(events);
-        std::size_t processedCount = 0;
         (void)sink;
         (void)context;
         for (const auto& frame : frames) {
-            if (frame.kind == input_v2::ingress::AssembledFrameKind::Stable &&
-                frame.facts.legacySnapshot) {
-                ++processedCount;
-            }
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
         const auto pendingAfterDrain = hub.PendingCount();
-        if (pendingAfterDrain == 0) {
-            _drainTaskQueued.store(false, std::memory_order_release);
-        }
 
         if (telemetryContext) {
-            LogDrainTelemetry(*telemetryContext, maxSnapshots, processedCount, pendingBefore, pendingAfterDrain);
+            LogDrainTelemetry(*telemetryContext, maxEvents, drainedEventCount, pendingBefore, pendingAfterDrain);
         }
 
-        return processedCount;
+        return drainedEventCount;
     }
 
     void PadEventSnapshotDispatcher::ResetForReplay()
@@ -268,13 +216,48 @@ namespace dualpad::input
         return _framePumpEnabled.load(std::memory_order_acquire);
     }
 
-    void PadEventSnapshotDispatcher::ScheduleDrainTask()
+    bool PadEventSnapshotDispatcher::TryScheduleDrainTask()
+    {
+        const auto pendingEvents = input_v2::ingress::IngressHub::GetSingleton().PendingCount();
+        const auto framePumpEnabled = _framePumpEnabled.load(std::memory_order_acquire);
+        const auto replayManualDrainActive = _replayManualDrainActive.load(std::memory_order_acquire);
+        const auto reason = framePumpEnabled ? DrainReason::TaskFallbackHighWater : DrainReason::FramePumpDisabled;
+        const auto telemetry = BuildDrainTelemetryContext(reason, kUpstreamTaskFallbackPollStaleMs);
+        if (!ShouldScheduleTaskFallback(
+                framePumpEnabled,
+                replayManualDrainActive,
+                pendingEvents,
+                kUpstreamTaskFallbackHighWatermarkEvents,
+                telemetry.routeState)) {
+            return false;
+        }
+
+        if (_drainTaskQueued.exchange(true, std::memory_order_acq_rel)) {
+            return false;
+        }
+
+        if (!ScheduleDrainTask()) {
+            return false;
+        }
+        logger::warn(
+            "[DualPad][IngressHub] Scheduled bounded fallback drain task pendingEvents={} highWatermarkEvents={} stalePollWindowMs={} reason={} routeState={} lastPollAgeMs={} hookInstalled={}",
+            pendingEvents,
+            kUpstreamTaskFallbackHighWatermarkEvents,
+            kUpstreamTaskFallbackPollStaleMs,
+            ToString(reason),
+            ToString(telemetry.routeState),
+            FormatLastPollAgeMs(telemetry),
+            telemetry.hookInstalled);
+        return true;
+    }
+
+    bool PadEventSnapshotDispatcher::ScheduleDrainTask()
     {
         auto* taskInterface = SKSE::GetTaskInterface();
         if (!taskInterface) {
             logger::warn("[DualPad][Snapshot] Failed to get TaskInterface for main-thread drain");
             _drainTaskQueued.store(false, std::memory_order_release);
-            return;
+            return false;
         }
 
         taskInterface->AddTask([]() {
@@ -282,8 +265,11 @@ namespace dualpad::input
             const auto telemetry = BuildDrainTelemetryContext(
                 dispatcher.IsFramePumpEnabled() ? DrainReason::TaskFallbackHighWater : DrainReason::FramePumpDisabled,
                 kUpstreamTaskFallbackPollStaleMs);
-            dispatcher.DrainOnMainThread(kTaskDrainBudget, &telemetry);
+            dispatcher.DrainOnMainThread(kTaskDrainBudgetEvents, &telemetry);
+            dispatcher._drainTaskQueued.store(false, std::memory_order_release);
+            (void)dispatcher.TryScheduleDrainTask();
             });
+        return true;
     }
 
     bool PadEventSnapshotDispatcher::HasResetInPendingLocked() const

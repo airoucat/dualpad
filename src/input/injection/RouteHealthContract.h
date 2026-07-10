@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -50,6 +51,25 @@ namespace dualpad::input
         UpstreamGamepadHookInstallStatus status{ UpstreamGamepadHookInstallStatus::NotAttempted };
         std::string_view debugReason{};
     };
+
+    constexpr bool ShouldScheduleTaskFallback(
+        bool framePumpEnabled,
+        bool replayManualDrainActive,
+        std::size_t pendingEvents,
+        std::size_t highWatermarkEvents,
+        UpstreamRouteState routeState) noexcept
+    {
+        if (replayManualDrainActive) {
+            return false;
+        }
+        if (!framePumpEnabled) {
+            return pendingEvents != 0;
+        }
+        if (pendingEvents < highWatermarkEvents) {
+            return false;
+        }
+        return routeState == UpstreamRouteState::ActiveStale;
+    }
 
     constexpr bool HasUpstreamGamepadHookInstallFailed(UpstreamGamepadHookInstallStatus status) noexcept
     {

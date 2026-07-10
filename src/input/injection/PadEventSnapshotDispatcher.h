@@ -18,12 +18,12 @@ namespace dualpad::input
 
         void SubmitSnapshot(const PadEventSnapshot& snapshot);
         void SubmitReset();
-        static constexpr std::size_t DefaultDrainBudget() { return kDefaultDrainBudget; }
+        static constexpr std::size_t DefaultDrainBudget() { return kDefaultDrainBudgetEvents; }
         std::size_t DrainOnMainThread(
-            std::size_t maxSnapshots = kDefaultDrainBudget,
+            std::size_t maxEvents = kDefaultDrainBudgetEvents,
             const DrainTelemetryContext* telemetryContext = nullptr);
         std::size_t DrainForReplay(
-            std::size_t maxSnapshots,
+            std::size_t maxEvents,
             const DrainTelemetryContext* telemetryContext,
             ReplayDrainSink sink,
             void* context);
@@ -33,13 +33,14 @@ namespace dualpad::input
 
     private:
         static constexpr std::size_t kPendingSnapshotCapacity = 256;
-        static constexpr std::size_t kDefaultDrainBudget = 16;
-        static constexpr std::size_t kTaskDrainBudget = 64;
-        static constexpr std::size_t kUpstreamTaskFallbackHighWatermark = 128;
+        static constexpr std::size_t kDefaultDrainBudgetEvents = 16;
+        static constexpr std::size_t kTaskDrainBudgetEvents = 64;
+        static constexpr std::size_t kUpstreamTaskFallbackHighWatermarkEvents = 128;
         static constexpr std::uint64_t kUpstreamTaskFallbackPollStaleMs = 250;
 
         PadEventSnapshotDispatcher() = default;
-        void ScheduleDrainTask();
+        bool TryScheduleDrainTask();
+        bool ScheduleDrainTask();
         bool HasResetInPendingLocked() const;
         bool HasCrossContextPendingLocked() const;
         void CoalescePendingLocked();

@@ -189,8 +189,8 @@ namespace
         WriteFile(
             scenario / "dispatcher_schedule.csv",
             "step_index,op,sequence,budget,reason,route_state,last_poll_age_ms,hook_installed,pending_before,pending_after,drained_count\n"
-            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n"
-            "1,drain,0,16,upstream_poll,active_fresh,4,true,1,0,1\n");
+            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,2,0\n"
+            "1,drain,0,16,upstream_poll,active_fresh,4,true,2,0,2\n");
 
         const auto result = telemetry::ReplayScenario(scenario, telemetry::ReplayMode::MaterializeFixture, actual);
         Require(result.ok, result.message);
@@ -290,8 +290,8 @@ namespace
         std::filesystem::remove_all(root);
         WriteRuntimeReplayBundle(
             scenario,
-            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n"
-            "1,drain,0,1,upstream_poll,active_fresh,4,true,1,0,1\n",
+            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,2,0\n"
+            "1,drain,0,2,upstream_poll,active_fresh,4,true,2,0,2\n",
             "1,1,1000,Gameplay,1,false,false,false,2,0.5,0,0,0,0,0\n",
             "1,0,ButtonPress,Button,2,0,None,0,0,1000,0,0,0,Disabled,None,None\n",
             "0,Gameplay,0,1000,0,0,0,0,0,0,0,0,0,0,0,0,0.5,0,0,0,0,0,true,true,false,false\n");
@@ -315,8 +315,8 @@ namespace
         std::filesystem::remove_all(root);
         WriteRuntimeReplayBundle(
             scenario,
-            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,1,0\n"
-            "1,drain,0,1,upstream_poll,active_fresh,4,true,1,0,1\n",
+            "0,submit,1,0,frame_pump_disabled,disabled,none,false,0,2,0\n"
+            "1,drain,0,2,upstream_poll,active_fresh,4,true,2,0,2\n",
             "1,1,1000,Gameplay,1,false,false,false,2,0.5,0,0,0,0,0\n",
             "1,0,ButtonPress,Button,2,0,None,0,0,1000,0,0,0,Disabled,None,None\n",
             "1,Gameplay,1,1000,2,2,0,0,2,2,0,0,0,0,0,0,0.5,0,0,0,0,0,true,true,false,false\n");

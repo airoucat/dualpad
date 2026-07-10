@@ -289,7 +289,7 @@ flowchart TB
 
 **回滚：** 单独回滚 gate/diagnostics commit 会恢复旧 route，不依赖后续数据模型。
 
-- [ ] **Unit 2：统一 fallback truth table 与真实 bounded drain**
+- [x] **Unit 2：统一 fallback truth table 与真实 bounded drain**
 
 **目标：** 消除 `active_fresh` 双 consumer 和伪预算全量 drain。
 

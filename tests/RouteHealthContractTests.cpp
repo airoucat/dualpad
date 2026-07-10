@@ -147,6 +147,31 @@ namespace
         Require(limiter.End(true) == 1, "second Poll completion must decrement in-flight count");
         Require(limiter.End(true) == 0, "final Poll completion must clear in-flight count");
     }
+
+    void TestTaskFallbackTruthTable()
+    {
+        using dualpad::input::ShouldScheduleTaskFallback;
+        using dualpad::input::UpstreamRouteState;
+
+        Require(
+            ShouldScheduleTaskFallback(false, false, 1, 128, UpstreamRouteState::Disabled),
+            "disabled frame pump must schedule the only available fallback consumer");
+        Require(
+            !ShouldScheduleTaskFallback(true, false, 127, 128, UpstreamRouteState::ActiveStale),
+            "pending below high-water must not schedule task fallback");
+        Require(
+            !ShouldScheduleTaskFallback(true, false, 128, 128, UpstreamRouteState::ActiveFresh),
+            "active fresh upstream route must not gain a second consumer at high-water");
+        Require(
+            ShouldScheduleTaskFallback(true, false, 128, 128, UpstreamRouteState::ActiveStale),
+            "active stale upstream route must schedule high-water recovery");
+        Require(
+            !ShouldScheduleTaskFallback(true, false, 128, 128, UpstreamRouteState::Disabled),
+            "registered frame pump owns disabled or missing upstream routes");
+        Require(
+            !ShouldScheduleTaskFallback(true, true, 128, 128, UpstreamRouteState::ActiveStale),
+            "manual replay drain must never schedule an asynchronous consumer");
+    }
 }
 
 int main()
@@ -159,5 +184,6 @@ int main()
     TestControlMapOverlayGate();
     TestInstallStatusLabels();
     TestPollDiagnosticLimiter();
+    TestTaskFallbackTruthTable();
     return 0;
 }

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <vector>
 
@@ -24,6 +25,7 @@ namespace dualpad::input_v2::ingress
         void PushSequenceGap();
         void PushExplicitReset();
         std::vector<IngressEvent> Drain();
+        std::vector<IngressEvent> Drain(std::size_t maxEvents);
         std::size_t PendingCount() const;
         std::size_t PendingLegacySnapshotCount() const;
         void ResetForTests();
@@ -41,7 +43,7 @@ namespace dualpad::input_v2::ingress
         std::uint64_t _nextSeq{ 1 };
         std::uint64_t _lastLegacySequence{ 0 };
         std::size_t _pendingLegacySnapshots{ 0 };
-        std::vector<IngressEvent> _queue;
+        std::deque<IngressEvent> _queue;
         mutable std::mutex _mutex;
     };
 }

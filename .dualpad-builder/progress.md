@@ -3145,3 +3145,11 @@
 - 新增默认关闭的 `log_poll_diagnostics`。启用时 `PollDiagnosticLimiter` 以固定 256-call 容量原子记录 sequence / thread / in-flight / caller / result / pollSequence / contextEpoch / packet / buttons / axes / triggers / dropped；容量耗尽只计 dropped，不分配内存。删除原先默认开启且用非原子静态 budget 的 per-Poll result log。
 - TDD 证据：默认 Favorites 用例先以 `Game.Favorites native output must fail closed by default` 红灯，gate 实现后绿灯；diagnostic limiter 先因缺少 `PollDiagnostics.h` 红灯，再实现后绿灯；config getter/reason 也分别先编译红灯再实现。
 - 验证：`DualPadGameplayProjectionTests`、`DualPadRouteHealthContractTests`、`DualPadInputV2Tests`、`DualPadNativeButtonCommitTests` 均 exit 0；`xmake build -y DualPad` exit 0 并部署 DLL，PDB 因目标占用跳过复制。该结果只证明 host/build containment，不证明 Favorites crash 已修复；release status 仍为 `NO-GO`。
+
+## 2026-07-11 00:55:00 +08:00
+
+- `S-DP5-RC20-HOTFIX / Unit 2` 完成：新增唯一 `ShouldScheduleTaskFallback()` truth table。frame pump disabled 时 pending event 由 task fallback 接管；frame pump enabled 时仅 `pendingEvents >= highWatermarkEvents && routeState=active_stale` 排 task；`active_fresh`、route disabled/hook missing、manual replay 均不启动第二 consumer。
+- dispatcher 的 pending/high-water/budget/drained telemetry 统一改为 event 单位；`SubmitSnapshot()` 实际路径调用同一 truth table。task 每次最多 drain 64 events，完成后释放 queued ownership，再按当前 pending/route 重评是否续排；TaskInterface 不可用时保留 pending 并清除 queued flag。
+- `IngressHub` transport 改为 `deque`，新增 `Drain(maxEvents)`，以 O(k) pop-front 严格执行 hard cap；`Drain()` 只保留为显式 full-drain compat。overflow compaction 会清零已被 marker 代表的 pending legacy snapshot count，partial drain 只在实际消费 legacy PadSnapshot 时递减。
+- TDD 证据：fallback truth table 先因 API 缺失编译红灯；17-event fixture 先因 `Drain(maxEvents)` 缺失编译红灯。实现后 `active_fresh` 不排 task、budget 0 不消费、budget 16 留下 seq 17 均转绿。
+- replay fixture 的 dispatcher schedule 从 snapshot 单位迁移为 event 单位：普通 legacy snapshot 为 Ui + Pad 两个 events，overflow snapshot 额外包含 gap marker。验证 `DualPadRouteHealthContractTests`、`DualPadIngressTests`、`DualPadReplayHarnessTests`、`DualPadReplayTests` 与 `xmake build -y DualPad` 均 exit 0；PDB 仍因目标占用跳过复制。release status 仍为 `NO-GO`。

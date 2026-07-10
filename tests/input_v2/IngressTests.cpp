@@ -183,6 +183,27 @@ namespace
         Require(drained[0].seq == 3, "hub must assign monotonic seq to overflow marker");
     }
 
+    void TestHubDrainHonorsExactEventBudget()
+    {
+        ingress::IngressHub hub{ 32 };
+        for (std::uint32_t epoch = 1; epoch <= 17; ++epoch) {
+            Require(hub.PushEvent(Manifest(epoch)), "budget fixture event must enqueue");
+        }
+
+        const auto none = hub.Drain(0);
+        Require(none.empty(), "zero event budget must not consume ingress");
+        Require(hub.PendingCount() == 17, "zero event budget must preserve all pending events");
+
+        const auto first = hub.Drain(16);
+        Require(first.size() == 16, "16-event budget must consume exactly 16 events");
+        Require(first.front().seq == 1 && first.back().seq == 16, "bounded drain must preserve event order");
+        Require(hub.PendingCount() == 1, "17th event must remain pending after 16-event drain");
+
+        const auto second = hub.Drain(16);
+        Require(second.size() == 1 && second.front().seq == 17, "next drain must return the retained 17th event");
+        Require(hub.PendingCount() == 0, "second drain must empty the fixture");
+    }
+
     void TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput()
     {
         ingress::IngressHub hub{ 4 };
@@ -1077,6 +1098,7 @@ namespace
 int main()
 {
     TestHubAssignsSeqAndEmitsOverflowMarker();
+    TestHubDrainHonorsExactEventBudget();
     TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
     TestLegacySnapshotAdapterPrefersInputV2ContextRevision();
