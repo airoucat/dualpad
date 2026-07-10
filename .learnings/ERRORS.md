@@ -217,3 +217,13 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: 最后一个 patch site 在“内存已变为 replacement、writer 随后抛异常”时，transaction 误以 `appliedSites == totalSites` 判定 Installed。
 - Detail: writer 的返回/异常状态与实际 patch reality 必须分别判断；即使每个 site 最终都短暂呈现 replacement，只要任一 writer 未正常确认，仍必须进入反向 expected-current rollback。该缺陷由 post-write exception 注入触发 Windows fast-fail 的测试断言暴露。
 - Resolution: 增加独立 `applicationFailed` 状态；只有全部 compare-write 正常确认且逐站点复验 replacement 才能返回 Installed。post-write exception 现在识别实际已写 site，并恢复全部 original bytes。
+
+## ERR-20260711-006
+
+- Logged: 2026-07-11 07:19 CST
+- Priority: medium
+- Status: resolved
+- Area: CI / release readiness contract drift
+- Summary: Phase 8 release gate 仍要求旧的 `_attemptedInstall = true` 源码拼写，误报已经升级为原子尝试与 transactional patch outcome 的 upstream hook。
+- Detail: 静态门禁应约束可复述的安全合同，而不是已退休的赋值语句。当前等价且更强的合同由 `_attemptedInstall.exchange(true, ...)`、`ExecutePatchTransaction`、`RolledBack` 和 `UnsafePartial` 共同表达。
+- Resolution: 更新 `check_release_readiness.py`，同时要求原子单次 install 尝试和 transactional rollback / unsafe-partial 分支；保留 runtime/version/signature fail-closed 检查。

@@ -7,7 +7,7 @@
 当前正式只保留两条输出线：
 
 - 原生手柄线：
-  `AuthoritativePollState -> XInputStateBridge -> Skyrim Poll`
+  `GameplayProjectionFrame -> PollCommitCoordinator -> immutable PollOutputFrame -> XInputStateBridge -> Skyrim Poll`
 - Mod 键盘事件线：
   `KeyboardHelperBackend -> KeyboardNativeBridge -> dinput8 proxy -> third-party mod`
 
@@ -19,8 +19,8 @@
 
 补充：
 
-- `AuthoritativePollState` 的正式语义是“虚拟 XInput 手柄硬件状态”。
-- Skyrim 原生 user event 尽量由游戏自己的 `producer / handler` 从这份硬件状态推导。
+- `PollOutputFrame` 是当前完整、同代且不可变的虚拟 XInput authority；`AuthoritativePollState` 只保留 legacy compatibility。
+- Skyrim 原生 user event 尽量由游戏自己的 `producer / handler` 从这份硬件状态推导；Poll reader 不修改 packet、pulse 或 runtime state。
 
 ## 当前 backend ownership
 
@@ -40,7 +40,7 @@
 特点：
 
 - 消费 `FrameActionPlan`。
-- 通过 `PollCommitCoordinator` 维护 Poll 可见性。
+- 通过 `PollCommitCoordinator` 维护 owner-generation 可见性；Poll 次数不是 pulse clock。
 - 输出的是标准手柄硬件位，不直接构造 `BSInputEvent`。
 
 ### 2. `AxisProjection`
@@ -126,7 +126,7 @@
 - `OpenInventory / OpenMagic / OpenMap / OpenSkills`
   - 所属 `MenuOpenHandler` 家族在当前 mod 栈下不稳定。
 - `OpenFavorites`
-  - 当前不纳入 combo-native 正式支持面。
+  - `Game.Favorites` native DPadUp route 在 matching dump/IDA 与真实游戏循环闭环前由独立 gate 默认关闭。
 - `QuickSave / QuickLoad`
   - 当前产品优先级不高。
 - `Console`
@@ -151,3 +151,4 @@
 - planner 决定动作合同，backend 不应重新解释 routing。
 - 原生线优先 materialize 标准手柄硬件位 / 轴，再交给 Skyrim 自己解释。
 - mod 线单独走 keyboard helper，不与原生线混用。
+- upstream hook 只有 transactional install 成功后才能激活；unsafe partial 保持 original passthrough 并 fail-closed。

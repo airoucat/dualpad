@@ -13,16 +13,17 @@
 HidReader
   -> PadState
   -> PadEventSnapshotDispatcher / PadEventSnapshotProcessor shim
-  -> IngressHub
-  -> FrameAssembler
-  -> DualPadRuntime
+  -> IngressHub (LatestPadState + OrderedEdgeQueue)
+  -> RuntimeOwnerGuard / FrameAssembler
+  -> DualPadRuntime (single owner mutation)
       -> InteractionEngine
       -> GameplayProjectionFrame
       -> PollOutputAdapter
       -> GameplayPresentationPublisher
       -> PromptRuntimeOwner
   -> SkyrimCompatibilitySurface / ScaleformPromptAdapter
-  -> UpstreamGamepadHook
+  -> immutable PollOutputFrame publication
+  -> UpstreamGamepadHook (acquire + serialize only)
       -> XInputStateBridge
       -> Skyrim Poll producer
 ```
@@ -47,6 +48,8 @@ HidReader
 
 负责将 legacy snapshot、live input facts、source evidence 和 boundary marker 组装成 input-v2 frame。
 
+连续 axes/triggers/current physical mask 使用 complete-generation latest publication；digital edge、manifest/UI/device boundary、reset 和 overflow marker 使用 bounded ordered queue。normal digital reducer 不读取 future `currentDownMask` 猜造 edge。
+
 ### Action graph / interaction
 
 - `src/input_v2/actions/*`
@@ -58,9 +61,9 @@ HidReader
 - `src/input_v2/gameplay/*`
 - `src/input/backend/NativeButtonCommitBackend.*`
 - `src/input/backend/PollCommitCoordinator.*`
-- `src/input/AuthoritativePollState.*`
+- `src/input_v2/gameplay/PollOutputFrame.*`
 
-负责将 resolved action frame materialize 成 virtual XInput hardware state。
+负责在唯一 owner generation 内将 resolved action frame materialize 成完整不可变 virtual XInput frame。`AuthoritativePollState` 仅保留 legacy compatibility，不是 current output authority；Poll reader 不推进 pulse 或 packet。
 
 ### Presentation / prompt compatibility
 
@@ -84,3 +87,6 @@ HidReader
 - `PH8b` 不恢复旧 runtime authority，也不迁移 replay root。
 - `PromptSnapshotRecord` 的 generated / CI 事实见 [../docs/generated/prompt_matrix_zh.md](../docs/generated/prompt_matrix_zh.md)。
 - canonical CI target 事实见 [../docs/generated/policies_zh.md](../docs/generated/policies_zh.md)。
+- 并发/发布合同见 [../docs/runtime_concurrency_contract.md](../docs/runtime_concurrency_contract.md)。
+- 背压/恢复合同见 [../docs/runtime_backpressure_contract.md](../docs/runtime_backpressure_contract.md)。
+- RC20 验证边界见 [../docs/testing/rc20_runtime_validation.md](../docs/testing/rc20_runtime_validation.md)。

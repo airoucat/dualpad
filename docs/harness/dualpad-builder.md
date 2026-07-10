@@ -72,8 +72,9 @@
 - HID / `PadState` 归一化只属于上游输入 adapter；`SkyrimCompatibilitySurface`、`ScaleformPromptAdapter`、`UpstreamGamepadHook`、`XInputStateBridge` 与 `AuthoritativePollState` 只属于 published / compat state 消费侧，不得写成 current mainline authority。
 - 当前 repo-owned 动态图标 surface 固定为 `ScaleformGlyphBridge -> ScaleformPromptAdapter -> PromptRuntimeOwner -> PromptService` 兼容路径；
   `ScaleformGlyphBridge` 与 `GlyphResolutionCompat` 不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority。
-- `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，不新增后续 runtime phase。
-- `DP5` / `S-DP5` 已完成 U0-U5 closeout；后续 RC evidence / field-readiness fixes 与实机 QA 仍不是新的 runtime phase。
+- `PH0` - `PH8b` closeout 已收口；当前活跃 Sprint 是 `S-DP5-RC20-HOTFIX`，它不新增后续 runtime phase。
+- `DP5` / `S-DP5` 已完成 U0-U5 closeout；当前 hotfix 只收口输入实时性、runtime concurrency、Favorites fail-closed 与动态证据，`DP5` 在闭环前保持 `in_progress` / `passes=false`。
+- native `Game.Favorites` 在 matching dump / IDA 与真实游戏循环完成前保持 fail-closed；当前 release status 为 `NO-GO`。
 - `FavoritesMenu` 页面级改造必须先恢复 workspace，再谈实现。
 - 机器私有路径、Skyrim 实例路径和外部 live artifact 路径只写到 `AGENTS.win.md` / `AGENTS.mac.md`
 - 共享文档一律使用 repo-relative 路径，不写机器私有绝对路径

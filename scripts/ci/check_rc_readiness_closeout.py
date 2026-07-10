@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import json
 import sys
 
 
@@ -193,8 +194,28 @@ def main() -> int:
     require_tokens(
         failures,
         "docs/authoritative-baseline/work-packages/README.md",
-        ["U5：verification / observability / governance closeout 已完成"],
+        [
+            "U5：verification / observability / governance closeout 已完成",
+            "S-DP5-RC20-HOTFIX",
+            "NO-GO",
+        ],
     )
+
+    for relative, tokens in {
+        "docs/runtime_concurrency_contract.md": ["唯一 runtime owner", "PollOutputFrame", "generation"],
+        "docs/runtime_backpressure_contract.md": ["LatestPadState", "ordered", "overflow"],
+        "docs/testing/rc20_runtime_validation.md": ["500/1000 Hz", "30/60/120 Hz", "P99", "NO-GO"],
+    }.items():
+        require_tokens(failures, relative, tokens)
+
+    feature_data = json.loads(read(".dualpad-builder/feature_list.json"))
+    dp5 = next((item for item in feature_data["features"] if item["id"] == "DP5"), None)
+    if not dp5 or dp5.get("status") != "in_progress" or dp5.get("passes") is not False:
+        failures.append(".dualpad-builder/feature_list.json: DP5 must remain in_progress/passes=false before dynamic closeout.")
+
+    sprint_data = json.loads(read(".dualpad-builder/sprint_plan.json"))
+    if sprint_data.get("current_sprint") != "S-DP5-RC20-HOTFIX":
+        failures.append(".dualpad-builder/sprint_plan.json: RC20 hotfix must remain the current sprint before dynamic closeout.")
 
     if failures:
         print("RC readiness closeout check failed:")

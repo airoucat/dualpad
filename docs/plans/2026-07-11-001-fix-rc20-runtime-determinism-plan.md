@@ -583,7 +583,7 @@ flowchart TB
 
 **回滚：** 完整 transaction 可回退到 safe passthrough / plugin-disabled，不留下 patch residue。
 
-- [ ] **Unit 9：压力、replay、property/fuzz、文档与 CI 收口**
+- [x] **Unit 9：压力、replay、property/fuzz、文档与 CI 收口**
 
 **目标：** 把前 8 个单元的语义变成 canonical 自动化和可审计合同。
 
@@ -630,6 +630,8 @@ flowchart TB
 - generated docs consistency、Windows xmake build、release/package smoke、graphify 和 diff hygiene。
 
 **验证：** canonical gates 全通过且结果写入 builder progress；所有未执行实机项留在 `docs/testing/rc20_runtime_validation.md`。
+
+**执行结果（2026-07-11）：** `DualPadIngressTests` 新增 virtual-clock rate matrix，覆盖 producer 500/1000 Hz × owner 30/60/120 Hz × producer-first/owner-first tie ordering；证明 pure analog 不放大 ordered queue、latest generation 单调、不读取 future state、semantic P99 不超过一个 producer period，并独立记录 20,000 次 publication 的 P50/P95/P99 telemetry（本机本次均约 100 ns，仅作趋势样本）。前序 Unit 5 已覆盖 2/4/8 readers × 100,000 publications。新增 runtime concurrency/backpressure/validation 文档并同步 README、ARCHITECTURE、current truth、authoritative baseline、builder harness 与 generated-doc manifest hash。`run_phase8_ci.ps1` 完整通过；`run_rc_readiness.ps1` 完整通过，dispatcher replay 10 个 mandatory scenario 均无 diff，`DualPadDInput8Proxy`、release artifact manifest、reviewed/generated docs、static contracts、builder JSON、Graphify 与 diff hygiene 均通过。门禁收口期间修正两处治理漂移：release check 从旧 `_attemptedInstall = true` 拼写升级为 atomic attempt + transactional rollback/unsafe-partial 合同；reviewed-doc checker 改为识别当前 `S-DP5-RC20-HOTFIX`，同时保留 PH8b completed 边界。上述仍不证明真实 Skyrim thread/menu lifecycle 或 Favorites 崩溃已修复；native Favorites 默认关闭，release status 保持 `NO-GO`。
 
 **回滚：** 单个 slice 的 CI/docs 变更随对应行为回滚，不能留下声称已验证的 stale evidence。
 

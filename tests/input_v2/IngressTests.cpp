@@ -11,8 +11,11 @@
 #include "input_v2/config/AtomicConfigReloader.h"
 
 #include <cstdlib>
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1377,6 +1380,112 @@ namespace
         Require(kernel.facts.monotonicUs == 200, "kernel monotonicUs must use ingress event time, not seq");
         Require(kernel.kernelRevision == stable.lastSeq, "kernel revision remains sequence-based");
     }
+
+    void TestDeterministicProducerOwnerRateMatrix()
+    {
+        const auto percentile = [](std::vector<std::uint64_t> values, std::size_t numerator) {
+            Require(!values.empty(), "rate-matrix latency samples must not be empty");
+            std::sort(values.begin(), values.end());
+            const auto index = std::min(values.size() - 1, (values.size() * numerator + 99) / 100 - 1);
+            return values[index];
+        };
+
+        for (const auto producerHz : { 500u, 1000u }) {
+            for (const auto ownerHz : { 30u, 60u, 120u }) {
+                for (const auto producerWinsTie : { false, true }) {
+                    ingress::IngressHub hub{ 16 };
+                    auto baseline = LiveHidSnapshot(1, 0, 0);
+                    baseline.state.leftStick.x = 0.0f;
+                    Require(hub.PushPadSnapshot(baseline, false), "rate-matrix baseline must publish");
+                    (void)hub.Capture(64);
+                    std::uint32_t producerIndex = 1;
+                    std::uint32_t ownerIndex = 0;
+                    std::uint64_t lastObservedGeneration = 0;
+                    std::vector<std::uint64_t> semanticLatencyUs;
+
+                    while (producerIndex < producerHz || ownerIndex < ownerHz) {
+                        const auto producerTimeUs = producerIndex < producerHz ?
+                            (static_cast<std::uint64_t>(producerIndex) * 1'000'000ull) / producerHz :
+                            std::numeric_limits<std::uint64_t>::max();
+                        const auto ownerTimeUs = ownerIndex < ownerHz ?
+                            (static_cast<std::uint64_t>(ownerIndex) * 1'000'000ull) / ownerHz :
+                            std::numeric_limits<std::uint64_t>::max();
+                        const bool publish = producerTimeUs < ownerTimeUs ||
+                            (producerTimeUs == ownerTimeUs && producerWinsTie);
+                        if (publish) {
+                            auto snapshot = LiveHidSnapshot(
+                                static_cast<std::uint64_t>(producerIndex) + 1,
+                                0,
+                                producerTimeUs);
+                            snapshot.state.leftStick.x = static_cast<float>(producerIndex % 101) / 100.0f;
+                            Require(hub.PushPadSnapshot(snapshot, false), "rate-matrix analog publication must succeed");
+                            ++producerIndex;
+                            continue;
+                        }
+
+                        const auto capture = hub.Capture(64);
+                        Require(capture.events.empty(), "rate-matrix pure analog input must never enter ordered queue");
+                        if (capture.latestPadState) {
+                            Require(
+                                capture.latestPadState->generation >= lastObservedGeneration,
+                                "rate-matrix owner must never observe a regressing latest generation");
+                            Require(
+                                capture.latestPadState->sourceTimestampUs <= ownerTimeUs,
+                                "rate-matrix owner must never observe future analog state");
+                            lastObservedGeneration = capture.latestPadState->generation;
+                            semanticLatencyUs.push_back(ownerTimeUs - capture.latestPadState->sourceTimestampUs);
+                        }
+                        ++ownerIndex;
+                    }
+
+                    const auto finalCapture = hub.Capture(64);
+                    Require(finalCapture.events.empty(), "final rate-matrix capture must retain zero ordered analog events");
+                    Require(
+                        finalCapture.latestPadState && finalCapture.latestPadState->generation == producerHz,
+                        "rate-matrix final capture must publish the final complete producer generation");
+                    const auto producerPeriodCeilingUs = (1'000'000ull + producerHz - 1) / producerHz;
+                    Require(
+                        percentile(semanticLatencyUs, 99) <= producerPeriodCeilingUs,
+                        "rate-matrix semantic P99 must stay within one producer period");
+                    Require(hub.PendingCount() == 0, "rate-matrix analog input must have zero queue amplification");
+                }
+            }
+        }
+    }
+
+    void RecordAxisPublicationLatencyPercentiles()
+    {
+        constexpr std::size_t kIterations = 20'000;
+        ingress::IngressHub hub{ 16 };
+        Require(hub.PushPadSnapshot(LiveHidSnapshot(1, 0, 1), false), "latency benchmark baseline must publish");
+        (void)hub.Capture(64);
+        std::vector<std::uint64_t> latencyNs;
+        latencyNs.reserve(kIterations);
+        for (std::size_t index = 0; index < kIterations; ++index) {
+            auto snapshot = LiveHidSnapshot(index + 2, 0, index + 2);
+            snapshot.state.leftStick.x = static_cast<float>(index % 101) / 100.0f;
+            const auto started = std::chrono::steady_clock::now();
+            Require(hub.PushPadSnapshot(snapshot, false), "latency benchmark analog publication must succeed");
+            const auto capture = hub.Capture(0);
+            const auto finished = std::chrono::steady_clock::now();
+            Require(
+                capture.latestPadState && capture.latestPadState->generation == index + 2,
+                "latency benchmark must observe each complete generation");
+            latencyNs.push_back(static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(finished - started).count()));
+        }
+        std::sort(latencyNs.begin(), latencyNs.end());
+        const auto at = [&latencyNs](std::size_t percentile) {
+            return latencyNs[std::min(
+                latencyNs.size() - 1,
+                (latencyNs.size() * percentile + 99) / 100 - 1)];
+        };
+        std::cout << "[DualPad][IngressBenchmark] axis_publication_latency_ns"
+                  << " samples=" << latencyNs.size()
+                  << " p50=" << at(50)
+                  << " p95=" << at(95)
+                  << " p99=" << at(99) << '\n';
+    }
 }
 
 int main()
@@ -1424,6 +1533,8 @@ int main()
     TestBuildKernelFrameDoesNotAcceptTransition();
     TestLegacySnapshotCannotOverrideKernelFacts();
     TestBuildKernelFrameUsesIngressMonotonicTimestamp();
+    TestDeterministicProducerOwnerRateMatrix();
+    RecordAxisPublicationLatencyPercentiles();
     std::cout << "DualPadIngressTests passed\n";
     return 0;
 }

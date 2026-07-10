@@ -20,7 +20,7 @@
   - `legacy-named input adapters -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner`
 - `src/input_v2/` 是唯一正式 runtime mainline；`PadEventSnapshotDispatcher / PadEventSnapshotProcessor` 只允许作为 shim / adapter。
 - HID / `PadState` 归一化只属于上游输入 adapter；`SkyrimCompatibilitySurface`、`ScaleformPromptAdapter`、`UpstreamGamepadHook`、`XInputStateBridge` 与 `AuthoritativePollState` 只属于 published / compat state 消费侧，不得写成 current mainline authority
-- `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，不新增后续 runtime phase
+- `PH0` - `PH8b` closeout 已收口；当前活跃 `S-DP5-RC20-HOTFIX` 只做 post-closeout field-readiness 修复与动态证据，不新增后续 runtime phase
 - 当前 repo-owned prompt/glyph compatibility authority 固定为 `ScaleformGlyphBridge` shim、`ScaleformPromptAdapter`、`PromptRuntimeOwner` 和 `PromptService`
 - repo-owned legacy SWF API / artifact 只作为 compat consumer 保持现有 shape；不得写成 glyph authority 或新的默认推进面
 - `ScaleformGlyphBridge` / `GlyphResolutionCompat` 不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority
@@ -63,7 +63,7 @@
 ## Done Definition
 
 - `WF0`、`DP1-DP5` 的状态与验证结果都能在 `.dualpad-builder/` 中追溯
-- 若存在当前激活的 Sprint / slice，必须有明确退出标准和验证入口；当前 PH8b baseline 下 `current_sprint=null`
+- 若存在当前激活的 Sprint / slice，必须有明确退出标准和验证入口；当前 `current_sprint=S-DP5-RC20-HOTFIX`
 - `passes` 只在对应验证实际通过后更新
 - 代码工作结束前完成 graphify close-out
 - 最终 handoff 不把历史 fallback、旧实验或缺失 workspace 冒充成当前真相

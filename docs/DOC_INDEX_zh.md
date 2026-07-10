@@ -4,7 +4,7 @@
 
 ## 当前活跃 Sprint
 
-- 无
+- `S-DP5-RC20-HOTFIX`：post-closeout field-readiness hardening，当前发布状态 `NO-GO`。
 - `PH8b` 已完成；`PH0` - `PH8b` closeout 已收口。
 - `DP5-RC20` U0-U5 已完成；后续为 RC evidence / field-readiness fixes 与实机 QA，不是新 runtime phase。
 - `PR-A`、`PR-B1`、`PR-B2`、`PR-B3` 已合入；`PR-C` 只修正文档合同卫生、死链和状态滞后。
@@ -37,6 +37,10 @@
 - [../README.md](../README.md)
 - [../src/ARCHITECTURE.md](../src/ARCHITECTURE.md)
 - [current_input_pipeline_zh.md](current_input_pipeline_zh.md)
+- [runtime_concurrency_contract.md](runtime_concurrency_contract.md)
+- [runtime_backpressure_contract.md](runtime_backpressure_contract.md)
+- [testing/rc20_runtime_validation.md](testing/rc20_runtime_validation.md)
+- [menu_context_policy_current_status_zh.md](menu_context_policy_current_status_zh.md)
 - [authoritative-baseline/README.md](authoritative-baseline/README.md)
 - [harness/dualpad-builder.md](harness/dualpad-builder.md)
 

@@ -31,7 +31,10 @@ def main() -> int:
             "Unsupported runtime",
             "REL::verify_code",
             "upstream poll hook remains disabled",
-            "_attemptedInstall = true",
+            "_attemptedInstall.exchange(true",
+            "ExecutePatchTransaction",
+            "PatchTransactionOutcome::RolledBack",
+            "PatchTransactionOutcome::UnsafePartial",
         ],
     )
     require_contains(

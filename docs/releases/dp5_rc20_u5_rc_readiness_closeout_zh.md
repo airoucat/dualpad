@@ -2,6 +2,19 @@
 
 本文记录 `DP5-RC20 U5 Verification / observability / governance closeout` 的当前结论。U5 是 RC 外层验证与治理收口，不是新的 runtime phase，不替代 `PH0` - `PH8b` 已冻结的 canonical targets。
 
+## RC20 hotfix update（2026-07-11）
+
+`S-DP5-RC20-HOTFIX` 在 U5 closeout 之后继续处理现场 release blockers，不重开 runtime phase。当前已落地：
+
+- continuous state 拆为 `LatestPadState` / `LatestSourceEvidence`，ordered queue 只保留 edge/boundary/recovery facts；
+- verified single runtime owner；
+- immutable `PollOutputFrame` 与 2/4/8 readers stress；
+- owner-generation pulse；
+- target-bound menu refresh；
+- transactional hook install、exact rollback 与 `UnsafePartial` fail-closed。
+
+`Game.Favorites` native route 继续默认关闭。matching dump/IDA、真实 Skyrim loop 和 soak 尚未完成，因此本文原有 RC QA baseline 不构成当前 hotfix 的 `GO` 证据；当前发布状态为 `NO-GO`。详细验证见 [../testing/rc20_runtime_validation.md](../testing/rc20_runtime_validation.md)。
+
 ## Gate hierarchy
 
 `Phase8 是 canonical base gate`。它继续由 `scripts/ci/run_phase8_ci.ps1` 直接构建并运行同名 canonical runtime targets：
@@ -83,6 +96,7 @@ Current debug snapshot/log surface covers the U5 required failure reasons:
 - Prompt freeze / unavailable state carries `PromptScopeFrozen`, `promptDebugReason`, prompt scope state, `manifestEpoch`, and related prompt baseline facts.
 - `overflow compaction` records retained boundary facts and dropped volatile input summary; `QueueOverflow` is a transition reason, not a silent queue mutation.
 - Hook failure carries install status and debug reason, including unsupported runtime, signature mismatch, failed and partial install paths.
+- Hook diagnostics additionally expose operational state and failure disposition: disabled、safe passthrough、installed、unsafe partial，以及 not-required、rolled-back、fail-closed。
 - Manifest/config/context generation can be correlated through `manifestEpoch`, `configGeneration`, and `contextRevision`.
 - Runtime logs are reason-transition keyed to prevent `log storm` behavior; identical degraded / recovered snapshots are deduplicated.
 - Optional `runtime_debug_snapshot.csv` from replay/debug tracing is additive and does not become Phase0 golden required schema.

@@ -11,11 +11,20 @@ Generated facts 固定由 `DualPadDocGen` 输出到：
 
 ## 一句话版本
 
-`PH8a` 已完成 runtime closeout：默认执行路径以 `src/input_v2/` 为正式 mainline。`PH8b` 不重新决定 runtime 主线归属，只把已稳定的主线接入 DocGen、generated docs、reviewed docs 和默认 CI。
+`PH8a` 已完成 runtime closeout：默认执行路径以 `src/input_v2/` 为正式 mainline。当前 RC20 hardening 在该主线内固定为 `LatestPadState + OrderedEdgeQueue -> verified runtime owner -> immutable PollOutputFrame`；`PH8b` 不重新决定 runtime 主线归属。
 
 ## 主链解释
 
 当前输入链从 HID / `PadState` 进入 legacy-named adapter，再汇入 input-v2 ingress、frame assembly、interaction、gameplay projection、poll output 和 presentation/prompt publish。
+
+其中：
+
+- axes/triggers/current physical mask latest-wins，不按 HID report 排队；
+- digital edge、boundary、reset/overflow 进入 bounded ordered queue；
+- `InputFramePump` 经过 `RuntimeOwnerGuard` 后是唯一 mutation owner；
+- owner 一次发布完整 `PollOutputFrame`，任意 Poll reader 只 acquire/serialize；
+- pulse 以 owner generation 推进，不以 Poll 次数推进；
+- menu refresh 绑定并复验单一 target，不遍历整个 menu stack。
 
 保留的 legacy-named 入口只承担兼容 adapter / shim 职责：
 
@@ -38,6 +47,7 @@ Generated facts 固定由 `DualPadDocGen` 输出到：
 当前输出面分为：
 
 - 原生手柄状态：经 input-v2 gameplay projection / poll output 写入 virtual XInput hardware state。
+- Poll publication：`PollOutputFrame` 是 current immutable authority；`AuthoritativePollState` 只保留 legacy compatibility。
 - Skyrim compatibility surface：提供 `IsUsingGamepad`、cursor owner、remap/menu enable 等黑盒观察面。
 - Prompt / Scaleform compatibility：旧 SWF API 继续经 `ScaleformGlyphBridge` 转发到 prompt runtime owner / adapter，不改旧返回 shape。
 - Keyboard helper：仍作为 helper backend / simulated keyboard route 使用，不是 Skyrim PC native event 默认主线。
@@ -56,3 +66,6 @@ Generated facts 固定由 `DualPadDocGen` 输出到：
 - [authoritative-baseline/README.md](authoritative-baseline/README.md)
 - [plans/dualpad_rearchitecture/09a_slice_phase8_runtime_closeout_zh.md](plans/dualpad_rearchitecture/09a_slice_phase8_runtime_closeout_zh.md)
 - [plans/dualpad_rearchitecture/09b_slice_phase8_governance_closeout_zh.md](plans/dualpad_rearchitecture/09b_slice_phase8_governance_closeout_zh.md)
+- [runtime_concurrency_contract.md](runtime_concurrency_contract.md)
+- [runtime_backpressure_contract.md](runtime_backpressure_contract.md)
+- [testing/rc20_runtime_validation.md](testing/rc20_runtime_validation.md)

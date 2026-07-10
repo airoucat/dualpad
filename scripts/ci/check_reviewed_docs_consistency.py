@@ -147,14 +147,16 @@ def main() -> int:
         if not feature or feature.get("status") != "completed" or feature.get("passes") is not True:
             failures.append(f".dualpad-builder/feature_list.json: {feature_id} must be completed with passes=true after PH8b closeout.")
     dp5 = features.get("DP5")
-    if not dp5 or dp5.get("status") != "planned" or dp5.get("passes") is not False:
-        failures.append(".dualpad-builder/feature_list.json: DP5 must remain planned/passes=false as post-closeout hardening.")
+    if not dp5 or dp5.get("status") != "in_progress" or dp5.get("passes") is not False:
+        failures.append(".dualpad-builder/feature_list.json: DP5 must remain in_progress/passes=false while the RC20 hotfix lacks dynamic evidence.")
     elif "post-closeout" not in (dp5.get("title", "") + " " + " ".join(dp5.get("acceptance", []))).lower():
         failures.append(".dualpad-builder/feature_list.json: DP5 must be explicitly labeled post-closeout hardening.")
+    elif not all(marker in " ".join(dp5.get("acceptance", [])) for marker in ["S-DP5-RC20-HOTFIX", "fail-closed", "NO-GO"]):
+        failures.append(".dualpad-builder/feature_list.json: DP5 must retain the active hotfix, native Favorites fail-closed, and NO-GO evidence boundary.")
 
     sprint_data = json.loads((ROOT / ".dualpad-builder/sprint_plan.json").read_text(encoding="utf-8"))
-    if sprint_data.get("current_sprint") is not None:
-        failures.append(".dualpad-builder/sprint_plan.json: current_sprint must be null after PH8b closeout.")
+    if sprint_data.get("current_sprint") != "S-DP5-RC20-HOTFIX":
+        failures.append(".dualpad-builder/sprint_plan.json: current_sprint must identify the active RC20 field-readiness hotfix.")
     sprints = {item["id"]: item for item in sprint_data["sprints"]}
     for sprint_id in ["S-DP1", "S-DP2", "S-DP3", "S-DP4", "S-PH0", "S-PH1", "S-PH2", "S-PH3", "S-PH4", "S-PH5", "S-PH6", "S-PH7", "S-PH8", "S-PH8a", "S-PH8b"]:
         sprint = sprints.get(sprint_id)
@@ -165,13 +167,23 @@ def main() -> int:
         failures.append(".dualpad-builder/sprint_plan.json: S-DP5 must remain planned as post-closeout hardening.")
     elif "post-closeout" not in (sdp5.get("title", "") + " " + sdp5.get("goal", "") + " " + " ".join(sdp5.get("exit_criteria", []))).lower():
         failures.append(".dualpad-builder/sprint_plan.json: S-DP5 must be explicitly labeled post-closeout hardening.")
+    hotfix = sprints.get("S-DP5-RC20-HOTFIX")
+    hotfix_contract = " ".join(
+        [hotfix.get("title", ""), hotfix.get("goal", "")] + hotfix.get("exit_criteria", [])
+    ) if hotfix else ""
+    if not hotfix or hotfix.get("unit_id") != "DP5" or hotfix.get("status") != "in_progress":
+        failures.append(".dualpad-builder/sprint_plan.json: S-DP5-RC20-HOTFIX must be the in-progress DP5 sprint.")
+    elif not all(marker in hotfix_contract for marker in ["不新增 runtime phase", "fail-closed", "NO-GO"]):
+        failures.append(".dualpad-builder/sprint_plan.json: active hotfix must retain its non-phase, fail-closed, and release-status boundary.")
 
     work_packages = (ROOT / "docs/authoritative-baseline/work-packages/README.md").read_text(encoding="utf-8")
     for marker in ["`DP1`：`completed`", "`DP2`：`completed`", "`DP3`：`completed`", "`DP4`：`completed`", "`PH0` - `PH8b`：`completed`"]:
         if marker not in work_packages:
             failures.append(f"docs/authoritative-baseline/work-packages/README.md: missing current status marker {marker}.")
-    if "`DP5`：`planned`（post-closeout hardening；不是新的 runtime phase）" not in work_packages:
-        failures.append("docs/authoritative-baseline/work-packages/README.md: DP5 must be marked as post-closeout hardening, not a runtime phase.")
+    if "`DP5`：`in_progress` / `passes=false`（post-closeout field-readiness hotfix；不是新的 runtime phase）" not in work_packages:
+        failures.append("docs/authoritative-baseline/work-packages/README.md: DP5 must identify the active post-closeout hotfix without reopening a runtime phase.")
+    if "当前活跃 Sprint：`S-DP5-RC20-HOTFIX`" not in work_packages:
+        failures.append("docs/authoritative-baseline/work-packages/README.md: missing active RC20 hotfix sprint marker.")
     for marker in ["默认 CI 自动执行", "人工 close-out 必做", "DualPadPresentationProjectionTests"]:
         if marker not in work_packages:
             failures.append(f"docs/authoritative-baseline/work-packages/README.md: missing close-out validation boundary marker {marker}.")
