@@ -80,12 +80,24 @@ def main() -> int:
         failures,
         "xmake.lua",
         [
+            'import("devel.git")',
+            "git.lastcommit",
+            "DUALPAD_BUILD_COMMIT",
             "dualpad_deploy",
             "os.cp(debug_ini_src, debug_ini_dst)",
             "os.cp(bindings_ini_src, bindings_ini_dst)",
             "os.cp(menu_policy_ini_src, menu_policy_ini_dst)",
             "DualPadControlMap.txt",
             "DualPadDInput8.ini",
+        ],
+    )
+    require_contains(
+        failures,
+        "src/main.cpp",
+        [
+            "DUALPAD_BUILD_COMMIT",
+            "[DualPad][Build] commit={}",
+            "REL::Module::get().version().string()",
         ],
     )
     require_contains(

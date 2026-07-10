@@ -227,3 +227,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: Phase 8 release gate 仍要求旧的 `_attemptedInstall = true` 源码拼写，误报已经升级为原子尝试与 transactional patch outcome 的 upstream hook。
 - Detail: 静态门禁应约束可复述的安全合同，而不是已退休的赋值语句。当前等价且更强的合同由 `_attemptedInstall.exchange(true, ...)`、`ExecutePatchTransaction`、`RolledBack` 和 `UnsafePartial` 共同表达。
 - Resolution: 更新 `check_release_readiness.py`，同时要求原子单次 install 尝试和 transactional rollback / unsafe-partial 分支；保留 runtime/version/signature fail-closed 检查。
+
+## ERR-20260711-007
+
+- Logged: 2026-07-11 09:34 CST
+- Priority: medium
+- Status: resolved
+- Area: build / xmake sandbox
+- Summary: xmake 配置沙箱没有 Lua 全局 `pcall`，Git 构建来源探测在配置阶段中止。
+- Detail: `xmake.lua` 顶层项目描述域不能假设标准 Lua 或脚本域函数可用；本机依次确认 `pcall`、`catch`、`import` 和 `os.iorun` 都不可在该域调用。需要加载模块的逻辑应进入 target `on_load` 脚本域。
+- Related files: `xmake.lua`, `src/main.cpp`
+- Resolution: 改用 xmake 自带 `devel.git.lastcommit` 模块并 fail closed；发布构建无法解析 Git commit 时不再生成来源不明的 DLL。`main.cpp` 仍保留宏缺失时的 `unknown`，仅服务于不经过 xmake 的独立编译。

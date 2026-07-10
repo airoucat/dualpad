@@ -54,6 +54,14 @@ local function configured_target_dir(deploy_dir, fallback_name)
 end
 
 target("DualPad")
+    on_load(function (target)
+        import("devel.git")
+        local build_commit = assert(
+            git.lastcommit({repodir = os.projectdir()}),
+            "git rev-parse failed: DualPad build provenance is required"):sub(1, 12)
+        target:add("defines", 'DUALPAD_BUILD_COMMIT="' .. build_commit .. '"')
+    end)
+
     add_deps("commonlibsse-ng")
     add_packages("hidapi")
 

@@ -31,6 +31,10 @@
 
 #include <atomic>
 
+#ifndef DUALPAD_BUILD_COMMIT
+#define DUALPAD_BUILD_COMMIT "unknown"
+#endif
+
 namespace logger = SKSE::log;
 
 namespace
@@ -192,6 +196,10 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     dualpad::input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton().Install();
 
     logger::info("DualPad v1.0.0 loaded");
+    logger::info(
+        "[DualPad][Build] commit={} runtime={}",
+        DUALPAD_BUILD_COMMIT,
+        REL::Module::get().version().string());
 
     if (auto* messaging = SKSE::GetMessagingInterface(); messaging) {
 
