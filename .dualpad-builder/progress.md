@@ -3122,3 +3122,26 @@
 
 - 用户复测 HID thread lifecycle 修复版后反馈：打开 Favorites 仍然闪退。因此 pre-output gameplay presentation handoff 与 HID reader 静态析构 hardening 都不能作为 Favorites 闪退根因闭环；当前可确定的是主菜单首次 Triangle/Y 下移已收敛，Favorites 仍停在 `Game.Favorites -> XInput DPadUp` 后、进入 `FavoritesMenu` observer 前。
 - 本轮按用户要求提交当前代码给网页 GPT 审核。待审重点应放在：`Game.Favorites` 走 upstream XInput DPadUp 是否仍会触发 Skyrim/SWF Favorites 打开链的已知崩溃路径、是否需要恢复/审计 Favorites SWF workspace 或对 live `favoritesmenu.swf` 做 A/B、以及当前 `NativeButtonCommitBackend` 低频 trace 是否应在正式合入前降噪或拆成诊断开关。
+
+## 2026-07-11 00:00:00 +08:00
+
+- `S-DP5-RC20-HOTFIX` planning start：读取用户提供的 RC20 Final v2 计划包、authoritative baseline、builder memory、graphify report、当前代码、相关测试、runtime/menu/poll 文档与 repo-local learnings。
+- 分支 / 基线：`codex/dp5-rc20-menu-native-hotfix @ 5f920307acd0fd01180fb37c9094bf2ac0d6600d`；开始规划时工作树 clean，跟踪 `origin/codex/dp5-rc20-menu-native-hotfix`。
+- 当前代码事实：实际 high-water schedule 未调用 `ShouldForceTaskFallback()`；`DrainOnMainThread(maxSnapshots)` 仍全量 `IngressHub::Drain()`；snapshot/event/frame 单位混用；analog/source evidence 与 edge/boundary 共用有界 queue；Poll thunk 内执行 drain、runtime/context mutation 与 pulse commit；`AuthoritativePollState` 多 atomic 字段无法证明同代；`XInputStateBridge` 存在 reader-side 普通全局；`ContextResolver` 无同步返回内部动态对象 reference；menu refresh 仍遍历全 stack；compat hook fail-closed helper 恒为 false。
+- 计划已写入：`docs/plans/2026-07-11-001-fix-rc20-runtime-determinism-plan.md`。执行拆为 10 个可审查 slice：事故隔离、fallback/bounded drain、latest state/ordered edges、runtime owner、immutable output、generation pulse、target refresh、transactional hook、stress/docs/CI、IDA/dump/real-game evidence。
+- Builder sync：`DP5` 改为 `in_progress`，`current_sprint=S-DP5-RC20-HOTFIX`。该 slice 是 post-closeout field-readiness hotfix，不新增 runtime phase。
+- 当前 release status：`NO-GO`。本条只完成规划和事实核验，尚未修改代码、运行新测试或完成 IDA/dump/实机验证；不得把既有静态/host 结果描述成 Favorites 已修复。
+
+## 2026-07-11 00:30:00 +08:00
+
+- `ce:plan` confidence deepening 与 mandatory document review 完成。审查依次覆盖 coherence、feasibility、scope-guardian、adversarial；按仓库规则在主线程顺序执行，未启动 subagent。
+- 自动修正 5 类计划问题：bounded drain 下 latest analog / ordered digital 的双 cutoff 合同；Poll read-only 与 generation pulse 的一致性；E-OWNER/E-POLL/E-PATCH/E-CRASH 证据依赖顺序；event hard cap / deadline 单位；首次 owner tick、degraded 与 shutdown 的 neutral `PollOutputFrame`。
+- 关键合同：LatestPadState 内部同代且 analog latest-wins；normal digital 只由已 drain edge reducer 推进，`currentDownMask` 仅用于 overflow recovery baseline。Poll diagnostics 不驱动 pulse；E-POLL 无法证明 owner/Poll ordering 时 native Favorites 继续 fail-closed。
+- review 后无残留 P0/P1 judgment finding；计划仍保持 `NO-GO`，下一步按默认链进入 `ce:work`，从 Unit 1 的 failing tests 与事故隔离开始。
+
+## 2026-07-11 00:45:00 +08:00
+
+- `S-DP5-RC20-HOTFIX / Unit 1` 完成：`Game.Favorites` 在 `ActionBackendPolicy` 唯一路由决策处增加独立 `enable_native_favorites` gate，默认 false；未验证 fallback 时返回 `Backend::None` 与稳定 `native_favorites_disabled` reason，不改变其它 native action、binding 或 descriptor。
+- 新增默认关闭的 `log_poll_diagnostics`。启用时 `PollDiagnosticLimiter` 以固定 256-call 容量原子记录 sequence / thread / in-flight / caller / result / pollSequence / contextEpoch / packet / buttons / axes / triggers / dropped；容量耗尽只计 dropped，不分配内存。删除原先默认开启且用非原子静态 budget 的 per-Poll result log。
+- TDD 证据：默认 Favorites 用例先以 `Game.Favorites native output must fail closed by default` 红灯，gate 实现后绿灯；diagnostic limiter 先因缺少 `PollDiagnostics.h` 红灯，再实现后绿灯；config getter/reason 也分别先编译红灯再实现。
+- 验证：`DualPadGameplayProjectionTests`、`DualPadRouteHealthContractTests`、`DualPadInputV2Tests`、`DualPadNativeButtonCommitTests` 均 exit 0；`xmake build -y DualPad` exit 0 并部署 DLL，PDB 因目标占用跳过复制。该结果只证明 host/build containment，不证明 Favorites crash 已修复；release status 仍为 `NO-GO`。

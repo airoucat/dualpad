@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input/injection/RouteHealthContract.h"
+#include "input/injection/PollDiagnostics.h"
 
 #include <stdexcept>
 #include <string_view>
@@ -124,6 +125,28 @@ namespace
                 dualpad::input::UpstreamGamepadHookInstallStatus::DisabledByConfig)) == "disabled_by_config",
             "disabled-by-config install status label should stay stable");
     }
+
+    void TestPollDiagnosticLimiter()
+    {
+        dualpad::input::PollDiagnosticLimiter limiter(2);
+
+        const auto disabled = limiter.Begin(false);
+        Require(!disabled.record, "disabled Poll diagnostics must not reserve a record");
+        Require(disabled.sequence == 0, "disabled Poll diagnostics must not advance sequence");
+        Require(limiter.InFlight() == 0, "disabled Poll diagnostics must not affect in-flight count");
+
+        const auto first = limiter.Begin(true);
+        const auto second = limiter.Begin(true);
+        const auto overflow = limiter.Begin(true);
+        Require(first.record && first.sequence == 1 && first.inFlight == 1, "first Poll diagnostic must be recorded");
+        Require(second.record && second.sequence == 2 && second.inFlight == 2, "second Poll diagnostic must be recorded");
+        Require(!overflow.record && overflow.sequence == 3 && overflow.inFlight == 3, "capacity overflow must remain observable without recording");
+        Require(limiter.Dropped() == 1, "capacity overflow must increment dropped count");
+
+        Require(limiter.End(true) == 2, "first Poll completion must decrement in-flight count");
+        Require(limiter.End(true) == 1, "second Poll completion must decrement in-flight count");
+        Require(limiter.End(true) == 0, "final Poll completion must clear in-flight count");
+    }
 }
 
 int main()
@@ -135,5 +158,6 @@ int main()
     TestInstallStatusFailureMapping();
     TestControlMapOverlayGate();
     TestInstallStatusLabels();
+    TestPollDiagnosticLimiter();
     return 0;
 }

@@ -30,6 +30,7 @@ namespace dualpad::input
         bool LogNativeInjection() const { return _logNativeInjection; }
         bool LogKeyboardInjection() const { return _logKeyboardInjection; }
         bool LogRouteHealth() const { return _logRouteHealth; }
+        bool LogPollDiagnostics() const { return _logPollDiagnostics; }
         bool EnableTraceRecording() const { return _enableTraceRecording; }
         const std::filesystem::path& TraceOutputDir() const { return _traceOutputDir; }
         std::string_view TraceSession() const { return _traceSession; }
@@ -39,6 +40,7 @@ namespace dualpad::input
         UpstreamGamepadHookMode GetUpstreamGamepadHookMode() const { return _upstreamGamepadHookMode; }
         bool EnableForceCrossContextRecoveryProbe() const { return _enableForceCrossContextRecoveryProbe; }
         bool EnableComboNativeHotkeys3To8() const { return _enableComboNativeHotkeys3To8; }
+        bool EnableNativeFavorites() const { return _enableNativeFavorites; }
 
     private:
         RuntimeConfig() = default;
@@ -57,6 +59,7 @@ namespace dualpad::input
         bool _logNativeInjection{ false };
         bool _logKeyboardInjection{ false };
         bool _logRouteHealth{ false };
+        bool _logPollDiagnostics{ false };
 
         bool _enableTraceRecording{ false };
         std::filesystem::path _traceOutputDir{ "build/replay-captures" };
@@ -67,5 +70,6 @@ namespace dualpad::input
         UpstreamGamepadHookMode _upstreamGamepadHookMode{ UpstreamGamepadHookMode::PollXInputCall };
         bool _enableForceCrossContextRecoveryProbe{ false };
         bool _enableComboNativeHotkeys3To8{ false };
+        bool _enableNativeFavorites{ false };
     };
 }

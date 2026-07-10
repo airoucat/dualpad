@@ -1,9 +1,46 @@
 {
   "project": "DualPad Authoritative Baseline",
   "status": "active",
-  "current_sprint": null,
-  "updated_at": "2026-06-12T00:00:00+08:00",
+  "current_sprint": "S-DP5-RC20-HOTFIX",
+  "updated_at": "2026-07-11T00:00:00+08:00",
   "sprints": [
+    {
+      "id": "S-DP5-RC20-HOTFIX",
+      "unit_id": "DP5",
+      "title": "RC20 input realtime and Favorites crash closure",
+      "goal": "在不新增 runtime phase 的前提下，收口连续状态背压、runtime 单写、不可变 Poll 输出、generation-based pulse、Favorites fail-closed 与动态证据。",
+      "depends_on": [
+        "S-PH8b",
+        "S-DP5"
+      ],
+      "requirements": [
+        "B1",
+        "B5",
+        "B6",
+        "B7"
+      ],
+      "status": "in_progress",
+      "exit_criteria": [
+        "src/input_v2 保持唯一 runtime mainline，Poll hook 只 acquire/serialize immutable PollOutputFrame",
+        "连续 axes/triggers 使用 complete-generation latest publication；current-down mask 仅作 overflow recovery baseline，ordered queue 只保留 edge、pulse request 和 boundary",
+        "runtime mutation 由经过验证的唯一 owner tick 推进，pulse 不再以 Poll 调用次数为时钟",
+        "native Game.Favorites 在真实 Skyrim、matching dump/IDA 和循环门禁完成前默认 fail-closed，且不会与 fallback 双路输出",
+        "target-bound menu refresh、transactional hook failure、host stress、canonical tests、docs、builder memory 与 graphify close-out 全部有可复述证据",
+        "最终审计按已证明、高概率推断、待动态验证分层，并只给出 NO-GO、GO WITH NATIVE FAVORITES DISABLED 或 GO"
+      ],
+      "verification": [
+        "fallback truth table 与 exact event-budget drain tests",
+        "LatestPadState / ordered edge / overflow clean-baseline tests",
+        "2/4/8 concurrent PollOutputFrame reader stress tests",
+        "owner-generation pulse、context/epoch/device/overflow cancellation tests",
+        "target-bound menu refresh 与 transactional hook rollback tests",
+        "DualPadIngressTests、DualPadInputV2Tests、DualPadRouteHealthContractTests、DualPadPresentationProjectionTests、DualPadNativeButtonCommitTests、replay/property/fuzz canonical regression",
+        "scripts/ci/run_phase8_ci.ps1 与 scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest",
+        "Windows xmake DualPad / DualPadDInput8Proxy build、release/package smoke、builder JSON、generated docs、graphify rebuild 与 git diff --check",
+        "IDA 0xC1AB40 / 0xC1AB9D caller contract、matching WinDbg/VS dump、vanilla/live SWF A/B（条件触发）",
+        "physical/synthetic DPadUp、vanilla 1000 次 open/close、每支持 UI profile 200 次与 2-hour soak"
+      ]
+    },
     {
       "id": "S-WF0",
       "unit_id": "WF0",

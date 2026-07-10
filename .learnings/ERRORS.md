@@ -166,3 +166,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: `~/.codex/config.toml` 中的 IDA MCP `command` 指向过期的 Microsoft Store Python 版本目录；`ida-pro-mcp` 段还包含当前 `ida_pro_mcp.server.py` 不支持的 `--unsafe` 参数；同时 `service_tier = "default"` 会让 `codex mcp list` 直接报 schema 错误，导致无法验证 MCP 配置。
 - Resolution: 将两个 IDA MCP 段的 `command` 改为当前可执行的用户级 Python shim，移除 `--unsafe`，并将 `service_tier` 改为当前 schema 接受的 `flex`。已验证 `ida_pro_mcp` 可 import，`tools/list` 能返回 `decompile`、`disasm`、`xrefs_to`、`py_eval` 等工具，且 `codex mcp list` 显示 `ida-pro-mcp` 与 `ida-pro-mcp-stdio` 均为 enabled。
 - Related files: `C:/Users/xuany/.codex/config.toml`
+
+## ERR-20260711-001
+
+- Logged: 2026-07-11 00:40 CST
+- Priority: low
+- Status: resolved
+- Area: tests / xmake target invocation
+- Summary: 将两个 focused target 并列传给一次 `xmake build`，第二个 target 被解析为 invalid argument。
+- Detail: 当前 xmake CLI 的 build/run 入口每次只接收一个 positional target。多个 focused targets 必须顺序执行 `xmake build -y <target>` / `xmake run -y <target>`，或使用仓库已有 CI 脚本；不能写成 `xmake build -y <target1> <target2>`。
+- Related files: `xmake.lua`, `scripts/ci/run_phase8_ci.ps1`
+- Resolution: 改为逐 target 构建与运行；失败发生在参数解析阶段，没有产生代码或测试结论。

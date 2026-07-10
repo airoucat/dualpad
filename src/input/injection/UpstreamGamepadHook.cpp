@@ -6,12 +6,14 @@
 
 #include <array>
 #include <exception>
+#include <intrin.h>
 #include <string>
 
 #include "input/HidReader.h"
 #include "input/XInputStateBridge.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
+#include "input/injection/PollDiagnostics.h"
 #include "input/injection/RouteHealthContract.h"
 
 namespace logger = SKSE::log;
@@ -25,6 +27,8 @@ namespace dualpad::input
         constexpr std::ptrdiff_t kExpectedPollXInputCallOffset = 0x5D;
         constexpr std::ptrdiff_t kExpectedPollXInputWindowOffset = 0x3E;
         constexpr std::size_t kUpstreamDrainBudget = 64;
+        constexpr std::uint64_t kPollDiagnosticCapacity = 256;
+        PollDiagnosticLimiter g_pollDiagnosticLimiter{ kPollDiagnosticCapacity };
         constexpr std::array<std::uint8_t, 38> kExpectedPollXInputWindow = {
             0x8B, 0x89, 0xC8, 0x00, 0x00, 0x00, 0x83, 0xF9,
             0xFF, 0x0F, 0x84, 0x1F, 0x02, 0x00, 0x00, 0x80,
@@ -43,6 +47,20 @@ namespace dualpad::input
                     return CallOriginal(userIndex, currentState);
                 }
 
+                const bool pollDiagnosticsEnabled = RuntimeConfig::GetSingleton().LogPollDiagnostics();
+                const auto diagnostic = g_pollDiagnosticLimiter.Begin(pollDiagnosticsEnabled);
+                const auto threadId = GetCurrentThreadId();
+                const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+                if (diagnostic.record) {
+                    logger::info(
+                        "[DualPad][PollDiagnostic] event=enter sequence={} thread={} inFlight={} caller=0x{:X} userIndex={}",
+                        diagnostic.sequence,
+                        threadId,
+                        diagnostic.inFlight,
+                        caller,
+                        userIndex);
+                }
+
                 if (!IsHidReaderRunning()) {
                     StartHidReader();
                     logger::info("[DualPad][UpstreamGamepad] Deferred HID reader start released via first poll activity");
@@ -57,7 +75,7 @@ namespace dualpad::input
                     .hookInstalled = upstreamHook.IsInstalled()
                 };
                 PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kUpstreamDrainBudget, &telemetry);
-                (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
+                const auto committed = backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
                 const auto result = FillSyntheticXInputState(currentState);
 
                 struct XInputGamepadView
@@ -78,27 +96,16 @@ namespace dualpad::input
                 };
 
                 const auto* state = reinterpret_cast<const XInputStateView*>(currentState);
-                const bool active =
-                    state->gamepad.buttons != 0 ||
-                    state->gamepad.leftTrigger != 0 ||
-                    state->gamepad.rightTrigger != 0 ||
-                    state->gamepad.thumbLX != 0 ||
-                    state->gamepad.thumbLY != 0 ||
-                    state->gamepad.thumbRX != 0 ||
-                    state->gamepad.thumbRY != 0;
-
-                static std::uint32_t activeLogBudget = 64;
-                static std::uint32_t idleLogBudget = 16;
-                if ((active && activeLogBudget > 0) || (!active && idleLogBudget > 0)) {
-                    if (active) {
-                        --activeLogBudget;
-                    } else {
-                        --idleLogBudget;
-                    }
-
+                const auto remainingInFlight = g_pollDiagnosticLimiter.End(pollDiagnosticsEnabled);
+                if (diagnostic.record) {
                     logger::info(
-                        "[DualPad][UpstreamGamepad] Poll thunk result={} packet={} buttons=0x{:04X} lx={} ly={} rx={} ry={} lt={} rt={} active={}",
+                        "[DualPad][PollDiagnostic] event=exit sequence={} thread={} inFlight={} result={} pollSequence={} contextEpoch={} packet={} buttons=0x{:04X} lx={} ly={} rx={} ry={} lt={} rt={} dropped={}",
+                        diagnostic.sequence,
+                        threadId,
+                        remainingInFlight,
                         result,
+                        committed.pollSequence,
+                        committed.contextEpoch,
                         state->packetNumber,
                         state->gamepad.buttons,
                         state->gamepad.thumbLX,
@@ -107,7 +114,7 @@ namespace dualpad::input
                         state->gamepad.thumbRY,
                         state->gamepad.leftTrigger,
                         state->gamepad.rightTrigger,
-                        active);
+                        g_pollDiagnosticLimiter.Dropped());
                 }
 
                 return result;

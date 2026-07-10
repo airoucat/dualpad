@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-06-12T00:00:00+08:00",
+  "updated_at": "2026-07-11T00:00:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -336,7 +336,7 @@
       "depends_on": [
         "WF0"
       ],
-      "status": "planned",
+      "status": "in_progress",
       "passes": false,
       "acceptance": [
         "DP5 / S-DP5 是 PH0-PH8b 之后的 DP5-RC20 post-closeout hardening / RC readiness；不是新的 runtime phase",
@@ -350,7 +350,10 @@
         "PR-B1/B2/B3 field-readiness 修正已合入：MainMenu / menu glyph delegate reattach、upstream route health half-install prevention、existing broken INI fail-closed and visible warnings",
         "PR-C documentation contract hygiene 修正文档状态滞后、retired menu policy focused target、U4/U5 live / parsed-only reserved / QA required 分类和 #8 superseded note",
         "任何 DP5-RC20 slice 都不得重开 input_v2 runtime mainline、canonical target 名称、replay root、旧 SWF 返回 shape、FavoritesMenu workspace 或 legacy glyph authority",
-        "DP5-RC20 U0-U5 closeout 与 PR-A/B/C 修正必须通过 Phase 8 canonical CI、RC readiness outer gate、builder JSON、graphify、replay diff 与 diff hygiene；最终 main head 远端 phase8 / rc-readiness 全绿后称为 RC QA baseline"
+        "DP5-RC20 U0-U5 closeout 与 PR-A/B/C 修正必须通过 Phase 8 canonical CI、RC readiness outer gate、builder JSON、graphify、replay diff 与 diff hygiene；最终 main head 远端 phase8 / rc-readiness 全绿后称为 RC QA baseline",
+        "S-DP5-RC20-HOTFIX 只处理输入实时性、runtime concurrency、immutable poll publication、Favorites crash containment 与动态证据闭环；它是 post-closeout field-readiness hotfix，不新增 runtime phase",
+        "native Game.Favorites 在单一 runtime writer、immutable PollOutputFrame、generation-based pulse、matching dump/IDA 与真实游戏循环闭环前默认 fail-closed",
+        "最终 release status 只能是 NO-GO、GO WITH NATIVE FAVORITES DISABLED 或 GO；未完成真实 Favorites 循环与 crash evidence 不得标记 GO"
       ]
     }
   ]

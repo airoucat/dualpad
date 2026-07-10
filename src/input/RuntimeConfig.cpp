@@ -153,6 +153,9 @@ namespace dualpad::input
             if (auto it = values.find("log_route_health"); it != values.end()) {
                 _logRouteHealth = ini::ParseBool(it->second, _logRouteHealth);
             }
+            if (auto it = values.find("log_poll_diagnostics"); it != values.end()) {
+                _logPollDiagnostics = ini::ParseBool(it->second, _logPollDiagnostics);
+            }
         };
 
         const auto parseInjection = [&](const auto& values) {
@@ -178,6 +181,9 @@ namespace dualpad::input
             if (auto it = values.find("enable_combo_native_hotkeys3_to_8"); it != values.end()) {
                 _enableComboNativeHotkeys3To8 =
                     ini::ParseBool(it->second, _enableComboNativeHotkeys3To8);
+            }
+            if (auto it = values.find("enable_native_favorites"); it != values.end()) {
+                _enableNativeFavorites = ini::ParseBool(it->second, _enableNativeFavorites);
             }
             if (auto it = values.find("enable_gameplay_ownership"); it != values.end()) {
                 logger::warn(
@@ -223,7 +229,7 @@ namespace dualpad::input
         }
 
         logger::info(
-            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} routeHealth={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={} replay trace={} outputDir={} session={} glyphQueries={}",
+            "[DualPad][RuntimeConfig] logging packets={} hex={} state={} mapping={} synthetic={} actionPlan={} native={} keyboard={} routeHealth={} pollDiagnostics={} injection upstreamGamepad={} upstreamMode={} crossContextProbe={} features comboHotkeys3to8={} nativeFavorites={} replay trace={} outputDir={} session={} glyphQueries={}",
             _logInputPackets,
             _logInputHex,
             _logInputState,
@@ -233,10 +239,12 @@ namespace dualpad::input
             _logNativeInjection,
             _logKeyboardInjection,
             _logRouteHealth,
+            _logPollDiagnostics,
             _useUpstreamGamepadHook,
             ToString(_upstreamGamepadHookMode),
             _enableForceCrossContextRecoveryProbe,
             _enableComboNativeHotkeys3To8,
+            _enableNativeFavorites,
             _enableTraceRecording,
             _traceOutputDir.string(),
             _traceSession,
@@ -264,6 +272,7 @@ namespace dualpad::input
         _logNativeInjection = false;
         _logKeyboardInjection = false;
         _logRouteHealth = false;
+        _logPollDiagnostics = false;
 
         _enableTraceRecording = false;
         _traceOutputDir = "build/replay-captures";
@@ -274,5 +283,6 @@ namespace dualpad::input
         _upstreamGamepadHookMode = UpstreamGamepadHookMode::PollXInputCall;
         _enableForceCrossContextRecoveryProbe = false;
         _enableComboNativeHotkeys3To8 = false;
+        _enableNativeFavorites = false;
     }
 }

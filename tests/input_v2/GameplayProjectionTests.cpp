@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include "input/RuntimeConfig.h"
+#include "input/backend/ActionBackendPolicy.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
@@ -7,6 +9,8 @@
 #include "input_v2/gameplay/RecoveryPlan.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -19,6 +23,7 @@ namespace
     namespace gameplay = dualpad::input_v2::gameplay;
     namespace presentation = dualpad::input_v2::presentation;
     namespace backend = dualpad::input::backend;
+    namespace input = dualpad::input;
 
     void Require(bool condition, std::string_view message);
 
@@ -332,7 +337,7 @@ namespace
             "Game.Activate must remain gate-aware in gameplay projection");
     }
 
-    void RunGameplayFavoritesPreOutputPresentationHandoffTests()
+    gameplay::GameplayProjectionFrame ResolveFavoritesPress()
     {
         auto resolved = Resolved();
         resolved.changes.push_back(actions::ActionPhaseChange{
@@ -342,12 +347,52 @@ namespace
             .timestampUs = 10'000
         });
 
-        const auto projected = gameplay::ResolveGameplayProjection(
+        return gameplay::ResolveGameplayProjection(
             Kernel(),
             resolved,
             gameplay::GameplayPolicy{ .gameplayContext = true },
             gameplay::GameplayProjectionFrame{},
             gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+    }
+
+    void RunGameplayFavoritesFailClosedByDefaultTests()
+    {
+        const auto missingConfig = std::filesystem::temp_directory_path() / "dualpad-missing-runtime-config.ini";
+        std::error_code error;
+        std::filesystem::remove(missingConfig, error);
+        (void)input::RuntimeConfig::GetSingleton().Load(missingConfig);
+
+        const auto projected = ResolveFavoritesPress();
+        const auto route = backend::ActionBackendPolicy::Decide("Game.Favorites");
+        Require(
+            route.reason == backend::ActionRoutingReason::NativeFavoritesDisabled,
+            "disabled native Favorites must expose a stable fail-closed reason");
+        Require(
+            projected.gamepadPlan.transientDigital.count == 0,
+            "Game.Favorites native output must fail closed by default");
+        Require(
+            !projected.presentationPlan.preOutputPresentationHandoff,
+            "disabled native Favorites must not request a pre-output presentation handoff");
+    }
+
+    void RunGameplayFavoritesOptInPresentationHandoffTests()
+    {
+        const auto configPath = std::filesystem::temp_directory_path() / "dualpad-native-favorites-enabled.ini";
+        {
+            std::ofstream config(configPath, std::ios::trunc);
+            config << "[Logging]\n";
+            config << "log_poll_diagnostics = true\n";
+            config << "[Features]\n";
+            config << "enable_native_favorites = true\n";
+        }
+        Require(input::RuntimeConfig::GetSingleton().Load(configPath), "explicit Favorites config must load");
+        Require(
+            input::RuntimeConfig::GetSingleton().LogPollDiagnostics(),
+            "explicit Poll diagnostics config must enable the bounded diagnostic path");
+        std::error_code error;
+        std::filesystem::remove(configPath, error);
+
+        const auto projected = ResolveFavoritesPress();
 
         Require(projected.gamepadPlan.transientDigital.count == 1, "Game.Favorites must enter native transient output plan");
         Require(
@@ -665,7 +710,8 @@ int main()
         RunProjectionClassificationAndGateTests();
         RunMenuContextGamepadOutputTests();
         RunGameplayActivateKeepsMinDownWindowLifecycleTests();
-        RunGameplayFavoritesPreOutputPresentationHandoffTests();
+        RunGameplayFavoritesFailClosedByDefaultTests();
+        RunGameplayFavoritesOptInPresentationHandoffTests();
         RunPrimaryPathArbitrationContractTests();
         RunOverflowFailClosedTests();
         RunSoftRecoveryDoesNotClearOutputTests();

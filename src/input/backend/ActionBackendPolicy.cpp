@@ -76,6 +76,19 @@ namespace dualpad::input::backend
         }
 
         if (const auto* descriptor = FindNativeActionDescriptor(actionId)) {
+            if (actionId == actions::Favorites &&
+                !RuntimeConfig::GetSingleton().EnableNativeFavorites()) {
+                return {
+                    .backend = PlannedBackend::None,
+                    .kind = PlannedActionKind::PluginAction,
+                    .contract = ActionOutputContract::None,
+                    .lifecyclePolicy = ActionLifecyclePolicy::None,
+                    .nativeCode = NativeControlCode::None,
+                    .ownsLifecycle = false,
+                    .reason = ActionRoutingReason::NativeFavoritesDisabled
+                };
+            }
+
             if (IsComboNativeHotkeyActionId(actionId) &&
                 !RuntimeConfig::GetSingleton().EnableComboNativeHotkeys3To8()) {
                 return {
@@ -84,7 +97,8 @@ namespace dualpad::input::backend
                     .contract = ActionOutputContract::None,
                     .lifecyclePolicy = ActionLifecyclePolicy::None,
                     .nativeCode = NativeControlCode::None,
-                    .ownsLifecycle = false
+                    .ownsLifecycle = false,
+                    .reason = ActionRoutingReason::ComboNativeHotkeyDisabled
                 };
             }
 
@@ -104,7 +118,8 @@ namespace dualpad::input::backend
             .contract = ActionOutputContract::None,
             .lifecyclePolicy = ActionLifecyclePolicy::None,
             .nativeCode = NativeControlCode::None,
-            .ownsLifecycle = false
+            .ownsLifecycle = false,
+            .reason = ActionRoutingReason::UnknownAction
         };
     }
 
