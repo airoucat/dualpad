@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -20,9 +21,10 @@ namespace dualpad::input
         bool IsInstalled() const;
         bool IsRouteActive() const;
         UpstreamGamepadHookInstallStatus GetInstallStatus() const;
-        std::string_view GetInstallDebugReason() const;
+        std::string GetInstallDebugReason() const;
         bool HasInstallFailed() const;
         bool WasInstallAttempted() const;
+        UpstreamRouteInstallSnapshot GetInstallSnapshot(bool configured) const;
         void NotePollCallActivity();
         std::optional<std::uint64_t> GetLastPollCallAgeMs() const;
         bool HasRecentPollCallActivity(std::uint64_t maxAgeMs = 250) const;
@@ -32,10 +34,13 @@ namespace dualpad::input
 
         void SetInstallStatus(UpstreamGamepadHookInstallStatus status, std::string_view debugReason);
 
-        bool _attemptedInstall{ false };
-        bool _installed{ false };
+        std::atomic_bool _attemptedInstall{ false };
+        std::atomic_bool _installed{ false };
         bool _loggedUnsupportedRuntime{ false };
-        UpstreamGamepadHookInstallStatus _installStatus{ UpstreamGamepadHookInstallStatus::NotAttempted };
+        std::atomic<UpstreamGamepadHookInstallStatus> _installStatus{
+            UpstreamGamepadHookInstallStatus::NotAttempted
+        };
+        mutable std::mutex _installReasonMutex;
         std::string _installDebugReason{ "not_attempted" };
         std::atomic<std::uint64_t> _lastPollCallTickMs{ 0 };
     };

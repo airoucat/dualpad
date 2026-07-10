@@ -3,7 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
+
+#include "input/injection/HookPatchTransaction.h"
 
 namespace dualpad::input
 {
@@ -15,6 +18,8 @@ namespace dualpad::input
         UnsupportedRuntime,
         SignatureMismatch,
         PatchFailed,
+        PatchRolledBack,
+        UnsafePartial,
         Installed,
         AlreadyInstalled
     };
@@ -50,7 +55,9 @@ namespace dualpad::input
         bool installed{ false };
         bool failed{ false };
         UpstreamGamepadHookInstallStatus status{ UpstreamGamepadHookInstallStatus::NotAttempted };
-        std::string_view debugReason{};
+        patching::HookOperationalState operationalState{ patching::HookOperationalState::Disabled };
+        patching::HookFailureDisposition disposition{ patching::HookFailureDisposition::None };
+        std::string debugReason;
     };
 
     constexpr bool ShouldScheduleTaskFallback(
@@ -80,6 +87,8 @@ namespace dualpad::input
         case UpstreamGamepadHookInstallStatus::UnsupportedRuntime:
         case UpstreamGamepadHookInstallStatus::SignatureMismatch:
         case UpstreamGamepadHookInstallStatus::PatchFailed:
+        case UpstreamGamepadHookInstallStatus::PatchRolledBack:
+        case UpstreamGamepadHookInstallStatus::UnsafePartial:
             return true;
         case UpstreamGamepadHookInstallStatus::NotAttempted:
         case UpstreamGamepadHookInstallStatus::DisabledByConfig:
@@ -97,6 +106,8 @@ namespace dualpad::input
         case UpstreamGamepadHookInstallStatus::UnsupportedRuntime:
         case UpstreamGamepadHookInstallStatus::SignatureMismatch:
         case UpstreamGamepadHookInstallStatus::PatchFailed:
+        case UpstreamGamepadHookInstallStatus::PatchRolledBack:
+        case UpstreamGamepadHookInstallStatus::UnsafePartial:
         case UpstreamGamepadHookInstallStatus::Installed:
         case UpstreamGamepadHookInstallStatus::AlreadyInstalled:
             return true;
@@ -112,6 +123,50 @@ namespace dualpad::input
         UpstreamGamepadHookInstallStatus status) noexcept
     {
         return !upstreamConfigured || !HasUpstreamGamepadHookInstallFailed(status);
+    }
+
+    constexpr patching::HookOperationalState ResolveUpstreamHookOperationalState(
+        UpstreamGamepadHookInstallStatus status) noexcept
+    {
+        switch (status) {
+        case UpstreamGamepadHookInstallStatus::Installed:
+        case UpstreamGamepadHookInstallStatus::AlreadyInstalled:
+            return patching::HookOperationalState::Installed;
+        case UpstreamGamepadHookInstallStatus::UnsafePartial:
+            return patching::HookOperationalState::UnsafePartial;
+        case UpstreamGamepadHookInstallStatus::UnsupportedMode:
+        case UpstreamGamepadHookInstallStatus::UnsupportedRuntime:
+        case UpstreamGamepadHookInstallStatus::SignatureMismatch:
+        case UpstreamGamepadHookInstallStatus::PatchFailed:
+        case UpstreamGamepadHookInstallStatus::PatchRolledBack:
+            return patching::HookOperationalState::SafePassthrough;
+        case UpstreamGamepadHookInstallStatus::NotAttempted:
+        case UpstreamGamepadHookInstallStatus::DisabledByConfig:
+        default:
+            return patching::HookOperationalState::Disabled;
+        }
+    }
+
+    constexpr patching::HookFailureDisposition ResolveUpstreamHookFailureDisposition(
+        UpstreamGamepadHookInstallStatus status) noexcept
+    {
+        switch (status) {
+        case UpstreamGamepadHookInstallStatus::PatchRolledBack:
+            return patching::HookFailureDisposition::RolledBack;
+        case UpstreamGamepadHookInstallStatus::UnsafePartial:
+            return patching::HookFailureDisposition::FailClosed;
+        case UpstreamGamepadHookInstallStatus::UnsupportedMode:
+        case UpstreamGamepadHookInstallStatus::UnsupportedRuntime:
+        case UpstreamGamepadHookInstallStatus::SignatureMismatch:
+        case UpstreamGamepadHookInstallStatus::PatchFailed:
+            return patching::HookFailureDisposition::NotRequired;
+        case UpstreamGamepadHookInstallStatus::NotAttempted:
+        case UpstreamGamepadHookInstallStatus::DisabledByConfig:
+        case UpstreamGamepadHookInstallStatus::Installed:
+        case UpstreamGamepadHookInstallStatus::AlreadyInstalled:
+        default:
+            return patching::HookFailureDisposition::None;
+        }
     }
 
     UpstreamRouteState ResolveUpstreamRouteState(

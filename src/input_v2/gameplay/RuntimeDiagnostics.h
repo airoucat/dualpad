@@ -35,6 +35,8 @@ namespace dualpad::input_v2::gameplay
         std::string hookInstallStatusName;
         std::string hookInstallDebugReason;
         std::string hookInstallDebugSummary;
+        std::string hookOperationalStateName;
+        std::string hookFailureDispositionName;
 
         bool upstreamRouteConfigured{ false };
         bool upstreamRouteInstallFailed{ false };
@@ -43,6 +45,8 @@ namespace dualpad::input_v2::gameplay
         };
         std::string upstreamRouteInstallStatusName;
         std::string upstreamRouteInstallDebugReason;
+        std::string upstreamOperationalStateName;
+        std::string upstreamFailureDispositionName;
 
         RuntimePromptDebugState promptState{ RuntimePromptDebugState::Unavailable };
         std::string promptStateName;

@@ -94,9 +94,9 @@ namespace
 
             dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton().RegisterInitialMenus();
 
-            if (dualpad::input::RuntimeConfig::GetSingleton().UseUpstreamGamepadHook()) {
-                dualpad::input::UpstreamGamepadHook::GetSingleton().Install();
-            }
+            // Install() also publishes DisabledByConfig, keeping operational state and
+            // disposition coherent even when the official upstream route is off.
+            dualpad::input::UpstreamGamepadHook::GetSingleton().Install();
 
             const auto upstreamRoute = dualpad::input::GetUpstreamRouteInstallSnapshot();
             if (dualpad::input::ShouldApplyControlMapOverlay(upstreamRoute.configured, upstreamRoute.status)) {

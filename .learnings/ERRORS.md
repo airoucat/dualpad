@@ -207,3 +207,13 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: 公共 presentation/context header 变更触发大范围重编译时，xmake 默认 34 jobs 导致 MSVC `C3859` / `C1076`，Windows 返回 pagefile error 1455。
 - Detail: focused ContextResolver target 已先构建并运行通过；随后 `xmake build -y DualPad` 并发重编译大量 PCH translation units 时耗尽 commit/pagefile。该错误是本机并发资源上限，不能当作代码编译结论。
 - Resolution: 对大范围 header 变更的本地全量重编译使用 `xmake build -y -j 4 DualPad`；focused targets 仍可使用默认并发。
+
+## ERR-20260711-005
+
+- Logged: 2026-07-11 07:02 CST
+- Priority: high
+- Status: resolved
+- Area: transactional hook patching / exception safety
+- Summary: 最后一个 patch site 在“内存已变为 replacement、writer 随后抛异常”时，transaction 误以 `appliedSites == totalSites` 判定 Installed。
+- Detail: writer 的返回/异常状态与实际 patch reality 必须分别判断；即使每个 site 最终都短暂呈现 replacement，只要任一 writer 未正常确认，仍必须进入反向 expected-current rollback。该缺陷由 post-write exception 注入触发 Windows fast-fail 的测试断言暴露。
+- Resolution: 增加独立 `applicationFailed` 状态；只有全部 compare-write 正常确认且逐站点复验 replacement 才能返回 Installed。post-write exception 现在识别实际已写 site，并恢复全部 original bytes。

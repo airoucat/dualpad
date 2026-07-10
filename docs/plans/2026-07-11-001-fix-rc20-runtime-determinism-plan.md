@@ -544,7 +544,7 @@ flowchart TB
 
 **回滚：** 可关闭 refresh feature，但不能恢复 global stack refresh。
 
-- [ ] **Unit 8：事务化 hook 安装与 fail-closed 状态**
+- [x] **Unit 8：事务化 hook 安装与 fail-closed 状态**
 
 **目标：** 让 unsupported、signature mismatch、failed、partial、installed、disabled 具有一致 operational state、disposition 与 rollback。
 
@@ -578,6 +578,8 @@ flowchart TB
 - unsupported runtime 不安装 hook、不应用依赖 overlay、不宣称 native route active。
 
 **验证：** 状态、日志、health、route gate 和 patch reality 一致；关键 hook 不保留半安装。
+
+**执行结果（2026-07-11）：** 新增共享 `HookPatchTransaction`，在任何 source site 写入前完成所有站点 exact preflight；每个 compare-write 后复验 replacement，失败时按逆序用 expected-current 条件恢复 original 并再次复验。host 注入覆盖第 2 / 3 site 失败、preflight mismatch、rollback 前外部篡改、writer 在实际写入后抛异常；安全恢复归类为 `RolledBack`，expected-current/复验失败归类为 `UnsafePartial + FailClosed`。upstream Poll call-site 保存并解码原始 `CALL rel32`，以已知 replacement 事务写入；route 只有 transaction 成功后才激活，unsafe 残留时 thunk 只调用 original。compat 两个函数入口不再用会误解普通 prologue 的 `write_branch<5>`：现在只覆盖两个完整指令（8 bytes），生成可调用 original 的 entry gateway，并与 vfunc 作为一个三站点 transaction 提交。unsupported/mismatch/failed/rolled-back/unsafe/installed/disabled 分离 operational state 与 failure disposition，统一进入 runtime diagnostics；disabled config 也显式执行 install gate 以发布真实状态。上述证明 host patch 合同和 build，可执行站点地址/真实启动期 quiescence 仍需 Unit 10 动态验证。
 
 **回滚：** 完整 transaction 可回退到 safe passthrough / plugin-disabled，不留下 patch residue。
 

@@ -37,7 +37,7 @@ namespace dualpad::input
         return UpstreamGamepadHookInstallStatus::Installed;
     }
 
-    std::string_view UpstreamGamepadHook::GetInstallDebugReason() const
+    std::string UpstreamGamepadHook::GetInstallDebugReason() const
     {
         return "test_upstream_hook_installed";
     }
@@ -50,6 +50,13 @@ namespace dualpad::input
     bool UpstreamGamepadHook::WasInstallAttempted() const
     {
         return true;
+    }
+
+    UpstreamRouteInstallSnapshot UpstreamGamepadHook::GetInstallSnapshot(bool configured) const
+    {
+        auto snapshot = GetUpstreamRouteInstallSnapshot();
+        snapshot.configured = configured;
+        return snapshot;
     }
 
     void UpstreamGamepadHook::NotePollCallActivity()
@@ -90,6 +97,8 @@ namespace dualpad::input
             .installed = true,
             .failed = false,
             .status = UpstreamGamepadHookInstallStatus::Installed,
+            .operationalState = patching::HookOperationalState::Installed,
+            .disposition = patching::HookFailureDisposition::None,
             .debugReason = "test_upstream_hook_installed"
         };
     }

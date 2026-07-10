@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input/injection/RouteHealthContract.h"
+#include "input/injection/HookPatchTransaction.h"
 #include "input/injection/PollDiagnostics.h"
 
 #include <stdexcept>
@@ -61,7 +62,9 @@ namespace
                  dualpad::input::UpstreamGamepadHookInstallStatus::UnsupportedMode,
                  dualpad::input::UpstreamGamepadHookInstallStatus::UnsupportedRuntime,
                  dualpad::input::UpstreamGamepadHookInstallStatus::SignatureMismatch,
-                 dualpad::input::UpstreamGamepadHookInstallStatus::PatchFailed }) {
+                 dualpad::input::UpstreamGamepadHookInstallStatus::PatchFailed,
+                 dualpad::input::UpstreamGamepadHookInstallStatus::PatchRolledBack,
+                 dualpad::input::UpstreamGamepadHookInstallStatus::UnsafePartial }) {
             Require(
                 dualpad::input::HasUpstreamGamepadHookInstallFailed(status),
                 "failure status should be classified as failed");
@@ -84,6 +87,25 @@ namespace
             !dualpad::input::WasUpstreamGamepadHookInstallAttempted(
                 dualpad::input::UpstreamGamepadHookInstallStatus::DisabledByConfig),
             "disabled upstream config should not be classified as an install attempt");
+
+        Require(
+            dualpad::input::ResolveUpstreamHookOperationalState(
+                dualpad::input::UpstreamGamepadHookInstallStatus::PatchRolledBack) ==
+                dualpad::input::patching::HookOperationalState::SafePassthrough,
+            "rolled-back patch must expose safe passthrough reality");
+        Require(
+            dualpad::input::ResolveUpstreamHookFailureDisposition(
+                dualpad::input::UpstreamGamepadHookInstallStatus::PatchRolledBack) ==
+                dualpad::input::patching::HookFailureDisposition::RolledBack,
+            "rolled-back patch must expose rollback disposition");
+        Require(
+            dualpad::input::ResolveUpstreamHookOperationalState(
+                dualpad::input::UpstreamGamepadHookInstallStatus::UnsafePartial) ==
+                dualpad::input::patching::HookOperationalState::UnsafePartial &&
+                dualpad::input::ResolveUpstreamHookFailureDisposition(
+                    dualpad::input::UpstreamGamepadHookInstallStatus::UnsafePartial) ==
+                    dualpad::input::patching::HookFailureDisposition::FailClosed,
+            "unsafe partial patch must be explicitly fail-closed");
     }
 
     void TestControlMapOverlayGate()
@@ -124,6 +146,139 @@ namespace
             std::string_view(dualpad::input::ToString(
                 dualpad::input::UpstreamGamepadHookInstallStatus::DisabledByConfig)) == "disabled_by_config",
             "disabled-by-config install status label should stay stable");
+    }
+
+    void TestPatchTransactionRollback()
+    {
+        using namespace dualpad::input::patching;
+
+        std::array<Bytes, 2> preflightMemory{ Bytes{ 1 }, Bytes{ 99 } };
+        std::size_t preflightWrites = 0;
+        std::vector<PatchSite> preflightSites;
+        for (std::size_t index = 0; index < preflightMemory.size(); ++index) {
+            preflightSites.push_back(PatchSite{
+                .name = "preflight_" + std::to_string(index),
+                .original = Bytes{ static_cast<std::uint8_t>(index + 1) },
+                .replacement = Bytes{ static_cast<std::uint8_t>(index + 11) },
+                .read = [&, index]() { return preflightMemory[index]; },
+                .compareWrite = [&, index](const Bytes& expected, const Bytes& desired) {
+                    ++preflightWrites;
+                    if (preflightMemory[index] != expected) {
+                        return false;
+                    }
+                    preflightMemory[index] = desired;
+                    return true;
+                }
+            });
+        }
+        const auto preflightFailure = ExecutePatchTransaction(preflightSites);
+        Require(
+            preflightFailure.outcome == PatchTransactionOutcome::FailedNoWrite &&
+                preflightWrites == 0 &&
+                preflightMemory[0] == Bytes{ 1 },
+            "every site must pass exact preflight before the transaction writes its first site");
+
+        const auto runFailureAt = [](std::size_t failureIndex, bool tamperRollback) {
+            std::array<Bytes, 3> memory{ Bytes{ 1 }, Bytes{ 2 }, Bytes{ 3 } };
+            const std::array<Bytes, 3> replacements{ Bytes{ 11 }, Bytes{ 12 }, Bytes{ 13 } };
+            std::vector<PatchSite> sites;
+            for (std::size_t index = 0; index < memory.size(); ++index) {
+                sites.push_back(PatchSite{
+                    .name = "site_" + std::to_string(index),
+                    .original = memory[index],
+                    .replacement = replacements[index],
+                    .read = [&, index]() { return memory[index]; },
+                    .compareWrite = [&, index](const Bytes& expected, const Bytes& desired) {
+                        if (memory[index] != expected) {
+                            return false;
+                        }
+                        if (desired == replacements[index] && index == failureIndex) {
+                            return false;
+                        }
+                        if (tamperRollback && index == 0 && desired == Bytes{ 1 }) {
+                            memory[index] = Bytes{ 99 };
+                            return false;
+                        }
+                        memory[index] = desired;
+                        return true;
+                    }
+                });
+            }
+            return std::pair{ ExecutePatchTransaction(sites), memory };
+        };
+
+        const auto [secondFailure, afterSecondFailure] = runFailureAt(1, false);
+        Require(
+            secondFailure.outcome == PatchTransactionOutcome::RolledBack,
+            "second-site failure must roll back the first exact patch");
+        Require(
+            afterSecondFailure == std::array<Bytes, 3>{ Bytes{ 1 }, Bytes{ 2 }, Bytes{ 3 } },
+            "second-site failure must restore all original bytes");
+
+        const auto [thirdFailure, afterThirdFailure] = runFailureAt(2, false);
+        Require(
+            thirdFailure.outcome == PatchTransactionOutcome::RolledBack,
+            "third-site failure must roll back both prior exact patches");
+        Require(
+            afterThirdFailure == std::array<Bytes, 3>{ Bytes{ 1 }, Bytes{ 2 }, Bytes{ 3 } },
+            "third-site failure must restore branch bytes and vfunc value");
+
+        const auto [tamperedRollback, afterTamperedRollback] = runFailureAt(1, true);
+        Require(
+            tamperedRollback.outcome == PatchTransactionOutcome::UnsafePartial,
+            "expected-current mismatch during rollback must enter unsafe partial state");
+        Require(
+            afterTamperedRollback[0] == Bytes{ 99 },
+            "transaction must refuse to overwrite an externally changed patch site");
+
+        std::array<Bytes, 2> throwMemory{ Bytes{ 1 }, Bytes{ 2 } };
+        const std::array<Bytes, 2> throwReplacements{ Bytes{ 11 }, Bytes{ 12 } };
+        std::vector<PatchSite> throwingSites;
+        for (std::size_t index = 0; index < throwMemory.size(); ++index) {
+            throwingSites.push_back(PatchSite{
+                .name = "throw_site_" + std::to_string(index),
+                .original = throwMemory[index],
+                .replacement = throwReplacements[index],
+                .read = [&, index]() { return throwMemory[index]; },
+                .compareWrite = [&, index](const Bytes& expected, const Bytes& desired) {
+                    if (throwMemory[index] != expected) {
+                        return false;
+                    }
+                    throwMemory[index] = desired;
+                    if (index == 1 && desired == throwReplacements[index]) {
+                        throw std::runtime_error("injected post-write exception");
+                    }
+                    return true;
+                }
+            });
+        }
+        const auto throwingResult = ExecutePatchTransaction(throwingSites);
+        Require(
+            throwingResult.outcome == PatchTransactionOutcome::RolledBack &&
+                throwMemory == std::array<Bytes, 2>{ Bytes{ 1 }, Bytes{ 2 } },
+            "post-write exception must detect patch reality and roll back every applied site");
+    }
+
+    void TestPatchEncodingContracts()
+    {
+        using namespace dualpad::input::patching;
+
+        const auto call = MakeRelativePatch(0x1000, 0x1800, RelativePatchOpcode::Call, 5);
+        Require(call.size() == 5 && call.front() == 0xE8, "call patch must encode one exact rel32 call");
+        Require(
+            DecodeRelativeTarget(0x1000, call, RelativePatchOpcode::Call) == std::optional<std::uintptr_t>{ 0x1800 },
+            "saved original call displacement must decode to its exact target");
+
+        const auto entryBranch = MakeRelativePatch(0x2000, 0x2800, RelativePatchOpcode::Jump, 8);
+        Require(entryBranch.size() == 8 && entryBranch.front() == 0xE9, "entry patch must encode a rel32 jump");
+        Require(
+            entryBranch[5] == 0x90 && entryBranch[6] == 0x90 && entryBranch[7] == 0x90,
+            "entry patch must cover only complete instructions and pad the remainder with NOPs");
+
+        const auto absoluteJump = MakeAbsoluteJump(0x123456789ABCDEF0ull);
+        Require(
+            absoluteJump.size() == 14 && absoluteJump[0] == 0xFF && absoluteJump[1] == 0x25,
+            "trampoline stub must encode an absolute RIP-relative jump");
     }
 
     void TestPollDiagnosticLimiter()
@@ -189,6 +344,8 @@ int main()
     TestInstallStatusFailureMapping();
     TestControlMapOverlayGate();
     TestInstallStatusLabels();
+    TestPatchTransactionRollback();
+    TestPatchEncodingContracts();
     TestPollDiagnosticLimiter();
     TestTaskFallbackTruthTable();
     return 0;

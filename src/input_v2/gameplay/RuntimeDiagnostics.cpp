@@ -67,8 +67,12 @@ namespace dualpad::input_v2::gameplay
                 << "|mask=" << snapshot.runtimeHealthReasons
                 << "|debug=" << snapshot.runtimeHealthDebugReason
                 << "|hook=" << snapshot.hookInstallStatusName
+                << "|hook_state=" << snapshot.hookOperationalStateName
+                << "|hook_disposition=" << snapshot.hookFailureDispositionName
                 << "|hook_reason=" << snapshot.hookInstallDebugReason
                 << "|upstream=" << snapshot.upstreamRouteInstallStatusName
+                << "|upstream_state=" << snapshot.upstreamOperationalStateName
+                << "|upstream_disposition=" << snapshot.upstreamFailureDispositionName
                 << "|upstream_failed=" << (snapshot.upstreamRouteInstallFailed ? "true" : "false")
                 << "|upstream_reason=" << snapshot.upstreamRouteInstallDebugReason
                 << "|prompt=" << snapshot.promptStateName
@@ -212,11 +216,15 @@ namespace dualpad::input_v2::gameplay
             .hookInstallStatusName = presentation::ToString(input.hookInstall.status),
             .hookInstallDebugReason = input.hookInstall.debugReason,
             .hookInstallDebugSummary = presentation::ToDebugString(input.hookInstall),
+            .hookOperationalStateName = input::patching::ToString(input.hookInstall.operationalState),
+            .hookFailureDispositionName = input::patching::ToString(input.hookInstall.disposition),
             .upstreamRouteConfigured = input.upstreamRoute.configured,
             .upstreamRouteInstallFailed = input.upstreamRoute.configured && input.upstreamRoute.failed,
             .upstreamRouteInstallStatus = input.upstreamRoute.status,
             .upstreamRouteInstallStatusName = input::ToString(input.upstreamRoute.status),
             .upstreamRouteInstallDebugReason = std::string(input.upstreamRoute.debugReason),
+            .upstreamOperationalStateName = input::patching::ToString(input.upstreamRoute.operationalState),
+            .upstreamFailureDispositionName = input::patching::ToString(input.upstreamRoute.disposition),
             .promptState = promptState,
             .promptStateName = ToString(promptState),
             .promptDebugReason = ResolvePromptDebugReason(input, promptState, reasonSummary),
@@ -259,7 +267,7 @@ namespace dualpad::input_v2::gameplay
 
         if (snapshot.runtimeHealthDegraded) {
             logger::warn(
-                "[DualPad][RuntimeDebug] degraded frame={} transition={} reasons={} debug='{}' prompt_state={} prompt_reason={} hook_status={} hook_reason='{}' upstream_status={} upstream_reason='{}' overflow='{}'",
+                "[DualPad][RuntimeDebug] degraded frame={} transition={} reasons={} debug='{}' prompt_state={} prompt_reason={} hook_status={} hook_state={} hook_disposition={} hook_reason='{}' upstream_status={} upstream_state={} upstream_disposition={} upstream_reason='{}' overflow='{}'",
                 snapshot.frameKind,
                 snapshot.transitionReason,
                 snapshot.runtimeHealthReasonSummary,
@@ -267,8 +275,12 @@ namespace dualpad::input_v2::gameplay
                 snapshot.promptStateName,
                 snapshot.promptDebugReason,
                 snapshot.hookInstallStatusName,
+                snapshot.hookOperationalStateName,
+                snapshot.hookFailureDispositionName,
                 snapshot.hookInstallDebugReason,
                 snapshot.upstreamRouteInstallStatusName,
+                snapshot.upstreamOperationalStateName,
+                snapshot.upstreamFailureDispositionName,
                 snapshot.upstreamRouteInstallDebugReason,
                 snapshot.overflowCompactionSummary);
             return;

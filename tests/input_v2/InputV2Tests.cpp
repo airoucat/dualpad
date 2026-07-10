@@ -1420,6 +1420,10 @@ namespace
         Require(
             snapshot.hookInstallDebugReason == "exception_after_patch_started",
             "debug snapshot must expose hook debug reason");
+        Require(
+            snapshot.hookOperationalStateName == "safe_passthrough" &&
+                snapshot.hookFailureDispositionName == "rolled_back",
+            "debug snapshot must expose compat operational state and rollback disposition");
         Require(snapshot.promptState == gameplay::RuntimePromptDebugState::Frozen, "degraded stable frame must freeze prompt");
         Require(
             snapshot.promptDebugReason.find("PromptScopeFrozen") != std::string::npos,
@@ -1607,6 +1611,11 @@ namespace
         Require(
             debug.hookInstallDebugReason == debugReason,
             "debug snapshot must expose hook debug reason");
+        Require(
+            debug.hookOperationalStateName ==
+                dualpad::input::patching::ToString(
+                    presentation::detail::MakeHookInstallResult(status, debugReason).operationalState),
+            "debug snapshot must expose compat operational state");
         Require(debug.promptState == gameplay::RuntimePromptDebugState::Ready, "SkyrimCompatSurface failure must not freeze prompt in debug snapshot");
         presentation::SkyrimCompatibilitySurface::GetSingleton().ForceInstallResultForTests(
             presentation::detail::MakeHookInstallResult(
@@ -1620,6 +1629,10 @@ namespace
             presentation::HookInstallStatus::PartialInstall,
             gameplay::RuntimeHealthReason::SkyrimCompatSurfacePartialInstall,
             "exception_after_patch_started");
+        AssertSkyrimCompatSurfaceFailureDegradesPresentationOnly(
+            presentation::HookInstallStatus::UnsafePartial,
+            gameplay::RuntimeHealthReason::SkyrimCompatSurfacePartialInstall,
+            "rollback_expected_current_mismatch");
         AssertSkyrimCompatSurfaceFailureDegradesPresentationOnly(
             presentation::HookInstallStatus::UnsupportedRuntime,
             gameplay::RuntimeHealthReason::SkyrimCompatSurfaceHookFailed,
@@ -1640,7 +1653,9 @@ namespace
             .installed = false,
             .failed = dualpad::input::HasUpstreamGamepadHookInstallFailed(status),
             .status = status,
-            .debugReason = debugReason
+            .operationalState = dualpad::input::ResolveUpstreamHookOperationalState(status),
+            .disposition = dualpad::input::ResolveUpstreamHookFailureDisposition(status),
+            .debugReason = std::string(debugReason)
         });
 
         RecordingPollOutputExecutor executor;
@@ -1687,6 +1702,14 @@ namespace
             debug.upstreamRouteInstallDebugReason == debugReason,
             "debug snapshot must expose upstream route debug reason");
         Require(
+            debug.upstreamOperationalStateName ==
+                dualpad::input::patching::ToString(
+                    dualpad::input::ResolveUpstreamHookOperationalState(status)) &&
+                debug.upstreamFailureDispositionName ==
+                    dualpad::input::patching::ToString(
+                        dualpad::input::ResolveUpstreamHookFailureDisposition(status)),
+            "debug snapshot must expose upstream operational state and disposition");
+        Require(
             debug.promptState == gameplay::RuntimePromptDebugState::Frozen,
             "upstream route failure must freeze prompt in debug snapshot");
 
@@ -1701,6 +1724,9 @@ namespace
         AssertUpstreamRouteFailureFailsClosed(
             dualpad::input::UpstreamGamepadHookInstallStatus::UnsupportedRuntime,
             "unsupported_runtime_1.6.640");
+        AssertUpstreamRouteFailureFailsClosed(
+            dualpad::input::UpstreamGamepadHookInstallStatus::UnsafePartial,
+            "unsafe_partial_patch");
     }
 
     void RunRuntimeDisabledUpstreamRouteDoesNotFailClosedTests()
@@ -1713,6 +1739,8 @@ namespace
             .installed = false,
             .failed = false,
             .status = dualpad::input::UpstreamGamepadHookInstallStatus::DisabledByConfig,
+            .operationalState = dualpad::input::patching::HookOperationalState::Disabled,
+            .disposition = dualpad::input::patching::HookFailureDisposition::None,
             .debugReason = "disabled_by_config"
         });
 

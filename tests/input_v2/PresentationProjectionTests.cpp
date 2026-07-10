@@ -722,6 +722,10 @@ void RunPresentationProjectionTests()
         Require(!unsupported.installed, "unsupported runtime hook result must not be installed");
         Require(!presentation::IsHookInstallFailure(unsupported), "CompatSurfaceUnsupportedRuntime_DegradesPresentationOnly");
         Require(
+            unsupported.operationalState == dualpad::input::patching::HookOperationalState::SafePassthrough &&
+                unsupported.disposition == dualpad::input::patching::HookFailureDisposition::NotRequired,
+            "unsupported runtime must expose safe passthrough without rollback");
+        Require(
             presentation::ToDebugString(unsupported).find("unsupported_runtime") != std::string::npos,
             "unsupported runtime hook result must expose debug reason");
 
@@ -737,19 +741,33 @@ void RunPresentationProjectionTests()
         Require(alreadyInstalled.installed, "already installed hook result must remain installed");
         Require(!presentation::IsHookInstallFailure(alreadyInstalled), "already installed must not fail closed");
 
-        const auto failed = presentation::detail::EvaluateHookPatchFailure(
-            presentation::detail::HookInstallProgress::NotStarted,
+        const auto failed = presentation::detail::EvaluateHookTransactionResult(
+            dualpad::input::patching::PatchTransactionOutcome::FailedNoWrite,
             "exception_before_patch_started");
         Require(failed.status == presentation::HookInstallStatus::Failed, "pre-patch exception must be failed");
         Require(!presentation::IsHookInstallFailure(failed), "SkyrimCompatSurface failed hook install must not fail closed by default");
 
-        const auto partial = presentation::detail::EvaluateHookPatchFailure(
-            presentation::detail::HookInstallProgress::PatchStarted,
+        const auto partial = presentation::detail::EvaluateHookTransactionResult(
+            dualpad::input::patching::PatchTransactionOutcome::RolledBack,
             "exception_after_patch_started");
         Require(
             partial.status == presentation::HookInstallStatus::PartialInstall,
             "post-patch exception must be partial install");
-        Require(!presentation::IsHookInstallFailure(partial), "SkyrimCompatSurface partial install must not fail closed by default");
+        Require(!presentation::IsHookInstallFailure(partial), "successfully rolled-back partial install must be safe passthrough");
+        Require(
+            partial.operationalState == dualpad::input::patching::HookOperationalState::SafePassthrough &&
+                partial.disposition == dualpad::input::patching::HookFailureDisposition::RolledBack,
+            "rolled-back compat patch must expose exact recovery disposition");
+
+        const auto unsafePartial = presentation::detail::EvaluateHookTransactionResult(
+            dualpad::input::patching::PatchTransactionOutcome::UnsafePartial,
+            "rollback_expected_current_mismatch");
+        Require(
+            unsafePartial.status == presentation::HookInstallStatus::UnsafePartial &&
+                presentation::IsHookInstallFailure(unsafePartial) &&
+                unsafePartial.operationalState == dualpad::input::patching::HookOperationalState::UnsafePartial &&
+                unsafePartial.disposition == dualpad::input::patching::HookFailureDisposition::FailClosed,
+            "unsafe partial compat hook must be explicitly fail-closed");
 
         presentation::SkyrimCompatibilitySurface compat;
         compat.Commit(presentation::PublishedPresentationState{});

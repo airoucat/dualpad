@@ -3,6 +3,7 @@
 #include <RE/Skyrim.h>
 
 #include "input_v2/presentation/PresentationProjection.h"
+#include "input/injection/HookPatchTransaction.h"
 
 #include <atomic>
 #include <cstddef>
@@ -64,12 +65,6 @@ namespace dualpad::input_v2::presentation
             Failed
         };
 
-        enum class HookInstallProgress : std::uint8_t
-        {
-            NotStarted = 0,
-            PatchStarted
-        };
-
         struct VfuncPatchSite
         {
             std::uintptr_t relocationBase{ 0 };
@@ -115,7 +110,8 @@ namespace dualpad::input_v2::presentation
         SignatureMismatch,
         AlreadyInstalled,
         Failed,
-        PartialInstall
+        PartialInstall,
+        UnsafePartial
     };
 
     struct HookInstallResult
@@ -123,6 +119,12 @@ namespace dualpad::input_v2::presentation
         HookInstallStatus status{ HookInstallStatus::NotAttempted };
         bool installed{ false };
         bool failClosed{ false };
+        input::patching::HookOperationalState operationalState{
+            input::patching::HookOperationalState::Disabled
+        };
+        input::patching::HookFailureDisposition disposition{
+            input::patching::HookFailureDisposition::None
+        };
         std::string debugReason;
     };
 
@@ -137,8 +139,8 @@ namespace dualpad::input_v2::presentation
             bool signaturesMatch,
             std::string_view debugReason = {});
 
-        HookInstallResult EvaluateHookPatchFailure(
-            HookInstallProgress progress,
+        HookInstallResult EvaluateHookTransactionResult(
+            input::patching::PatchTransactionOutcome outcome,
             std::string_view debugReason);
     }
 
@@ -200,8 +202,8 @@ namespace dualpad::input_v2::presentation
         void ResetRefreshStateForTests();
 
     private:
-        static bool StaticIsUsingGamepadHook();
-        static bool StaticIsGamepadCursorHook();
+        static bool StaticIsUsingGamepadHook(void* self);
+        static bool StaticIsGamepadCursorHook(void* self);
         static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
         static void DoRefreshMenus();
 
@@ -237,8 +239,8 @@ namespace dualpad::input_v2::presentation
             std::size_t refreshed,
             std::size_t notified,
             std::size_t skippedNotReady);
-        bool CallOriginalIsUsingGamepad() const;
-        bool CallOriginalGamepadControlsCursor() const;
+        bool CallOriginalIsUsingGamepad(void* self = nullptr) const;
+        bool CallOriginalGamepadControlsCursor(void* self = nullptr) const;
         bool CallOriginalGamepadDeviceEnabled(RE::BSPCGamepadDeviceHandler* device) const;
         HookInstallResult MarkInstallResultLocked(const HookInstallResult& result);
         HookInstallResult MarkInstallSucceeded();

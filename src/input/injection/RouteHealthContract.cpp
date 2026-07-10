@@ -64,6 +64,10 @@ namespace dualpad::input
             return "signature_mismatch";
         case UpstreamGamepadHookInstallStatus::PatchFailed:
             return "patch_failed";
+        case UpstreamGamepadHookInstallStatus::PatchRolledBack:
+            return "patch_rolled_back";
+        case UpstreamGamepadHookInstallStatus::UnsafePartial:
+            return "unsafe_partial";
         case UpstreamGamepadHookInstallStatus::Installed:
             return "installed";
         case UpstreamGamepadHookInstallStatus::AlreadyInstalled:

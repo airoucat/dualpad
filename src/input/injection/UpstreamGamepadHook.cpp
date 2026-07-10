@@ -5,11 +5,13 @@
 #include <SKSE/Version.h>
 
 #include <array>
-#include <exception>
+#include <cstring>
 #include <intrin.h>
 #include <string>
+#include <vector>
 
 #include "input/XInputStateBridge.h"
+#include "input/injection/HookPatchTransaction.h"
 #include "input/injection/PollDiagnostics.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input_v2/gameplay/PollOutputFrame.h"
@@ -34,13 +36,51 @@ namespace dualpad::input
             0x2C, 0x17, 0x00, 0x00, 0x85, 0xC0
         };
 
+        patching::Bytes ReadPatchBytes(std::uintptr_t address, std::size_t size)
+        {
+            patching::Bytes bytes(size);
+            std::memcpy(bytes.data(), reinterpret_cast<const void*>(address), size);
+            return bytes;
+        }
+
+        bool CompareWritePatchBytes(
+            std::uintptr_t address,
+            const patching::Bytes& expected,
+            const patching::Bytes& desired)
+        {
+            if (expected.size() != desired.size() || expected.empty()) {
+                return false;
+            }
+            return REL::safe_write(
+                address,
+                desired.data(),
+                desired.size(),
+                expected.data(),
+                expected.size());
+        }
+
+        std::uintptr_t AllocateAbsoluteJumpStub(std::uintptr_t destination)
+        {
+            const auto bytes = patching::MakeAbsoluteJump(destination);
+            if (bytes.empty()) {
+                return 0;
+            }
+            auto* memory = SKSE::GetTrampoline().allocate(bytes.size());
+            if (!memory) {
+                return 0;
+            }
+            const auto address = reinterpret_cast<std::uintptr_t>(memory);
+            REL::safe_write(address, bytes.data(), bytes.size());
+            return ReadPatchBytes(address, bytes.size()) == bytes ? address : 0;
+        }
+
         struct PollXInputCallHook
         {
             using OriginalXInputGetState_t = std::uint32_t(WINAPI*)(std::uint32_t, void*);
 
             static std::uint32_t WINAPI Thunk(std::uint32_t userIndex, void* currentState)
             {
-                if (!currentState || userIndex != 0) {
+                if (!_routeEnabled.load(std::memory_order_acquire) || !currentState || userIndex != 0) {
                     return CallOriginal(userIndex, currentState);
                 }
 
@@ -114,6 +154,7 @@ namespace dualpad::input
             }
 
             static inline std::uintptr_t _originalTarget{ 0 };
+            static inline std::atomic_bool _routeEnabled{ false };
 
             static std::uint32_t CallOriginal(std::uint32_t userIndex, void* currentState)
             {
@@ -135,14 +176,14 @@ namespace dualpad::input
 
     void UpstreamGamepadHook::Install()
     {
-        if (_installed) {
+        if (_installed.load(std::memory_order_acquire)) {
             SetInstallStatus(UpstreamGamepadHookInstallStatus::AlreadyInstalled, "already_installed");
             return;
         }
-        if (_attemptedInstall) {
+        if (_attemptedInstall.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
-        _attemptedInstall = true;
+        PollXInputCallHook::_routeEnabled.store(false, std::memory_order_release);
 
         const auto& config = RuntimeConfig::GetSingleton();
         if (!config.UseUpstreamGamepadHook()) {
@@ -180,7 +221,7 @@ namespace dualpad::input
         if (!REL::verify_code(windowAddress, kExpectedPollXInputWindow)) {
             SetInstallStatus(
                 UpstreamGamepadHookInstallStatus::SignatureMismatch,
-                "is_using_gamepad_call_signature_mismatch");
+                "poll_xinput_call_signature_mismatch");
             logger::error(
                 "[DualPad][UpstreamGamepad] Poll XInput call-site verification failed at poll=0x{:X}; upstream poll hook remains disabled",
                 pollAddress);
@@ -188,77 +229,114 @@ namespace dualpad::input
         }
 
         const auto callAddress = pollAddress + kExpectedPollXInputCallOffset;
-        try {
-            PollXInputCallHook::_originalTarget = SKSE::GetTrampoline().write_call<5>(
-                callAddress,
-                PollXInputCallHook::Thunk);
-        }
-        catch (const std::exception& e) {
-            SetInstallStatus(
-                UpstreamGamepadHookInstallStatus::PatchFailed,
-                std::string("patch_failed:") + e.what());
+        const auto originalCall = ReadPatchBytes(callAddress, 5);
+        const auto originalTarget = patching::DecodeRelativeTarget(
+            callAddress,
+            originalCall,
+            patching::RelativePatchOpcode::Call);
+        const auto thunkStub = AllocateAbsoluteJumpStub(
+            reinterpret_cast<std::uintptr_t>(PollXInputCallHook::Thunk));
+        const auto replacementCall = patching::MakeRelativePatch(
+            callAddress,
+            thunkStub,
+            patching::RelativePatchOpcode::Call,
+            originalCall.size());
+        if (!originalTarget || thunkStub == 0 || replacementCall.empty()) {
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::PatchFailed, "patch_preparation_failed");
             logger::error(
-                "[DualPad][UpstreamGamepad] Exception while patching Poll-internal XInput call at 0x{:X}: {}",
-                callAddress,
-                e.what());
-            return;
-        }
-        catch (...) {
-            SetInstallStatus(UpstreamGamepadHookInstallStatus::PatchFailed, "patch_failed:unknown_exception");
-            logger::error(
-                "[DualPad][UpstreamGamepad] Unknown exception while patching Poll-internal XInput call at 0x{:X}",
-                callAddress);
-            return;
-        }
-        _installed = PollXInputCallHook::_originalTarget != 0;
-
-        if (!_installed) {
-            SetInstallStatus(UpstreamGamepadHookInstallStatus::PatchFailed, "patch_failed:no_original_target");
-            logger::error(
-                "[DualPad][UpstreamGamepad] Failed to patch Poll-internal XInput call at 0x{:X}; upstream poll hook remains disabled",
+                "[DualPad][UpstreamGamepad] Failed to prepare transactional Poll hook at 0x{:X}; upstream route remains disabled",
                 callAddress);
             return;
         }
 
+        PollXInputCallHook::_originalTarget = *originalTarget;
+        std::vector<patching::PatchSite> sites;
+        sites.push_back(patching::PatchSite{
+            .name = "poll_xinput_call",
+            .original = originalCall,
+            .replacement = replacementCall,
+            .read = [callAddress]() { return ReadPatchBytes(callAddress, 5); },
+            .compareWrite = [callAddress](const auto& expected, const auto& desired) {
+                return CompareWritePatchBytes(callAddress, expected, desired);
+            }
+        });
+        const auto transaction = patching::ExecutePatchTransaction(sites);
+        switch (transaction.outcome) {
+        case patching::PatchTransactionOutcome::Installed:
+            break;
+        case patching::PatchTransactionOutcome::RolledBack:
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::PatchRolledBack, "patch_failed_rolled_back");
+            return;
+        case patching::PatchTransactionOutcome::UnsafePartial:
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::UnsafePartial, "unsafe_partial_patch");
+            logger::critical(
+                "[DualPad][UpstreamGamepad] Unsafe partial Poll hook at site={}; thunk remains original passthrough",
+                transaction.failedSite);
+            return;
+        case patching::PatchTransactionOutcome::FailedNoWrite:
+        default:
+            SetInstallStatus(UpstreamGamepadHookInstallStatus::PatchFailed, "patch_failed_no_write");
+            return;
+        }
+
+        SetInstallStatus(UpstreamGamepadHookInstallStatus::Installed, "installed");
+        PollXInputCallHook::_routeEnabled.store(true, std::memory_order_release);
         logger::info(
             "[DualPad][UpstreamGamepad] Installed official Poll XInput call-site hook poll=0x{:X} callSite=0x{:X} originalTarget=0x{:X}",
             pollAddress,
             callAddress,
             PollXInputCallHook::_originalTarget);
-        SetInstallStatus(UpstreamGamepadHookInstallStatus::Installed, "installed");
     }
 
     bool UpstreamGamepadHook::IsInstalled() const
     {
-        return _installed;
+        return _installed.load(std::memory_order_acquire);
     }
 
     bool UpstreamGamepadHook::IsRouteActive() const
     {
         const auto& config = RuntimeConfig::GetSingleton();
-        return _installed &&
+        return _installed.load(std::memory_order_acquire) &&
             config.UseUpstreamGamepadHook() &&
             config.GetUpstreamGamepadHookMode() == UpstreamGamepadHookMode::PollXInputCall;
     }
 
     UpstreamGamepadHookInstallStatus UpstreamGamepadHook::GetInstallStatus() const
     {
-        return _installStatus;
+        return _installStatus.load(std::memory_order_acquire);
     }
 
-    std::string_view UpstreamGamepadHook::GetInstallDebugReason() const
+    std::string UpstreamGamepadHook::GetInstallDebugReason() const
     {
+        std::scoped_lock lock(_installReasonMutex);
         return _installDebugReason;
     }
 
     bool UpstreamGamepadHook::HasInstallFailed() const
     {
-        return HasUpstreamGamepadHookInstallFailed(_installStatus);
+        return HasUpstreamGamepadHookInstallFailed(GetInstallStatus());
     }
 
     bool UpstreamGamepadHook::WasInstallAttempted() const
     {
-        return WasUpstreamGamepadHookInstallAttempted(_installStatus);
+        return WasUpstreamGamepadHookInstallAttempted(GetInstallStatus());
+    }
+
+    UpstreamRouteInstallSnapshot UpstreamGamepadHook::GetInstallSnapshot(bool configured) const
+    {
+        std::scoped_lock lock(_installReasonMutex);
+        const auto status = _installStatus.load(std::memory_order_acquire);
+        return UpstreamRouteInstallSnapshot{
+            .configured = configured,
+            .installAttempted = WasUpstreamGamepadHookInstallAttempted(status),
+            .installed = status == UpstreamGamepadHookInstallStatus::Installed ||
+                status == UpstreamGamepadHookInstallStatus::AlreadyInstalled,
+            .failed = HasUpstreamGamepadHookInstallFailed(status),
+            .status = status,
+            .operationalState = ResolveUpstreamHookOperationalState(status),
+            .disposition = ResolveUpstreamHookFailureDisposition(status),
+            .debugReason = _installDebugReason
+        };
     }
 
     void UpstreamGamepadHook::NotePollCallActivity()
@@ -291,8 +369,15 @@ namespace dualpad::input
         UpstreamGamepadHookInstallStatus status,
         std::string_view debugReason)
     {
-        _installStatus = status;
-        _installDebugReason = debugReason.empty() ? ToString(status) : std::string(debugReason);
+        {
+            std::scoped_lock lock(_installReasonMutex);
+            _installDebugReason = debugReason.empty() ? ToString(status) : std::string(debugReason);
+            _installed.store(
+                status == UpstreamGamepadHookInstallStatus::Installed ||
+                    status == UpstreamGamepadHookInstallStatus::AlreadyInstalled,
+                std::memory_order_release);
+            _installStatus.store(status, std::memory_order_release);
+        }
     }
 
     UpstreamRouteInstallSnapshot GetUpstreamRouteInstallSnapshot()
@@ -300,14 +385,6 @@ namespace dualpad::input
         const auto& config = RuntimeConfig::GetSingleton();
         const auto& hook = UpstreamGamepadHook::GetSingleton();
         const bool configured = config.UseUpstreamGamepadHook();
-        const auto status = hook.GetInstallStatus();
-        return UpstreamRouteInstallSnapshot{
-            .configured = configured,
-            .installAttempted = hook.WasInstallAttempted(),
-            .installed = hook.IsInstalled(),
-            .failed = hook.HasInstallFailed(),
-            .status = status,
-            .debugReason = hook.GetInstallDebugReason()
-        };
+        return hook.GetInstallSnapshot(configured);
     }
 }

@@ -153,6 +153,7 @@ namespace dualpad::input_v2::gameplay
         {
             switch (status) {
             case presentation::HookInstallStatus::PartialInstall:
+            case presentation::HookInstallStatus::UnsafePartial:
                 return RuntimeHealthReason::SkyrimCompatSurfacePartialInstall;
             case presentation::HookInstallStatus::UnsupportedRuntime:
             case presentation::HookInstallStatus::SignatureMismatch:
