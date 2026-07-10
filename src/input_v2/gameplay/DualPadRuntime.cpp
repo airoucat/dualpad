@@ -534,22 +534,22 @@ namespace dualpad::input_v2::gameplay
         return _presentationPublisher.PublishAfterOutputApply(frame, tick, outputApplySucceeded);
     }
 
-    const presentation::PublishedGameplayPresentation& DualPadRuntime::GetPublishedGameplayPresentation() const
+    presentation::PublishedGameplayPresentation DualPadRuntime::GetPublishedGameplayPresentation() const
     {
         return _presentationPublisher.GetPublished();
     }
 
-    const GameplayProjectionFrame& DualPadRuntime::GetLastProjectionFrame() const
+    GameplayProjectionFrame DualPadRuntime::GetLastProjectionFrame() const
     {
         return _lastProjectionFrame;
     }
 
-    const RuntimeDebugSnapshot& DualPadRuntime::GetLastDebugSnapshot() const
+    RuntimeDebugSnapshot DualPadRuntime::GetLastDebugSnapshot() const
     {
         return _lastDebugSnapshot;
     }
 
-    void DualPadRuntime::ResetForTests()
+    void DualPadRuntime::ResetMutableState()
     {
         _lastProjectionFrame = GameplayProjectionFrame{};
         _lastDebugSnapshot = RuntimeDebugSnapshot{};
@@ -559,5 +559,10 @@ namespace dualpad::input_v2::gameplay
         _interactionState.Reset();
         _presentationPublisher.ResetForTests();
         _presentationProjection.ResetForTests();
+    }
+
+    void DualPadRuntime::ResetForTests()
+    {
+        ResetMutableState();
     }
 }

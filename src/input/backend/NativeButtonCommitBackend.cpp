@@ -177,7 +177,7 @@ namespace dualpad::input::backend
             bool routeActive)
         {
             const auto committed = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
-            const auto& resolved = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+            const auto resolved = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
             logger::info(
                 "[DualPad][{}] stage={} action={} phase={} contract={} digitalPolicy={} gateAware={} actionContext={} actionEpoch={} frameRouteActive={} presentationEpoch={} presentationDirty=0x{:02X} presentationUiContext={} eligibility={} owner={} navigationOwner={} cursorOwner={} presentationContextRevision={} gameplayPresentationRevision={} resolverHost={} resolverUiContext={} resolverContextRevision={} legacyContext={} legacyEpoch={} menuStackRevision={} topMenuInstancePresent={} topMenuInstance={} observer={} identity={} degraded={}",
                 traceTag,
@@ -219,7 +219,7 @@ namespace dualpad::input::backend
             std::uint32_t buttonBit)
         {
             const auto committed = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
-            const auto& resolved = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+            const auto resolved = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
             logger::info(
                 "[DualPad][{}] stage=slot poll={} slotAction={} slotContext={} slotEpoch={} outputCode={} bit=0x{:08X} execState={} commitMode={} pending={} nextPulse={} managed={} down={} gateAware={} token={} downSubmitted={} releaseSubmitted={} downCount={} upCount={} coalesced={} dropped={} presentationEpoch={} presentationDirty=0x{:02X} presentationUiContext={} eligibility={} owner={} navigationOwner={} cursorOwner={} resolverHost={} resolverUiContext={} resolverContextRevision={} legacyContext={} legacyEpoch={} menuStackRevision={} topMenuInstancePresent={} topMenuInstance={} observer={} identity={} degraded={}",
                 traceTag,
@@ -270,7 +270,7 @@ namespace dualpad::input::backend
             std::uint16_t xinputButtons)
         {
             const auto committed = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
-            const auto& resolved = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+            const auto resolved = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
             logger::info(
                 "[DualPad][{}] stage=poll poll={} context={} epoch={} trackedBit=0x{:08X} down=0x{:08X} pressed=0x{:08X} released=0x{:08X} managed=0x{:08X} xinputButtons=0x{:04X} presentationEpoch={} presentationDirty=0x{:02X} presentationUiContext={} eligibility={} owner={} navigationOwner={} cursorOwner={} presentationContextRevision={} gameplayPresentationRevision={} resolverHost={} resolverUiContext={} resolverContextRevision={} legacyContext={} legacyEpoch={} menuStackRevision={} topMenuInstancePresent={} topMenuInstance={} observer={} identity={} degraded={}",
                 traceTag,
@@ -567,7 +567,7 @@ namespace dualpad::input::backend
         std::scoped_lock lock(_lock);
 
         const auto nowUs = NowUs();
-        const auto& contextSnapshot = dualpad::input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        const auto contextSnapshot = dualpad::input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
         const auto context = contextSnapshot.legacyInputContext;
         const auto contextEpoch = contextSnapshot.legacyContextEpoch;
         _frameContext = context;

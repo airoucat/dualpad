@@ -31,7 +31,8 @@ namespace dualpad::input
         UpstreamPoll = 0,
         FramePumpAssistStale,
         TaskFallbackHighWater,
-        FramePumpDisabled
+        FramePumpDisabled,
+        RuntimeOwnerInputPump
     };
 
     struct DrainTelemetryContext

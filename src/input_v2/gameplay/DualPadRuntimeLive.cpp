@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input_v2/gameplay/DualPadRuntime.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 #include "input/AuthoritativePollState.h"
 #include "input/backend/ActionBackendPolicy.h"
@@ -9,6 +10,8 @@
 #include "input/backend/NativeDigitalPolicyResolver.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input_v2::gameplay
 {
@@ -271,6 +274,10 @@ namespace dualpad::input_v2::gameplay
 
     DualPadRuntimeResult DualPadRuntime::ProcessGameplayFrame(const DualPadRuntimeInput& input)
     {
+        if (!runtime::RuntimeOwnerGuard::GetSingleton().IsCurrentThreadOwnerTick()) {
+            logger::critical("[DualPad][RuntimeOwner] rejected ProcessGameplayFrame outside active owner tick");
+            return {};
+        }
         if (ShouldFailClosedRuntimeOutput(input.runtimeHealthReasons)) {
             auto runtimeHealthReasons = input.runtimeHealthReasons;
             if (runtimeHealthReasons != RuntimeHealthMask(RuntimeHealthReason::None)) {
@@ -296,6 +303,10 @@ namespace dualpad::input_v2::gameplay
 
     DualPadRuntimeResult DualPadRuntime::ProcessAssembledFrame(const ingress::AssembledFactFrame& frame)
     {
+        if (!runtime::RuntimeOwnerGuard::GetSingleton().IsCurrentThreadOwnerTick()) {
+            logger::critical("[DualPad][RuntimeOwner] rejected ProcessAssembledFrame outside active owner tick");
+            return {};
+        }
         if (frame.kind == ingress::AssembledFrameKind::Transition) {
             auto result = ProcessTransitionFrame(frame);
             PublishRuntimeDebugSnapshot(frame, result);
@@ -308,5 +319,14 @@ namespace dualpad::input_v2::gameplay
         PublishStablePresentationSurface(envelope, result);
         PublishRuntimeDebugSnapshot(frame, result);
         return result;
+    }
+
+    void DualPadRuntime::ResetOnOwnerTick()
+    {
+        if (!runtime::RuntimeOwnerGuard::GetSingleton().IsCurrentThreadOwnerTick()) {
+            logger::critical("[DualPad][RuntimeOwner] rejected DualPadRuntime reset outside active owner tick");
+            return;
+        }
+        ResetMutableState();
     }
 }

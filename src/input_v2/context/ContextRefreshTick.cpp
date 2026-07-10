@@ -3,6 +3,7 @@
 
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 namespace logger = SKSE::log;
 
@@ -107,8 +108,14 @@ namespace dualpad::input_v2::context
         return ContextResolver::GetSingleton().ResolveAndPublish(stack, gameplaySubstate, catalog);
     }
 
-    ResolvedContextSnapshot ContextRefreshTick::RefreshOnMainThread(std::uint64_t frameToken)
+    ResolvedContextSnapshot ContextRefreshTick::RefreshOnOwnerTick(std::uint64_t frameToken)
     {
+        if (!runtime::RuntimeOwnerGuard::GetSingleton().IsCurrentThreadOwnerTick()) {
+            logger::critical(
+                "[DualPad][RuntimeOwner] rejected ContextRefreshTick mutation outside active owner tick frameToken={}",
+                frameToken);
+            return ContextResolver::GetSingleton().GetPublishedSnapshot();
+        }
         {
             std::scoped_lock lock(_mutex);
             if (ShouldSkipFrameLocked(frameToken)) {

@@ -6,8 +6,11 @@
 #include "input_v2/menu/MenuInstanceRegistry.h"
 
 #include <iostream>
+#include <atomic>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
+#include <type_traits>
 
 namespace
 {
@@ -43,6 +46,10 @@ void RunContextResolverTests()
 {
     namespace actions = dualpad::input_v2::actions;
     namespace ctx = dualpad::input_v2::context;
+
+    static_assert(
+        !std::is_reference_v<decltype(ctx::ContextResolver::GetSingleton().GetPublishedSnapshot())>,
+        "ContextResolver publication must be returned by value");
     namespace menu = dualpad::input_v2::menu;
     using dualpad::input::InputContext;
 
@@ -336,6 +343,45 @@ void RunContextResolverTests()
         const auto diff = ctx::ContextResolver::CompareShadowRecords(expected, actual);
         Require(!diff.passes, "presentationPolicyId diff must fail shadow compare");
         Require(diff.diffs.size() == 1 && diff.diffs.front() == "presentationPolicyId", "shadow compare must report presentationPolicyId diff");
+    }
+
+    {
+        auto& resolver = ctx::ContextResolver::GetSingleton();
+        resolver.ResetForTests();
+        ctx::ResolvedContextSnapshot initial{};
+        initial.contextRevision = 1;
+        initial.menuStackRevision = 1;
+        initial.legacyContextEpoch = 1;
+        initial.presentationPolicyId = "1";
+        initial.actionSetStack.baseSetId = "1";
+        resolver.PublishSnapshotForReplayTests(std::move(initial));
+        std::atomic_bool done{ false };
+        std::atomic_bool torn{ false };
+        std::thread writer([&]() {
+            for (std::uint32_t generation = 2; generation <= 20'000; ++generation) {
+                ctx::ResolvedContextSnapshot snapshot{};
+                snapshot.contextRevision = generation;
+                snapshot.menuStackRevision = generation;
+                snapshot.legacyContextEpoch = generation;
+                snapshot.presentationPolicyId = std::to_string(generation);
+                snapshot.actionSetStack.baseSetId = snapshot.presentationPolicyId;
+                resolver.PublishSnapshotForReplayTests(std::move(snapshot));
+            }
+            done.store(true, std::memory_order_release);
+        });
+        while (!done.load(std::memory_order_acquire)) {
+            const auto snapshot = resolver.GetPublishedSnapshot();
+            if (snapshot.contextRevision != snapshot.menuStackRevision ||
+                snapshot.contextRevision != snapshot.legacyContextEpoch ||
+                snapshot.presentationPolicyId != snapshot.actionSetStack.baseSetId) {
+                torn.store(true, std::memory_order_release);
+                break;
+            }
+        }
+        writer.join();
+        Require(!torn.load(std::memory_order_acquire), "concurrent context readers must never observe a torn publication");
+        const auto final = resolver.GetPublishedSnapshot();
+        Require(final.contextRevision == 20'000, "concurrent context publication must retain the final complete generation");
     }
 }
 

@@ -8,10 +8,14 @@
 #include "input/backend/ModEventKeyPool.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/ingress/IngressHub.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
+
+namespace logger = SKSE::log;
 
 namespace dualpad::input
 {
@@ -95,7 +99,21 @@ namespace dualpad::input
         return instance;
     }
 
-    void PadEventSnapshotProcessor::ResetState()
+    void PadEventSnapshotProcessor::ResetStateOnOwnerTick()
+    {
+        if (!input_v2::runtime::RuntimeOwnerGuard::GetSingleton().IsCurrentThreadOwnerTick()) {
+            logger::critical("[DualPad][RuntimeOwner] rejected processor reset outside active owner tick");
+            return;
+        }
+        AuthoritativePollState::GetSingleton().Reset();
+        backend::NativeButtonCommitBackend::GetSingleton().Reset();
+        backend::KeyboardHelperBackend::GetSingleton().Reset();
+        input_v2::gameplay::DualPadRuntime::GetSingleton().ResetOnOwnerTick();
+        input_v2::ingress::IngressHub::GetSingleton().ResetForTests();
+        DirectProcessorAssembler().Reset();
+    }
+
+    void PadEventSnapshotProcessor::ResetStateForReplayTests()
     {
         AuthoritativePollState::GetSingleton().Reset();
         backend::NativeButtonCommitBackend::GetSingleton().Reset();
@@ -103,12 +121,19 @@ namespace dualpad::input
         input_v2::gameplay::DualPadRuntime::GetSingleton().ResetForTests();
         input_v2::ingress::IngressHub::GetSingleton().ResetForTests();
         DirectProcessorAssembler().Reset();
+        input_v2::runtime::RuntimeOwnerGuard::GetSingleton().ResetForTests();
     }
 
     void PadEventSnapshotProcessor::Process(const PadEventSnapshot& snapshot)
     {
+        auto& contextRefresh = input_v2::context::ContextRefreshTick::GetSingleton();
+        auto ownerTick = input_v2::runtime::RuntimeOwnerGuard::GetSingleton().TryEnter(
+            contextRefresh.BeginFrame());
+        if (!ownerTick.Accepted()) {
+            return;
+        }
         if (snapshot.type == PadEventSnapshotType::Reset) {
-            ResetState();
+            ResetStateOnOwnerTick();
             return;
         }
 
@@ -123,6 +148,10 @@ namespace dualpad::input
 
     void PadEventSnapshotProcessor::ProcessIngressFrame(const input_v2::ingress::AssembledFactFrame& frame)
     {
+        if (!input_v2::runtime::RuntimeOwnerGuard::GetSingleton().IsCurrentThreadOwnerTick()) {
+            logger::critical("[DualPad][RuntimeOwner] rejected ProcessIngressFrame outside active owner tick");
+            return;
+        }
         if (frame.kind == input_v2::ingress::AssembledFrameKind::Transition &&
             frame.transition.requestHardResync) {
             AuthoritativePollState::GetSingleton().Reset();

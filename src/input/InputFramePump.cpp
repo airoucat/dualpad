@@ -6,8 +6,10 @@
 #include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input/injection/UpstreamGamepadHook.h"
+#include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/ingress/LiveInputFactProducer.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 namespace logger = SKSE::log;
 
@@ -15,7 +17,6 @@ namespace dualpad::input
 {
     namespace
     {
-        constexpr std::size_t kUpstreamAssistDrainBudget = 32;
         constexpr std::uint64_t kUpstreamPollAssistWindowMs = 250;
 
         std::uint64_t NowMonotonicUs()
@@ -30,7 +31,7 @@ namespace dualpad::input
             }
 
             auto& producer = input_v2::ingress::LiveInputFactProducer::GetSingleton();
-            const auto& contextSnapshot =
+            const auto contextSnapshot =
                 input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
             for (auto* current = *events; current; current = current->next) {
                 const auto tick = NowMonotonicUs();
@@ -104,6 +105,7 @@ namespace dualpad::input
 
         _registered = false;
         PadEventSnapshotDispatcher::GetSingleton().SetFramePumpEnabled(false);
+        input_v2::runtime::RuntimeOwnerGuard::GetSingleton().Stop();
         logger::info("[DualPad][FramePump] Unregistered from BSInputDeviceManager input pump");
     }
 
@@ -126,51 +128,12 @@ namespace dualpad::input
                     StartHidReader();
                     logger::info("[DualPad][FramePump] Deferred HID reader start released via input pump activity");
                 }
-
-                static bool loggedRouteOwnership = false;
-                if (!loggedRouteOwnership) {
-                    logger::info(
-                        "[DualPad][FramePump] Official upstream gamepad route owns snapshot draining; input pump will assist only when poll activity goes stale");
-                    loggedRouteOwnership = true;
-                }
-
-                if (upstreamHook.HasRecentPollCallActivity(kUpstreamPollAssistWindowMs)) {
-                    return RE::BSEventNotifyControl::kContinue;
-                }
-
-                const auto lastPollAgeMs = upstreamHook.GetLastPollCallAgeMs();
-                const DrainTelemetryContext telemetry{
-                    .reason = DrainReason::FramePumpAssistStale,
-                    .routeState = ResolveUpstreamRouteState(
-                        upstreamHook.IsRouteActive(),
-                        lastPollAgeMs,
-                        kUpstreamPollAssistWindowMs),
-                    .lastPollAgeMs = lastPollAgeMs,
-                    .hookInstalled = upstreamHook.IsInstalled()
-                };
-                const auto drained =
-                    PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kUpstreamAssistDrainBudget, &telemetry);
-                if (drained != 0) {
-                    static std::uint64_t lastAssistLogTickMs = 0;
-                    const auto now = GetTickCount64();
-                    if (now - lastAssistLogTickMs >= 1000) {
-                        logger::warn(
-                            "[DualPad][FramePump] Upstream poll activity stale; input pump assisted snapshot drain drained={} budget={} windowMs={} routeState={} lastPollAgeMs={}",
-                            drained,
-                            kUpstreamAssistDrainBudget,
-                            kUpstreamPollAssistWindowMs,
-                            ToString(telemetry.routeState),
-                            telemetry.lastPollAgeMs ? std::to_string(*telemetry.lastPollAgeMs) : "none");
-                        lastAssistLogTickMs = now;
-                    }
-                }
-                return RE::BSEventNotifyControl::kContinue;
             }
         }
 
         const auto lastPollAgeMs = upstreamHook.GetLastPollCallAgeMs();
         const DrainTelemetryContext telemetry{
-            .reason = DrainReason::FramePumpDisabled,
+            .reason = DrainReason::RuntimeOwnerInputPump,
             .routeState = ResolveUpstreamRouteState(
                 upstreamHook.IsRouteActive(),
                 lastPollAgeMs,
@@ -178,9 +141,11 @@ namespace dualpad::input
             .lastPollAgeMs = lastPollAgeMs,
             .hookInstalled = upstreamHook.IsInstalled()
         };
-        PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(
+        const auto frameToken = input_v2::context::ContextRefreshTick::GetSingleton().BeginFrame();
+        PadEventSnapshotDispatcher::GetSingleton().DrainOnOwnerTick(
             PadEventSnapshotDispatcher::DefaultDrainBudget(),
-            &telemetry);
+            &telemetry,
+            frameToken);
 
         return RE::BSEventNotifyControl::kContinue;
     }

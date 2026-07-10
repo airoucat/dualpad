@@ -542,7 +542,7 @@ namespace dualpad::input_v2::telemetry
         void ResetProcessorRuntimeForReplay()
         {
             input::backend::KeyboardHelperBackend::GetSingleton().SetReplayRouteActive(false);
-            input::PadEventSnapshotProcessor::GetSingleton().ResetState();
+            input::PadEventSnapshotProcessor::GetSingleton().ResetStateForReplayTests();
             input_v2::context::ContextResolver::GetSingleton().ResetForTests();
             input_v2::prompt::PromptRuntimeOwner::GetSingleton().ResetForTests();
             gReplayManifestSeeded = false;

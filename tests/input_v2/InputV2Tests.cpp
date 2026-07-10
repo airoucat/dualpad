@@ -24,12 +24,14 @@
 #include "input_v2/menu/MenuInstanceRegistry.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 
 namespace
 {
@@ -38,6 +40,7 @@ namespace
     namespace context = dualpad::input_v2::context;
     namespace gameplay = dualpad::input_v2::gameplay;
     namespace ingress = dualpad::input_v2::ingress;
+    namespace runtime = dualpad::input_v2::runtime;
     namespace menu = dualpad::input_v2::menu;
     namespace presentation = dualpad::input_v2::presentation;
     namespace prompt = dualpad::input_v2::prompt;
@@ -2497,6 +2500,71 @@ namespace
             result.projectionFrame.gamepadPlan.analog.rightTrigger == 1.0f,
             "replay boundary stable frame must resolve right trigger value");
     }
+
+    void RunRuntimeOwnerGuardTests()
+    {
+        runtime::RuntimeOwnerGuard guard;
+        {
+            auto first = guard.TryEnter(1);
+            Require(first.Accepted(), "first owner tick must bind and enter");
+            Require(first.Generation() == 1, "first owner tick must publish generation 1");
+
+            auto reentrant = guard.TryEnter(1);
+            Require(!reentrant.Accepted(), "same-tick reentry must not gain mutation authority");
+            Require(
+                reentrant.Failure() == runtime::RuntimeOwnerFailure::ReentrantTick,
+                "same-tick reentry must expose ReentrantTick");
+        }
+        auto snapshot = guard.GetSnapshot();
+        Require(snapshot.degraded, "same-tick reentry must permanently degrade the owner guard");
+        Require(snapshot.rejectedTicks == 1, "same-tick reentry must increment rejected tick count");
+
+        guard.ResetForTests();
+        {
+            auto first = guard.TryEnter(10);
+            Require(first.Accepted(), "reset owner guard must accept a new first tick");
+        }
+        {
+            auto repeated = guard.TryEnter(10);
+            Require(!repeated.Accepted(), "repeated completed frame token must not mutate twice");
+            Require(
+                repeated.Failure() == runtime::RuntimeOwnerFailure::RepeatedFrameToken,
+                "repeated completed frame token must expose RepeatedFrameToken");
+        }
+
+        guard.ResetForTests();
+        {
+            auto first = guard.TryEnter(20);
+            Require(first.Accepted(), "thread-drift fixture must bind on the main test thread");
+        }
+        runtime::RuntimeOwnerFailure driftFailure = runtime::RuntimeOwnerFailure::None;
+        std::thread drift([&]() {
+            auto otherThread = guard.TryEnter(21);
+            driftFailure = otherThread.Failure();
+        });
+        drift.join();
+        snapshot = guard.GetSnapshot();
+        Require(driftFailure == runtime::RuntimeOwnerFailure::ThreadDrift, "second thread must be rejected as ThreadDrift");
+        Require(snapshot.degraded && snapshot.generation == 1, "thread drift must not advance runtime generation");
+
+        guard.ResetForTests();
+        {
+            auto first = guard.TryEnter(30);
+            Require(first.Accepted() && first.Generation() == 1, "first healthy tick must use generation 1");
+        }
+        {
+            auto second = guard.TryEnter(31);
+            Require(second.Accepted() && second.Generation() == 2, "same owner must advance one generation per frame token");
+        }
+        snapshot = guard.GetSnapshot();
+        Require(!snapshot.degraded && snapshot.generation == 2, "healthy owner cadence must remain non-degraded");
+
+        guard.Stop();
+        snapshot = guard.GetSnapshot();
+        Require(snapshot.degraded && snapshot.failure == runtime::RuntimeOwnerFailure::OwnerStopped, "owner stop must publish fail-closed lifecycle state");
+        auto afterStop = guard.TryEnter(32);
+        Require(!afterStop.Accepted(), "stopped owner must never silently bind a new writer");
+    }
 }
 
 int main()
@@ -2529,6 +2597,7 @@ int main()
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests();
         RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();
         RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
+        RunRuntimeOwnerGuardTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

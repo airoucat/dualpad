@@ -2,12 +2,15 @@
 #include "input/injection/PadEventSnapshotDispatcher.h"
 
 #include "input_v2/compat/LegacyInputContextCompat.h"
+#include "input/AuthoritativePollState.h"
 #include "input/RuntimeConfig.h"
+#include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
 #include "input/injection/UpstreamGamepadHook.h"
 #include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
 namespace logger = SKSE::log;
@@ -137,16 +140,24 @@ namespace dualpad::input
         SubmitSnapshot(snapshot);
     }
 
-    std::size_t PadEventSnapshotDispatcher::DrainOnMainThread(
+    std::size_t PadEventSnapshotDispatcher::DrainOnOwnerTick(
         std::size_t maxEvents,
-        const DrainTelemetryContext* telemetryContext)
+        const DrainTelemetryContext* telemetryContext,
+        std::uint64_t frameToken)
     {
         if (maxEvents == 0) {
             return 0;
         }
 
         auto& contextRefresh = input_v2::context::ContextRefreshTick::GetSingleton();
-        contextRefresh.RefreshOnMainThread(contextRefresh.BeginFrame());
+        if (frameToken == 0) {
+            frameToken = contextRefresh.BeginFrame();
+        }
+        auto ownerTick = input_v2::runtime::RuntimeOwnerGuard::GetSingleton().TryEnter(frameToken);
+        if (!ownerTick.Accepted()) {
+            return 0;
+        }
+        contextRefresh.RefreshOnOwnerTick(frameToken);
 
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
         const auto pendingBefore = hub.PendingCount();
@@ -159,6 +170,8 @@ namespace dualpad::input
         for (const auto& frame : frames) {
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
+        AuthoritativePollState::GetSingleton().AdvanceOwnerTime();
+        (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
 
         const auto pendingAfterDrain = hub.PendingCount();
 
@@ -179,6 +192,13 @@ namespace dualpad::input
             return 0;
         }
 
+        auto& contextRefresh = input_v2::context::ContextRefreshTick::GetSingleton();
+        auto ownerTick = input_v2::runtime::RuntimeOwnerGuard::GetSingleton().TryEnter(
+            contextRefresh.BeginFrame());
+        if (!ownerTick.Accepted()) {
+            return 0;
+        }
+
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
         const auto pendingBefore = hub.PendingCount();
         auto capture = hub.Capture(maxEvents);
@@ -192,6 +212,8 @@ namespace dualpad::input
         for (const auto& frame : frames) {
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
+        AuthoritativePollState::GetSingleton().AdvanceOwnerTime();
+        (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
         const auto pendingAfterDrain = hub.PendingCount();
 
         if (telemetryContext) {
@@ -210,6 +232,7 @@ namespace dualpad::input
         _droppedSnapshots = 0;
         input_v2::ingress::IngressHub::GetSingleton().ResetForTests();
         RuntimeFrameAssembler().Reset();
+        input_v2::runtime::RuntimeOwnerGuard::GetSingleton().ResetForTests();
         _drainTaskQueued.store(false, std::memory_order_release);
         _framePumpEnabled.store(false, std::memory_order_release);
         _replayManualDrainActive.store(true, std::memory_order_release);
@@ -278,7 +301,7 @@ namespace dualpad::input
             const auto telemetry = BuildDrainTelemetryContext(
                 dispatcher.IsFramePumpEnabled() ? DrainReason::TaskFallbackHighWater : DrainReason::FramePumpDisabled,
                 kUpstreamTaskFallbackPollStaleMs);
-            dispatcher.DrainOnMainThread(kTaskDrainBudgetEvents, &telemetry);
+            dispatcher.DrainOnOwnerTick(kTaskDrainBudgetEvents, &telemetry);
             dispatcher._drainTaskQueued.store(false, std::memory_order_release);
             (void)dispatcher.TryScheduleDrainTask();
             });

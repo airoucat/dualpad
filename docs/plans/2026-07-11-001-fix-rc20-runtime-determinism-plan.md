@@ -372,7 +372,7 @@ flowchart TB
 
 **回滚：** 切换主路径前保留 replay-compatible adapter；禁止两个 live authority 同时启用。
 
-- [ ] **Unit 4：建立可验证的唯一 runtime owner**
+- [x] **Unit 4：建立可验证的唯一 runtime owner**
 
 **目标：** 把 FrameAssembler、runtime、context、presentation、prompt、pulse 和 output generation 的写权限收口到一个 owner tick。
 

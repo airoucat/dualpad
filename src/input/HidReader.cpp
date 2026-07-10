@@ -81,7 +81,7 @@ namespace
             dualpad::input::NormalizePadState(currentState);
             dualpad::input::LogStateSummary(currentState);
 
-            const auto& contextSnapshot =
+            const auto contextSnapshot =
                 dualpad::input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
             const auto snapshotContext = contextSnapshot.legacyInputContext;
             const auto snapshotContextEpoch = contextSnapshot.legacyContextEpoch;

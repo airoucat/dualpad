@@ -41,6 +41,8 @@ namespace dualpad::input
             return "frame_pump_assist_stale";
         case DrainReason::TaskFallbackHighWater:
             return "task_fallback_high_water";
+        case DrainReason::RuntimeOwnerInputPump:
+            return "runtime_owner_input_pump";
         case DrainReason::FramePumpDisabled:
         default:
             return "frame_pump_disabled";

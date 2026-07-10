@@ -12,9 +12,10 @@ namespace dualpad::input
 
         void Process(const PadEventSnapshot& snapshot);
         void ProcessIngressFrame(const input_v2::ingress::AssembledFactFrame& frame);
-        void ResetState();
+        void ResetStateForReplayTests();
 
     private:
         PadEventSnapshotProcessor() = default;
+        void ResetStateOnOwnerTick();
     };
 }

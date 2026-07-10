@@ -132,10 +132,8 @@ namespace dualpad::input
         _hasAnalog.store(true, std::memory_order_release);
     }
 
-    AuthoritativePollFrame AuthoritativePollState::ReadSnapshot()
+    void AuthoritativePollState::AdvanceOwnerTime()
     {
-        AuthoritativePollFrame frame{};
-
         const auto expireMs = _unmanagedPulseExpireMs.load(std::memory_order_acquire);
         if (expireMs > 0 && NowMs() >= expireMs) {
             auto expectedExpireMs = expireMs;
@@ -147,6 +145,11 @@ namespace dualpad::input
                 _unmanagedPulseDown.store(0, std::memory_order_release);
             }
         }
+    }
+
+    AuthoritativePollFrame AuthoritativePollState::ReadSnapshot() const
+    {
+        AuthoritativePollFrame frame{};
 
         frame.unmanagedDownMask =
             _unmanagedHeldDown.load(std::memory_order_acquire) |

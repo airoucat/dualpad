@@ -5,4 +5,5 @@
 namespace dualpad::input
 {
     std::uint32_t FillSyntheticXInputState(void* pState);
+    std::uint32_t FillNeutralXInputState(void* pState);
 }

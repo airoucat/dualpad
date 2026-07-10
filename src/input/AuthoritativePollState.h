@@ -48,6 +48,7 @@ namespace dualpad::input
         static AuthoritativePollState& GetSingleton();
 
         void Reset();
+        void AdvanceOwnerTime();
 
         void SetUnmanagedButton(std::uint32_t bit, bool down);
         void PulseUnmanagedButton(std::uint32_t bit);
@@ -75,7 +76,7 @@ namespace dualpad::input
             float leftTrigger,
             float rightTrigger);
 
-        [[nodiscard]] AuthoritativePollFrame ReadSnapshot();
+        [[nodiscard]] AuthoritativePollFrame ReadSnapshot() const;
 
     private:
         std::atomic<std::uint32_t> _unmanagedHeldDown{ 0 };

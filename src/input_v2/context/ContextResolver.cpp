@@ -114,6 +114,7 @@ namespace dualpad::input_v2::context
         GameplaySubstate gameplaySubstate,
         const CompiledContextCatalog& catalog)
     {
+        std::scoped_lock lock(_mutex);
         ResolvedContextSnapshot next{};
         next.gameplaySubstate = gameplaySubstate;
         next.menuStackRevision = menuStack.menuStackRevision;
@@ -192,18 +193,21 @@ namespace dualpad::input_v2::context
         return _published;
     }
 
-    const ResolvedContextSnapshot& ContextResolver::GetPublishedSnapshot() const
+    ResolvedContextSnapshot ContextResolver::GetPublishedSnapshot() const
     {
+        std::scoped_lock lock(_mutex);
         return _published;
     }
 
     void ContextResolver::PublishSnapshotForReplayTests(ResolvedContextSnapshot snapshot)
     {
+        std::scoped_lock lock(_mutex);
         _published = std::move(snapshot);
     }
 
     void ContextResolver::ResetForTests()
     {
+        std::scoped_lock lock(_mutex);
         _published = ResolvedContextSnapshot{};
     }
 

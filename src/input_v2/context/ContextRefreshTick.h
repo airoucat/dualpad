@@ -16,7 +16,7 @@ namespace dualpad::input_v2::context
         static ContextRefreshTick& GetSingleton();
 
         std::uint64_t BeginFrame();
-        ResolvedContextSnapshot RefreshOnMainThread(std::uint64_t frameToken);
+        ResolvedContextSnapshot RefreshOnOwnerTick(std::uint64_t frameToken);
         void MarkCombatEvent(bool playerInCombat);
 
         ResolvedContextSnapshot RefreshObservedForTests(

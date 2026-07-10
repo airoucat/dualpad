@@ -107,4 +107,13 @@ namespace dualpad::input
 
         return ERROR_SUCCESS;
     }
+
+    std::uint32_t FillNeutralXInputState(void* pState)
+    {
+        if (!pState) {
+            return ERROR_BAD_ARGUMENTS;
+        }
+        *reinterpret_cast<XINPUT_STATE*>(pState) = XINPUT_STATE{};
+        return ERROR_SUCCESS;
+    }
 }

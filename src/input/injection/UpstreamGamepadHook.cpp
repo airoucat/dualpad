@@ -9,12 +9,11 @@
 #include <intrin.h>
 #include <string>
 
-#include "input/HidReader.h"
+#include "input/AuthoritativePollState.h"
 #include "input/XInputStateBridge.h"
-#include "input/backend/NativeButtonCommitBackend.h"
-#include "input/injection/PadEventSnapshotDispatcher.h"
 #include "input/injection/PollDiagnostics.h"
 #include "input/injection/RouteHealthContract.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 namespace logger = SKSE::log;
 
@@ -26,7 +25,6 @@ namespace dualpad::input
         constexpr std::uintptr_t kExpectedPollRva = 0xC1AB40;
         constexpr std::ptrdiff_t kExpectedPollXInputCallOffset = 0x5D;
         constexpr std::ptrdiff_t kExpectedPollXInputWindowOffset = 0x3E;
-        constexpr std::size_t kUpstreamDrainBudget = 64;
         constexpr std::uint64_t kPollDiagnosticCapacity = 256;
         PollDiagnosticLimiter g_pollDiagnosticLimiter{ kPollDiagnosticCapacity };
         constexpr std::array<std::uint8_t, 38> kExpectedPollXInputWindow = {
@@ -61,22 +59,13 @@ namespace dualpad::input
                         userIndex);
                 }
 
-                if (!IsHidReaderRunning()) {
-                    StartHidReader();
-                    logger::info("[DualPad][UpstreamGamepad] Deferred HID reader start released via first poll activity");
-                }
-
                 auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
                 upstreamHook.NotePollCallActivity();
-                const DrainTelemetryContext telemetry{
-                    .reason = DrainReason::UpstreamPoll,
-                    .routeState = UpstreamRouteState::ActiveFresh,
-                    .lastPollAgeMs = std::uint64_t{ 0 },
-                    .hookInstalled = upstreamHook.IsInstalled()
-                };
-                PadEventSnapshotDispatcher::GetSingleton().DrainOnMainThread(kUpstreamDrainBudget, &telemetry);
-                const auto committed = backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
-                const auto result = FillSyntheticXInputState(currentState);
+                const auto owner = input_v2::runtime::RuntimeOwnerGuard::GetSingleton().GetSnapshot();
+                const auto result = owner.degraded ?
+                    FillNeutralXInputState(currentState) :
+                    FillSyntheticXInputState(currentState);
+                const auto committed = AuthoritativePollState::GetSingleton().ReadSnapshot();
 
                 struct XInputGamepadView
                 {

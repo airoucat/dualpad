@@ -197,6 +197,7 @@ local ph6_scaleform_prompt_files = {
 }
 
 local ph7_ingress_files = {
+    "src/input_v2/runtime/RuntimeOwnerGuard.cpp",
     "src/input_v2/ingress/IngressHub.cpp",
     "src/input_v2/ingress/FrameAssembler.cpp",
     "src/input_v2/ingress/IngressBoundaryKey.cpp",

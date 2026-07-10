@@ -26,9 +26,10 @@ namespace dualpad::input
             const input_v2::presentation::SourceEvidenceFrame* sourceEvidenceFrame = nullptr);
         void SubmitReset();
         static constexpr std::size_t DefaultDrainBudget() { return kDefaultDrainBudgetEvents; }
-        std::size_t DrainOnMainThread(
+        std::size_t DrainOnOwnerTick(
             std::size_t maxEvents = kDefaultDrainBudgetEvents,
-            const DrainTelemetryContext* telemetryContext = nullptr);
+            const DrainTelemetryContext* telemetryContext = nullptr,
+            std::uint64_t frameToken = 0);
         std::size_t DrainForReplay(
             std::size_t maxEvents,
             const DrainTelemetryContext* telemetryContext,

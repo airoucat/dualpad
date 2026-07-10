@@ -6,6 +6,7 @@
 #include "input_v2/menu/MenuInstanceRegistry.h"
 
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -88,7 +89,7 @@ namespace dualpad::input_v2::context
             GameplaySubstate gameplaySubstate,
             const CompiledContextCatalog& catalog);
 
-        const ResolvedContextSnapshot& GetPublishedSnapshot() const;
+        ResolvedContextSnapshot GetPublishedSnapshot() const;
         void PublishSnapshotForReplayTests(ResolvedContextSnapshot snapshot);
         void ResetForTests();
 
@@ -100,6 +101,7 @@ namespace dualpad::input_v2::context
             const ShadowCompareRecord& actual);
 
     private:
+        mutable std::mutex _mutex;
         ResolvedContextSnapshot _published{};
     };
 }

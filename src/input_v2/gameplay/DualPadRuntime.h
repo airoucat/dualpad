@@ -62,9 +62,10 @@ namespace dualpad::input_v2::gameplay
             std::uint64_t tick,
             bool outputApplySucceeded);
 
-        const presentation::PublishedGameplayPresentation& GetPublishedGameplayPresentation() const;
-        const GameplayProjectionFrame& GetLastProjectionFrame() const;
-        const RuntimeDebugSnapshot& GetLastDebugSnapshot() const;
+        presentation::PublishedGameplayPresentation GetPublishedGameplayPresentation() const;
+        GameplayProjectionFrame GetLastProjectionFrame() const;
+        RuntimeDebugSnapshot GetLastDebugSnapshot() const;
+        void ResetOnOwnerTick();
         void ResetForTests();
 
     private:
@@ -81,6 +82,7 @@ namespace dualpad::input_v2::gameplay
         DualPadRuntimeResult ProcessGameplayFrameWithExecutor(
             const DualPadRuntimeInput& input,
             IPollOutputExecutor& executor);
+        void ResetMutableState();
 
         GameplayProjectionFrame _lastProjectionFrame{};
         GameplayRecoveryInput _pendingRecovery{};
