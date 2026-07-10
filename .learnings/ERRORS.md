@@ -177,3 +177,23 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: 当前 xmake CLI 的 build/run 入口每次只接收一个 positional target。多个 focused targets 必须顺序执行 `xmake build -y <target>` / `xmake run -y <target>`，或使用仓库已有 CI 脚本；不能写成 `xmake build -y <target1> <target2>`。
 - Related files: `xmake.lua`, `scripts/ci/run_phase8_ci.ps1`
 - Resolution: 改为逐 target 构建与运行；失败发生在参数解析阶段，没有产生代码或测试结论。
+
+## ERR-20260711-002
+
+- Logged: 2026-07-11 00:56 CST
+- Priority: low
+- Status: resolved
+- Area: git / remote push race
+- Summary: commit 后显式 push 因 remote ref lock expected-old mismatch 被拒，但远端已处于本地目标 commit。
+- Detail: `git push` 报远端 ref 已是本地 HEAD、却仍按旧 tracking SHA 做 compare-and-swap。此时不得 force push；先用 `git ls-remote` 对比 local/remote SHA，再 `git fetch` 刷新 tracking ref。SHA 相同表示切片已发布，只是同步竞争导致命令非零。
+- Resolution: 已确认 local HEAD、remote branch 均为 `10eb20911789679fb357819f72febcc4afd1c1dc`，fetch 后分支不再 ahead/behind。
+
+## ERR-20260711-003
+
+- Logged: 2026-07-11 01:12 CST
+- Priority: low
+- Status: resolved
+- Area: tests / ingress property stress
+- Summary: LatestPadState property fixture 以高于消费速率的真实 digital edge 生产速率运行，误把预期的 ordered-edge backlog/overflow 当成模拟量放大回归。
+- Detail: fixture 每 17 个 report 切换一次按键、每 23 个 report 只 drain 1 个 event；即使纯轴 report 完全不入队，digital producer 仍快于 consumer，最终必然填满容量。验证 analog latest-wins 时必须把 event budget 设为足以覆盖真实 edge 速率，并单独断言最大 queue 长度与 edge 数量关系。
+- Resolution: 每次 capture 改为 drain 2 个 event，断言最大 pending 不超过初始 UI marker 加两个真实 edge；测试随后通过。

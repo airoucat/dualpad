@@ -2,6 +2,7 @@
 
 #include "input_v2/actions/LegacyInteractionInputAdapter.h"
 #include "input_v2/ingress/IngressBoundaryKey.h"
+#include "input_v2/ingress/LatestPadState.h"
 #include "input_v2/ingress/IngressMarkers.h"
 #include "input_v2/ingress/IngressRecovery.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
@@ -50,6 +51,8 @@ namespace dualpad::input_v2::ingress
         std::uint32_t menuStackRevision{ 0 };
         std::uint32_t deviceFamilyRevision{ 0 };
         std::uint64_t monotonicUs{ 0 };
+        std::uint64_t latestPadStateGeneration{ 0 };
+        std::uint64_t latestSourceEvidenceGeneration{ 0 };
         std::vector<actions::ControlSample> controlSamples;
         std::vector<actions::ControlSample> pulseLedger;
         presentation::SourceEvidenceSnapshot sourceEvidence;
@@ -82,6 +85,10 @@ namespace dualpad::input_v2::ingress
     {
     public:
         std::vector<AssembledFactFrame> Assemble(const std::vector<IngressEvent>& events);
+        std::vector<AssembledFactFrame> Assemble(
+            const std::vector<IngressEvent>& events,
+            const std::optional<LatestPadState>& latestPadState,
+            const std::optional<LatestSourceEvidence>& latestSourceEvidence);
         void Reset();
 
     private:
@@ -102,6 +109,8 @@ namespace dualpad::input_v2::ingress
         Window _window{};
         std::uint64_t _lastConsumedSeq{ 0 };
         std::uint64_t _lastMonotonicUs{ 0 };
+        std::uint64_t _lastLatestPadGeneration{ 0 };
+        std::uint64_t _lastLatestSourceGeneration{ 0 };
 
         void ApplyEventToWindow(const IngressEvent& event);
         void ApplyOverflowCompaction(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
@@ -117,6 +126,10 @@ namespace dualpad::input_v2::ingress
         void HandleBoundaryChange(std::vector<AssembledFactFrame>& frames, const IngressEvent& event, IngressBoundaryKey nextKey, TransitionReason reason);
         bool HandleOrderingViolation(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
         void HandleSourceEvidence(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
+        void ApplyLatestPadState(const LatestPadState& latest);
+        void ApplyLatestSourceEvidence(
+            std::vector<AssembledFactFrame>& frames,
+            const LatestSourceEvidence& latest);
     };
 
     bool ShouldDispatchToInteractionEngine(const AssembledFactFrame& frame);

@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 namespace dualpad::input_v2::ingress
@@ -20,6 +21,9 @@ namespace dualpad::input_v2::ingress
             const dualpad::input::PadEventSnapshot& snapshot,
             bool synthesizeDigitalEdges);
         void PublishGamepadSourceEvidence(
+            const context::ResolvedContextSnapshot& contextSnapshot,
+            std::uint64_t tick);
+        presentation::SourceEvidenceFrame CollectGamepadSourceEvidence(
             const context::ResolvedContextSnapshot& contextSnapshot,
             std::uint64_t tick);
         void PublishKeyboardSourceEvidence(
@@ -43,10 +47,10 @@ namespace dualpad::input_v2::ingress
         void ResetForTests();
 
     private:
-        void PublishKeyboardMouseSourceEvidence(
+        presentation::SourceEvidenceFrame CollectKeyboardMouseSourceEvidenceLocked(
             const context::ResolvedContextSnapshot& contextSnapshot,
             std::uint64_t tick);
-        void PublishCurrentSourceEvidence(
+        presentation::SourceEvidenceFrame CollectCurrentSourceEvidenceLocked(
             const context::ResolvedContextSnapshot& contextSnapshot,
             std::uint64_t tick);
 
@@ -54,5 +58,6 @@ namespace dualpad::input_v2::ingress
         std::array<std::uint64_t, 32> _downAtUs{};
         presentation::DeviceFamilyIngressPublisher _deviceFamilyPublisher{};
         presentation::SourceEvidenceCollector _sourceEvidenceCollector{};
+        std::mutex _mutex;
     };
 }

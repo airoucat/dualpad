@@ -56,6 +56,7 @@ namespace dualpad::input
         bool framePumpEnabled,
         bool replayManualDrainActive,
         std::size_t pendingEvents,
+        bool hasUncapturedLatest,
         std::size_t highWatermarkEvents,
         UpstreamRouteState routeState) noexcept
     {
@@ -63,7 +64,7 @@ namespace dualpad::input
             return false;
         }
         if (!framePumpEnabled) {
-            return pendingEvents != 0;
+            return pendingEvents != 0 || hasUncapturedLatest;
         }
         if (pendingEvents < highWatermarkEvents) {
             return false;

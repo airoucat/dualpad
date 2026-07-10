@@ -1187,7 +1187,11 @@ namespace
         (void)ingress::IngressHub::GetSingleton().PushPadSnapshot(LiveHidSnapshot(60, 0x0, 60'000));
 
         ingress::FrameAssembler assembler;
-        const auto frames = assembler.Assemble(ingress::IngressHub::GetSingleton().Drain());
+        const auto capture = ingress::IngressHub::GetSingleton().Capture(256);
+        const auto frames = assembler.Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
         RecordingPollOutputExecutor executor;
         for (const auto& frame : frames) {
             (void)runtime.ProcessAssembledFrameForTests(frame, executor);
@@ -1214,7 +1218,11 @@ namespace
         ingress::FrameAssembler assembler;
 
         auto drive = [&]() {
-            const auto frames = assembler.Assemble(ingress::IngressHub::GetSingleton().Drain());
+            const auto capture = ingress::IngressHub::GetSingleton().Capture(256);
+            const auto frames = assembler.Assemble(
+                capture.events,
+                capture.latestPadState,
+                capture.latestSourceEvidence);
             RecordingPollOutputExecutor executor;
             for (const auto& frame : frames) {
                 (void)runtime.ProcessAssembledFrameForTests(frame, executor);
@@ -2102,7 +2110,11 @@ namespace
             contextSnapshot.contextRevision));
 
         ingress::FrameAssembler assembler;
-        const auto frames = assembler.Assemble(hub.Drain());
+        auto capture = hub.Capture(256);
+        const auto frames = assembler.Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
         bool processedStable = false;
         gameplay::DualPadRuntimeResult result{};
         RecordingPollOutputExecutor executor;
@@ -2203,7 +2215,11 @@ namespace
         (void)hub.PushPadSnapshot(stickSnapshot);
 
         ingress::FrameAssembler assembler;
-        const auto frames = assembler.Assemble(hub.Drain());
+        auto capture = hub.Capture(256);
+        const auto frames = assembler.Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
         bool processedStable = false;
         gameplay::DualPadRuntimeResult result{};
         RecordingPollOutputExecutor executor;
@@ -2285,7 +2301,11 @@ namespace
             contextSnapshot.contextRevision));
 
         ingress::FrameAssembler assembler;
-        auto frames = assembler.Assemble(hub.Drain());
+        auto capture = hub.Capture(256);
+        auto frames = assembler.Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
         bool processedStable = false;
         gameplay::DualPadRuntimeResult result{};
         RecordingPollOutputExecutor executor;
@@ -2322,7 +2342,11 @@ namespace
             contextSnapshot.legacyInputContext,
             contextSnapshot.legacyContextEpoch,
             contextSnapshot.contextRevision));
-        frames = assembler.Assemble(hub.Drain());
+        capture = hub.Capture(256);
+        frames = assembler.Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
         bool processedHeldStable = false;
         gameplay::DualPadRuntimeResult heldResult{};
         for (const auto& frame : frames) {

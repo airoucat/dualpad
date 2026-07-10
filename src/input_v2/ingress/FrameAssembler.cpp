@@ -128,9 +128,19 @@ namespace dualpad::input_v2::ingress
         _window = Window{};
         _lastConsumedSeq = 0;
         _lastMonotonicUs = 0;
+        _lastLatestPadGeneration = 0;
+        _lastLatestSourceGeneration = 0;
     }
 
     std::vector<AssembledFactFrame> FrameAssembler::Assemble(const std::vector<IngressEvent>& events)
+    {
+        return Assemble(events, std::nullopt, std::nullopt);
+    }
+
+    std::vector<AssembledFactFrame> FrameAssembler::Assemble(
+        const std::vector<IngressEvent>& events,
+        const std::optional<LatestPadState>& latestPadState,
+        const std::optional<LatestSourceEvidence>& latestSourceEvidence)
     {
         std::vector<AssembledFactFrame> frames;
         for (const auto& event : events) {
@@ -195,6 +205,13 @@ namespace dualpad::input_v2::ingress
             ApplyEventToWindow(event);
         }
 
+        if (latestSourceEvidence && latestSourceEvidence->generation > _lastLatestSourceGeneration) {
+            ApplyLatestSourceEvidence(frames, *latestSourceEvidence);
+        }
+        if (latestPadState && latestPadState->generation > _lastLatestPadGeneration) {
+            ApplyLatestPadState(*latestPadState);
+        }
+
         FlushWindow(frames);
         return frames;
     }
@@ -218,7 +235,7 @@ namespace dualpad::input_v2::ingress
         _window.key = _currentKey;
         _window.facts = BuildDurableCarryFacts(_latestFacts);
         ApplyFactsFromBoundaryKey(_window.facts, _currentKey);
-        _window.facts.monotonicUs = event.monotonicUs;
+        _window.facts.monotonicUs = std::max(_window.facts.monotonicUs, event.monotonicUs);
     }
 
     bool FrameAssembler::HandleOrderingViolation(std::vector<AssembledFactFrame>& frames, const IngressEvent& event)
@@ -269,7 +286,7 @@ namespace dualpad::input_v2::ingress
                 _window.firstMonotonicUs = event.monotonicUs;
             }
             _window.lastMonotonicUs = event.monotonicUs;
-            _window.facts.monotonicUs = event.monotonicUs;
+            _window.facts.monotonicUs = std::max(_window.facts.monotonicUs, event.monotonicUs);
         }
 
         if (event.kind == IngressKind::PadSnapshot) {
@@ -454,6 +471,49 @@ namespace dualpad::input_v2::ingress
         }
 
         ApplyEventToWindow(event);
+    }
+
+    void FrameAssembler::ApplyLatestSourceEvidence(
+        std::vector<AssembledFactFrame>& frames,
+        const LatestSourceEvidence& latest)
+    {
+        const auto revision = latest.snapshot.deviceFamilyEvidence.deviceFamilyRevision;
+        if (!_pendingDeviceMarker && revision > _currentKey.deviceFamilyRevision) {
+            return;
+        }
+        _lastLatestSourceGeneration = latest.generation;
+        IngressEvent event{};
+        event.seq = _lastConsumedSeq;
+        event.monotonicUs = std::max(latest.snapshot.collectedTick, _lastMonotonicUs);
+        event.source = IngressSource::DeviceFamilyPublisher;
+        event.kind = IngressKind::SourceEvidence;
+        event.sourceEvidence = latest.snapshot;
+        HandleSourceEvidence(frames, event);
+        if (_window.open) {
+            _window.facts.latestSourceEvidenceGeneration = latest.generation;
+            _latestFacts = _window.facts;
+        } else {
+            _latestFacts.latestSourceEvidenceGeneration = latest.generation;
+        }
+    }
+
+    void FrameAssembler::ApplyLatestPadState(const LatestPadState& latest)
+    {
+        const auto contextRevision = latest.contextRevision != 0 ? latest.contextRevision : latest.contextEpoch;
+        if (_currentKey.contextRevision != contextRevision ||
+            _currentKey.menuStackRevision != latest.contextEpoch) {
+            return;
+        }
+        _lastLatestPadGeneration = latest.generation;
+        IngressEvent event{};
+        event.seq = _lastConsumedSeq;
+        event.monotonicUs = std::max(latest.sourceTimestampUs, _lastMonotonicUs);
+        event.source = IngressSource::LegacyDispatcher;
+        event.kind = IngressKind::PadSnapshot;
+        event.pad.samples = BuildLatestAnalogSamples(latest);
+        ApplyEventToWindow(event);
+        _window.facts.latestPadStateGeneration = latest.generation;
+        _latestFacts = _window.facts;
     }
 
     bool ShouldDispatchToInteractionEngine(const AssembledFactFrame& frame)

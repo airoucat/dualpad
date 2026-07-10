@@ -7,6 +7,11 @@
 #include <atomic>
 #include <mutex>
 
+namespace dualpad::input_v2::presentation
+{
+    struct SourceEvidenceFrame;
+}
+
 namespace dualpad::input
 {
     class PadEventSnapshotDispatcher
@@ -16,7 +21,9 @@ namespace dualpad::input
 
         static PadEventSnapshotDispatcher& GetSingleton();
 
-        void SubmitSnapshot(const PadEventSnapshot& snapshot);
+        void SubmitSnapshot(
+            const PadEventSnapshot& snapshot,
+            const input_v2::presentation::SourceEvidenceFrame* sourceEvidenceFrame = nullptr);
         void SubmitReset();
         static constexpr std::size_t DefaultDrainBudget() { return kDefaultDrainBudgetEvents; }
         std::size_t DrainOnMainThread(

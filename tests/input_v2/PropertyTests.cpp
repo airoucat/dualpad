@@ -5,6 +5,7 @@
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace
@@ -110,6 +111,55 @@ int main()
     Require(resolved.values[0].x >= -1.0f && resolved.values[0].x <= 1.0f, "property Axis2D x must stay in range");
     Require(resolved.values[0].y >= -1.0f && resolved.values[0].y <= 1.0f, "property Axis2D y must stay in range");
     Require(resolved.values[0].timestampUs == axisFrame.facts.monotonicUs, "property Axis2D timestamp must coalesce to frame time");
+
+    IngressHub latestHub{ 16 };
+    bool reducerDown = false;
+    std::uint32_t physicalMask = 0;
+    std::size_t maxPending = 0;
+    auto consumeEdges = [&](const IngressCapture& capture) {
+        for (const auto& event : capture.events) {
+            if (event.kind != IngressKind::PadSnapshot) {
+                continue;
+            }
+            for (const auto& sample : event.pad.samples) {
+                if (sample.pressed) {
+                    Require(!reducerDown, "property ordered reducer must not observe a synthetic duplicate press");
+                    reducerDown = true;
+                }
+                if (sample.released) {
+                    Require(reducerDown, "property ordered reducer must not observe a release without a drained press");
+                    reducerDown = false;
+                }
+            }
+        }
+    };
+
+    for (std::uint64_t sequence = 1; sequence <= 512; ++sequence) {
+        if ((sequence % 17) == 0) {
+            physicalMask ^= 0x1u;
+        }
+        dualpad::input::PadEventSnapshot snapshot{};
+        snapshot.type = dualpad::input::PadEventSnapshotType::Input;
+        snapshot.firstSequence = sequence;
+        snapshot.sequence = sequence;
+        snapshot.sourceTimestampUs = sequence * 100;
+        snapshot.state.sequence = sequence;
+        snapshot.state.timestampUs = snapshot.sourceTimestampUs;
+        snapshot.state.buttons.digitalMask = physicalMask;
+        snapshot.state.rightStick.x = static_cast<float>(sequence % 101) / 100.0f;
+        Require(latestHub.PushPadSnapshot(snapshot, false), "property latest-state report must fit bounded edge queue");
+        maxPending = std::max(maxPending, latestHub.PendingCount());
+        if ((sequence % 23) == 0) {
+            consumeEdges(latestHub.Capture(2));
+        }
+    }
+    while (latestHub.PendingCount() != 0) {
+        consumeEdges(latestHub.Capture(1));
+    }
+    const auto latestCapture = latestHub.Capture(1);
+    Require(maxPending <= 3, "property steady reports must not amplify into per-report ordered queue entries");
+    Require(!reducerDown && physicalMask == 0, "property ordered reducer must converge after a clean release");
+    Require(latestCapture.latestPadState && latestCapture.latestPadState->generation == 512, "property latest generation must advance once per complete report");
 
     return 0;
 }

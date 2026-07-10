@@ -112,11 +112,14 @@ namespace dualpad::input
         return instance;
     }
 
-    void PadEventSnapshotDispatcher::SubmitSnapshot(const PadEventSnapshot& snapshot)
+    void PadEventSnapshotDispatcher::SubmitSnapshot(
+        const PadEventSnapshot& snapshot,
+        const input_v2::presentation::SourceEvidenceFrame* sourceEvidenceFrame)
     {
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
         const auto pendingCountBeforeQueue = hub.PendingCount();
-        (void)hub.PushPadSnapshot(snapshot);
+        const bool retainLegacySnapshot = _replayManualDrainActive.load(std::memory_order_acquire);
+        (void)hub.PushPadSnapshot(snapshot, retainLegacySnapshot, sourceEvidenceFrame);
         const auto pendingCountAfterQueue = hub.PendingCount();
 
         input_v2::telemetry::InputTraceRecorder::GetSingleton().RecordDispatcherSubmit(
@@ -147,9 +150,12 @@ namespace dualpad::input
 
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
         const auto pendingBefore = hub.PendingCount();
-        auto events = hub.Drain(maxEvents);
-        const auto drainedEventCount = events.size();
-        auto frames = RuntimeFrameAssembler().Assemble(events);
+        auto capture = hub.Capture(maxEvents);
+        const auto drainedEventCount = capture.events.size();
+        auto frames = RuntimeFrameAssembler().Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
         for (const auto& frame : frames) {
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
@@ -175,9 +181,12 @@ namespace dualpad::input
 
         auto& hub = input_v2::ingress::IngressHub::GetSingleton();
         const auto pendingBefore = hub.PendingCount();
-        auto events = hub.Drain(maxEvents);
-        const auto drainedEventCount = events.size();
-        const auto frames = RuntimeFrameAssembler().Assemble(events);
+        auto capture = hub.Capture(maxEvents);
+        const auto drainedEventCount = capture.events.size();
+        const auto frames = RuntimeFrameAssembler().Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
         (void)sink;
         (void)context;
         for (const auto& frame : frames) {
@@ -219,6 +228,8 @@ namespace dualpad::input
     bool PadEventSnapshotDispatcher::TryScheduleDrainTask()
     {
         const auto pendingEvents = input_v2::ingress::IngressHub::GetSingleton().PendingCount();
+        const auto hasUncapturedLatest =
+            input_v2::ingress::IngressHub::GetSingleton().HasUncapturedLatest();
         const auto framePumpEnabled = _framePumpEnabled.load(std::memory_order_acquire);
         const auto replayManualDrainActive = _replayManualDrainActive.load(std::memory_order_acquire);
         const auto reason = framePumpEnabled ? DrainReason::TaskFallbackHighWater : DrainReason::FramePumpDisabled;
@@ -227,6 +238,7 @@ namespace dualpad::input
                 framePumpEnabled,
                 replayManualDrainActive,
                 pendingEvents,
+                hasUncapturedLatest,
                 kUpstreamTaskFallbackHighWatermarkEvents,
                 telemetry.routeState)) {
             return false;
@@ -240,8 +252,9 @@ namespace dualpad::input
             return false;
         }
         logger::warn(
-            "[DualPad][IngressHub] Scheduled bounded fallback drain task pendingEvents={} highWatermarkEvents={} stalePollWindowMs={} reason={} routeState={} lastPollAgeMs={} hookInstalled={}",
+            "[DualPad][IngressHub] Scheduled bounded fallback drain task pendingEvents={} hasUncapturedLatest={} highWatermarkEvents={} stalePollWindowMs={} reason={} routeState={} lastPollAgeMs={} hookInstalled={}",
             pendingEvents,
+            hasUncapturedLatest,
             kUpstreamTaskFallbackHighWatermarkEvents,
             kUpstreamTaskFallbackPollStaleMs,
             ToString(reason),

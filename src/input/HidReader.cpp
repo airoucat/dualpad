@@ -88,7 +88,8 @@ namespace
             const auto snapshotContextRevision = contextSnapshot.contextRevision;
 
             dualpad::input::PadEventBuffer events{};
-            dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().PublishGamepadSourceEvidence(
+            const auto sourceEvidenceFrame =
+                dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().CollectGamepadSourceEvidence(
                 contextSnapshot,
                 currentState.timestampUs);
 
@@ -103,7 +104,9 @@ namespace
             snapshot.state = currentState;
             snapshot.events = events;
             snapshot.overflowed = events.overflowed;
-            dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitSnapshot(snapshot);
+            dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitSnapshot(
+                snapshot,
+                &sourceEvidenceFrame);
 
         }
 

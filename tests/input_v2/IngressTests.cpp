@@ -11,8 +11,10 @@
 #include "input_v2/config/AtomicConfigReloader.h"
 
 #include <cstdlib>
+#include <atomic>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -66,6 +68,37 @@ namespace
         event.kind = ingress::IngressKind::SourceEvidence;
         event.sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision = deviceFamilyRevision;
         return event;
+    }
+
+    presentation::SourceEvidenceFrame GamepadSourceFrame(std::uint32_t revision, std::uint64_t tick, bool changed)
+    {
+        presentation::SourceEvidenceFrame frame{};
+        if (changed) {
+            frame.records.push_back(presentation::SourceEvidenceRecord{
+                .kind = presentation::SourceEvidenceRecordKind::DeviceFamilyChanged,
+                .deviceFamilyChanged = presentation::DeviceFamilyChangedPayload{
+                    .family = presentation::DeviceFamily::Gamepad,
+                    .newRevision = revision,
+                    .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+                    .publishedTick = tick
+                }
+            });
+        }
+        frame.records.push_back(presentation::SourceEvidenceRecord{
+            .kind = presentation::SourceEvidenceRecordKind::SourceEvidenceSnapshot,
+            .sourceEvidence = presentation::SourceEvidenceSnapshot{
+                .deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{
+                    .family = presentation::DeviceFamily::Gamepad,
+                    .deviceFamilyRevision = revision,
+                    .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+                    .publishedTick = tick
+                },
+                .gamepadEvidence = true,
+                .gamepadLease = true,
+                .collectedTick = tick
+            }
+        });
+        return frame;
     }
 
     ingress::IngressEvent PadSample(std::uint32_t code, bool down, bool pressed, bool released)
@@ -170,6 +203,19 @@ namespace
         return nullptr;
     }
 
+    const actions::ControlSample* FindAxisSample(
+        const ingress::FactFrame& facts,
+        input::PadAxisId axis)
+    {
+        for (const auto& sample : facts.controlSamples) {
+            if (sample.path.kind == actions::ControlPathKind::AnalogAxis1D &&
+                sample.path.code == static_cast<std::uint32_t>(axis)) {
+                return &sample;
+            }
+        }
+        return nullptr;
+    }
+
     void TestHubAssignsSeqAndEmitsOverflowMarker()
     {
         ingress::IngressHub hub{ 2 };
@@ -202,6 +248,244 @@ namespace
         const auto second = hub.Drain(16);
         Require(second.size() == 1 && second.front().seq == 17, "next drain must return the retained 17th event");
         Require(hub.PendingCount() == 0, "second drain must empty the fixture");
+    }
+
+    void TestLatestPadStatePreventsSteadyAnalogQueueGrowth()
+    {
+        ingress::IngressHub hub{ 64 };
+        auto baseline = LiveHidSnapshot(1, 0, 100);
+        baseline.state.leftStick.x = 0.1f;
+        Require(hub.PushPadSnapshot(baseline, false), "baseline HID transaction must publish");
+        (void)hub.Capture(64);
+
+        for (std::uint64_t sequence = 2; sequence <= 1001; ++sequence) {
+            auto snapshot = LiveHidSnapshot(sequence, 0, sequence * 100);
+            snapshot.state.leftStick.x = static_cast<float>(sequence) / 1001.0f;
+            Require(hub.PushPadSnapshot(snapshot, false), "steady analog HID transaction must publish");
+        }
+
+        Require(hub.PendingCount() == 0, "steady analog reports must not grow the ordered edge queue");
+        Require(hub.HasUncapturedLatest(), "steady analog reports must expose uncaptured latest work without inventing queue events");
+        const auto capture = hub.Capture(64);
+        Require(capture.events.empty(), "steady analog capture must not synthesize ordered events");
+        Require(capture.latestPadState.has_value(), "steady analog capture must include latest pad state");
+        Require(capture.latestPadState->generation == 1001, "latest pad state generation must advance per report");
+        Require(capture.latestPadState->sourceSequence == 1001, "latest pad state must retain HID source sequence");
+        Require(capture.latestPadState->state.leftStick.x == 1.0f, "latest pad state must retain newest axis value");
+        Require(!hub.HasUncapturedLatest(), "capture must acknowledge the complete latest generation");
+    }
+
+    void TestLatestAnalogCanLeadBoundedDigitalEdgeCutoff()
+    {
+        ingress::IngressHub hub{ 16 };
+        Require(hub.PushPadSnapshot(LiveHidSnapshot(1, 0, 100), false), "digital baseline must publish");
+        (void)hub.Capture(16);
+
+        auto press = LiveHidSnapshot(2, 0x1, 200);
+        press.state.leftStick.x = 0.25f;
+        auto release = LiveHidSnapshot(3, 0, 300);
+        release.state.leftStick.x = 0.75f;
+        Require(hub.PushPadSnapshot(press, false), "press transaction must publish");
+        Require(hub.PushPadSnapshot(release, false), "release transaction must publish");
+
+        const auto first = hub.Capture(1);
+        Require(first.events.size() == 1, "one-event capture must stop at press cutoff");
+        Require(first.remainingEvents == 1, "release must remain queued after press-only capture");
+        Require(first.events[0].pad.samples.size() == 1 && first.events[0].pad.samples[0].pressed, "first ordered edge must be press");
+        Require(first.latestPadState->state.leftStick.x == 0.75f, "latest analog may lead the edge cutoff");
+        Require(first.latestPadState->currentDownMask == 0, "latest recovery mask may reflect a future release");
+
+        const auto second = hub.Capture(1);
+        Require(second.events.size() == 1 && second.events[0].pad.samples[0].released, "second ordered edge must be release");
+        Require(second.remainingEvents == 0, "second capture must consume remaining release");
+    }
+
+    void TestFrameAssemblerKeepsLatestAnalogSeparateFromOrderedEdgeCutoff()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::FrameAssembler assembler;
+        Require(hub.PushPadSnapshot(LiveHidSnapshot(1, 0, 100), false), "assembler baseline must publish");
+        auto capture = hub.Capture(16);
+        (void)assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+
+        auto press = LiveHidSnapshot(2, 0x1, 200);
+        press.state.leftStick.x = 0.25f;
+        auto release = LiveHidSnapshot(3, 0, 300);
+        release.state.leftStick.x = 0.75f;
+        Require(hub.PushPadSnapshot(press, false), "assembler press must publish");
+        Require(hub.PushPadSnapshot(release, false), "assembler release must publish");
+        auto newestAnalog = LiveHidSnapshot(4, 0, 400);
+        newestAnalog.state.leftStick.x = 0.9f;
+        Require(hub.PushPadSnapshot(newestAnalog, false), "newest analog state must publish without another edge");
+
+        capture = hub.Capture(1);
+        auto frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        const auto& pressFrame = LastStableFrame(frames);
+        const auto* pressSample = FindControlSample(pressFrame.facts, 0x1);
+        const auto* axisSample = FindAxisSample(pressFrame.facts, input::PadAxisId::LeftStickX);
+        Require(pressSample && pressSample->pressed && !pressSample->released, "first cutoff frame must contain only the ordered press edge");
+        Require(axisSample && axisSample->scalar == 0.9f, "first cutoff frame may contain newer latest analog state");
+        Require(FindPulse(pressFrame.facts, 0x1, false, true) == nullptr, "future release mask must not synthesize an early release");
+        const auto pressMonotonicUs = pressFrame.facts.monotonicUs;
+
+        capture = hub.Capture(1);
+        frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        const auto& releaseFrame = LastStableFrame(frames);
+        Require(FindPulse(releaseFrame.facts, 0x1, false, true) != nullptr, "second cutoff frame must deliver the queued release edge");
+        Require(releaseFrame.facts.monotonicUs >= pressMonotonicUs, "older queued release must not regress stable fact time after latest analog led the cutoff");
+    }
+
+    void TestOverflowRetainsLatestPadState()
+    {
+        ingress::IngressHub hub{ 1 };
+        Require(hub.PushPadSnapshot(LiveHidSnapshot(1, 0, 100), false), "overflow baseline must publish");
+        (void)hub.Capture(8);
+
+        auto press = LiveHidSnapshot(2, 0x1, 200);
+        press.state.rightStick.y = 0.25f;
+        auto release = LiveHidSnapshot(3, 0, 300);
+        release.state.rightStick.y = 0.9f;
+        Require(hub.PushPadSnapshot(press, false), "first edge must fit queue");
+        Require(!hub.PushPadSnapshot(release, false), "second edge must report overflow");
+
+        const auto capture = hub.Capture(8);
+        Require(capture.events.size() == 1 && capture.events[0].kind == ingress::IngressKind::QueueOverflow, "overflow must remain an ordered marker");
+        Require(capture.latestPadState->state.rightStick.y == 0.9f, "overflow must not delete latest axis state");
+        Require(capture.latestPadState->currentDownMask == 0, "overflow recovery baseline must retain current physical mask");
+    }
+
+    void TestOverflowFreezesDigitalEdgesUntilCleanRelease()
+    {
+        ingress::IngressHub hub{ 1 };
+        Require(hub.PushEvent(Manifest(1)), "overflow freeze fixture must fill the queue");
+        Require(
+            !hub.PushPadSnapshot(LiveHidSnapshot(1, 0x1, 100), false),
+            "press arriving into a full queue must establish edge-history-lost recovery");
+        auto capture = hub.Capture(8);
+        Require(capture.events.size() == 1 && capture.events[0].kind == ingress::IngressKind::QueueOverflow, "overflow freeze must publish one recovery marker");
+
+        Require(
+            hub.PushPadSnapshot(LiveHidSnapshot(2, 0x3, 200), false),
+            "additional press while recovery is active must update latest state without failing publication");
+        Require(hub.PendingCount() == 0, "additional press must remain frozen while any physical button is down");
+
+        Require(
+            hub.PushPadSnapshot(LiveHidSnapshot(3, 0, 300), false),
+            "clean release must establish the new recovery baseline");
+        Require(hub.PendingCount() == 0, "clean release must not leak stale release pulses after overflow");
+
+        Require(
+            hub.PushPadSnapshot(LiveHidSnapshot(4, 0x1, 400), false),
+            "first press after clean release must resume ordered edge delivery");
+        capture = hub.Capture(8);
+        Require(capture.events.size() == 1, "post-recovery press must enqueue exactly one edge event");
+        Require(capture.events[0].pad.samples.size() == 1 && capture.events[0].pad.samples[0].pressed, "post-recovery event must be the new press");
+    }
+
+    void TestSourceEvidenceUsesLatestPublicationWithoutQueueGrowth()
+    {
+        ingress::IngressHub hub{ 16 };
+        hub.PublishSourceEvidenceFrame(GamepadSourceFrame(1, 1, true));
+        const auto initial = hub.Capture(16);
+        Require(initial.events.size() == 1 && initial.events[0].kind == ingress::IngressKind::DeviceFamilyChanged, "source change must retain ordered device boundary");
+
+        for (std::uint64_t tick = 2; tick <= 1001; ++tick) {
+            hub.PublishSourceEvidenceFrame(GamepadSourceFrame(1, tick, false));
+        }
+        Require(hub.PendingCount() == 0, "repeated source snapshots must not grow ordered queue");
+        const auto capture = hub.Capture(16);
+        Require(capture.latestSourceEvidence.has_value(), "capture must include latest source evidence");
+        Require(capture.latestSourceEvidence->generation == 1001, "source publication generation must advance");
+        Require(capture.latestSourceEvidence->snapshot.collectedTick == 1001, "latest source evidence must retain newest tick");
+    }
+
+    void TestConcurrentCaptureNeverObservesHalfHidTransaction()
+    {
+        ingress::IngressHub hub{ 64 };
+        std::atomic_bool writerDone{ false };
+        std::atomic_bool writerFailed{ false };
+        std::thread writer([&]() {
+            for (std::uint64_t sequence = 1; sequence <= 10'000; ++sequence) {
+                auto snapshot = LiveHidSnapshot(sequence, 0, sequence);
+                snapshot.state.leftStick.x = static_cast<float>(sequence % 100) / 100.0f;
+                const auto source = GamepadSourceFrame(1, sequence, sequence == 1);
+                if (!hub.PushPadSnapshot(snapshot, false, &source)) {
+                    writerFailed.store(true, std::memory_order_release);
+                    break;
+                }
+            }
+            writerDone.store(true, std::memory_order_release);
+        });
+
+        std::size_t coherentCaptures = 0;
+        while (!writerDone.load(std::memory_order_acquire)) {
+            const auto capture = hub.Capture(64);
+            if (capture.latestPadState && capture.latestSourceEvidence) {
+                Require(
+                    capture.latestPadState->sourceSequence == capture.latestSourceEvidence->snapshot.collectedTick,
+                    "capture must not observe source evidence and pad state from different HID transactions");
+                ++coherentCaptures;
+            }
+            std::this_thread::yield();
+        }
+        writer.join();
+
+        const auto finalCapture = hub.Capture(64);
+        Require(!writerFailed.load(std::memory_order_acquire), "coherent HID writer must not overflow on state-only reports");
+        Require(finalCapture.latestPadState && finalCapture.latestSourceEvidence, "final coherent capture must include both publications");
+        Require(
+            finalCapture.latestPadState->sourceSequence == finalCapture.latestSourceEvidence->snapshot.collectedTick,
+            "final coherent capture must come from one complete HID transaction");
+        Require(finalCapture.latestPadState->sourceSequence == 10'000, "final coherent capture must retain the last transaction");
+        Require(coherentCaptures != 0 || finalCapture.latestPadState.has_value(), "coherent capture fixture must observe a publication");
+    }
+
+    void TestLatestSourceEvidenceCannotBypassQueuedDeviceBoundary()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::FrameAssembler assembler;
+        Require(hub.PushEvent(PadSample(0x1, true, true, false)), "source cutoff fixture must enqueue an older edge");
+        hub.PublishSourceEvidenceFrame(GamepadSourceFrame(1, 200, true));
+
+        auto capture = hub.Capture(1);
+        auto frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        const auto& beforeBoundary = LastStableFrame(frames);
+        Require(beforeBoundary.boundaryKey.deviceFamilyRevision == 0, "latest source must not advance beyond an undrained device marker");
+        Require(beforeBoundary.facts.latestSourceEvidenceGeneration == 0, "deferred source generation must remain unapplied");
+        Require(capture.remainingEvents == 1, "device marker must remain queued behind the older edge");
+
+        capture = hub.Capture(1);
+        frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        const auto& afterBoundary = LastStableFrame(frames);
+        Require(afterBoundary.boundaryKey.deviceFamilyRevision == 1, "source evidence must publish after its marker reaches the cutoff");
+        Require(afterBoundary.facts.latestSourceEvidenceGeneration == 1, "paired latest source generation must publish once ordered marker is consumed");
+    }
+
+    void TestLatestAnalogCannotBypassQueuedContextBoundary()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::FrameAssembler assembler;
+        Require(hub.PushEvent(PadSample(0x1, true, true, false)), "context cutoff fixture must enqueue an older edge");
+        auto latest = LiveHidSnapshot(1, 0, 200);
+        latest.contextEpoch = 2;
+        latest.contextRevision = 3;
+        latest.state.leftStick.x = 0.9f;
+        Require(hub.PushPadSnapshot(latest, false), "new-context latest state must publish");
+
+        auto capture = hub.Capture(1);
+        auto frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        const auto& beforeBoundary = LastStableFrame(frames);
+        Require(beforeBoundary.boundaryKey.contextRevision == 0, "older edge must remain in the old context cutoff");
+        Require(FindAxisSample(beforeBoundary.facts, input::PadAxisId::LeftStickX) == nullptr, "new-context analog must wait for its queued UI boundary");
+        Require(beforeBoundary.facts.latestPadStateGeneration == 0, "deferred latest pad generation must remain unapplied");
+
+        capture = hub.Capture(1);
+        frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        const auto& afterBoundary = LastStableFrame(frames);
+        const auto* axis = FindAxisSample(afterBoundary.facts, input::PadAxisId::LeftStickX);
+        Require(afterBoundary.boundaryKey.contextRevision == 3 && afterBoundary.boundaryKey.menuStackRevision == 2, "queued UI boundary must advance before latest analog");
+        Require(axis && axis->scalar == 0.9f, "latest analog must publish after its context boundary reaches the cutoff");
+        Require(afterBoundary.facts.latestPadStateGeneration == 1, "paired latest pad generation must publish after the UI boundary");
     }
 
     void TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput()
@@ -578,13 +862,13 @@ namespace
         const auto frame = collector.CollectAfterDeviceFamilyIngress(publication, contextSnapshot, 100);
         ingress::PublishSourceEvidenceFrameToIngressHub(frame);
 
-        const auto drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 2, "device family seam must enqueue marker plus source evidence");
-        Require(drained[0].kind == ingress::IngressKind::DeviceFamilyChanged, "device marker must be first");
-        Require(drained[1].kind == ingress::IngressKind::SourceEvidence, "source evidence must pair after marker");
+        const auto capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.size() == 1, "device family seam must enqueue only the ordered marker");
+        Require(capture.events[0].kind == ingress::IngressKind::DeviceFamilyChanged, "device marker must be first");
+        Require(capture.latestSourceEvidence.has_value(), "source evidence must publish through the latest slot");
         Require(
-            drained[0].deviceFamily.deviceFamilyRevision ==
-                drained[1].sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision,
+            capture.events[0].deviceFamily.deviceFamilyRevision ==
+                capture.latestSourceEvidence->snapshot.deviceFamilyEvidence.deviceFamilyRevision,
             "source evidence revision must only pair/mirror marker payload");
     }
 
@@ -599,18 +883,18 @@ namespace
         contextSnapshot.menuStackRevision = 22;
         producer.PublishGamepadSourceEvidence(contextSnapshot, 44'000);
 
-        const auto drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 2, "live gamepad evidence must enqueue marker plus source evidence");
-        Require(drained[0].kind == ingress::IngressKind::DeviceFamilyChanged, "live gamepad evidence marker must be first");
-        Require(drained[1].kind == ingress::IngressKind::SourceEvidence, "live gamepad source evidence must pair after marker");
+        const auto capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.size() == 1, "live gamepad evidence must enqueue only the ordered marker");
+        Require(capture.events[0].kind == ingress::IngressKind::DeviceFamilyChanged, "live gamepad evidence marker must be first");
+        Require(capture.latestSourceEvidence.has_value(), "live gamepad source evidence must publish through the latest slot");
         Require(
-            drained[0].deviceFamily.deviceFamilyRevision ==
-                drained[1].sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision,
+            capture.events[0].deviceFamily.deviceFamilyRevision ==
+                capture.latestSourceEvidence->snapshot.deviceFamilyEvidence.deviceFamilyRevision,
             "live SourceEvidence must mirror the marker deviceFamilyRevision");
         Require(
-            drained[1].sourceEvidence.deviceFamilyEvidence.family == presentation::DeviceFamily::Gamepad,
+            capture.latestSourceEvidence->snapshot.deviceFamilyEvidence.family == presentation::DeviceFamily::Gamepad,
             "live SourceEvidence must publish gamepad family");
-        Require(drained[1].sourceEvidence.gamepadEvidence, "live SourceEvidence must record gamepad evidence");
+        Require(capture.latestSourceEvidence->snapshot.gamepadEvidence, "live SourceEvidence must record gamepad evidence");
     }
 
     void TestLiveKeyboardMouseEvidencePublishesTakeoverAndReclaim()
@@ -624,46 +908,46 @@ namespace
         contextSnapshot.menuStackRevision = 32;
 
         producer.PublishGamepadSourceEvidence(contextSnapshot, 100'000);
-        auto drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 2, "gamepad evidence must publish marker plus SourceEvidence");
-        Require(drained[1].sourceEvidence.gamepadEvidence, "gamepad evidence must set gamepadEvidence");
-        Require(drained[1].sourceEvidence.gamepadLease, "gamepad evidence must establish gamepad lease");
+        auto capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.size() == 1, "gamepad evidence must publish one ordered marker");
+        Require(capture.latestSourceEvidence->snapshot.gamepadEvidence, "gamepad evidence must set gamepadEvidence");
+        Require(capture.latestSourceEvidence->snapshot.gamepadLease, "gamepad evidence must establish gamepad lease");
 
         producer.PublishKeyboardSourceEvidence(contextSnapshot, 0x1E, 101'000);
-        drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 2, "keyboard evidence must publish takeover marker plus SourceEvidence");
+        capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.size() == 1, "keyboard evidence must publish one takeover marker");
         Require(
-            drained[0].deviceFamily.family == presentation::DeviceFamily::KeyboardMouse,
+            capture.events[0].deviceFamily.family == presentation::DeviceFamily::KeyboardMouse,
             "keyboard evidence must publish KeyboardMouse marker");
-        Require(drained[1].sourceEvidence.keyboardEvidence, "keyboard evidence must set keyboardEvidence");
-        Require(!drained[1].sourceEvidence.gamepadEvidence, "keyboard evidence must clear gamepad evidence");
-        Require(!drained[1].sourceEvidence.gamepadLease, "keyboard evidence must clear gamepad lease");
+        Require(capture.latestSourceEvidence->snapshot.keyboardEvidence, "keyboard evidence must set keyboardEvidence");
+        Require(!capture.latestSourceEvidence->snapshot.gamepadEvidence, "keyboard evidence must clear gamepad evidence");
+        Require(!capture.latestSourceEvidence->snapshot.gamepadLease, "keyboard evidence must clear gamepad lease");
 
         producer.PublishGamepadSourceEvidence(contextSnapshot, 102'000);
-        drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 2, "gamepad reclaim must publish marker plus SourceEvidence");
+        capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.size() == 1, "gamepad reclaim must publish one ordered marker");
         Require(
-            drained[0].deviceFamily.family == presentation::DeviceFamily::Gamepad,
+            capture.events[0].deviceFamily.family == presentation::DeviceFamily::Gamepad,
             "gamepad reclaim must publish Gamepad marker");
-        Require(drained[1].sourceEvidence.gamepadEvidence, "gamepad reclaim must restore gamepadEvidence");
-        Require(!drained[1].sourceEvidence.keyboardEvidence, "gamepad reclaim must clear keyboardEvidence");
+        Require(capture.latestSourceEvidence->snapshot.gamepadEvidence, "gamepad reclaim must restore gamepadEvidence");
+        Require(!capture.latestSourceEvidence->snapshot.keyboardEvidence, "gamepad reclaim must clear keyboardEvidence");
 
         producer.PublishMouseMoveSourceEvidence(contextSnapshot, 5, -3, 103'000);
-        drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 2, "mouse move evidence must publish takeover marker plus SourceEvidence");
-        Require(drained[1].sourceEvidence.mouseMoveEvidence, "mouse move evidence must set mouseMoveEvidence");
+        capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.size() == 1, "mouse move evidence must publish one takeover marker");
+        Require(capture.latestSourceEvidence->snapshot.mouseMoveEvidence, "mouse move evidence must set mouseMoveEvidence");
         Require(
-            drained[1].sourceEvidence.pointerSignal == presentation::PointerSignal::HoverOnly,
+            capture.latestSourceEvidence->snapshot.pointerSignal == presentation::PointerSignal::HoverOnly,
             "mouse move evidence must publish hover pointer signal");
 
         producer.PublishGamepadSourceEvidence(contextSnapshot, 104'000);
-        (void)ingress::IngressHub::GetSingleton().Drain();
+        (void)ingress::IngressHub::GetSingleton().Capture(16);
         producer.PublishMouseButtonSourceEvidence(contextSnapshot, 105'000);
-        drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 2, "mouse button evidence must publish takeover marker plus SourceEvidence");
-        Require(drained[1].sourceEvidence.mouseButtonEvidence, "mouse button evidence must set mouseButtonEvidence");
+        capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.size() == 1, "mouse button evidence must publish one takeover marker");
+        Require(capture.latestSourceEvidence->snapshot.mouseButtonEvidence, "mouse button evidence must set mouseButtonEvidence");
         Require(
-            drained[1].sourceEvidence.pointerSignal == presentation::PointerSignal::PointerActive,
+            capture.latestSourceEvidence->snapshot.pointerSignal == presentation::PointerSignal::PointerActive,
             "mouse button evidence must publish active pointer signal");
     }
 
@@ -678,20 +962,20 @@ namespace
         contextSnapshot.menuStackRevision = 42;
 
         producer.PublishGamepadSourceEvidence(contextSnapshot, 200'000);
-        (void)ingress::IngressHub::GetSingleton().Drain();
+        (void)ingress::IngressHub::GetSingleton().Capture(16);
 
         producer.MarkSyntheticKeyboardScancode(0x64, 1, 250'000, 201'000);
         producer.PublishKeyboardSourceEvidence(contextSnapshot, 0x64, 201'100);
 
-        const auto drained = ingress::IngressHub::GetSingleton().Drain();
-        Require(drained.size() == 1, "synthetic keyboard evidence must not publish a device-family takeover marker");
-        Require(drained[0].kind == ingress::IngressKind::SourceEvidence, "synthetic keyboard evidence should only mirror SourceEvidence");
+        const auto capture = ingress::IngressHub::GetSingleton().Capture(16);
+        Require(capture.events.empty(), "synthetic keyboard evidence must not publish an ordered takeover event");
+        Require(capture.latestSourceEvidence.has_value(), "synthetic keyboard evidence must refresh the latest source slot");
         Require(
-            drained[0].sourceEvidence.deviceFamilyEvidence.family == presentation::DeviceFamily::Gamepad,
+            capture.latestSourceEvidence->snapshot.deviceFamilyEvidence.family == presentation::DeviceFamily::Gamepad,
             "synthetic keyboard evidence must keep the current Gamepad family");
-        Require(!drained[0].sourceEvidence.keyboardEvidence, "synthetic keyboard evidence must not set keyboardEvidence");
-        Require(drained[0].sourceEvidence.syntheticKeyboardWindow, "synthetic keyboard evidence must mark the synthetic window");
-        Require(drained[0].sourceEvidence.gamepadLease, "synthetic keyboard evidence must not clear the gamepad lease");
+        Require(!capture.latestSourceEvidence->snapshot.keyboardEvidence, "synthetic keyboard evidence must not set keyboardEvidence");
+        Require(capture.latestSourceEvidence->snapshot.syntheticKeyboardWindow, "synthetic keyboard evidence must mark the synthetic window");
+        Require(capture.latestSourceEvidence->snapshot.gamepadLease, "synthetic keyboard evidence must not clear the gamepad lease");
     }
 
     void TestStableMergeKeepsPulseLedger()
@@ -1099,6 +1383,15 @@ int main()
 {
     TestHubAssignsSeqAndEmitsOverflowMarker();
     TestHubDrainHonorsExactEventBudget();
+    TestLatestPadStatePreventsSteadyAnalogQueueGrowth();
+    TestLatestAnalogCanLeadBoundedDigitalEdgeCutoff();
+    TestFrameAssemblerKeepsLatestAnalogSeparateFromOrderedEdgeCutoff();
+    TestOverflowRetainsLatestPadState();
+    TestOverflowFreezesDigitalEdgesUntilCleanRelease();
+    TestSourceEvidenceUsesLatestPublicationWithoutQueueGrowth();
+    TestConcurrentCaptureNeverObservesHalfHidTransaction();
+    TestLatestSourceEvidenceCannotBypassQueuedDeviceBoundary();
+    TestLatestAnalogCannotBypassQueuedContextBoundary();
     TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
     TestLegacySnapshotAdapterPrefersInputV2ContextRevision();

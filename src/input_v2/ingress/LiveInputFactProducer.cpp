@@ -67,6 +67,7 @@ namespace dualpad::input_v2::ingress
         const dualpad::input::PadEventSnapshot& snapshot,
         bool synthesizeDigitalEdges)
     {
+        std::scoped_lock lock(_mutex);
         std::vector<actions::ControlSample> samples;
         const auto timestampUs = TimestampUs(snapshot);
         const auto currentMask = snapshot.state.buttons.digitalMask;
@@ -108,16 +109,23 @@ namespace dualpad::input_v2::ingress
         const context::ResolvedContextSnapshot& contextSnapshot,
         std::uint64_t tick)
     {
+        PublishSourceEvidenceFrameToIngressHub(CollectGamepadSourceEvidence(contextSnapshot, tick));
+    }
+
+    presentation::SourceEvidenceFrame LiveInputFactProducer::CollectGamepadSourceEvidence(
+        const context::ResolvedContextSnapshot& contextSnapshot,
+        std::uint64_t tick)
+    {
+        std::scoped_lock lock(_mutex);
         _sourceEvidenceCollector.RecordGamepadEvidence(true, tick, kGamepadLeaseWindowTicks);
         const auto publication = _deviceFamilyPublisher.Publish(
             presentation::DeviceFamily::Gamepad,
             presentation::DeviceFamilyEvidenceSource::RawInputIngress,
             tick);
-        const auto frame = _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
+        return _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
             publication,
             contextSnapshot,
             tick);
-        PublishSourceEvidenceFrameToIngressHub(frame);
     }
 
     void LiveInputFactProducer::PublishKeyboardSourceEvidence(
@@ -125,23 +133,30 @@ namespace dualpad::input_v2::ingress
         std::uint32_t scancode,
         std::uint64_t tick)
     {
-        const bool syntheticSuppressed =
-            _sourceEvidenceCollector.ConsumeSyntheticKeyboardScancode(scancode, tick);
-        _sourceEvidenceCollector.RecordKeyboardEvidence(true, syntheticSuppressed, tick);
-        if (syntheticSuppressed) {
-            PublishCurrentSourceEvidence(contextSnapshot, tick);
-            return;
+        presentation::SourceEvidenceFrame frame;
+        {
+            std::scoped_lock lock(_mutex);
+            const bool syntheticSuppressed =
+                _sourceEvidenceCollector.ConsumeSyntheticKeyboardScancode(scancode, tick);
+            _sourceEvidenceCollector.RecordKeyboardEvidence(true, syntheticSuppressed, tick);
+            frame = syntheticSuppressed ?
+                CollectCurrentSourceEvidenceLocked(contextSnapshot, tick) :
+                CollectKeyboardMouseSourceEvidenceLocked(contextSnapshot, tick);
         }
-
-        PublishKeyboardMouseSourceEvidence(contextSnapshot, tick);
+        PublishSourceEvidenceFrameToIngressHub(frame);
     }
 
     void LiveInputFactProducer::PublishMouseButtonSourceEvidence(
         const context::ResolvedContextSnapshot& contextSnapshot,
         std::uint64_t tick)
     {
-        _sourceEvidenceCollector.RecordMouseButtonEvidence(true, tick);
-        PublishKeyboardMouseSourceEvidence(contextSnapshot, tick);
+        presentation::SourceEvidenceFrame frame;
+        {
+            std::scoped_lock lock(_mutex);
+            _sourceEvidenceCollector.RecordMouseButtonEvidence(true, tick);
+            frame = CollectKeyboardMouseSourceEvidenceLocked(contextSnapshot, tick);
+        }
+        PublishSourceEvidenceFrameToIngressHub(frame);
     }
 
     void LiveInputFactProducer::PublishMouseMoveSourceEvidence(
@@ -154,8 +169,13 @@ namespace dualpad::input_v2::ingress
             return;
         }
 
-        _sourceEvidenceCollector.RecordMouseMoveEvidence(dx, dy, tick);
-        PublishKeyboardMouseSourceEvidence(contextSnapshot, tick);
+        presentation::SourceEvidenceFrame frame;
+        {
+            std::scoped_lock lock(_mutex);
+            _sourceEvidenceCollector.RecordMouseMoveEvidence(dx, dy, tick);
+            frame = CollectKeyboardMouseSourceEvidenceLocked(contextSnapshot, tick);
+        }
+        PublishSourceEvidenceFrameToIngressHub(frame);
     }
 
     void LiveInputFactProducer::MarkSyntheticKeyboardScancode(
@@ -164,10 +184,11 @@ namespace dualpad::input_v2::ingress
         std::uint64_t windowUs,
         std::uint64_t nowUs)
     {
+        std::scoped_lock lock(_mutex);
         _sourceEvidenceCollector.MarkSyntheticKeyboardScancode(scancode, pendingEvents, windowUs, nowUs);
     }
 
-    void LiveInputFactProducer::PublishKeyboardMouseSourceEvidence(
+    presentation::SourceEvidenceFrame LiveInputFactProducer::CollectKeyboardMouseSourceEvidenceLocked(
         const context::ResolvedContextSnapshot& contextSnapshot,
         std::uint64_t tick)
     {
@@ -175,28 +196,27 @@ namespace dualpad::input_v2::ingress
             presentation::DeviceFamily::KeyboardMouse,
             presentation::DeviceFamilyEvidenceSource::RawInputIngress,
             tick);
-        const auto frame = _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
+        return _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
             publication,
             contextSnapshot,
             tick);
-        PublishSourceEvidenceFrameToIngressHub(frame);
     }
 
-    void LiveInputFactProducer::PublishCurrentSourceEvidence(
+    presentation::SourceEvidenceFrame LiveInputFactProducer::CollectCurrentSourceEvidenceLocked(
         const context::ResolvedContextSnapshot& contextSnapshot,
         std::uint64_t tick)
     {
-        const auto frame = _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
+        return _sourceEvidenceCollector.CollectAfterDeviceFamilyIngress(
             presentation::DeviceFamilyIngressPublication{
                 .evidence = _deviceFamilyPublisher.GetPublished()
             },
             contextSnapshot,
             tick);
-        PublishSourceEvidenceFrameToIngressHub(frame);
     }
 
     void LiveInputFactProducer::Reset()
     {
+        std::scoped_lock lock(_mutex);
         _previousDownMask = 0;
         _downAtUs = {};
         _deviceFamilyPublisher.ResetForTests();

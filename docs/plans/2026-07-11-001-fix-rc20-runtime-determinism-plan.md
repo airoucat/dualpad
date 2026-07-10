@@ -326,7 +326,7 @@ flowchart TB
 
 **回滚：** 保留旧 `Drain()` 仅供明确 replay/teardown 场景；runtime 路径不允许回退到它。
 
-- [ ] **Unit 3：拆分 LatestPadState、OrderedEdgeQueue 与 source facts**
+- [x] **Unit 3：拆分 LatestPadState、OrderedEdgeQueue 与 source facts**
 
 **目标：** 让连续状态 latest-wins，让必须有序的 edge / boundary 保持有界顺序。
 

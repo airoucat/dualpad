@@ -85,7 +85,8 @@ namespace dualpad::input_v2::ingress
 
     std::vector<IngressEvent> ConvertLegacySnapshotToIngressEvents(
         const dualpad::input::PadEventSnapshot& snapshot,
-        std::uint64_t lastObservedSequence)
+        std::uint64_t lastObservedSequence,
+        LegacyIngressConversionOptions options)
     {
         std::vector<IngressEvent> events;
         const auto firstSequence = FirstSequenceOrSequence(snapshot);
@@ -104,7 +105,9 @@ namespace dualpad::input_v2::ingress
         if (snapshot.type == dualpad::input::PadEventSnapshotType::Reset) {
             auto reset = MakeExplicitResetEvent();
             reset.monotonicUs = snapshot.sourceTimestampUs;
-            LiveInputFactProducer::GetSingleton().Reset();
+            if (options.resetLiveProducer) {
+                LiveInputFactProducer::GetSingleton().Reset();
+            }
             events.push_back(reset);
             return events;
         }
@@ -121,59 +124,44 @@ namespace dualpad::input_v2::ingress
             events.push_back(reset);
         }
 
-        IngressEvent ui{};
-        ui.kind = IngressKind::UiSnapshot;
-        ui.source = IngressSource::LegacyDispatcher;
-        ui.monotonicUs = snapshot.sourceTimestampUs;
-        ui.ui = UiSnapshotPayload{
-            .contextRevision = SnapshotContextRevision(snapshot),
-            .menuStackRevision = snapshot.contextEpoch
-        };
-        events.push_back(ui);
+        if (options.includeUiSnapshot) {
+            IngressEvent ui{};
+            ui.kind = IngressKind::UiSnapshot;
+            ui.source = IngressSource::LegacyDispatcher;
+            ui.monotonicUs = snapshot.sourceTimestampUs;
+            ui.ui = UiSnapshotPayload{
+                .contextRevision = SnapshotContextRevision(snapshot),
+                .menuStackRevision = snapshot.contextEpoch
+            };
+            events.push_back(ui);
+        }
 
         IngressEvent pad{};
         pad.kind = IngressKind::PadSnapshot;
         pad.source = IngressSource::LegacyDispatcher;
         pad.monotonicUs = snapshot.sourceTimestampUs;
-        pad.pad.legacySnapshot = snapshot;
+        if (options.retainLegacySnapshot) {
+            pad.pad.legacySnapshot = snapshot;
+        }
         pad.pad.firstSequence = firstSequence;
         pad.pad.sequence = snapshot.sequence;
         pad.pad.overflowed = snapshot.overflowed || snapshot.events.overflowed;
         pad.pad.coalesced = snapshot.coalesced;
         pad.pad.crossContextMismatch = snapshot.crossContextMismatch;
-        pad.pad.samples = LiveInputFactProducer::GetSingleton().BuildControlSamples(
-            snapshot,
-            snapshot.events.count == 0);
+        if (options.includeContinuousSamples) {
+            pad.pad.samples = LiveInputFactProducer::GetSingleton().BuildControlSamples(
+                snapshot,
+                snapshot.events.count == 0);
+        }
         AppendEventSamples(snapshot, pad.pad.samples);
-        events.push_back(std::move(pad));
+        if (options.retainLegacySnapshot || !pad.pad.samples.empty()) {
+            events.push_back(std::move(pad));
+        }
         return events;
     }
 
     void PublishSourceEvidenceFrameToIngressHub(const presentation::SourceEvidenceFrame& frame)
     {
-        auto& hub = IngressHub::GetSingleton();
-        std::vector<IngressEvent> events;
-        events.reserve(frame.records.size());
-        for (const auto& record : frame.records) {
-            if (record.kind == presentation::SourceEvidenceRecordKind::DeviceFamilyChanged) {
-                IngressEvent marker{};
-                marker.kind = IngressKind::DeviceFamilyChanged;
-                marker.source = IngressSource::DeviceFamilyPublisher;
-                marker.monotonicUs = record.deviceFamilyChanged.publishedTick;
-                marker.deviceFamily = DeviceFamilyChangedPayload{
-                    .family = record.deviceFamilyChanged.family,
-                    .deviceFamilyRevision = record.deviceFamilyChanged.newRevision
-                };
-                events.push_back(std::move(marker));
-            } else {
-                IngressEvent evidence{};
-                evidence.kind = IngressKind::SourceEvidence;
-                evidence.source = IngressSource::DeviceFamilyPublisher;
-                evidence.monotonicUs = record.sourceEvidence.collectedTick;
-                evidence.sourceEvidence = record.sourceEvidence;
-                events.push_back(std::move(evidence));
-            }
-        }
-        (void)hub.PushEvents(std::move(events));
+        IngressHub::GetSingleton().PublishSourceEvidenceFrame(frame);
     }
 }
