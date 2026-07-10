@@ -197,3 +197,13 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: LatestPadState property fixture 以高于消费速率的真实 digital edge 生产速率运行，误把预期的 ordered-edge backlog/overflow 当成模拟量放大回归。
 - Detail: fixture 每 17 个 report 切换一次按键、每 23 个 report 只 drain 1 个 event；即使纯轴 report 完全不入队，digital producer 仍快于 consumer，最终必然填满容量。验证 analog latest-wins 时必须把 event budget 设为足以覆盖真实 edge 速率，并单独断言最大 queue 长度与 edge 数量关系。
 - Resolution: 每次 capture 改为 drain 2 个 event，断言最大 pending 不超过初始 UI marker 加两个真实 edge；测试随后通过。
+
+## ERR-20260711-004
+
+- Logged: 2026-07-11 02:33 CST
+- Priority: low
+- Status: resolved
+- Area: Windows build / MSVC PCH memory
+- Summary: 公共 presentation/context header 变更触发大范围重编译时，xmake 默认 34 jobs 导致 MSVC `C3859` / `C1076`，Windows 返回 pagefile error 1455。
+- Detail: focused ContextResolver target 已先构建并运行通过；随后 `xmake build -y DualPad` 并发重编译大量 PCH translation units 时耗尽 commit/pagefile。该错误是本机并发资源上限，不能当作代码编译结论。
+- Resolution: 对大范围 header 变更的本地全量重编译使用 `xmake build -y -j 4 DualPad`；focused targets 仍可使用默认并发。

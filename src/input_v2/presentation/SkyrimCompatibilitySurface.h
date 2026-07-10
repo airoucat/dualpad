@@ -16,6 +16,44 @@
 
 namespace dualpad::input_v2::presentation
 {
+    struct MenuRefreshTarget
+    {
+        std::string menuName;
+        menu::MenuInstanceId instanceId{ 0 };
+        std::uintptr_t menuPtr{ 0 };
+        std::uintptr_t moviePtr{ 0 };
+        std::uint32_t menuStackRevision{ 0 };
+        std::uint32_t contextRevision{ 0 };
+        std::uint32_t presentationEpoch{ 0 };
+
+        friend bool operator==(const MenuRefreshTarget&, const MenuRefreshTarget&) = default;
+    };
+
+    struct LiveMenuRefreshTarget
+    {
+        bool uiAvailable{ false };
+        std::uintptr_t menuPtr{ 0 };
+        std::uintptr_t moviePtr{ 0 };
+        bool rootReady{ false };
+        bool ownedCallbackReady{ false };
+    };
+
+    enum class MenuRefreshTargetValidation : std::uint8_t
+    {
+        ReadyOwnedCallback = 0,
+        ReadyRefreshPlatform,
+        DeferredNotReady,
+        Superseded,
+        Disallowed
+    };
+
+    bool IsMenuRefreshTargetAllowlisted(std::string_view menuName) noexcept;
+    MenuRefreshTarget MakeMenuRefreshTarget(const PublishedPresentationState& state);
+    MenuRefreshTargetValidation ValidateMenuRefreshTarget(
+        const MenuRefreshTarget& captured,
+        const MenuRefreshTarget& current,
+        const LiveMenuRefreshTarget& live) noexcept;
+
     namespace detail
     {
         enum class InstallState : std::uint8_t
@@ -172,6 +210,8 @@ namespace dualpad::input_v2::presentation
             std::uint64_t serial{ 0 };
             std::uint32_t epoch{ 0 };
             std::string key;
+            MenuRefreshTarget target;
+            PresentationDirtyFlags requestedDirty{ PresentationDirtyFlags::None };
             std::uint8_t deferredAttempts{ 0 };
         };
 

@@ -5,6 +5,8 @@
 #include <REL/Pattern.h>
 #include <SKSE/Version.h>
 
+#include <algorithm>
+#include <array>
 #include <sstream>
 
 namespace logger = SKSE::log;
@@ -23,6 +25,19 @@ namespace dualpad::input_v2::presentation
         constexpr std::uint8_t kMaxDeferredAttempts = 3;
         constexpr auto kExpectedBoolSurfaceEntryWindow =
             REL::make_pattern<"48 83 EC 28 48 8B 49 70 48 85 C9 74 11">();
+        constexpr std::array<std::string_view, 17> kMenuRefreshAllowlist{
+            "Main Menu",
+            "InventoryMenu", "Inventory Menu",
+            "MagicMenu", "Magic Menu",
+            "MapMenu", "Map Menu",
+            "JournalMenu", "Journal Menu",
+            "ContainerMenu", "Container Menu",
+            "BarterMenu", "Barter Menu",
+            "Crafting Menu",
+            "Book Menu",
+            "Dialogue Menu",
+            "Lockpicking Menu"
+        };
 
         const char* ToLogString(PresentationOwner owner)
         {
@@ -71,20 +86,28 @@ namespace dualpad::input_v2::presentation
             return static_cast<std::uint32_t>(static_cast<std::uint8_t>(flags));
         }
 
-        bool NotifyMenuPresentationChanged(RE::IMenu& menu)
+        void InspectMenuPresentationReadiness(RE::IMenu& menu, LiveMenuRefreshTarget& live)
         {
             if (!menu.uiMovie) {
-                return false;
+                return;
+            }
+
+            RE::GFxValue root;
+            live.rootReady = menu.uiMovie->GetVariable(&root, "_root") && root.IsObject();
+            if (!live.rootReady) {
+                return;
             }
 
             RE::GFxValue callback;
-            if (!menu.uiMovie->GetVariable(&callback, "_root.DualPad_OnPresentationChanged") ||
-                callback.IsUndefined()) {
-                return false;
-            }
+            live.ownedCallbackReady =
+                menu.uiMovie->GetVariable(&callback, "_root.DualPad_OnPresentationChanged") &&
+                !callback.IsUndefined() &&
+                !callback.IsNull();
+        }
 
+        void NotifyMenuPresentationChanged(RE::IMenu& menu)
+        {
             menu.uiMovie->InvokeNoReturn("_root.DualPad_OnPresentationChanged", nullptr, 0);
-            return true;
         }
 
         bool IsInstalledStatus(HookInstallStatus status)
@@ -149,6 +172,50 @@ namespace dualpad::input_v2::presentation
             }
             return detail::MakeHookInstallResult(HookInstallStatus::Success, "hook_sites_verified");
         }
+    }
+
+    bool IsMenuRefreshTargetAllowlisted(std::string_view menuName) noexcept
+    {
+        return std::find(kMenuRefreshAllowlist.begin(), kMenuRefreshAllowlist.end(), menuName) !=
+            kMenuRefreshAllowlist.end();
+    }
+
+    MenuRefreshTarget MakeMenuRefreshTarget(const PublishedPresentationState& state)
+    {
+        return {
+            .menuName = state.targetMenuName,
+            .instanceId = state.targetMenuInstanceId,
+            .menuPtr = state.targetMenuPtr,
+            .moviePtr = state.targetMenuMoviePtr,
+            .menuStackRevision = state.menuStackRevision,
+            .contextRevision = state.contextRevision,
+            .presentationEpoch = state.epoch
+        };
+    }
+
+    MenuRefreshTargetValidation ValidateMenuRefreshTarget(
+        const MenuRefreshTarget& captured,
+        const MenuRefreshTarget& current,
+        const LiveMenuRefreshTarget& live) noexcept
+    {
+        if (!IsMenuRefreshTargetAllowlisted(captured.menuName) ||
+            captured.instanceId == 0 ||
+            captured.menuPtr == 0 ||
+            captured.moviePtr == 0) {
+            return MenuRefreshTargetValidation::Disallowed;
+        }
+        if (captured != current) {
+            return MenuRefreshTargetValidation::Superseded;
+        }
+        if (!live.uiAvailable || live.menuPtr == 0 || live.moviePtr == 0 || !live.rootReady) {
+            return MenuRefreshTargetValidation::DeferredNotReady;
+        }
+        if (live.menuPtr != captured.menuPtr || live.moviePtr != captured.moviePtr) {
+            return MenuRefreshTargetValidation::Superseded;
+        }
+        return live.ownedCallbackReady ?
+            MenuRefreshTargetValidation::ReadyOwnedCallback :
+            MenuRefreshTargetValidation::ReadyRefreshPlatform;
     }
 
     namespace detail
@@ -449,7 +516,10 @@ namespace dualpad::input_v2::presentation
 
         const auto state = GetCommittedState();
         logger::info(
-            "[DualPad][MenuRefreshTrace] event=request queued=true owner={} navigationOwner={} cursorOwner={} eligibility={} epoch={} dirty=0x{:02X} contextRevision={} gameplayPresentationRevision={}",
+            "[DualPad][MenuRefreshTrace] event=request queued=true target={} instance={} menuStackRevision={} owner={} navigationOwner={} cursorOwner={} eligibility={} epoch={} dirty=0x{:02X} contextRevision={} gameplayPresentationRevision={}",
+            state.targetMenuName,
+            state.targetMenuInstanceId,
+            state.menuStackRevision,
             ToLogString(state.owner),
             ToLogString(state.navigationOwner),
             ToLogString(state.cursorOwner),
@@ -697,13 +767,19 @@ namespace dualpad::input_v2::presentation
             .serial = ++_nextRefreshSerial,
             .epoch = _committed.epoch,
             .key = MakeRefreshKey(_committed),
+            .target = MakeMenuRefreshTarget(_committed),
+            .requestedDirty = _committed.dirty,
             .deferredAttempts = deferredAttempts
         };
     }
 
     bool SkyrimCompatibilitySurface::IsRefreshableMenuPresentation(const PublishedPresentationState& state)
     {
-        return state.menuRefreshEligibility == MenuRefreshEligibility::EligibleStableMenu;
+        return state.menuRefreshEligibility == MenuRefreshEligibility::EligibleStableMenu &&
+            state.targetMenuInstanceId != 0 &&
+            state.targetMenuPtr != 0 &&
+            state.targetMenuMoviePtr != 0 &&
+            IsMenuRefreshTargetAllowlisted(state.targetMenuName);
     }
 
     std::string SkyrimCompatibilitySurface::MakeRefreshKey(const PublishedPresentationState& state)
@@ -711,6 +787,11 @@ namespace dualpad::input_v2::presentation
         std::ostringstream out;
         out << state.epoch
             << "|ctx=" << state.contextRevision
+            << "|stack=" << state.menuStackRevision
+            << "|target=" << state.targetMenuName
+            << "|instance=" << state.targetMenuInstanceId
+            << "|menuPtr=" << state.targetMenuPtr
+            << "|moviePtr=" << state.targetMenuMoviePtr
             << "|ui=" << static_cast<std::uint16_t>(state.uiContextId)
             << "|eligibility=" << static_cast<unsigned>(state.menuRefreshEligibility)
             << "|policy=" << state.presentationPolicyId
@@ -974,40 +1055,66 @@ namespace dualpad::input_v2::presentation
             return;
         }
 
-        bool uiReady = false;
+        RE::GPtr<RE::IMenu> targetMenu;
+        LiveMenuRefreshTarget live{};
         if (auto* ui = RE::UI::GetSingleton(); ui) {
-            for (auto& menu : ui->menuStack) {
-                if (!menu) {
-                    ++skippedNotReady;
-                    continue;
-                }
-                if (!menu->uiMovie) {
-                    ++skippedNotReady;
-                    continue;
-                }
-
-                menu->RefreshPlatform();
-                ++refreshed;
-                if (NotifyMenuPresentationChanged(*menu)) {
-                    ++notified;
+            live.uiAvailable = true;
+            targetMenu = ui->GetMenu(request.target.menuName);
+            if (targetMenu) {
+                live.menuPtr = reinterpret_cast<std::uintptr_t>(targetMenu.get());
+                if (targetMenu->uiMovie) {
+                    live.moviePtr = reinterpret_cast<std::uintptr_t>(targetMenu->uiMovie.get());
+                    InspectMenuPresentationReadiness(*targetMenu, live);
                 }
             }
-            uiReady = true;
         }
 
+        const auto stateBeforeInvoke = surface.GetCommittedState();
+        const auto validation = ValidateMenuRefreshTarget(
+            request.target,
+            MakeMenuRefreshTarget(stateBeforeInvoke),
+            live);
         auto result = MenuRefreshExecutionResult::Completed;
+        if (!IsRefreshableMenuPresentation(stateBeforeInvoke) ||
+            MakeRefreshKey(stateBeforeInvoke) != request.key) {
+            result = MenuRefreshExecutionResult::Superseded;
+        }
+        switch (result == MenuRefreshExecutionResult::Superseded ?
+                    MenuRefreshTargetValidation::Superseded :
+                    validation) {
+        case MenuRefreshTargetValidation::ReadyOwnedCallback:
+            NotifyMenuPresentationChanged(*targetMenu);
+            ++notified;
+            break;
+        case MenuRefreshTargetValidation::ReadyRefreshPlatform:
+            targetMenu->RefreshPlatform();
+            ++refreshed;
+            break;
+        case MenuRefreshTargetValidation::DeferredNotReady:
+            ++skippedNotReady;
+            result = MenuRefreshExecutionResult::DeferredNotReady;
+            break;
+        case MenuRefreshTargetValidation::Disallowed:
+        case MenuRefreshTargetValidation::Superseded:
+        default:
+            result = MenuRefreshExecutionResult::Superseded;
+            break;
+        }
+
         const auto stateAtEnd = surface.GetCommittedState();
         if (!IsRefreshableMenuPresentation(stateAtEnd) ||
-            MakeRefreshKey(stateAtEnd) != request.key) {
+            MakeRefreshKey(stateAtEnd) != request.key ||
+            MakeMenuRefreshTarget(stateAtEnd) != request.target) {
             result = MenuRefreshExecutionResult::Superseded;
-        } else if (!uiReady || refreshed == 0) {
-            result = MenuRefreshExecutionResult::DeferredNotReady;
         }
 
         logger::info(
-            "[DualPad][MenuRefreshTrace] event=done serial={} result={} menus={} notified={} skippedNotReady={} owner={} navigationOwner={} cursorOwner={} epoch={} dirty=0x{:02X}",
+            "[DualPad][MenuRefreshTrace] event=done serial={} result={} target={} instance={} menuStackRevision={} refreshed={} notified={} skippedNotReady={} owner={} navigationOwner={} cursorOwner={} epoch={} requestedDirty=0x{:02X} currentDirty=0x{:02X}",
             request.serial,
             ToString(result),
+            request.target.menuName,
+            request.target.instanceId,
+            request.target.menuStackRevision,
             refreshed,
             notified,
             skippedNotReady,
@@ -1015,6 +1122,7 @@ namespace dualpad::input_v2::presentation
             ToLogString(stateAtEnd.navigationOwner),
             ToLogString(stateAtEnd.cursorOwner),
             stateAtEnd.epoch,
+            ToDirtyBits(request.requestedDirty),
             ToDirtyBits(stateAtEnd.dirty));
         surface.CompleteRefreshRequest(request, result, refreshed, notified, skippedNotReady);
     }

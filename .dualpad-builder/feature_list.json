@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-07-11T02:16:07+08:00",
+  "updated_at": "2026-07-11T06:45:41+08:00",
   "features": [
     {
       "id": "WF0",
@@ -353,6 +353,7 @@
         "DP5-RC20 U0-U5 closeout 与 PR-A/B/C 修正必须通过 Phase 8 canonical CI、RC readiness outer gate、builder JSON、graphify、replay diff 与 diff hygiene；最终 main head 远端 phase8 / rc-readiness 全绿后称为 RC QA baseline",
         "S-DP5-RC20-HOTFIX 只处理输入实时性、runtime concurrency、immutable poll publication、Favorites crash containment 与动态证据闭环；它是 post-closeout field-readiness hotfix，不新增 runtime phase",
         "native Game.Favorites 在单一 runtime writer、immutable PollOutputFrame、generation-based pulse、matching dump/IDA 与真实游戏循环闭环前默认 fail-closed",
+        "Unit 7 已将 menu refresh 收窄为同一 owner publication 捕获并在 UI task 复验的单一 allowlisted target；stale、replaced、half-initialized 与 denied menu 不再触发全 stack refresh",
         "最终 release status 只能是 NO-GO、GO WITH NATIVE FAVORITES DISABLED 或 GO；未完成真实 Favorites 循环与 crash evidence 不得标记 GO"
       ]
     }

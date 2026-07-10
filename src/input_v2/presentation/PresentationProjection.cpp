@@ -93,6 +93,11 @@ namespace dualpad::input_v2::presentation
         next.deviceFamilyRevision = evidence.deviceFamilyEvidence.deviceFamilyRevision;
         next.uiContextId = contextSnapshot.uiContextId;
         next.menuRefreshEligibility = DeriveMenuRefreshEligibility(contextSnapshot);
+        next.targetMenuName = contextSnapshot.topMenuName;
+        next.targetMenuInstanceId = contextSnapshot.topMenuInstanceId.value_or(0);
+        next.targetMenuPtr = contextSnapshot.topMenuPtr;
+        next.targetMenuMoviePtr = contextSnapshot.topMenuMoviePtr;
+        next.menuStackRevision = contextSnapshot.menuStackRevision;
         next.actionSetStack = contextSnapshot.actionSetStack;
         next.presentationPolicyId = contextSnapshot.presentationPolicyId;
         next.contextRevision = contextSnapshot.contextRevision;
@@ -135,7 +140,12 @@ namespace dualpad::input_v2::presentation
         }
         if (next.uiContextId != _published.uiContextId ||
             next.contextRevision != _published.contextRevision ||
-            next.menuRefreshEligibility != _published.menuRefreshEligibility) {
+            next.menuRefreshEligibility != _published.menuRefreshEligibility ||
+            next.targetMenuName != _published.targetMenuName ||
+            next.targetMenuInstanceId != _published.targetMenuInstanceId ||
+            next.targetMenuPtr != _published.targetMenuPtr ||
+            next.targetMenuMoviePtr != _published.targetMenuMoviePtr ||
+            next.menuStackRevision != _published.menuStackRevision) {
             dirty |= PresentationDirtyFlags::Context;
         }
         if (next.actionSetStack != _published.actionSetStack) {

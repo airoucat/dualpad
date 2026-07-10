@@ -42,6 +42,9 @@ namespace
         context.contextRevision = 8;
         context.menuStackRevision = 4;
         context.topMenuInstanceId = 1;
+        context.topMenuName = "Journal Menu";
+        context.topMenuPtr = 0x1000;
+        context.topMenuMoviePtr = 0x2000;
         return context;
     }
 
@@ -58,6 +61,11 @@ namespace
         state.uiContextId = uiContextId;
         state.menuRefreshEligibility =
             dualpad::input_v2::presentation::MenuRefreshEligibility::EligibleStableMenu;
+        state.targetMenuName = "Journal Menu";
+        state.targetMenuInstanceId = 1;
+        state.targetMenuPtr = 0x1000;
+        state.targetMenuMoviePtr = 0x2000;
+        state.menuStackRevision = contextRevision;
         state.contextRevision = contextRevision;
         state.actionSetStack.baseSetId = "MenuBase";
         state.actionSetStack.layerIds = { "MenuLayer" };
@@ -149,6 +157,13 @@ void RunPresentationProjectionTests()
             published.actionSetStack == MenuContext().actionSetStack,
             "PresentationProjection must forward PH2 action set stack");
         Require(published.epoch == 1, "dirty first publish must advance epoch");
+        Require(
+            published.targetMenuName == "Journal Menu" &&
+                published.targetMenuInstanceId == 1 &&
+                published.targetMenuPtr == 0x1000 &&
+                published.targetMenuMoviePtr == 0x2000 &&
+                published.menuStackRevision == 4,
+            "presentation publication must carry the stable target captured by ContextResolver");
 
         auto keyboardTakeover = snapshot;
         keyboardTakeover.keyboardEvidence = true;
@@ -326,7 +341,6 @@ void RunPresentationProjectionTests()
         Require(parity.passes, "shadow parity must pass when legacy and projected compatibility outputs match");
         Require(parity.contextRevision == 9, "shadow parity must carry contextRevision for diff logs");
         Require(parity.epoch == published.epoch, "shadow parity must carry epoch for refresh parity");
-
         const auto diff = compat.CompareShadowParity(
             presentation::LegacyCompatibilitySurface{
                 .isUsingGamepad = true,
@@ -354,6 +368,11 @@ void RunPresentationProjectionTests()
         menuGamepad.cursorOwner = presentation::CursorOwner::Gamepad;
         menuGamepad.uiContextId = dualpad::input_v2::context::UiContextId::Journal;
         menuGamepad.menuRefreshEligibility = presentation::MenuRefreshEligibility::EligibleStableMenu;
+        menuGamepad.targetMenuName = "Journal Menu";
+        menuGamepad.targetMenuInstanceId = 1;
+        menuGamepad.targetMenuPtr = 0x1000;
+        menuGamepad.targetMenuMoviePtr = 0x2000;
+        menuGamepad.menuStackRevision = 10;
         menuGamepad.contextRevision = 10;
         menuGamepad.epoch = 1;
         menuGamepad.dirty = presentation::PresentationDirtyFlags::Owner;
@@ -461,6 +480,75 @@ void RunPresentationProjectionTests()
         Require(
             compat.RefreshMenusIfNeeded(),
             "RefreshQueueUnavailable_DoesNotConsumeEpoch retry must still see the same pending epoch");
+    }
+
+    {
+        const presentation::MenuRefreshTarget captured{
+            .menuName = "Main Menu",
+            .instanceId = 7,
+            .menuPtr = 0x1100,
+            .moviePtr = 0x2200,
+            .menuStackRevision = 3,
+            .contextRevision = 4,
+            .presentationEpoch = 5
+        };
+        auto current = captured;
+        presentation::LiveMenuRefreshTarget live{
+            .uiAvailable = true,
+            .menuPtr = 0x1100,
+            .moviePtr = 0x2200,
+            .rootReady = true,
+            .ownedCallbackReady = true
+        };
+        Require(
+            presentation::ValidateMenuRefreshTarget(captured, current, live) ==
+                presentation::MenuRefreshTargetValidation::ReadyOwnedCallback,
+            "allowlisted stable target with callback must prefer the DualPad-owned callback");
+        live.ownedCallbackReady = false;
+        Require(
+            presentation::ValidateMenuRefreshTarget(captured, current, live) ==
+                presentation::MenuRefreshTargetValidation::ReadyRefreshPlatform,
+            "allowlisted stable target may use target-only RefreshPlatform when callback is absent");
+        live.moviePtr = 0;
+        Require(
+            presentation::ValidateMenuRefreshTarget(captured, current, live) ==
+                presentation::MenuRefreshTargetValidation::DeferredNotReady,
+            "target with null movie must defer without touching another menu");
+        live.moviePtr = 0x2200;
+        live.rootReady = false;
+        Require(
+            presentation::ValidateMenuRefreshTarget(captured, current, live) ==
+                presentation::MenuRefreshTargetValidation::DeferredNotReady,
+            "target with unavailable movie root must defer without calling RefreshPlatform");
+        live.rootReady = true;
+        live.menuPtr = 0x3300;
+        Require(
+            presentation::ValidateMenuRefreshTarget(captured, current, live) ==
+                presentation::MenuRefreshTargetValidation::Superseded,
+            "replaced instance must cancel stale refresh");
+        live.menuPtr = 0x1100;
+        current.menuStackRevision += 1;
+        Require(
+            presentation::ValidateMenuRefreshTarget(captured, current, live) ==
+                presentation::MenuRefreshTargetValidation::Superseded,
+            "changed menu stack revision must cancel stale refresh");
+
+        presentation::SkyrimCompatibilitySurface compat;
+        auto firstTarget = EligibleMenuPresentation(10, 20);
+        auto replacedTarget = firstTarget;
+        replacedTarget.targetMenuInstanceId += 1;
+        Require(
+            compat.MakeRefreshKeyForTests(firstTarget) != compat.MakeRefreshKeyForTests(replacedTarget),
+            "replacement instance must produce a distinct refresh key");
+
+        for (const auto deniedName : { "Loading Menu", "Fader Menu", "MessageBoxMenu" }) {
+            auto denied = captured;
+            denied.menuName = deniedName;
+            Require(
+                presentation::ValidateMenuRefreshTarget(denied, denied, live) ==
+                    presentation::MenuRefreshTargetValidation::Disallowed,
+                "loading/fader/message box targets must be denied by refresh allowlist");
+        }
     }
 
     {

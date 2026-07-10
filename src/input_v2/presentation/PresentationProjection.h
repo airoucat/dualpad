@@ -96,6 +96,11 @@ namespace dualpad::input_v2::presentation
         PointerIntent pointerIntent{ PointerIntent::None };
         context::UiContextId uiContextId{ context::UiContextId::None };
         MenuRefreshEligibility menuRefreshEligibility{ MenuRefreshEligibility::NotMenu };
+        std::string targetMenuName;
+        menu::MenuInstanceId targetMenuInstanceId{ 0 };
+        std::uintptr_t targetMenuPtr{ 0 };
+        std::uintptr_t targetMenuMoviePtr{ 0 };
+        std::uint32_t menuStackRevision{ 0 };
         actions::ActionSetStack actionSetStack;
         context::PresentationPolicyId presentationPolicyId;
         std::uint32_t contextRevision{ 0 };

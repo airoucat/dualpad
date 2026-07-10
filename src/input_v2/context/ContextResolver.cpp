@@ -36,6 +36,9 @@ namespace dualpad::input_v2::context
                 lhs.gameplaySubstate == rhs.gameplaySubstate &&
                 lhs.uiContextId == rhs.uiContextId &&
                 lhs.topMenuInstanceId == rhs.topMenuInstanceId &&
+                lhs.topMenuName == rhs.topMenuName &&
+                lhs.topMenuPtr == rhs.topMenuPtr &&
+                lhs.topMenuMoviePtr == rhs.topMenuMoviePtr &&
                 lhs.identityQuality == rhs.identityQuality &&
                 lhs.menuObserverCompleteness == rhs.menuObserverCompleteness &&
                 lhs.menuIdentityDegraded == rhs.menuIdentityDegraded &&
@@ -125,6 +128,9 @@ namespace dualpad::input_v2::context
             const auto& top = menuStack.trackedMenus.front();
             next.hostMode = HostMode::Menu;
             next.topMenuInstanceId = top.instanceId;
+            next.topMenuName = top.menuName;
+            next.topMenuPtr = top.menuPtr;
+            next.topMenuMoviePtr = top.moviePtr;
             next.identityQuality = top.identityQuality;
             next.menuIdentityDegraded = top.identityQuality == menu::MenuIdentityQuality::DegradedIdentity;
 

@@ -41,6 +41,9 @@ namespace dualpad::input_v2::context
         GameplaySubstate gameplaySubstate{ GameplaySubstate::None };
         UiContextId uiContextId{ UiContextId::None };
         std::optional<menu::MenuInstanceId> topMenuInstanceId;
+        std::string topMenuName;
+        std::uintptr_t topMenuPtr{ 0 };
+        std::uintptr_t topMenuMoviePtr{ 0 };
         menu::MenuIdentityQuality identityQuality{ menu::MenuIdentityQuality::StablePointer };
         menu::ObserverCompleteness menuObserverCompleteness{ menu::ObserverCompleteness::Complete };
         bool menuIdentityDegraded{ false };

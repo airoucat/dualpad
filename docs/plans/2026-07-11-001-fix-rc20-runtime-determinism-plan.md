@@ -504,7 +504,7 @@ flowchart TB
 
 **回滚：** native Favorites 保持 off；其它 pulse 若需 compatibility flag，只能在 owner-generation 两种安全策略间切换，不得回到 Poll clock。
 
-- [ ] **Unit 7：收窄为 target-bound menu refresh**
+- [x] **Unit 7：收窄为 target-bound menu refresh**
 
 **目标：** UI task 只刷新捕获并复验的目标实例，取消 stale/superseded request。
 
@@ -539,6 +539,8 @@ flowchart TB
 - Integration：Loading/Fader/MessageBox 并存时只触碰 allowlisted target。
 
 **验证：** `DoRefreshMenus()` 不再遍历整个 stack 调 `RefreshPlatform()`；每次执行可关联 target identity。
+
+**执行结果（2026-07-11）：** `ContextResolver -> PublishedPresentationState -> MenuRefreshRequest` 现在携带同一 owner publication 中的 menu name、stable instance ID、menu/movie pointer、menu stack revision、context revision、presentation epoch 与 requested dirty。UI task 只通过捕获的 menu name 获取一个 live target，并在调用前复验完整 target identity、refresh key、allowlist、movie 与 `_root` readiness；存在 DualPad-owned callback 时优先调用它，否则只对已列入显式安全合同的同一 target 调用 `RefreshPlatform()`。目标替换、revision/epoch 变化、Loading/Fader/MessageBox/Favorites、null movie/root 与非稳定身份分别 supersede、deny 或 bounded defer，绝不回退为全 stack 遍历。evaluator 审查额外补上调用前第二次 committed-state 复验以及 `_root` 独立 readiness，缩小 owner/UI task 间的 stale window。聚焦 ContextResolver/Presentation tests、InputV2、ReplayHarness 与插件构建均通过；这仍是 host/build 证据，不证明真实 Skyrim menu lifecycle。
 
 **回滚：** 可关闭 refresh feature，但不能恢复 global stack refresh。
 

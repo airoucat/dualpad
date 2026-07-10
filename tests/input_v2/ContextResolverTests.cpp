@@ -149,7 +149,7 @@ void RunContextResolverTests()
         const auto stack = registry.ReconcileAndPublish(
             menu::ObservedMenuSnapshot{
                 .completeness = menu::ObserverCompleteness::Complete,
-                .nodes = { Node(0x6000, "JournalMenu", 7) }
+                .nodes = { Node(0x6000, "JournalMenu", 7, 0x6100, 0x6200) }
             },
             catalog);
         const auto resolved = resolver.ResolveAndPublish(stack, ctx::GameplaySubstate::None, catalog);
@@ -160,6 +160,10 @@ void RunContextResolverTests()
         Require(resolved.actionSetStack.scopeAnchorIds == std::vector<std::string>({ "MenuBase", "JournalLayer" }), "scope anchors should come from catalog");
         Require(resolved.presentationPolicyId == "JournalMenu", "presentationPolicyId must publish with resolved UiContextId");
         Require(resolved.menuStackRevision == stack.menuStackRevision, "resolver must forward registry menuStackRevision");
+        Require(resolved.topMenuName == "JournalMenu", "resolver must publish the exact target menu name");
+        Require(resolved.topMenuInstanceId == stack.trackedMenus.front().instanceId, "resolver must publish the target instance id");
+        Require(resolved.topMenuPtr == 0x6000, "resolver must publish the target menu pointer");
+        Require(resolved.topMenuMoviePtr == 0x6200, "resolver must publish the target movie pointer");
         Require(resolved.contextRevision == 1, "first resolved context should publish contextRevision 1");
 
         const auto again = resolver.ResolveAndPublish(stack, ctx::GameplaySubstate::None, catalog);
