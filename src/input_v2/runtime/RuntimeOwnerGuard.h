@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <mutex>
 #include <thread>
 
@@ -66,6 +67,7 @@ namespace dualpad::input_v2::runtime
 
         RuntimeOwnerTick TryEnter(std::uint64_t frameToken);
         [[nodiscard]] RuntimeOwnerSnapshot GetSnapshot() const;
+        [[nodiscard]] RuntimeOwnerFailure GetPublishedFailure() const noexcept;
         [[nodiscard]] bool IsCurrentThreadOwnerTick() const;
         void Stop();
         void ResetForTests();
@@ -79,6 +81,7 @@ namespace dualpad::input_v2::runtime
         std::thread::id _ownerThread{};
         RuntimeOwnerSnapshot _snapshot{};
         bool _loggedDegraded{ false };
+        std::atomic<RuntimeOwnerFailure> _publishedFailure{ RuntimeOwnerFailure::None };
     };
 
     const char* ToString(RuntimeOwnerFailure failure) noexcept;

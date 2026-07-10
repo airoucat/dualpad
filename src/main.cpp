@@ -17,7 +17,9 @@
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/gameplay/PollOutputFrame.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+#include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 #include "input/injection/UpstreamGamepadHook.h"
 
@@ -74,6 +76,10 @@ namespace
             LogReverseProbeAddresses();
 
             dualpad::input::RuntimeConfig::GetSingleton().Load();
+
+            // Construct all immutable fail-closed frames before arbitrary game Poll threads can enter the hook.
+            (void)dualpad::input_v2::gameplay::PollOutputPublication::GetSingleton();
+            (void)dualpad::input_v2::runtime::RuntimeOwnerGuard::GetSingleton();
 
             const auto compiledConfig = dualpad::input_v2::config::AtomicConfigReloader::GetSingleton().LoadOrRecover();
             if (!compiledConfig.ok) {

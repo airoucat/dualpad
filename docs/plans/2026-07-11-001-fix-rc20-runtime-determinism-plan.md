@@ -414,7 +414,7 @@ flowchart TB
 
 **回滚：** guard 可单独关闭 owner path并保持 native Favorites fail-closed，但不得恢复 Poll-owned mutation。
 
-- [ ] **Unit 5：发布完整不可变 PollOutputFrame，并让 Poll hook 只读**
+- [x] **Unit 5：发布完整不可变 PollOutputFrame，并让 Poll hook 只读**
 
 **目标：** 任意 reader 每次只看到一个完整 generation，且不会修改 runtime 或 packet state。
 
@@ -455,6 +455,8 @@ flowchart TB
 - Integration：Poll hook serialization 不访问 UI，不调用 drain/runtime/pulse mutation。
 
 **验证：** 无普通 reader-side globals；multi-reader stress 无 torn frame；同一次 hook 只读一个 frame。
+
+**执行结果（2026-07-11）：** `PollOutputPublication` 使用 `atomic<shared_ptr<const PollOutputFrame>>` 发布完整对象，首次 owner tick 前以及 owner degraded、publication unavailable、shutdown 都返回预构造 neutral frame。owner 在 native commit 后一次性绑定 runtime / manifest / context / presentation / action metadata、已序列化 XInput buttons / axes / triggers、packet 与 pulse token；packet 只在 gamepad-visible payload 改变时递增，context-only publication 不递增。Poll hook 每次只 acquire 一次并纯序列化，不再读取 `AuthoritativePollState`、`ContextResolver`、presentation 或 owner mutex snapshot，也删除 reader-side packet/cache globals。2 / 4 / 8 readers 各配合 100,000 次 owner publication 的 host stress、slow-reader lifetime、neutral failure modes、serializer 与 replay 回归均通过。该结果不替代 E-POLL、generation pulse 或真实 Skyrim 验证，native Favorites 继续默认关闭。
 
 **回滚：** 旧 compat reader 仅允许从新 publication 派生，不得重新启用多 atomic authority。
 

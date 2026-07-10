@@ -107,6 +107,7 @@ namespace dualpad::input_v2::runtime
     {
         _snapshot.degraded = true;
         _snapshot.failure = failure;
+        _publishedFailure.store(failure, std::memory_order_release);
         ++_snapshot.rejectedTicks;
         if (!_loggedDegraded) {
             logger::critical(
@@ -136,6 +137,11 @@ namespace dualpad::input_v2::runtime
         return _snapshot;
     }
 
+    RuntimeOwnerFailure RuntimeOwnerGuard::GetPublishedFailure() const noexcept
+    {
+        return _publishedFailure.load(std::memory_order_acquire);
+    }
+
     bool RuntimeOwnerGuard::IsCurrentThreadOwnerTick() const
     {
         std::scoped_lock lock(_mutex);
@@ -159,6 +165,7 @@ namespace dualpad::input_v2::runtime
         _ownerThread = {};
         _snapshot = RuntimeOwnerSnapshot{};
         _loggedDegraded = false;
+        _publishedFailure.store(RuntimeOwnerFailure::None, std::memory_order_release);
     }
 
     const char* ToString(RuntimeOwnerFailure failure) noexcept

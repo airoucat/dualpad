@@ -4,12 +4,16 @@
 #include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/AuthoritativePollState.h"
 #include "input/RuntimeConfig.h"
+#include "input/XInputButtonSerialization.h"
 #include "input/backend/NativeButtonCommitBackend.h"
 #include "input/injection/PadEventSnapshotProcessor.h"
 #include "input/injection/UpstreamGamepadHook.h"
 #include "input_v2/context/ContextRefreshTick.h"
+#include "input_v2/config/AtomicConfigReloader.h"
+#include "input_v2/gameplay/PollOutputFrame.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/runtime/RuntimeOwnerGuard.h"
 #include "input_v2/telemetry/InputTraceRecorder.h"
 
@@ -107,6 +111,54 @@ namespace dualpad::input
             static input_v2::ingress::FrameAssembler assembler;
             return assembler;
         }
+
+        void CommitAndPublishPollOutput(std::uint64_t runtimeGeneration)
+        {
+            auto& nativeBackend = backend::NativeButtonCommitBackend::GetSingleton();
+            (void)nativeBackend.CommitPollState();
+
+            const auto authoritative = AuthoritativePollState::GetSingleton().ReadSnapshot();
+            const auto context = input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+            const auto presentation =
+                input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
+            const auto bundle =
+                input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+            const bool routeActive = nativeBackend.IsRouteActive();
+
+            input_v2::gameplay::PollOutputFrame output{
+                .runtimeGeneration = runtimeGeneration,
+                .manifestEpoch = bundle ? bundle->manifestEpoch : 0,
+                .contextRevision = context.contextRevision,
+                .presentationEpoch = presentation.epoch,
+                .actionEpoch = runtimeGeneration,
+                .context = authoritative.context,
+                .contextEpoch = authoritative.contextEpoch,
+                .menuStackRevision = context.menuStackRevision,
+                .sourceTimestampUs = authoritative.sourceTimestampUs,
+                .buttons = routeActive ? ToXInputButtons(authoritative.downMask) : std::uint16_t{ 0 },
+                .pressedMask = routeActive ? authoritative.pressedMask : 0,
+                .releasedMask = routeActive ? authoritative.releasedMask : 0,
+                .lx = routeActive && authoritative.hasAnalog ?
+                    input_v2::gameplay::EncodePollStickAxis(authoritative.moveX) : 0,
+                .ly = routeActive && authoritative.hasAnalog ?
+                    input_v2::gameplay::EncodePollStickAxis(authoritative.moveY) : 0,
+                .rx = routeActive && authoritative.hasAnalog ?
+                    input_v2::gameplay::EncodePollStickAxis(authoritative.lookX) : 0,
+                .ry = routeActive && authoritative.hasAnalog ?
+                    input_v2::gameplay::EncodePollStickAxis(authoritative.lookY) : 0,
+                .lt = routeActive && authoritative.hasAnalog ?
+                    input_v2::gameplay::EncodePollTrigger(authoritative.leftTrigger) : std::uint8_t{ 0 },
+                .rt = routeActive && authoritative.hasAnalog ?
+                    input_v2::gameplay::EncodePollTrigger(authoritative.rightTrigger) : std::uint8_t{ 0 },
+                .pulseToken = authoritative.pollSequence,
+                .routeHealth = routeActive ?
+                    input_v2::gameplay::PollOutputRouteHealth::Ready :
+                    input_v2::gameplay::PollOutputRouteHealth::PublicationUnavailable,
+                .neutral = !routeActive
+            };
+            (void)input_v2::gameplay::PollOutputPublication::GetSingleton().PublishOwnerFrame(
+                std::move(output));
+        }
     }
 
     PadEventSnapshotDispatcher& PadEventSnapshotDispatcher::GetSingleton()
@@ -171,7 +223,7 @@ namespace dualpad::input
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
         AuthoritativePollState::GetSingleton().AdvanceOwnerTime();
-        (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
+        CommitAndPublishPollOutput(ownerTick.Generation());
 
         const auto pendingAfterDrain = hub.PendingCount();
 
@@ -213,7 +265,7 @@ namespace dualpad::input
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
         AuthoritativePollState::GetSingleton().AdvanceOwnerTime();
-        (void)backend::NativeButtonCommitBackend::GetSingleton().CommitPollState();
+        CommitAndPublishPollOutput(ownerTick.Generation());
         const auto pendingAfterDrain = hub.PendingCount();
 
         if (telemetryContext) {
@@ -233,6 +285,7 @@ namespace dualpad::input
         input_v2::ingress::IngressHub::GetSingleton().ResetForTests();
         RuntimeFrameAssembler().Reset();
         input_v2::runtime::RuntimeOwnerGuard::GetSingleton().ResetForTests();
+        input_v2::gameplay::PollOutputPublication::GetSingleton().ResetForTests();
         _drainTaskQueued.store(false, std::memory_order_release);
         _framePumpEnabled.store(false, std::memory_order_release);
         _replayManualDrainActive.store(true, std::memory_order_release);

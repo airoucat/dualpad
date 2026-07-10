@@ -6,6 +6,7 @@
 #include "input/PadProfile.h"
 #include "input/Trigger.h"
 #include "input/backend/NativeActionDescriptor.h"
+#include "input/XInputStateBridge.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/actions/InteractionEngine.h"
@@ -16,6 +17,7 @@
 #include "input_v2/context/ContextCatalog.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
+#include "input_v2/gameplay/PollOutputFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
 #include "input_v2/gameplay/RuntimeDiagnostics.h"
 #include "input_v2/ingress/FrameAssembler.h"
@@ -27,11 +29,13 @@
 #include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace
 {
@@ -2565,6 +2569,171 @@ namespace
         auto afterStop = guard.TryEnter(32);
         Require(!afterStop.Accepted(), "stopped owner must never silently bind a new writer");
     }
+
+    void RunPollOutputPublicationTests()
+    {
+        auto& publication = gameplay::PollOutputPublication::GetSingleton();
+        auto& ownerGuard = runtime::RuntimeOwnerGuard::GetSingleton();
+        ownerGuard.ResetForTests();
+        publication.ResetForTests();
+
+        auto frame = publication.AcquireForPoll();
+        Require(frame != nullptr, "Poll publication must always return a frame before the first owner tick");
+        Require(frame->publicationGeneration == 0, "initial neutral Poll frame must use generation 0");
+        Require(frame->neutral, "initial Poll frame must be neutral");
+        Require(
+            frame->routeHealth == gameplay::PollOutputRouteHealth::Initializing,
+            "initial neutral Poll frame must expose Initializing route health");
+
+        auto makeFrame = [](std::uint64_t generation) {
+            const auto revision = static_cast<std::uint32_t>(generation);
+            return gameplay::PollOutputFrame{
+                .runtimeGeneration = generation,
+                .manifestEpoch = generation + 1'000'000,
+                .contextRevision = revision,
+                .presentationEpoch = revision ^ 0x55AA55AAu,
+                .actionEpoch = revision * 3u,
+                .contextEpoch = revision * 5u,
+                .menuStackRevision = revision * 9u,
+                .sourceTimestampUs = generation * 11u,
+                .buttons = static_cast<std::uint16_t>(revision),
+                .pressedMask = revision ^ 0x0F0F0F0Fu,
+                .releasedMask = revision ^ 0xF0F0F0F0u,
+                .lx = static_cast<std::int16_t>(revision % 32767u),
+                .ly = -static_cast<std::int16_t>(revision % 32767u),
+                .rx = static_cast<std::int16_t>(revision % 16384u),
+                .ry = -static_cast<std::int16_t>(revision % 16384u),
+                .lt = static_cast<std::uint8_t>(revision % 255u),
+                .rt = static_cast<std::uint8_t>((revision + 1u) % 255u),
+                .pulseToken = generation * 7u,
+                .routeHealth = gameplay::PollOutputRouteHealth::Ready,
+                .neutral = false
+            };
+        };
+
+        publication.PublishForTests(makeFrame(1));
+        frame = publication.AcquireForPoll();
+        Require(frame->publicationGeneration == 1 && frame->runtimeGeneration == 1, "first owner publication must be complete generation 1");
+        Require(frame->packetNumber == 1, "first changed gamepad payload must allocate packet 1 on the owner");
+
+        const auto heldOldFrame = frame;
+        publication.PublishForTests(makeFrame(2));
+        const auto newer = publication.AcquireForPoll();
+        Require(newer->runtimeGeneration == 2, "newer owner frame must publish");
+        Require(heldOldFrame->runtimeGeneration == 1 && heldOldFrame->buttons == 1, "slow reader must retain an immutable old frame lifetime");
+
+        auto runReaders = [&](std::size_t readerCount) {
+            publication.ResetForTests();
+            ownerGuard.ResetForTests();
+            publication.PublishForTests(makeFrame(1));
+            std::atomic_bool done{ false };
+            std::atomic_bool torn{ false };
+            std::vector<std::thread> readers;
+            readers.reserve(readerCount);
+            for (std::size_t index = 0; index < readerCount; ++index) {
+                readers.emplace_back([&]() {
+                    while (!done.load(std::memory_order_acquire)) {
+                        const auto acquired = publication.AcquireForPoll();
+                        if (acquired->routeHealth != gameplay::PollOutputRouteHealth::Ready) {
+                            continue;
+                        }
+                        const auto generation = acquired->runtimeGeneration;
+                        const auto revision = static_cast<std::uint32_t>(generation);
+                        if (acquired->publicationGeneration != generation ||
+                            acquired->manifestEpoch != generation + 1'000'000 ||
+                            acquired->contextRevision != revision ||
+                            acquired->presentationEpoch != (revision ^ 0x55AA55AAu) ||
+                            acquired->actionEpoch != revision * 3u ||
+                            acquired->contextEpoch != revision * 5u ||
+                            acquired->menuStackRevision != revision * 9u ||
+                            acquired->sourceTimestampUs != generation * 11u ||
+                            acquired->buttons != static_cast<std::uint16_t>(revision) ||
+                            acquired->pulseToken != generation * 7u) {
+                            torn.store(true, std::memory_order_release);
+                            break;
+                        }
+                    }
+                });
+            }
+            for (std::uint64_t generation = 2; generation <= 100'000; ++generation) {
+                publication.PublishForTests(makeFrame(generation));
+            }
+            done.store(true, std::memory_order_release);
+            for (auto& reader : readers) {
+                reader.join();
+            }
+            Require(!torn.load(std::memory_order_acquire), "multi-reader Poll publication must never tear generations");
+            Require(publication.AcquireForPoll()->runtimeGeneration == 100'000, "multi-reader stress must retain final owner generation");
+        };
+        runReaders(2);
+        runReaders(4);
+        runReaders(8);
+
+        publication.ResetForTests();
+        auto contextOnly = makeFrame(1);
+        publication.PublishForTests(contextOnly);
+        const auto stablePacket = publication.AcquireForPoll()->packetNumber;
+        contextOnly.contextRevision += 1;
+        contextOnly.contextEpoch += 1;
+        publication.PublishForTests(contextOnly);
+        Require(
+            publication.AcquireForPoll()->packetNumber == stablePacket,
+            "context-only publication must not change the XInput packet number");
+        contextOnly.lx += 1;
+        publication.PublishForTests(contextOnly);
+        Require(
+            publication.AcquireForPoll()->packetNumber == stablePacket + 1,
+            "serialized gamepad payload change must advance packet number on the owner");
+
+        struct XInputGamepadView
+        {
+            std::uint16_t buttons;
+            std::uint8_t leftTrigger;
+            std::uint8_t rightTrigger;
+            std::int16_t thumbLX;
+            std::int16_t thumbLY;
+            std::int16_t thumbRX;
+            std::int16_t thumbRY;
+        };
+        struct XInputStateView
+        {
+            std::uint32_t packetNumber;
+            XInputGamepadView gamepad;
+        };
+        const auto serializedFrame = publication.AcquireForPoll();
+        XInputStateView serialized{};
+        Require(
+            dualpad::input::FillSyntheticXInputState(&serialized, *serializedFrame) == 0,
+            "Poll serializer must accept a complete immutable frame");
+        Require(
+            serialized.packetNumber == serializedFrame->packetNumber &&
+                serialized.gamepad.buttons == serializedFrame->buttons &&
+                serialized.gamepad.thumbLX == serializedFrame->lx &&
+                serialized.gamepad.thumbLY == serializedFrame->ly &&
+                serialized.gamepad.thumbRX == serializedFrame->rx &&
+                serialized.gamepad.thumbRY == serializedFrame->ry &&
+                serialized.gamepad.leftTrigger == serializedFrame->lt &&
+                serialized.gamepad.rightTrigger == serializedFrame->rt,
+            "Poll serializer must copy one frame without consulting mutable runtime state");
+
+        publication.SetUnavailableForTests(true);
+        frame = publication.AcquireForPoll();
+        Require(frame->neutral && frame->routeHealth == gameplay::PollOutputRouteHealth::PublicationUnavailable, "unavailable publication must return explicit neutral frame");
+        publication.SetUnavailableForTests(false);
+
+        ownerGuard.ResetForTests();
+        (void)ownerGuard.TryEnter(0);
+        frame = publication.AcquireForPoll();
+        Require(frame->neutral && frame->routeHealth == gameplay::PollOutputRouteHealth::OwnerDegraded, "degraded owner must force neutral Poll frame");
+
+        ownerGuard.ResetForTests();
+        ownerGuard.Stop();
+        frame = publication.AcquireForPoll();
+        Require(frame->neutral && frame->routeHealth == gameplay::PollOutputRouteHealth::Shutdown, "stopped owner must force shutdown-neutral Poll frame");
+
+        ownerGuard.ResetForTests();
+        publication.ResetForTests();
+    }
 }
 
 int main()
@@ -2598,6 +2767,7 @@ int main()
         RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();
         RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
         RunRuntimeOwnerGuardTests();
+        RunPollOutputPublicationTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

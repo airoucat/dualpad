@@ -174,6 +174,7 @@ local ph4_action_graph_files = {
 local ph5_gameplay_projection_files = {
     "src/input_v2/gameplay/DualPadRuntime.cpp",
     "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
+    "src/input_v2/gameplay/PollOutputFrame.cpp",
     "src/input_v2/gameplay/PollOutputAdapter.cpp",
     "src/input_v2/gameplay/RecoveryPlan.cpp",
     "src/input_v2/gameplay/GameplayPresentationPublisher.cpp",
@@ -282,6 +283,7 @@ target("DualPadInputV2Tests")
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
         "src/input/backend/ActionBackendPolicy.cpp",
         "src/input/backend/NativeActionDescriptor.cpp",
+        "src/input/XInputStateBridge.cpp",
         "src/input/injection/RouteHealthContract.cpp",
         "src/input_v2/telemetry/UpstreamGamepadHookReplayStub.cpp",
         "src/input/RuntimeConfig.cpp")

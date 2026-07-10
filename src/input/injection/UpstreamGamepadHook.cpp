@@ -9,11 +9,10 @@
 #include <intrin.h>
 #include <string>
 
-#include "input/AuthoritativePollState.h"
 #include "input/XInputStateBridge.h"
 #include "input/injection/PollDiagnostics.h"
 #include "input/injection/RouteHealthContract.h"
-#include "input_v2/runtime/RuntimeOwnerGuard.h"
+#include "input_v2/gameplay/PollOutputFrame.h"
 
 namespace logger = SKSE::log;
 
@@ -61,11 +60,8 @@ namespace dualpad::input
 
                 auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
                 upstreamHook.NotePollCallActivity();
-                const auto owner = input_v2::runtime::RuntimeOwnerGuard::GetSingleton().GetSnapshot();
-                const auto result = owner.degraded ?
-                    FillNeutralXInputState(currentState) :
-                    FillSyntheticXInputState(currentState);
-                const auto committed = AuthoritativePollState::GetSingleton().ReadSnapshot();
+                const auto outputFrame = input_v2::gameplay::PollOutputPublication::GetSingleton().AcquireForPoll();
+                const auto result = FillSyntheticXInputState(currentState, *outputFrame);
 
                 struct XInputGamepadView
                 {
@@ -88,13 +84,19 @@ namespace dualpad::input
                 const auto remainingInFlight = g_pollDiagnosticLimiter.End(pollDiagnosticsEnabled);
                 if (diagnostic.record) {
                     logger::info(
-                        "[DualPad][PollDiagnostic] event=exit sequence={} thread={} inFlight={} result={} pollSequence={} contextEpoch={} packet={} buttons=0x{:04X} lx={} ly={} rx={} ry={} lt={} rt={} dropped={}",
+                        "[DualPad][PollDiagnostic] event=exit sequence={} thread={} inFlight={} result={} outputGeneration={} runtimeGeneration={} routeHealth={} pulseToken={} contextRevision={} contextEpoch={} presentationEpoch={} menuStackRevision={} packet={} buttons=0x{:04X} lx={} ly={} rx={} ry={} lt={} rt={} dropped={}",
                         diagnostic.sequence,
                         threadId,
                         remainingInFlight,
                         result,
-                        committed.pollSequence,
-                        committed.contextEpoch,
+                        outputFrame->publicationGeneration,
+                        outputFrame->runtimeGeneration,
+                        input_v2::gameplay::ToString(outputFrame->routeHealth),
+                        outputFrame->pulseToken,
+                        outputFrame->contextRevision,
+                        outputFrame->contextEpoch,
+                        outputFrame->presentationEpoch,
+                        outputFrame->menuStackRevision,
                         state->packetNumber,
                         state->gamepad.buttons,
                         state->gamepad.thumbLX,
