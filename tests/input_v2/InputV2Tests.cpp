@@ -6,6 +6,7 @@
 #include "input/PadProfile.h"
 #include "input/Trigger.h"
 #include "input/backend/NativeActionDescriptor.h"
+#include "input/backend/PollCommitCoordinator.h"
 #include "input/XInputStateBridge.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
@@ -48,6 +49,8 @@ namespace
     namespace menu = dualpad::input_v2::menu;
     namespace presentation = dualpad::input_v2::presentation;
     namespace prompt = dualpad::input_v2::prompt;
+    namespace input_actions = dualpad::input::actions;
+    namespace input_backend = dualpad::input::backend;
 
     void Require(bool condition, std::string_view message)
     {
@@ -2606,6 +2609,8 @@ namespace
                 .lt = static_cast<std::uint8_t>(revision % 255u),
                 .rt = static_cast<std::uint8_t>((revision + 1u) % 255u),
                 .pulseToken = generation * 7u,
+                .pulseDownGeneration = generation,
+                .pulseUpGeneration = generation + 1,
                 .routeHealth = gameplay::PollOutputRouteHealth::Ready,
                 .neutral = false
             };
@@ -2648,7 +2653,9 @@ namespace
                             acquired->menuStackRevision != revision * 9u ||
                             acquired->sourceTimestampUs != generation * 11u ||
                             acquired->buttons != static_cast<std::uint16_t>(revision) ||
-                            acquired->pulseToken != generation * 7u) {
+                            acquired->pulseToken != generation * 7u ||
+                            acquired->pulseDownGeneration != generation ||
+                            acquired->pulseUpGeneration != generation + 1) {
                             torn.store(true, std::memory_order_release);
                             break;
                         }
@@ -2734,6 +2741,125 @@ namespace
         ownerGuard.ResetForTests();
         publication.ResetForTests();
     }
+
+    class RecordingCommitEmitter final : public input_backend::IPollCommitEmitter
+    {
+    public:
+        input_backend::EmitResult Emit(const input_backend::EmitRequest& request) override
+        {
+            requests.push_back(request);
+            return { .submitted = true };
+        }
+
+        std::vector<input_backend::EmitRequest> requests;
+    };
+
+    input_backend::PollCommitRequest GenerationPulseRequest(
+        dualpad::input::InputContext context,
+        std::uint32_t epoch,
+        std::string_view actionId = input_actions::MenuConfirm)
+    {
+        return {
+            .actionId = std::string(actionId),
+            .context = context,
+            .outputCode = input_backend::NativeControlCode::MenuConfirm,
+            .mode = input_backend::PollCommitMode::Pulse,
+            .kind = input_backend::PollCommitRequestKind::Pulse,
+            .epoch = epoch
+        };
+    }
+
+    void RunGenerationBasedPulseTests()
+    {
+        input_backend::PollCommitCoordinator coordinator;
+        RecordingCommitEmitter emitter;
+
+        coordinator.BeginFrame(dualpad::input::InputContext::Menu, 42, 1'000, 10);
+        Require(coordinator.QueueRequest(GenerationPulseRequest(dualpad::input::InputContext::Menu, 42)), "pulse request must queue");
+        coordinator.Tick(1'000, true);
+        coordinator.Flush(emitter, 1'000);
+        Require(
+            emitter.requests.size() == 1 &&
+                emitter.requests[0].edge == input_backend::EmitEdge::Down &&
+                emitter.requests[0].runtimeGeneration == 10,
+            "pulse down must publish exactly once in its owner generation");
+
+        coordinator.BeginFrame(dualpad::input::InputContext::Menu, 42, 2'000, 10);
+        coordinator.Tick(2'000, true);
+        coordinator.Flush(emitter, 2'000);
+        Require(emitter.requests.size() == 1, "repeating work or Poll reads in one generation must not release pulse");
+
+        coordinator.BeginFrame(dualpad::input::InputContext::Menu, 42, 3'000, 11);
+        coordinator.Tick(3'000, true);
+        coordinator.Flush(emitter, 3'000);
+        Require(
+            emitter.requests.size() == 2 &&
+                emitter.requests[1].edge == input_backend::EmitEdge::Up &&
+                emitter.requests[1].runtimeGeneration == 11,
+            "pulse up must publish exactly once in a later owner generation");
+        const auto completed = coordinator.LastPulseRecord();
+        Require(
+            completed.downGeneration == 10 && completed.upGeneration == 11 && !completed.cancelled,
+            "completed pulse record must bind one token to down/up owner generations");
+
+        coordinator.Reset();
+        emitter.requests.clear();
+        coordinator.BeginFrame(dualpad::input::InputContext::Menu, 70, 4'000, 20);
+        Require(coordinator.QueueRequest(GenerationPulseRequest(dualpad::input::InputContext::Menu, 70)), "context test pulse must queue");
+        coordinator.Tick(4'000, true);
+        coordinator.Flush(emitter, 4'000);
+        coordinator.BeginFrame(dualpad::input::InputContext::FavoritesMenu, 71, 5'000, 21);
+        coordinator.Tick(5'000, true);
+        coordinator.Flush(emitter, 5'000);
+        coordinator.BeginFrame(dualpad::input::InputContext::FavoritesMenu, 71, 5'100, 21);
+        coordinator.Tick(5'100, true);
+        coordinator.Flush(emitter, 5'100);
+        Require(
+            emitter.requests.size() == 2 && emitter.requests.back().edge == input_backend::EmitEdge::Up,
+            "context/epoch transition must release a visible pulse once and discard stale pending work");
+
+        for (const auto reason : {
+                 input_backend::PulseBoundaryReason::Overflow,
+                 input_backend::PulseBoundaryReason::DeviceDisconnected,
+                 input_backend::PulseBoundaryReason::RouteUnavailable }) {
+            coordinator.Reset();
+            emitter.requests.clear();
+            coordinator.BeginFrame(dualpad::input::InputContext::Gameplay, 90, 6'000, 30);
+            Require(coordinator.QueueRequest(GenerationPulseRequest(dualpad::input::InputContext::Gameplay, 90)), "boundary pulse must queue");
+            coordinator.Tick(6'000, true);
+            coordinator.Flush(emitter, 6'000);
+            coordinator.CancelForBoundary(reason, 31);
+            const auto cancelled = coordinator.LastPulseRecord();
+            Require(
+                cancelled.cancelled && cancelled.downGeneration == 30 && cancelled.upGeneration == 31 &&
+                    cancelled.boundaryReason == reason,
+                "overflow/device boundary must cancel visible pulse at an explicit owner generation");
+        }
+
+        coordinator.Reset();
+        emitter.requests.clear();
+        coordinator.BeginFrame(dualpad::input::InputContext::Gameplay, 100, 7'000, 40);
+        const auto rapid = GenerationPulseRequest(
+            dualpad::input::InputContext::Gameplay,
+            100,
+            input_actions::Favorites);
+        Require(coordinator.QueueRequest(rapid) && coordinator.QueueRequest(rapid), "rapid double pulse must coalesce one pending request");
+        coordinator.Tick(7'000, true);
+        coordinator.Flush(emitter, 7'000);
+        for (std::uint64_t generation = 41; generation <= 43; ++generation) {
+            coordinator.BeginFrame(dualpad::input::InputContext::Gameplay, 100, 7'000 + generation, generation);
+            coordinator.Tick(7'000 + generation, true);
+            coordinator.Flush(emitter, 7'000 + generation);
+        }
+        Require(
+            std::count_if(emitter.requests.begin(), emitter.requests.end(), [](const auto& request) {
+                return request.edge == input_backend::EmitEdge::Down;
+            }) == 2 &&
+                std::count_if(emitter.requests.begin(), emitter.requests.end(), [](const auto& request) {
+                    return request.edge == input_backend::EmitEdge::Up;
+                }) == 2,
+            "rapid double pulse must produce two non-overlapping down/up generation pairs");
+    }
 }
 
 int main()
@@ -2768,6 +2894,7 @@ int main()
         RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
         RunRuntimeOwnerGuardTests();
         RunPollOutputPublicationTests();
+        RunGenerationBasedPulseTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

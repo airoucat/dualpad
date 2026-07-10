@@ -38,7 +38,7 @@ namespace dualpad::input::backend
         return HeldEmitterSource::None;
     }
 
-    void NativeButtonCommitBackend::BeginFrame(InputContext, std::uint32_t, std::uint64_t)
+    void NativeButtonCommitBackend::BeginFrame(InputContext, std::uint32_t, std::uint64_t, std::uint64_t)
     {
     }
 
@@ -55,7 +55,11 @@ namespace dualpad::input::backend
     {
     }
 
-    CommittedButtonState NativeButtonCommitBackend::CommitPollState()
+    void NativeButtonCommitBackend::CancelForBoundary(PulseBoundaryReason, std::uint64_t)
+    {
+    }
+
+    CommittedButtonState NativeButtonCommitBackend::CommitPollState(std::uint64_t)
     {
         return {};
     }

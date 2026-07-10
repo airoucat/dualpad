@@ -2,6 +2,7 @@
 
 #include "input/backend/FrameActionPlan.h"
 #include "input/backend/NativeControlCode.h"
+#include "input/backend/PulseGenerationContract.h"
 
 #ifndef DUALPAD_REPLAY_HARNESS
 #include "input/backend/PollCommitCoordinator.h"
@@ -136,6 +137,7 @@ namespace dualpad::input::backend
         InputContext context{ InputContext::Gameplay };
         std::uint32_t contextEpoch{ 0 };
         std::uint64_t pollSequence{ 0 };
+        PulseGenerationRecord pulse{};
     };
 
     inline constexpr bool IsNativeDigitalGateOpenForContext(InputContext) noexcept
@@ -163,12 +165,14 @@ namespace dualpad::input::backend
         void BeginFrame(
             InputContext context,
             std::uint32_t contextEpoch,
-            std::uint64_t nowUs = 0);
+            std::uint64_t nowUs,
+            std::uint64_t runtimeGeneration);
 
         void SetGameplayDigitalGatePlan(bool suppressNewTransientActions);
         bool ApplyPlannedAction(const PlannedAction& action);
         void ForceCancelGateAwareGameplayTransientActions();
-        [[nodiscard]] CommittedButtonState CommitPollState();
+        void CancelForBoundary(PulseBoundaryReason reason, std::uint64_t runtimeGeneration);
+        [[nodiscard]] CommittedButtonState CommitPollState(std::uint64_t runtimeGeneration);
 
 #ifndef DUALPAD_REPLAY_HARNESS
         EmitResult Emit(const EmitRequest& request) override;

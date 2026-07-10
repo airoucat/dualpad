@@ -283,6 +283,7 @@ target("DualPadInputV2Tests")
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
         "src/input/backend/ActionBackendPolicy.cpp",
         "src/input/backend/NativeActionDescriptor.cpp",
+        "src/input/backend/PollCommitCoordinator.cpp",
         "src/input/XInputStateBridge.cpp",
         "src/input/injection/RouteHealthContract.cpp",
         "src/input_v2/telemetry/UpstreamGamepadHookReplayStub.cpp",

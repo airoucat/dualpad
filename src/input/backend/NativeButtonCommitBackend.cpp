@@ -145,7 +145,7 @@ namespace dualpad::input::backend
 
         bool TraceSlotIsManaged(const PollCommitSlot& slot)
         {
-            if (slot.actionId == RE::BSFixedString(actions::Sprint.data()) &&
+            if (slot.actionId == actions::Sprint &&
                 slot.mode == PollCommitMode::Hold &&
                 slot.activeHeldEmitter == HeldEmitterSource::KeyboardMouse &&
                 !slot.token.active) {
@@ -221,7 +221,7 @@ namespace dualpad::input::backend
             const auto committed = presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
             const auto resolved = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
             logger::info(
-                "[DualPad][{}] stage=slot poll={} slotAction={} slotContext={} slotEpoch={} outputCode={} bit=0x{:08X} execState={} commitMode={} pending={} nextPulse={} managed={} down={} gateAware={} token={} downSubmitted={} releaseSubmitted={} downCount={} upCount={} coalesced={} dropped={} presentationEpoch={} presentationDirty=0x{:02X} presentationUiContext={} eligibility={} owner={} navigationOwner={} cursorOwner={} resolverHost={} resolverUiContext={} resolverContextRevision={} legacyContext={} legacyEpoch={} menuStackRevision={} topMenuInstancePresent={} topMenuInstance={} observer={} identity={} degraded={}",
+                "[DualPad][{}] stage=slot poll={} slotAction={} slotContext={} slotEpoch={} outputCode={} bit=0x{:08X} execState={} commitMode={} pending={} nextPulse={} managed={} down={} gateAware={} token={} downGeneration={} upGeneration={} downSubmitted={} releaseSubmitted={} downCount={} upCount={} coalesced={} dropped={} presentationEpoch={} presentationDirty=0x{:02X} presentationUiContext={} eligibility={} owner={} navigationOwner={} cursorOwner={} resolverHost={} resolverUiContext={} resolverContextRevision={} legacyContext={} legacyEpoch={} menuStackRevision={} topMenuInstancePresent={} topMenuInstance={} observer={} identity={} degraded={}",
                 traceTag,
                 pollSequence,
                 slot.actionId.c_str(),
@@ -237,6 +237,8 @@ namespace dualpad::input::backend
                 TraceSlotIsDown(slot),
                 slot.gateAware,
                 slot.token.tokenId,
+                slot.token.downGeneration,
+                slot.token.upGeneration,
                 slot.token.downSubmitted,
                 slot.token.releaseSubmitted,
                 slot.emittedDownCount,
@@ -378,7 +380,7 @@ namespace dualpad::input::backend
             if (slot.actionId.empty()) {
                 continue;
             }
-            if (slot.actionId.c_str() == actionId) {
+            if (slot.actionId == actionId) {
                 return SlotIsDown(slot);
             }
         }
@@ -397,7 +399,7 @@ namespace dualpad::input::backend
             if (slot.actionId.empty()) {
                 continue;
             }
-            if (slot.actionId.c_str() == actionId) {
+            if (slot.actionId == actionId) {
                 return (slot.heldContributorMask & mask) != 0;
             }
         }
@@ -411,7 +413,7 @@ namespace dualpad::input::backend
             if (slot.actionId.empty()) {
                 continue;
             }
-            if (slot.actionId.c_str() == actionId) {
+            if (slot.actionId == actionId) {
                 return slot.activeHeldEmitter;
             }
         }
@@ -421,13 +423,14 @@ namespace dualpad::input::backend
     void NativeButtonCommitBackend::BeginFrame(
         InputContext context,
         std::uint32_t contextEpoch,
-        std::uint64_t nowUs)
+        std::uint64_t nowUs,
+        std::uint64_t runtimeGeneration)
     {
         std::scoped_lock lock(_lock);
         _frameContext = context;
         _frameContextEpoch = contextEpoch;
         _suppressGameplayDigitalTransientActions = false;
-        _pollCommit.BeginFrame(context, contextEpoch, nowUs != 0 ? nowUs : NowUs());
+        _pollCommit.BeginFrame(context, contextEpoch, nowUs != 0 ? nowUs : NowUs(), runtimeGeneration);
         SyncExternalHeldContributors(context, contextEpoch);
     }
 
@@ -558,10 +561,21 @@ namespace dualpad::input::backend
         _pollCommit.ForceCancelGateAwareTransientSlots();
     }
 
-    CommittedButtonState NativeButtonCommitBackend::CommitPollState()
+    void NativeButtonCommitBackend::CancelForBoundary(
+        PulseBoundaryReason reason,
+        std::uint64_t runtimeGeneration)
+    {
+        std::scoped_lock lock(_lock);
+        _pollCommit.CancelForBoundary(reason, runtimeGeneration);
+        _suppressGameplayDigitalTransientActions = false;
+    }
+
+    CommittedButtonState NativeButtonCommitBackend::CommitPollState(std::uint64_t runtimeGeneration)
     {
         if (!IsRouteActive()) {
-            return {};
+            std::scoped_lock lock(_lock);
+            _pollCommit.CancelForBoundary(PulseBoundaryReason::RouteUnavailable, runtimeGeneration);
+            return { .pulse = _pollCommit.LastPulseRecord() };
         }
 
         std::scoped_lock lock(_lock);
@@ -573,7 +587,7 @@ namespace dualpad::input::backend
         _frameContext = context;
         _frameContextEpoch = contextEpoch;
 
-        _pollCommit.BeginFrame(context, contextEpoch, nowUs);
+        _pollCommit.BeginFrame(context, contextEpoch, nowUs, runtimeGeneration);
         SyncExternalHeldContributors(context, contextEpoch);
         _pollCommit.Tick(nowUs, IsGameplayGateOpen(context));
         _pollCommit.Flush(*this, nowUs);
@@ -593,6 +607,7 @@ namespace dualpad::input::backend
         result.context = context;
         result.contextEpoch = contextEpoch;
         result.pollSequence = ++_pollSequence;
+        result.pulse = _pollCommit.LastPulseRecord();
         const auto favoritesBit = ToVirtualPadBit(NativeControlCode::FavoritesCombo);
         bool hasGameFavoritesSlotState = false;
         SneakProbeSnapshot sneakSnapshot{};
@@ -618,7 +633,7 @@ namespace dualpad::input::backend
                 result.buttonDownMask |= buttonBit;
             }
 
-            if (slot.actionId == RE::BSFixedString(actions::Favorites.data()) &&
+            if (slot.actionId == actions::Favorites &&
                 TraceSlotIsManaged(slot)) {
                 hasGameFavoritesSlotState = true;
                 LogTrackedNativeSlotTrace(
@@ -630,7 +645,7 @@ namespace dualpad::input::backend
 
             if (ShouldLogPollCommit() && SlotIsManaged(slot)) {
                 logger::info(
-                    "[DualPad][NativeButtonCommit] poll={} context={} action={} code={} execState={} commitMode={} managed={} down={} epoch={} token={} nextPulse={} desiredHeld={} downCount={} upCount={}",
+                    "[DualPad][NativeButtonCommit] poll={} context={} action={} code={} execState={} commitMode={} managed={} down={} epoch={} token={} downGeneration={} upGeneration={} nextPulse={} desiredHeld={} downCount={} upCount={}",
                     result.pollSequence,
                     dualpad::input::ToString(slot.context),
                     slot.actionId.c_str(),
@@ -641,15 +656,17 @@ namespace dualpad::input::backend
                     SlotIsDown(slot),
                     slot.epoch,
                     slot.token.tokenId,
+                    slot.token.downGeneration,
+                    slot.token.upGeneration,
                     slot.pending.pendingNextPulse,
-                    slot.actionId == RE::BSFixedString(actions::Sprint.data()) ?
+                    slot.actionId == actions::Sprint ?
                         slot.activeHeldEmitter == HeldEmitterSource::Gamepad :
                         slot.heldContributorMask != 0,
                     slot.emittedDownCount,
                     slot.emittedUpCount);
             }
 
-            if (slot.actionId == RE::BSFixedString(actions::Sprint.data())) {
+            if (slot.actionId == actions::Sprint) {
                 sprintSnapshot.gamepadContributor =
                     (slot.heldContributorMask & static_cast<std::uint8_t>(HeldContributor::Gamepad)) != 0;
                 sprintSnapshot.keyboardMouseContributor =
@@ -661,7 +678,7 @@ namespace dualpad::input::backend
                 sprintSnapshot.activeEmitter = slot.activeHeldEmitter;
             }
 
-            if (slot.actionId == RE::BSFixedString(actions::Sneak.data())) {
+            if (slot.actionId == actions::Sneak) {
                 sneakSnapshot.actionDown = SlotIsDown(slot);
                 sneakSnapshot.managed = SlotIsManaged(slot);
                 sneakSnapshot.gateAware = slot.gateAware;
@@ -785,16 +802,17 @@ namespace dualpad::input::backend
 
         if (ShouldLogPollCommit()) {
             logger::info(
-                "[DualPad][NativeButtonCommit] emit action={} edge={} epoch={} token={} context={} held={:.3f}",
-                request.actionId.c_str(),
+                "[DualPad][NativeButtonCommit] emit action={} edge={} epoch={} token={} runtimeGeneration={} context={} held={:.3f}",
+                request.actionId,
                 request.edge == EmitEdge::Down ? "Down" : "Up",
                 request.epoch,
                 request.tokenId,
+                request.runtimeGeneration,
                 dualpad::input::ToString(request.context),
                 request.heldSeconds);
         }
 
-        // In the poll-owned mainline this is a commit-FSM acknowledgement, not
+        // In the owner-generation mainline this is a commit-FSM acknowledgement, not
         // direct BSInputEvent queue injection. Gameplay-visible state is
         // materialized later by CommitPollState() exporting the committed
         // virtual button current-state.
@@ -814,7 +832,7 @@ namespace dualpad::input::backend
             return translation.kind;
         }
 
-        outRequest.actionId = RE::BSFixedString(action.actionId.c_str());
+        outRequest.actionId = action.actionId;
         outRequest.context = action.context;
         outRequest.outputCode = static_cast<NativeControlCode>(action.outputCode);
         outRequest.mode = translation.mode;
@@ -861,7 +879,7 @@ namespace dualpad::input::backend
 
     bool NativeButtonCommitBackend::SlotIsManaged(const PollCommitSlot& slot)
     {
-        if (slot.actionId == RE::BSFixedString(actions::Sprint.data()) &&
+        if (slot.actionId == actions::Sprint &&
             slot.mode == PollCommitMode::Hold &&
             slot.activeHeldEmitter == HeldEmitterSource::KeyboardMouse &&
             !slot.token.active) {
@@ -885,7 +903,7 @@ namespace dualpad::input::backend
                 dualpad::input::ToString(context));
         }
         _pollCommit.SyncHeldContributor(
-            RE::BSFixedString(actions::Sprint.data()),
+            actions::Sprint,
             HeldContributor::KeyboardMouse,
             kbmSprintHeld);
     }

@@ -460,7 +460,7 @@ flowchart TB
 
 **回滚：** 旧 compat reader 仅允许从新 publication 派生，不得重新启用多 atomic authority。
 
-- [ ] **Unit 6：把 pulse 时钟迁移到 runtime generation**
+- [x] **Unit 6：把 pulse 时钟迁移到 runtime generation**
 
 **目标：** down/up 只由 owner generation 推进，不受 Poll 次数或 Poll thread 影响。
 
@@ -499,6 +499,8 @@ flowchart TB
 - release publication 不重复，stale pulse 不跨 epoch。
 
 **验证：** Poll 次数不改变 state；每个 token 恰好 0/1 次 down 和 0/1 次 up，cancel reason 可审计。
+
+**执行结果（2026-07-11）：** `PollCommitCoordinator` 的 pulse/toggle token 记录 down/up runtime generation；down 只在 owner commit 成功时绑定 generation N，release 同时满足“后续 owner generation”与既有 min-down time 才能提交。同 generation 重复 begin/tick/flush 不推进状态。context/epoch 变化安全完成已可见 release；recovery/overflow/device/route boundary 通过显式 cancellation generation 清除全部 managed state，避免 stale/stuck output；快速双击 `Game.Favorites` coalesce 为两组不重叠 down/up token。`PollOutputFrame` 与低成本 Poll diagnostic 同时携带 pulse token、down generation、up generation。为建立纯 host contract，coordinator 内部 action key 从依赖 Skyrim string pool 的 `RE::BSFixedString` 改为 owner-only `std::string`，Poll hot path 不受影响。E-POLL 的真实调用顺序仍未证明，因此本实现只完成确定性代码合同，不解除 `enable_native_favorites=false`，也不声称真实游戏已观察到每个 N→N+1 pulse。
 
 **回滚：** native Favorites 保持 off；其它 pulse 若需 compatibility flag，只能在 owner-generation 两种安全策略间切换，不得回到 Poll clock。
 

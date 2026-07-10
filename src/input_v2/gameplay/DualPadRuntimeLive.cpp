@@ -126,17 +126,22 @@ namespace dualpad::input_v2::gameplay
                 _legacyContextEpoch(legacyContextEpoch),
                 _nowUs(nowUs)
             {
+                _runtimeGeneration =
+                    input_v2::runtime::RuntimeOwnerGuard::GetSingleton().GetSnapshot().generation;
                 dualpad::input::backend::NativeButtonCommitBackend::GetSingleton().BeginFrame(
                     _legacyContext,
                     _legacyContextEpoch,
-                    _nowUs);
+                    _nowUs,
+                    _runtimeGeneration);
             }
 
             bool ClearNativeOutput() override
             {
                 auto& native = dualpad::input::backend::NativeButtonCommitBackend::GetSingleton();
-                native.Reset();
-                native.BeginFrame(_legacyContext, _legacyContextEpoch, _nowUs);
+                native.CancelForBoundary(
+                    dualpad::input::backend::PulseBoundaryReason::RecoveryReset,
+                    _runtimeGeneration);
+                native.BeginFrame(_legacyContext, _legacyContextEpoch, _nowUs, _runtimeGeneration);
                 return true;
             }
 
@@ -269,6 +274,7 @@ namespace dualpad::input_v2::gameplay
             dualpad::input::InputContext _legacyContext{ dualpad::input::InputContext::Gameplay };
             std::uint32_t _legacyContextEpoch{ 1 };
             std::uint64_t _nowUs{ 0 };
+            std::uint64_t _runtimeGeneration{ 0 };
         };
     }
 

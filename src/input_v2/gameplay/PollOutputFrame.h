@@ -42,6 +42,8 @@ namespace dualpad::input_v2::gameplay
         std::uint8_t lt{ 0 };
         std::uint8_t rt{ 0 };
         std::uint64_t pulseToken{ 0 };
+        std::uint64_t pulseDownGeneration{ 0 };
+        std::uint64_t pulseUpGeneration{ 0 };
 
         PollOutputRouteHealth routeHealth{ PollOutputRouteHealth::Initializing };
         bool neutral{ true };

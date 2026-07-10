@@ -3,9 +3,12 @@
 #include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/backend/IPollCommitEmitter.h"
 #include "input/backend/NativeControlCode.h"
+#include "input/backend/PulseGenerationContract.h"
 
 #include <array>
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 namespace dualpad::input::backend
 {
@@ -170,7 +173,7 @@ namespace dualpad::input::backend
 
     struct PollCommitRequest
     {
-        RE::BSFixedString actionId{};
+        std::string actionId;
         InputContext context{ InputContext::Gameplay };
         NativeControlCode outputCode{ NativeControlCode::None };
         PollCommitMode mode{ PollCommitMode::None };
@@ -191,6 +194,8 @@ namespace dualpad::input::backend
         std::uint32_t epoch{ 0 };
         std::uint64_t downAtUs{ 0 };
         std::uint64_t earliestReleaseAtUs{ 0 };
+        std::uint64_t downGeneration{ 0 };
+        std::uint64_t upGeneration{ 0 };
         bool downSubmitted{ false };
         bool releaseSubmitted{ false };
     };
@@ -205,7 +210,7 @@ namespace dualpad::input::backend
 
     struct PollCommitSlot
     {
-        RE::BSFixedString actionId{};
+        std::string actionId;
         InputContext context{ InputContext::Gameplay };
         NativeControlCode outputCode{ NativeControlCode::None };
         PollCommitMode mode{ PollCommitMode::None };
@@ -238,7 +243,8 @@ namespace dualpad::input::backend
         void BeginFrame(
             InputContext context,
             std::uint32_t contextEpoch,
-            std::uint64_t nowUs);
+            std::uint64_t nowUs,
+            std::uint64_t runtimeGeneration);
 
         bool QueueRequest(const PollCommitRequest& request);
 
@@ -247,26 +253,32 @@ namespace dualpad::input::backend
             bool gameplayGateOpen);
 
         void Flush(IPollCommitEmitter& emitter, std::uint64_t nowUs);
+        void CancelForBoundary(
+            PulseBoundaryReason reason,
+            std::uint64_t runtimeGeneration);
         void ForceCancelGateAwareTransientSlots();
         void SyncHeldContributor(
-            RE::BSFixedString actionId,
+            std::string_view actionId,
             HeldContributor contributor,
             bool held);
 
         void DumpState() const;
 
         [[nodiscard]] const std::array<PollCommitSlot, kMaxSlots>& Slots() const;
+        [[nodiscard]] PulseGenerationRecord LastPulseRecord() const noexcept;
 
     private:
         std::array<PollCommitSlot, kMaxSlots> _slots{};
         InputContext _currentContext{ InputContext::Gameplay };
         std::uint32_t _currentEpoch{ 0 };
         std::uint64_t _nowUs{ 0 };
+        std::uint64_t _currentGeneration{ 0 };
         std::uint32_t _nextTokenId{ 1 };
         bool _lastGameplayGateOpen{ true };
+        PulseGenerationRecord _lastPulseRecord{};
 
-        PollCommitSlot* FindOrCreateSlot(RE::BSFixedString actionId);
-        PollCommitSlot* FindSlot(RE::BSFixedString actionId);
+        PollCommitSlot* FindOrCreateSlot(std::string_view actionId);
+        PollCommitSlot* FindSlot(std::string_view actionId);
 
         void QueuePulse(PollCommitSlot& slot, const PollCommitRequest& request);
         void QueueToggle(PollCommitSlot& slot, const PollCommitRequest& request);
@@ -284,7 +296,7 @@ namespace dualpad::input::backend
 
         void InvalidateStaleState(PollCommitSlot& slot);
         bool CanStartNewTransaction(const PollCommitSlot& slot) const;
-        bool IsSingleEmitterHoldAction(RE::BSFixedString actionId) const;
+        bool IsSingleEmitterHoldAction(std::string_view actionId) const;
         HeldEmitterSource ResolveHeldEmitter(const PollCommitSlot& slot) const;
         bool HasSyntheticHoldDemand(const PollCommitSlot& slot) const;
 

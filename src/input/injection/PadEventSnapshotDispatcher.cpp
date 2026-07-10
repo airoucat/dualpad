@@ -115,7 +115,7 @@ namespace dualpad::input
         void CommitAndPublishPollOutput(std::uint64_t runtimeGeneration)
         {
             auto& nativeBackend = backend::NativeButtonCommitBackend::GetSingleton();
-            (void)nativeBackend.CommitPollState();
+            const auto committed = nativeBackend.CommitPollState(runtimeGeneration);
 
             const auto authoritative = AuthoritativePollState::GetSingleton().ReadSnapshot();
             const auto context = input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
@@ -150,7 +150,9 @@ namespace dualpad::input
                     input_v2::gameplay::EncodePollTrigger(authoritative.leftTrigger) : std::uint8_t{ 0 },
                 .rt = routeActive && authoritative.hasAnalog ?
                     input_v2::gameplay::EncodePollTrigger(authoritative.rightTrigger) : std::uint8_t{ 0 },
-                .pulseToken = authoritative.pollSequence,
+                .pulseToken = committed.pulse.tokenId,
+                .pulseDownGeneration = committed.pulse.downGeneration,
+                .pulseUpGeneration = committed.pulse.upGeneration,
                 .routeHealth = routeActive ?
                     input_v2::gameplay::PollOutputRouteHealth::Ready :
                     input_v2::gameplay::PollOutputRouteHealth::PublicationUnavailable,

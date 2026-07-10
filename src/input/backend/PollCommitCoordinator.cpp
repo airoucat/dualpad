@@ -17,7 +17,7 @@ namespace dualpad::input::backend
             return static_cast<std::uint8_t>(contributor);
         }
 
-        bool IsSprintAction(RE::BSFixedString actionId)
+        bool IsSprintAction(std::string_view actionId)
         {
             return actionId == actions::Sprint;
         }
@@ -35,18 +35,22 @@ namespace dualpad::input::backend
         _currentContext = InputContext::Gameplay;
         _currentEpoch = 0;
         _nowUs = 0;
+        _currentGeneration = 0;
         _nextTokenId = 1;
         _lastGameplayGateOpen = true;
+        _lastPulseRecord = {};
     }
 
     void PollCommitCoordinator::BeginFrame(
         InputContext context,
         std::uint32_t contextEpoch,
-        std::uint64_t nowUs)
+        std::uint64_t nowUs,
+        std::uint64_t runtimeGeneration)
     {
         _currentContext = context;
         _currentEpoch = contextEpoch;
         _nowUs = nowUs;
+        _currentGeneration = runtimeGeneration;
 
         for (auto& slot : _slots) {
             if (!slot.actionId.empty() &&
@@ -140,13 +144,25 @@ namespace dualpad::input::backend
                     .context = slot.context,
                     .epoch = slot.token.epoch,
                     .tokenId = slot.token.tokenId,
+                    .runtimeGeneration = _currentGeneration,
                     .edge = EmitEdge::Down,
                     .heldSeconds = 0.0f,
                     .nowUs = nowUs
                 });
                 if (result.submitted) {
+                    slot.token.downAtUs = nowUs;
+                    slot.token.earliestReleaseAtUs =
+                        nowUs + static_cast<std::uint64_t>(slot.minDownMs) * 1000ULL;
+                    slot.token.downGeneration = _currentGeneration;
                     slot.token.downSubmitted = true;
                     ++slot.emittedDownCount;
+                    if (slot.mode == PollCommitMode::Pulse || slot.mode == PollCommitMode::Toggle) {
+                        _lastPulseRecord = {
+                            .tokenId = slot.token.tokenId,
+                            .epoch = slot.token.epoch,
+                            .downGeneration = slot.token.downGeneration
+                        };
+                    }
                 }
             }
 
@@ -162,16 +178,59 @@ namespace dualpad::input::backend
                     .context = slot.context,
                     .epoch = slot.token.epoch,
                     .tokenId = slot.token.tokenId,
+                    .runtimeGeneration = _currentGeneration,
                     .edge = EmitEdge::Up,
                     .heldSeconds = heldSeconds,
                     .nowUs = nowUs
                 });
                 if (result.submitted) {
+                    slot.token.upGeneration = _currentGeneration;
                     slot.token.releaseSubmitted = true;
                     ++slot.emittedUpCount;
+                    if (slot.mode == PollCommitMode::Pulse || slot.mode == PollCommitMode::Toggle) {
+                        _lastPulseRecord = {
+                            .tokenId = slot.token.tokenId,
+                            .epoch = slot.token.epoch,
+                            .downGeneration = slot.token.downGeneration,
+                            .upGeneration = slot.token.upGeneration
+                        };
+                    }
                     CompleteRelease(slot, nowUs);
                 }
             }
+        }
+    }
+
+    void PollCommitCoordinator::CancelForBoundary(
+        PulseBoundaryReason reason,
+        std::uint64_t runtimeGeneration)
+    {
+        _currentGeneration = runtimeGeneration;
+        for (auto& slot : _slots) {
+            const bool transient = slot.mode == PollCommitMode::Pulse || slot.mode == PollCommitMode::Toggle;
+            if (slot.actionId.empty()) {
+                continue;
+            }
+
+            if (transient && slot.token.active && slot.token.downSubmitted && !slot.token.releaseSubmitted) {
+                _lastPulseRecord = {
+                    .tokenId = slot.token.tokenId,
+                    .epoch = slot.token.epoch,
+                    .downGeneration = slot.token.downGeneration,
+                    .upGeneration = runtimeGeneration,
+                    .boundaryReason = reason,
+                    .cancelled = true
+                };
+            }
+            if (HasManagedState(slot)) {
+                ++slot.cancelledCount;
+            }
+            slot.pending = {};
+            slot.heldContributorMask = 0;
+            slot.activeHeldEmitter = HeldEmitterSource::None;
+            slot.pendingGamepadHandoff = false;
+            ClearToken(slot);
+            TransitionState(slot, ExecState::Idle, _nowUs);
         }
     }
 
@@ -190,7 +249,7 @@ namespace dualpad::input::backend
     }
 
     void PollCommitCoordinator::SyncHeldContributor(
-        RE::BSFixedString actionId,
+        std::string_view actionId,
         HeldContributor contributor,
         bool held)
     {
@@ -214,7 +273,7 @@ namespace dualpad::input::backend
             }
 
             logger::info(
-                "[DualPad][PollCommit] action={} state={} epoch={} token={} mode={} pending={} nextPulse={} desiredHeld={} activeEmitter={} downSubmitted={} releaseSubmitted={} downCount={} upCount={} coalesced={} dropped={}",
+                "[DualPad][PollCommit] action={} state={} epoch={} token={} mode={} pending={} nextPulse={} desiredHeld={} activeEmitter={} downGeneration={} upGeneration={} downSubmitted={} releaseSubmitted={} downCount={} upCount={} coalesced={} dropped={}",
                 slot.actionId.c_str(),
                 ToString(slot.state),
                 slot.epoch,
@@ -224,6 +283,8 @@ namespace dualpad::input::backend
                 slot.pending.pendingNextPulse,
                 HasSyntheticHoldDemand(slot),
                 ToString(slot.activeHeldEmitter),
+                slot.token.downGeneration,
+                slot.token.upGeneration,
                 slot.token.downSubmitted,
                 slot.token.releaseSubmitted,
                 slot.emittedDownCount,
@@ -238,7 +299,12 @@ namespace dualpad::input::backend
         return _slots;
     }
 
-    PollCommitSlot* PollCommitCoordinator::FindOrCreateSlot(RE::BSFixedString actionId)
+    PulseGenerationRecord PollCommitCoordinator::LastPulseRecord() const noexcept
+    {
+        return _lastPulseRecord;
+    }
+
+    PollCommitSlot* PollCommitCoordinator::FindOrCreateSlot(std::string_view actionId)
     {
         if (auto* existing = FindSlot(actionId)) {
             return existing;
@@ -254,7 +320,7 @@ namespace dualpad::input::backend
         return nullptr;
     }
 
-    PollCommitSlot* PollCommitCoordinator::FindSlot(RE::BSFixedString actionId)
+    PollCommitSlot* PollCommitCoordinator::FindSlot(std::string_view actionId)
     {
         for (auto& slot : _slots) {
             if (slot.actionId == actionId) {
@@ -420,6 +486,8 @@ namespace dualpad::input::backend
         case ExecState::PulseDownVisible:
             if (slot.token.active &&
                 slot.token.downSubmitted &&
+                slot.token.downGeneration != 0 &&
+                _currentGeneration > slot.token.downGeneration &&
                 nowUs >= slot.token.earliestReleaseAtUs) {
                 TransitionState(slot, ExecState::ReleaseGap, nowUs);
             }
@@ -604,8 +672,6 @@ namespace dualpad::input::backend
         slot.token.active = true;
         slot.token.tokenId = _nextTokenId++;
         slot.token.epoch = slot.epoch != 0 ? slot.epoch : _currentEpoch;
-        slot.token.downAtUs = nowUs;
-        slot.token.earliestReleaseAtUs = nowUs + static_cast<std::uint64_t>(slot.minDownMs) * 1000ULL;
         TransitionState(slot, ExecState::PulseDownVisible, nowUs);
     }
 
@@ -615,8 +681,6 @@ namespace dualpad::input::backend
         slot.token.active = true;
         slot.token.tokenId = _nextTokenId++;
         slot.token.epoch = slot.epoch != 0 ? slot.epoch : _currentEpoch;
-        slot.token.downAtUs = nowUs;
-        slot.token.earliestReleaseAtUs = nowUs;
         slot.pending.kind = PendingKind::None;
         slot.activeHeldEmitter = HeldEmitterSource::Gamepad;
         TransitionState(slot, ExecState::HoldDownVisible, nowUs);
@@ -728,7 +792,7 @@ namespace dualpad::input::backend
              slot.state != ExecState::Idle);
     }
 
-    bool PollCommitCoordinator::IsSingleEmitterHoldAction(RE::BSFixedString actionId) const
+    bool PollCommitCoordinator::IsSingleEmitterHoldAction(std::string_view actionId) const
     {
         return actionId == actions::Sprint;
     }
@@ -872,6 +936,8 @@ namespace dualpad::input::backend
         case ExecState::PulseDownVisible:
             if (slot.token.active &&
                 slot.token.downSubmitted &&
+                slot.token.downGeneration != 0 &&
+                _currentGeneration > slot.token.downGeneration &&
                 nowUs >= slot.token.earliestReleaseAtUs) {
                 TransitionState(slot, ExecState::ReleaseGap, nowUs);
             }

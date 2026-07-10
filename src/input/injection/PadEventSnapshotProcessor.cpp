@@ -106,7 +106,9 @@ namespace dualpad::input
             return;
         }
         AuthoritativePollState::GetSingleton().Reset();
-        backend::NativeButtonCommitBackend::GetSingleton().Reset();
+        backend::NativeButtonCommitBackend::GetSingleton().CancelForBoundary(
+            backend::PulseBoundaryReason::RecoveryReset,
+            input_v2::runtime::RuntimeOwnerGuard::GetSingleton().GetSnapshot().generation);
         backend::KeyboardHelperBackend::GetSingleton().Reset();
         input_v2::gameplay::DualPadRuntime::GetSingleton().ResetOnOwnerTick();
         input_v2::ingress::IngressHub::GetSingleton().ResetForTests();

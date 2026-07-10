@@ -84,7 +84,7 @@ namespace dualpad::input
                 const auto remainingInFlight = g_pollDiagnosticLimiter.End(pollDiagnosticsEnabled);
                 if (diagnostic.record) {
                     logger::info(
-                        "[DualPad][PollDiagnostic] event=exit sequence={} thread={} inFlight={} result={} outputGeneration={} runtimeGeneration={} routeHealth={} pulseToken={} contextRevision={} contextEpoch={} presentationEpoch={} menuStackRevision={} packet={} buttons=0x{:04X} lx={} ly={} rx={} ry={} lt={} rt={} dropped={}",
+                        "[DualPad][PollDiagnostic] event=exit sequence={} thread={} inFlight={} result={} outputGeneration={} runtimeGeneration={} routeHealth={} pulseToken={} pulseDownGeneration={} pulseUpGeneration={} contextRevision={} contextEpoch={} presentationEpoch={} menuStackRevision={} packet={} buttons=0x{:04X} lx={} ly={} rx={} ry={} lt={} rt={} dropped={}",
                         diagnostic.sequence,
                         threadId,
                         remainingInFlight,
@@ -93,6 +93,8 @@ namespace dualpad::input
                         outputFrame->runtimeGeneration,
                         input_v2::gameplay::ToString(outputFrame->routeHealth),
                         outputFrame->pulseToken,
+                        outputFrame->pulseDownGeneration,
+                        outputFrame->pulseUpGeneration,
                         outputFrame->contextRevision,
                         outputFrame->contextEpoch,
                         outputFrame->presentationEpoch,
