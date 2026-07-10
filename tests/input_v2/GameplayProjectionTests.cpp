@@ -62,6 +62,12 @@ namespace
             return true;
         }
 
+        bool ApplyPreOutputPresentationHandoff(const gameplay::GameplayPresentationPlan&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyPreOutputPresentationHandoff);
+            return true;
+        }
+
         bool ApplySustainedDigital(const gameplay::NativeSustainedCommand&) override
         {
             steps.push_back(gameplay::PollOutputApplyStep::ApplySustainedDigital);
@@ -324,6 +330,57 @@ namespace
         Require(
             projected.gamepadPlan.transientDigital.items[0].gateAware,
             "Game.Activate must remain gate-aware in gameplay projection");
+    }
+
+    void RunGameplayFavoritesPreOutputPresentationHandoffTests()
+    {
+        auto resolved = Resolved();
+        resolved.changes.push_back(actions::ActionPhaseChange{
+            .actionId = "Game.Favorites",
+            .bindingId = 21,
+            .phase = actions::ActionPhase::Press,
+            .timestampUs = 10'000
+        });
+
+        const auto projected = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            resolved,
+            gameplay::GameplayPolicy{ .gameplayContext = true },
+            gameplay::GameplayProjectionFrame{},
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+
+        Require(projected.gamepadPlan.transientDigital.count == 1, "Game.Favorites must enter native transient output plan");
+        Require(
+            projected.gamepadPlan.transientDigital.items[0].control == backend::NativeControlCode::FavoritesCombo,
+            "Game.Favorites must keep native Favorites control");
+        Require(
+            projected.gamepadPlan.transientDigital.items[0].presentationHandoff ==
+                backend::NativePresentationHandoff::GameplayMenuEntry,
+            "Game.Favorites must carry gameplay menu-entry presentation handoff metadata");
+        Require(
+            projected.presentationPlan.engineOwner == presentation::PresentationOwner::Gamepad,
+            "gamepad menu-entry transient must publish Gamepad engine owner before native output");
+        Require(
+            projected.presentationPlan.menuEntryOwner == presentation::PresentationOwner::Gamepad,
+            "gamepad menu-entry transient must publish Gamepad menu entry owner");
+        Require(
+            projected.presentationPlan.preOutputPresentationHandoff,
+            "gamepad menu-entry transient must request pre-output presentation handoff");
+
+        gameplay::PollOutputAdapter adapter;
+        RecordingPollOutputExecutor executor;
+        const auto result = adapter.Apply(projected, executor);
+        Require(result.outputApplySucceeded, "Favorites handoff output plan must apply");
+
+        const std::vector<gameplay::PollOutputApplyStep> expected{
+            gameplay::PollOutputApplyStep::ApplyGatePlan,
+            gameplay::PollOutputApplyStep::ApplyPreOutputPresentationHandoff,
+            gameplay::PollOutputApplyStep::ApplyTransientDigital,
+            gameplay::PollOutputApplyStep::PublishAnalogState,
+            gameplay::PollOutputApplyStep::CommitCleanRecoveryBaseline
+        };
+        Require(executor.steps == expected, "pre-output presentation handoff must run before native Favorites pulse");
+        Require(result.steps == expected, "output result must expose pre-output handoff ordering");
     }
 
     void RunPrimaryPathArbitrationContractTests()
@@ -608,6 +665,7 @@ int main()
         RunProjectionClassificationAndGateTests();
         RunMenuContextGamepadOutputTests();
         RunGameplayActivateKeepsMinDownWindowLifecycleTests();
+        RunGameplayFavoritesPreOutputPresentationHandoffTests();
         RunPrimaryPathArbitrationContractTests();
         RunOverflowFailClosedTests();
         RunSoftRecoveryDoesNotClearOutputTests();

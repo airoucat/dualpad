@@ -2,6 +2,7 @@
 
 #include "input/backend/ActionLifecyclePolicy.h"
 #include "input/backend/ActionOutputContract.h"
+#include "input/backend/NativeActionDescriptor.h"
 #include "input/backend/NativeControlCode.h"
 #include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/gameplay/RecoveryPlan.h"
@@ -86,6 +87,9 @@ namespace dualpad::input_v2::gameplay
         dualpad::input::backend::ActionOutputContract contract{ dualpad::input::backend::ActionOutputContract::None };
         dualpad::input::backend::ActionLifecyclePolicy lifecyclePolicy{ dualpad::input::backend::ActionLifecyclePolicy::None };
         bool gateAware{ false };
+        dualpad::input::backend::NativePresentationHandoff presentationHandoff{
+            dualpad::input::backend::NativePresentationHandoff::None
+        };
         std::uint32_t contextRevision{ 0 };
     };
 
@@ -169,6 +173,7 @@ namespace dualpad::input_v2::gameplay
         bool keyboardMoveActive{ false };
         bool keyboardMouseCombatActive{ false };
         bool keyboardMouseDigitalActive{ false };
+        bool gamepadMenuEntryActive{ false };
         presentation::PresentationOwner uiOwner{ presentation::PresentationOwner::KeyboardMouse };
         presentation::CursorOwner menuCursorOwner{ presentation::CursorOwner::KeyboardMouse };
     };
@@ -190,6 +195,7 @@ namespace dualpad::input_v2::gameplay
         presentation::PresentationOwner engineOwner{ presentation::PresentationOwner::KeyboardMouse };
         presentation::PresentationOwner menuEntryOwner{ presentation::PresentationOwner::KeyboardMouse };
         presentation::GameplayPresentationReasonCode reason{ presentation::GameplayPresentationReasonCode::None };
+        bool preOutputPresentationHandoff{ false };
     };
 
     struct GameplayProjectionFrame

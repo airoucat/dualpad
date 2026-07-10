@@ -136,6 +136,7 @@ namespace dualpad::input_v2::presentation
 
         HookInstallResult Install();
         void Commit(const PublishedPresentationState& state);
+        void CommitPreOutputGameplayPresentationHandoff(PresentationOwner owner);
         void EnableRollback(const LegacyCompatibilitySurface& legacy);
         void DisableRollback();
 
@@ -156,6 +157,7 @@ namespace dualpad::input_v2::presentation
         void SetMenuRefreshTaskSinkForTests(MenuRefreshTaskSink sink);
         void CompleteQueuedRefreshForTests();
         void DeferQueuedRefreshForTests();
+        std::string MakeRefreshKeyForTests(const PublishedPresentationState& state) const;
         void ResetInstallStateForTests();
         void ResetRefreshStateForTests();
 
@@ -210,6 +212,7 @@ namespace dualpad::input_v2::presentation
         std::uint32_t _lastRefreshCompletedEpoch{ 0 };
         std::string _lastRefreshQueuedKey;
         std::string _lastRefreshCompletedKey;
+        std::string _lastDeferredHeldRequeueKey;
         std::optional<MenuRefreshRequest> _refreshInFlight;
         std::optional<MenuRefreshRequest> _refreshPendingLatest;
         std::optional<MenuRefreshRequest> _refreshDeferredHeld;

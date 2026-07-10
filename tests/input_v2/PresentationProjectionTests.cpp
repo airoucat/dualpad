@@ -508,6 +508,22 @@ void RunPresentationProjectionTests()
     {
         presentation::SkyrimCompatibilitySurface compat;
         compat.ResetRefreshStateForTests();
+
+        auto first = EligibleMenuPresentation(61, 70);
+        first.gameplayPresentationRevision = 1;
+        first.dirty = presentation::PresentationDirtyFlags::Owner;
+
+        auto revisionOnly = first;
+        revisionOnly.gameplayPresentationRevision = 2;
+        revisionOnly.dirty = presentation::PresentationDirtyFlags::None;
+        Require(
+            compat.MakeRefreshKeyForTests(first) == compat.MakeRefreshKeyForTests(revisionOnly),
+            "MenuRefresh_GameplayRevisionOnlyChange must not change refresh key when no refresh-relevant dirty flag changed");
+    }
+
+    {
+        presentation::SkyrimCompatibilitySurface compat;
+        compat.ResetRefreshStateForTests();
         std::size_t queuedRefreshes = 0;
         compat.SetMenuRefreshTaskSinkForTests([&](auto) {
             ++queuedRefreshes;
@@ -537,6 +553,13 @@ void RunPresentationProjectionTests()
             compat.RefreshMenusIfNeeded(),
             "MenuRefresh_DeferredNotReady must preserve held intent across a later stable tick without dirty");
         Require(queuedRefreshes == 5, "held deferred intent must requeue once on the later stable tick");
+        compat.DeferQueuedRefreshForTests();
+        auto identicalStableTick = stableTickWithoutDirty;
+        compat.Commit(identicalStableTick);
+        Require(
+            !compat.RefreshMenusIfNeeded(),
+            "MenuRefresh_DeferredNotReady must not requeue held intent on every identical stable tick");
+        Require(queuedRefreshes == 5, "held deferred intent must not spin on unchanged stable ticks");
         compat.CompleteQueuedRefreshForTests();
         compat.SetMenuRefreshTaskSinkForTests({});
         compat.ResetRefreshStateForTests();

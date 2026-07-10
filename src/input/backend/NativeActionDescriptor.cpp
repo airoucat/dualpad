@@ -22,7 +22,7 @@ namespace dualpad::input::backend
             { actions::Sprint, NativeControlCode::Sprint, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Hold, ActionLifecyclePolicy::HoldOwner, true, NativeAxisTarget::None, VirtualPadButtonRoleL1 },
             { actions::Sneak, NativeControlCode::Sneak, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Toggle, ActionLifecyclePolicy::ToggleOwner, true, NativeAxisTarget::None, VirtualPadButtonRoleL3 },
             { actions::Shout, NativeControlCode::Shout, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Hold, ActionLifecyclePolicy::HoldOwner, true, NativeAxisTarget::None, VirtualPadButtonRoleR1 },
-            { actions::Favorites, NativeControlCode::FavoritesCombo, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleDpadUp },
+            { actions::Favorites, NativeControlCode::FavoritesCombo, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleDpadUp, NativePresentationHandoff::GameplayMenuEntry },
             { actions::Hotkey1, NativeControlCode::Hotkey1, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleDpadLeft },
             { actions::Hotkey2, NativeControlCode::Hotkey2, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleDpadRight },
             { actions::Hotkey3, NativeControlCode::Hotkey3, PlannedBackend::NativeButtonCommit, PlannedActionKind::NativeButton, ActionOutputContract::Pulse, ActionLifecyclePolicy::DeferredPulse, false, NativeAxisTarget::None, VirtualPadButtonRoleL1 | VirtualPadButtonRoleCreate },
@@ -168,6 +168,20 @@ namespace dualpad::input::backend
         }
 
         return nullptr;
+    }
+
+    bool RequiresGameplayMenuEntryPresentationHandoff(std::string_view actionId)
+    {
+        const auto* descriptor = FindNativeActionDescriptor(actionId);
+        return descriptor != nullptr &&
+            descriptor->presentationHandoff == NativePresentationHandoff::GameplayMenuEntry;
+    }
+
+    bool RequiresGameplayMenuEntryPresentationHandoff(NativeControlCode nativeCode)
+    {
+        const auto* descriptor = FindNativeActionDescriptor(nativeCode);
+        return descriptor != nullptr &&
+            descriptor->presentationHandoff == NativePresentationHandoff::GameplayMenuEntry;
     }
 
     std::string_view ToString(NativeControlCode code)

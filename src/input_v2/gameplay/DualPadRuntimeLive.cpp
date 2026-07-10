@@ -8,6 +8,7 @@
 #include "input/backend/ModEventKeyPool.h"
 #include "input/backend/NativeDigitalPolicyResolver.h"
 #include "input/backend/NativeButtonCommitBackend.h"
+#include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 
 namespace dualpad::input_v2::gameplay
 {
@@ -159,6 +160,13 @@ namespace dualpad::input_v2::gameplay
                 if (gatePlan.transientDigitalGate == DigitalGateMode::CancelAndSuppressNewTransient) {
                     native.ForceCancelGateAwareGameplayTransientActions();
                 }
+                return true;
+            }
+
+            bool ApplyPreOutputPresentationHandoff(const GameplayPresentationPlan& plan) override
+            {
+                dualpad::input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton()
+                    .CommitPreOutputGameplayPresentationHandoff(plan.engineOwner);
                 return true;
             }
 

@@ -60,6 +60,15 @@ namespace dualpad::input_v2::gameplay
             return result;
         }
 
+        if (frame.presentationPlan.preOutputPresentationHandoff) {
+            if (!RunStep(
+                    result,
+                    PollOutputApplyStep::ApplyPreOutputPresentationHandoff,
+                    executor.ApplyPreOutputPresentationHandoff(frame.presentationPlan))) {
+                return result;
+            }
+        }
+
         for (std::size_t index = 0; index < frame.gamepadPlan.sustainedDigital.count; ++index) {
             if (!RunStep(
                     result,

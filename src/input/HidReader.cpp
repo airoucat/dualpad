@@ -15,14 +15,17 @@
 
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <thread>
+#include <utility>
 
 namespace logger = SKSE::log;
 
 namespace
 {
     std::atomic_bool g_running{ false };
-    std::thread g_thread;
+    std::mutex g_threadMutex;
+    std::thread* g_thread{ nullptr };
 
     using namespace std::chrono_literals;
 
@@ -125,7 +128,11 @@ namespace dualpad::input
             return;
         }
 
-        g_thread = std::thread(ReaderLoop);
+        {
+            std::scoped_lock lock(g_threadMutex);
+            delete g_thread;
+            g_thread = new std::thread(ReaderLoop);
+        }
         logger::info("[DualPad] HID reader started");
     }
 
@@ -135,8 +142,17 @@ namespace dualpad::input
             return;
         }
 
-        if (g_thread.joinable()) {
-            g_thread.join();
+        std::thread* thread = nullptr;
+        {
+            std::scoped_lock lock(g_threadMutex);
+            thread = std::exchange(g_thread, nullptr);
+        }
+
+        if (thread) {
+            if (thread->joinable()) {
+                thread->join();
+            }
+            delete thread;
         }
 
         logger::info("[DualPad] HID reader stopped");

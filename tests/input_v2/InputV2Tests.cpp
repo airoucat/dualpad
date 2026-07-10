@@ -121,6 +121,12 @@ namespace
             return true;
         }
 
+        bool ApplyPreOutputPresentationHandoff(const gameplay::GameplayPresentationPlan&) override
+        {
+            steps.push_back(gameplay::PollOutputApplyStep::ApplyPreOutputPresentationHandoff);
+            return true;
+        }
+
         bool ApplySustainedDigital(const gameplay::NativeSustainedCommand&) override
         {
             steps.push_back(gameplay::PollOutputApplyStep::ApplySustainedDigital);
@@ -216,6 +222,7 @@ namespace
             return true;
         }
 
+        bool ApplyPreOutputPresentationHandoff(const gameplay::GameplayPresentationPlan&) override { return true; }
         bool ApplySustainedDigital(const gameplay::NativeSustainedCommand&) override { return true; }
         bool ApplyTransientDigital(const gameplay::NativeTransientCommand&) override { return true; }
         bool ApplyHelperCommand(const gameplay::HelperOutputCommand&) override { return true; }

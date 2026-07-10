@@ -20,6 +20,12 @@ namespace dualpad::input::backend
         RightTrigger
     };
 
+    enum class NativePresentationHandoff : std::uint8_t
+    {
+        None = 0,
+        GameplayMenuEntry
+    };
+
     enum VirtualPadButtonRoleMask : std::uint16_t
     {
         VirtualPadButtonRoleNone = 0,
@@ -50,10 +56,13 @@ namespace dualpad::input::backend
         bool ownsLifecycle{ false };
         NativeAxisTarget axisTarget{ NativeAxisTarget::None };
         std::uint16_t virtualButtonRoles{ VirtualPadButtonRoleNone };
+        NativePresentationHandoff presentationHandoff{ NativePresentationHandoff::None };
     };
 
     const NativeActionDescriptor* FindNativeActionDescriptor(std::string_view actionId);
     const NativeActionDescriptor* FindNativeActionDescriptor(NativeControlCode nativeCode);
+    bool RequiresGameplayMenuEntryPresentationHandoff(std::string_view actionId);
+    bool RequiresGameplayMenuEntryPresentationHandoff(NativeControlCode nativeCode);
     std::uint32_t ResolveVirtualPadBitMask(std::uint16_t virtualButtonRoles, const PadBits& bits);
     std::uint32_t ResolveVirtualPadBitMask(NativeControlCode nativeCode, const PadBits& bits);
 }

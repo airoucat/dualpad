@@ -146,3 +146,16 @@ DualPad 回看旧基线时必须确认保留下来的 helper 是否仍有调用�
 
 ### Detail
 主菜单 Triangle 首次下移问题中，`SkyrimCompatibilitySurface::ShouldRefreshMenus()` 在 `input_v2` 仍存在，容易误以为 PH8 迁移保留了旧刷新语义；但历史 grep 证明 `261869b` 删除 `InputModalityTracker` 时也删除了唯一调用链：`ShouldRefreshMenus() -> RefreshMenus() -> menu->RefreshPlatform() -> _root.DualPad_OnPresentationChanged()`。后续遇到“旧基线可用、当前不可用”的菜单兼容问题时，不能只比较数据结构和 helper 实现，必须用 `git grep <old> <symbol>` 与 `git grep HEAD <symbol>` 验证调用链是否仍闭合。
+
+## [LRN-20260627-001] insight
+
+**Logged**: 2026-06-27T22:09:46+08:00
+**Priority**: high
+**Status**: pending
+**Area**: runtime / menu presentation
+
+### Summary
+DualPad 异步 menu refresh key 只能包含会产生 refresh-relevant dirty 的字段，否则会制造假 superseded 并漏掉冷启动首次 `RefreshPlatform()`。
+
+### Detail
+冷启动 Main Menu 首次 Triangle/Y 仍下移的现场日志显示：首个 `[MenuRefreshTrace] event=request` 捕获 `epoch=1 dirty=0x3F gameplayPresentationRevision=1`，UI task 执行时 committed state 已变成同一 presentation epoch/context 但 `gameplayPresentationRevision=2 dirty=0x00`，旧 key 因包含 gameplay revision 被判 `Superseded`，导致第一次 `Menu.Confirm` 的 `xinputButtons=0x1000` 在任何 `result=Completed` 前发出。后续设计异步 request key 时，key 字段必须和 dirty/eligibility 语义一致；若字段变化不会触发 dirty，就不应让它使 in-flight request stale。对于 `DeferredNotReady` held intent，也不能在相同 key 的每个 stable tick 上重排，否则会形成 refresh storm。

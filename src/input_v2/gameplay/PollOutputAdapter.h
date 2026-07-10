@@ -14,6 +14,7 @@ namespace dualpad::input_v2::gameplay
         ClearSustainedDigitalAggregator,
         ClearProjectionStickyOwners,
         ApplyGatePlan,
+        ApplyPreOutputPresentationHandoff,
         ApplySustainedDigital,
         ApplyTransientDigital,
         ApplyHelperCommand,
@@ -37,6 +38,7 @@ namespace dualpad::input_v2::gameplay
         virtual bool ClearSustainedDigitalAggregator() = 0;
         virtual bool ClearProjectionStickyOwners() = 0;
         virtual bool ApplyGatePlan(const GatePlan& gatePlan) = 0;
+        virtual bool ApplyPreOutputPresentationHandoff(const GameplayPresentationPlan& plan) = 0;
         virtual bool ApplySustainedDigital(const NativeSustainedCommand& command) = 0;
         virtual bool ApplyTransientDigital(const NativeTransientCommand& command) = 0;
         virtual bool ApplyHelperCommand(const HelperOutputCommand& command) = 0;

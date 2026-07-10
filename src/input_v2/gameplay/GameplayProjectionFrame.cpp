@@ -31,6 +31,12 @@ namespace dualpad::input_v2::gameplay
             return contract == ActionOutputContract::Hold || contract == ActionOutputContract::Repeat;
         }
 
+        bool IsPresentationHandoffEdge(actions::ActionPhase phase)
+        {
+            return phase == actions::ActionPhase::Press ||
+                phase == actions::ActionPhase::Pulse;
+        }
+
         bool TryParseTrailingNumber(std::string_view value, std::uint16_t& out)
         {
             const auto dot = value.find_last_of('.');
@@ -224,11 +230,17 @@ namespace dualpad::input_v2::gameplay
             decision.lookOwner == ChannelOwner::Gamepad ||
             decision.moveOwner == ChannelOwner::Gamepad ||
             decision.combatOwner == ChannelOwner::Gamepad;
+        const bool gamepadPresentationPrimary =
+            gamepadAnalogPrimary ||
+            input.gamepadMenuEntryActive;
 
         decision.engineOwner = keyboardMousePrimary ?
             presentation::PresentationOwner::KeyboardMouse :
-            (gamepadAnalogPrimary ? presentation::PresentationOwner::Gamepad : input.uiOwner);
-        decision.menuEntryOwner = decision.engineOwner;
+            (gamepadPresentationPrimary ? presentation::PresentationOwner::Gamepad : input.uiOwner);
+        decision.menuEntryOwner =
+            input.gamepadMenuEntryActive && !keyboardMousePrimary ?
+            presentation::PresentationOwner::Gamepad :
+            decision.engineOwner;
         return decision;
     }
 
@@ -252,10 +264,16 @@ namespace dualpad::input_v2::gameplay
             frame.recoveryPlan.resetKeyboardHelperBackend;
 
         bool hasTransientGamepadDigital = false;
+        bool hasGameplayMenuEntryDigital = false;
         for (const auto& change : resolved.changes) {
             const auto decision = dualpad::input::backend::ActionBackendPolicy::Decide(change.actionId);
             if (decision.backend == PlannedBackend::NativeButtonCommit && IsTransientContract(decision.contract)) {
                 hasTransientGamepadDigital = true;
+                if (policy.gameplayContext &&
+                    IsPresentationHandoffEdge(change.phase) &&
+                    dualpad::input::backend::RequiresGameplayMenuEntryPresentationHandoff(change.actionId)) {
+                    hasGameplayMenuEntryDigital = true;
+                }
             }
         }
 
@@ -283,6 +301,7 @@ namespace dualpad::input_v2::gameplay
             .keyboardMoveActive = policy.keyboardMoveActive,
             .keyboardMouseCombatActive = policy.keyboardMouseCombatActive,
             .keyboardMouseDigitalActive = policy.keyboardMouseDigitalActive,
+            .gamepadMenuEntryActive = hasGameplayMenuEntryDigital,
             .uiOwner = presentation::PresentationOwner::KeyboardMouse,
             .menuCursorOwner = presentation::CursorOwner::KeyboardMouse
         });
@@ -326,6 +345,7 @@ namespace dualpad::input_v2::gameplay
         bool overflow = false;
         for (const auto& change : resolved.changes) {
             const auto decision = dualpad::input::backend::ActionBackendPolicy::Decide(change.actionId);
+            const auto* descriptor = dualpad::input::backend::FindNativeActionDescriptor(change.actionId);
             if (decision.backend == PlannedBackend::NativeButtonCommit) {
                 if (IsTransientContract(decision.contract)) {
                     if (frame.gatePlan.transientDigitalGate == DigitalGateMode::Open) {
@@ -345,6 +365,9 @@ namespace dualpad::input_v2::gameplay
                                 .gateAware = dualpad::input::backend::IsNativeDigitalGateAwareAction(
                                     change.actionId,
                                     digitalPolicy),
+                                .presentationHandoff = descriptor ?
+                                    descriptor->presentationHandoff :
+                                    dualpad::input::backend::NativePresentationHandoff::None,
                                 .contextRevision = frame.contextRevision
                             }) || overflow;
                     }
@@ -386,6 +409,9 @@ namespace dualpad::input_v2::gameplay
 
         frame.presentationPlan.engineOwner = primaryPath.engineOwner;
         frame.presentationPlan.menuEntryOwner = primaryPath.menuEntryOwner;
+        frame.presentationPlan.preOutputPresentationHandoff =
+            hasGameplayMenuEntryDigital &&
+            primaryPath.engineOwner == presentation::PresentationOwner::Gamepad;
         if (frame.recoveryPlan.mode == RecoveryMode::HardResetOutputs) {
             frame.presentationPlan.reason = presentation::GameplayPresentationReasonCode::RecoveryRepublish;
         } else {
