@@ -128,7 +128,6 @@ namespace dualpad::input_v2::ingress
         _window = Window{};
         _lastConsumedSeq = 0;
         _lastMonotonicUs = 0;
-        _lastMonotonicUsBySource = {};
         _lastLatestPadGeneration = 0;
         _lastLatestSourceGeneration = 0;
     }
@@ -189,10 +188,14 @@ namespace dualpad::input_v2::ingress
             }
 
             if (event.kind == IngressKind::DeviceFamilyChanged) {
-                _pendingDeviceMarker = event.deviceFamily;
                 auto nextKey = _currentKey;
                 nextKey.deviceFamilyRevision = event.deviceFamily.deviceFamilyRevision;
-                FlushWindow(frames);
+                if (_pendingDeviceMarker) {
+                    _window = Window{};
+                } else {
+                    FlushWindow(frames);
+                }
+                _pendingDeviceMarker = event.deviceFamily;
                 EmitTransition(frames, _currentKey, nextKey, TransitionReason::BoundaryKeyChanged);
                 _currentKey = nextKey;
                 continue;
@@ -262,20 +265,10 @@ namespace dualpad::input_v2::ingress
 
         if (event.monotonicUs != 0) {
             // Ingress seq is assigned under the hub lock and is the ordering
-            // authority. Producer timestamps are observations from independent
-            // threads and may overlap or arrive slightly out of timestamp order.
-            // A regression within one producer still rejects volatile history,
-            // while cross-producer overlap only advances the evaluation clock by max.
-            const auto sourceIndex = static_cast<std::size_t>(event.source);
-            auto& lastSourceMonotonicUs = _lastMonotonicUsBySource.at(sourceIndex);
-            if (lastSourceMonotonicUs != 0 && event.monotonicUs < lastSourceMonotonicUs) {
-                FlushWindow(frames);
-                FactHealth health{};
-                health.sequenceGap = true;
-                EmitTransition(frames, _currentKey, _currentKey, TransitionReason::SequenceGap, health);
-                return true;
-            }
-            lastSourceMonotonicUs = event.monotonicUs;
+            // authority. Capture timestamps are observations taken before the
+            // hub lock by independent threads and clock domains, even when they
+            // share one coarse IngressSource label. Preserve seq-ordered facts
+            // and advance the frame evaluation clock only by the observed max.
             _lastMonotonicUs = std::max(_lastMonotonicUs, event.monotonicUs);
         }
 
@@ -379,7 +372,7 @@ namespace dualpad::input_v2::ingress
 
     void FrameAssembler::FlushWindow(std::vector<AssembledFactFrame>& frames)
     {
-        if (!_window.open) {
+        if (!_window.open || _pendingDeviceMarker) {
             return;
         }
 
@@ -454,7 +447,7 @@ namespace dualpad::input_v2::ingress
                 FactHealth health{};
                 health.pendingBoundaryMarkerPair = true;
                 health.boundaryMarkerMismatch = true;
-                FlushWindow(frames);
+                _window = Window{};
                 EmitTransition(frames, _currentKey, _currentKey, TransitionReason::ExplicitReset, health);
                 _pendingDeviceMarker.reset();
                 return;
@@ -485,7 +478,11 @@ namespace dualpad::input_v2::ingress
         const LatestSourceEvidence& latest)
     {
         const auto revision = latest.snapshot.deviceFamilyEvidence.deviceFamilyRevision;
-        if (!_pendingDeviceMarker && revision > _currentKey.deviceFamilyRevision) {
+        // The latest slot can already describe markers that remain behind this
+        // capture's ordered cutoff. Wait until its matching marker is consumed;
+        // an ahead-of-cutoff snapshot is not a corrupt marker pair.
+        if ((_pendingDeviceMarker && revision > _pendingDeviceMarker->deviceFamilyRevision) ||
+            (!_pendingDeviceMarker && revision > _currentKey.deviceFamilyRevision)) {
             return;
         }
         _lastLatestSourceGeneration = latest.generation;
@@ -506,6 +503,9 @@ namespace dualpad::input_v2::ingress
 
     void FrameAssembler::ApplyLatestPadState(const LatestPadState& latest)
     {
+        if (_pendingDeviceMarker) {
+            return;
+        }
         const auto contextRevision = latest.contextRevision != 0 ? latest.contextRevision : latest.contextEpoch;
         if (_currentKey.contextRevision != contextRevision ||
             _currentKey.menuStackRevision != latest.contextEpoch) {
@@ -520,7 +520,9 @@ namespace dualpad::input_v2::ingress
         event.pad.samples = BuildLatestAnalogSamples(latest);
         ApplyEventToWindow(event);
         _window.facts.latestPadStateGeneration = latest.generation;
-        _latestFacts = _window.facts;
+        if (!_pendingDeviceMarker) {
+            _latestFacts = _window.facts;
+        }
     }
 
     bool ShouldDispatchToInteractionEngine(const AssembledFactFrame& frame)

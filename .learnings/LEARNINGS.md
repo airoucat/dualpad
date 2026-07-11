@@ -185,3 +185,16 @@ Skyrim 的 `BSInputDeviceManager` input event sink 在读档生命周期中可�
 
 ### Detail
 匹配 build `1b3ca5a2bc7a` 的实机日志证明：owner 在线程 `29128` 完成 frame token 1-359 后，Loading/Fader 建立期间由线程 `22420` 进入 token 360。旧 guard 因固定 thread ID 假设永久 `thread_drift`。正确合同由 RAII owner ticket、`tickActive` 和严格单调 frame token 共同建立：前一 ticket 已释放时允许显式、可观察的串行 thread handoff；ticket 活跃期间的异线程进入仍必须永久 fail-closed。不要仅凭函数名或单次主菜单采样声称 Skyrim 输入入口固定线程。
+
+## [LRN-20260711-003] correction
+
+**Logged**: 2026-07-11T09:30:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: ingress / ordering / latest publication
+
+### Summary
+`IngressSource` 是粗粒度诊断标签，不是 producer identity 或 clock-domain identity；DualPad ordered ingress 只能以 hub 分配的 `IngressEvent.seq` 作为排序权威。
+
+### Detail
+build `32617f1ed2fa` 的实机日志出现 429 次 `transition=sequence_gap`，但没有设备 sequence-gap marker 或 queue overflow。`DeviceFamilyPublisher` 标签同时承载 HID 与键鼠线程在不同采集时钟下生成的 marker，时间戳倒退并不表示数据丢失。另一个独立问题是 latest-wins `LatestSourceEvidence` 可以描述仍在本轮 capture cutoff 后方的 marker；这种 revision 超前必须延迟，不能当作 pairing corruption，且配对完成前 latest/ordered pad facts 不能发布新 boundary 的 stable frame。后续修改 ingress 时，应以 seq 检测真实顺序损坏，以时间戳全局 max 推进 evaluation time，并显式区分“latest 领先 cutoff”和“同一 ordered pair 不匹配”。

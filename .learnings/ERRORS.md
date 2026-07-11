@@ -250,3 +250,13 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: `DualPadDocGen` 的 provenance inputs 不只有 config，还包含 `xmake.lua`、manifest/catalog/prompt/schema 源码和 replay golden files。即使 config 没变，修改这些输入也会合法改变 4 份 generated docs 的 manifest hash。
 - Related files: `tools/docgen/DualPadDocGenMain.cpp`, `xmake.lua`, `docs/generated/*.md`
 - Resolution: 接受 canonical DocGen 生成的 `7ab15ab062bdd968`，连续再运行一次确认输出稳定，并重跑 Phase 8。后续任何 provenance input slice 都必须在同一 close-out 中运行 DocGen。
+
+## ERR-20260711-009
+
+- Logged: 2026-07-11 09:44 CST
+- Priority: high
+- Status: resolved
+- Area: ingress / device boundary cutoff
+- Summary: 为阻止未配对 device marker 发布 stable frame，首次实现直接丢弃 pending 期间的 ordered pad facts，破坏了正常同批 marker/source 后的 Menu D-pad sustained output。
+- Detail: ordered pad facts 可以在 pending window 内暂存；禁止的是配对完成前 `FlushWindow()`，不是禁止收集事实。正常 capture 常按 `Manifest -> DeviceFamilyChanged -> UiSnapshot -> PadSnapshot` 排列，并在同一次 `Assemble()` 末尾用 latest source 完成配对。提前丢弃 pad 会让 source 虽然正常配对，D-pad edge 仍永久消失。
+- Resolution: pending window 保留 ordered facts但不更新 durable `_latestFacts`，`FlushWindow()` 在 marker pending 时不发布；matching source 清除 pending 后正常提交整窗。若 newer device marker 在旧 pair 完成前到达，则丢弃旧 unpaired window，避免把事实跨 boundary 重解释。`DualPadIngressTests` 与触发失败的 `DualPadInputV2Tests` 均重新通过。

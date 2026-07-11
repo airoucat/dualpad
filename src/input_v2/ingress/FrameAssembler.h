@@ -7,7 +7,6 @@
 #include "input_v2/ingress/IngressRecovery.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
-#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -110,8 +109,6 @@ namespace dualpad::input_v2::ingress
         Window _window{};
         std::uint64_t _lastConsumedSeq{ 0 };
         std::uint64_t _lastMonotonicUs{ 0 };
-        std::array<std::uint64_t, static_cast<std::size_t>(IngressSource::Recovery) + 1>
-            _lastMonotonicUsBySource{};
         std::uint64_t _lastLatestPadGeneration{ 0 };
         std::uint64_t _lastLatestSourceGeneration{ 0 };
 

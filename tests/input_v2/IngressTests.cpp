@@ -104,6 +104,39 @@ namespace
         return frame;
     }
 
+    presentation::SourceEvidenceFrame KeyboardMouseSourceFrame(
+        std::uint32_t revision,
+        std::uint64_t tick,
+        bool changed)
+    {
+        presentation::SourceEvidenceFrame frame{};
+        if (changed) {
+            frame.records.push_back(presentation::SourceEvidenceRecord{
+                .kind = presentation::SourceEvidenceRecordKind::DeviceFamilyChanged,
+                .deviceFamilyChanged = presentation::DeviceFamilyChangedPayload{
+                    .family = presentation::DeviceFamily::KeyboardMouse,
+                    .newRevision = revision,
+                    .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+                    .publishedTick = tick
+                }
+            });
+        }
+        frame.records.push_back(presentation::SourceEvidenceRecord{
+            .kind = presentation::SourceEvidenceRecordKind::SourceEvidenceSnapshot,
+            .sourceEvidence = presentation::SourceEvidenceSnapshot{
+                .deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{
+                    .family = presentation::DeviceFamily::KeyboardMouse,
+                    .deviceFamilyRevision = revision,
+                    .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+                    .publishedTick = tick
+                },
+                .keyboardEvidence = true,
+                .collectedTick = tick
+            }
+        });
+        return frame;
+    }
+
     ingress::IngressEvent PadSample(std::uint32_t code, bool down, bool pressed, bool released)
     {
         ingress::IngressEvent event{};
@@ -462,6 +495,96 @@ namespace
         const auto& afterBoundary = LastStableFrame(frames);
         Require(afterBoundary.boundaryKey.deviceFamilyRevision == 1, "source evidence must publish after its marker reaches the cutoff");
         Require(afterBoundary.facts.latestSourceEvidenceGeneration == 1, "paired latest source generation must publish once ordered marker is consumed");
+    }
+
+    void TestLatestSourceEvidenceAheadOfCapturedBoundaryWaitsForMatchingMarker()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::FrameAssembler assembler;
+        ingress::LatestPadState latestPad{
+            .generation = 1,
+            .sourceSequence = 1,
+            .sourceTimestampUs = 350,
+            .contextEpoch = 0,
+            .contextRevision = 0
+        };
+        latestPad.state.leftStick.x = 0.5f;
+        hub.PublishSourceEvidenceFrame(GamepadSourceFrame(1, 100, true));
+        hub.PublishSourceEvidenceFrame(KeyboardMouseSourceFrame(2, 200, true));
+        hub.PublishSourceEvidenceFrame(GamepadSourceFrame(3, 300, true));
+
+        for (std::uint32_t revision = 1; revision <= 3; ++revision) {
+            const auto capture = hub.Capture(1);
+            Require(capture.events.size() == 1, "one queued family boundary must be captured per owner tick");
+            const auto frames = assembler.Assemble(
+                capture.events,
+                latestPad,
+                capture.latestSourceEvidence);
+            Require(
+                FindTransition(frames, ingress::TransitionReason::ExplicitReset) == nullptr,
+                "a latest-wins source snapshot ahead of the capture cutoff must be deferred, not treated as mismatch");
+            Require(
+                capture.remainingEvents == 3 - revision,
+                "newer family boundaries must remain ordered behind the capture cutoff");
+
+            const auto stableIt = std::find_if(
+                frames.begin(),
+                frames.end(),
+                [](const ingress::AssembledFactFrame& frame) {
+                    return frame.kind == ingress::AssembledFrameKind::Stable;
+                });
+            if (revision < 3) {
+                Require(
+                    stableIt == frames.end(),
+                    "latest pad state must not bypass an unpaired device-family boundary");
+            } else {
+                Require(stableIt != frames.end(), "matching marker must release the deferred stable frame");
+                const auto& stable = LastStableFrame(frames);
+                Require(
+                    stable.boundaryKey.deviceFamilyRevision == 3,
+                    "the latest source snapshot must publish after its matching boundary is consumed");
+                Require(
+                    stable.facts.latestSourceEvidenceGeneration == 3,
+                    "deferred latest source generation must publish exactly at its matching cutoff");
+                Require(
+                    stable.facts.latestPadStateGeneration == 1,
+                    "latest pad generation must publish after the device-family pair is complete");
+            }
+        }
+    }
+
+    void TestOrderedPadEventWaitsForDeviceSourcePair()
+    {
+        ingress::FrameAssembler assembler;
+        ingress::LatestSourceEvidence futureSource{
+            .generation = 2,
+            .snapshot = presentation::SourceEvidenceSnapshot{
+                .deviceFamilyEvidence = presentation::PublishedDeviceFamilyEvidence{
+                    .family = presentation::DeviceFamily::KeyboardMouse,
+                    .deviceFamilyRevision = 2,
+                    .source = presentation::DeviceFamilyEvidenceSource::RawInputIngress,
+                    .publishedTick = 200
+                },
+                .keyboardEvidence = true,
+                .collectedTick = 200
+            }
+        };
+        const auto frames = assembler.Assemble(
+            AssignSeq({
+                DeviceMarker(presentation::DeviceFamily::Gamepad, 1),
+                PadSample(0x1, true, true, false)
+            }),
+            std::nullopt,
+            futureSource);
+
+        Require(
+            std::none_of(
+                frames.begin(),
+                frames.end(),
+                [](const ingress::AssembledFactFrame& frame) {
+                    return frame.kind == ingress::AssembledFrameKind::Stable;
+                }),
+            "ordered pad facts must not publish while the device-family marker is unpaired");
     }
 
     void TestLatestAnalogCannotBypassQueuedContextBoundary()
@@ -1166,7 +1289,7 @@ namespace
             "out-of-order seq must fail closed instead of being sorted back into order");
     }
 
-    void TestFrameAssemblerRejectsMonotonicTimeRegression()
+    void TestFrameAssemblerUsesIngressSeqForMonotonicTimeRegression()
     {
         auto events = AssignSeq({
             Manifest(1),
@@ -1178,13 +1301,47 @@ namespace
         ingress::FrameAssembler assembler;
         const auto frames = assembler.Assemble(events);
         Require(
-            FindTransition(frames, ingress::TransitionReason::SequenceGap) != nullptr,
-            "monotonic time regression must fail closed through a transition");
+            FindTransition(frames, ingress::TransitionReason::SequenceGap) == nullptr,
+            "a producer timestamp regression with contiguous ingress seq is not sequence loss");
 
         const auto& stable = LastStableFrame(frames);
         Require(
-            FindPulse(stable.facts, 1, false, true) == nullptr,
-            "time-regressed volatile release must not enter stable pulse ledger");
+            FindPulse(stable.facts, 1, false, true) != nullptr,
+            "seq-ordered release must remain visible even when its capture timestamp is older");
+        Require(
+            stable.facts.monotonicUs == events[1].monotonicUs,
+            "frame evaluation time must retain the maximum observed capture timestamp");
+    }
+
+    void TestDeviceFamilyEvidenceFromIndependentThreadsUsesIngressSeqAuthority()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::FrameAssembler assembler;
+
+        hub.PublishSourceEvidenceFrame(GamepadSourceFrame(1, 2'000'000, true));
+        hub.PublishSourceEvidenceFrame(KeyboardMouseSourceFrame(2, 1'999'000, true));
+        hub.PublishSourceEvidenceFrame(GamepadSourceFrame(3, 2'001'000, true));
+
+        const auto capture = hub.Capture(16);
+        Require(capture.events.size() == 3, "three family boundary markers must be ordered by ingress seq");
+        const auto frames = assembler.Assemble(
+            capture.events,
+            capture.latestPadState,
+            capture.latestSourceEvidence);
+
+        Require(
+            FindTransition(frames, ingress::TransitionReason::SequenceGap) == nullptr,
+            "independent HID and keyboard capture clocks must not manufacture sequence loss");
+        Require(
+            FindTransition(frames, ingress::TransitionReason::ExplicitReset) == nullptr,
+            "clock overlap must not hard-reset a correctly paired latest source snapshot");
+        const auto& stable = LastStableFrame(frames);
+        Require(
+            stable.boundaryKey.deviceFamilyRevision == 3,
+            "all seq-ordered device-family boundaries must be consumed");
+        Require(
+            stable.facts.sourceEvidence.deviceFamilyEvidence.deviceFamilyRevision == 3,
+            "the latest source snapshot must pair with the last consumed boundary");
     }
 
     void TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline()
@@ -1500,6 +1657,8 @@ int main()
     TestSourceEvidenceUsesLatestPublicationWithoutQueueGrowth();
     TestConcurrentCaptureNeverObservesHalfHidTransaction();
     TestLatestSourceEvidenceCannotBypassQueuedDeviceBoundary();
+    TestLatestSourceEvidenceAheadOfCapturedBoundaryWaitsForMatchingMarker();
+    TestOrderedPadEventWaitsForDeviceSourcePair();
     TestLatestAnalogCannotBypassQueuedContextBoundary();
     TestHubOverflowCompactsBoundaryFactsAndDropsVolatileInput();
     TestLegacySnapshotAdapterProducesControlSamplesAndPulseLedger();
@@ -1525,7 +1684,8 @@ int main()
     TestRuntimeSnapshotSeqGapWithoutBoundaryChangeIsSoftTransition();
     TestAxisOnlyCoalescingDoesNotClearHeldButton();
     TestFrameAssemblerDoesNotSortOutOfOrderEvents();
-    TestFrameAssemblerRejectsMonotonicTimeRegression();
+    TestFrameAssemblerUsesIngressSeqForMonotonicTimeRegression();
+    TestDeviceFamilyEvidenceFromIndependentThreadsUsesIngressSeqAuthority();
     TestFrameAssemblerOverflowPayloadBuildsBoundaryBaseline();
     TestDeviceMarkerMismatchFailsClosed();
     TestStaleSourceEvidenceAfterNewerDeviceMarkerDoesNotHardReset();

@@ -50,6 +50,8 @@ HidReader
 
 连续 axes/triggers/current physical mask 使用 complete-generation latest publication；digital edge、manifest/UI/device boundary、reset 和 overflow marker 使用 bounded ordered queue。normal digital reducer 不读取 future `currentDownMask` 猜造 edge。
 
+ordered ingress 的唯一顺序权威是 hub 锁内分配的 `IngressEvent.seq`。producer 采集时间戳只以 max 推进 frame evaluation time，不能制造 `SequenceGap`；领先当前 capture cutoff 的 `LatestSourceEvidence` 必须等到匹配的 device-family marker 被消费后才能发布，配对期间不得让 latest/ordered pad facts 绕过边界形成 `Stable` frame。
+
 ### Action graph / interaction
 
 - `src/input_v2/actions/*`

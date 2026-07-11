@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": "S-DP5-RC20-HOTFIX",
-  "updated_at": "2026-07-11T09:05:00+08:00",
+  "updated_at": "2026-07-11T09:46:00+08:00",
   "sprints": [
     {
       "id": "S-DP5-RC20-HOTFIX",
@@ -41,7 +41,7 @@
         "Windows xmake DualPad / DualPadDInput8Proxy build、release/package smoke、builder JSON、generated docs、graphify rebuild 与 git diff --check",
         "IDA 0xC1AB40 / 0xC1AB9D caller contract、matching WinDbg/VS dump、vanilla/live SWF A/B（条件触发）",
         "修复 build 1edb1949ecc4 读档时记录 event=rebound，且后续 runtime generation 持续推进、无 failure=thread_drift",
-        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；实机 build 71c57b30ae0a 暴露的多 producer timestamp regression 不得再制造 sequence_gap",
+        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；实机 build 32617f1ed2fa 暴露的同一粗粒度 IngressSource 跨线程/时钟 timestamp regression 与 latest-source cutoff 超前不得再制造 sequence_gap / explicit_reset storm",
         "DualPadContextResolverTests 与 runtime UI boundary static tests 证明 owner tick 不读取 RE::UI，stale UI capture 不覆盖新 event，Scaleform attach 与 HUD mutation 只从 UI task 调用",
         "physical/synthetic DPadUp、vanilla 1000 次 open/close、每支持 UI profile 200 次与 2-hour soak"
       ]

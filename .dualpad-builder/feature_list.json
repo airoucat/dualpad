@@ -357,7 +357,8 @@
         "Unit 8 已让 upstream call-site 与 Skyrim compatibility 三站点 hook 具备 exact preflight、expected-current rollback、UnsafePartial fail-closed 及 operational state / disposition 诊断合同",
         "Unit 9 已完成 500/1000 Hz producer x 30/60/120 Hz owner deterministic matrix、axis publication percentile telemetry、canonical Phase 8 / RC readiness、replay zero-diff、proxy build、artifact manifest、reviewed/generated docs、builder JSON、Graphify 与 diff hygiene 收口",
         "Unit 10 阶段性证据已完成 Skyrim 1.5.97 Poll call-site IDA 调查；build 71c57b30ae0a 的读档安全 smoke 已证明 serialized owner handoff 可推进到 generation 3000 且不再 thread_drift，同时暴露 31 次由多 producer timestamp regression 误判的 sequence_gap；FrameAssembler 已改为以 ingress seq 为唯一排序权威并补回归，待新 build 实机复测，Favorites dump/循环仍未完成",
-        "build 71c57b30ae0a 的 1519 次 owner handoff 证明 runtime owner 不具备 UI thread authority；UiMenuObserver 已改为 event-time Partial publication + coalesced AddUITask live capture + stale sequence rejection，ContextRefreshTick 不再读取 RE::UI，Scaleform attach 与 HUD mutation 也只经 UI task，待新 build 验证摇杆与菜单后按键行为",
+        "build 71c57b30ae0a 的 1519 次 owner handoff 证明 runtime owner 不具备 UI thread authority；UiMenuObserver 已改为 event-time Partial publication + coalesced AddUITask live capture + stale sequence rejection，ContextRefreshTick 不再读取 RE::UI，Scaleform attach 与 HUD mutation 也只经 UI task",
+        "build 32617f1ed2fa 的实机日志确认 UI-task capture 与单 target refresh 生效，但仍出现 429 次伪 sequence_gap、121 次 explicit_reset 和 device boundary/refresh storm；根因已由 TDD 收敛为粗粒度 IngressSource 下跨线程/时钟 timestamp regression 被误作排序失败，以及 LatestSourceEvidence 领先 capture cutoff 时被误作 marker mismatch；配对完成前 latest/ordered pad facts 现在也不能绕过边界发布 Stable frame，当前修复待 matching build 实机复测",
         "最终 release status 只能是 NO-GO、GO WITH NATIVE FAVORITES DISABLED 或 GO；未完成真实 Favorites 循环与 crash evidence 不得标记 GO"
       ]
     }

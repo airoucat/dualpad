@@ -11,9 +11,11 @@
 | digital press/release | bounded ordered queue | edge 不可覆盖、乱序或重复 |
 | manifest/UI/device boundary | bounded ordered queue | 必须在对应后续 edge 前消费 |
 | reset / overflow marker | bounded ordered queue | 建立显式 recovery barrier，不静默丢历史 |
-
-ordered queue 的跨 producer 顺序权威只有 `IngressEvent.seq`。该序号在 `IngressHub` 锁内分配，连续性用于检测真实 gap。`monotonicUs` 是各 producer 的采集时间：同一 `IngressSource` 内倒退仍 fail-closed；不同 producer 之间允许重叠或轻微倒退，只以 max 方式形成不倒退的帧评估时间，不能单独制造 `SequenceGap`。
 | legacy snapshot | 仅 compat/replay/debug payload | 不回流 core kernel authority |
+
+ordered queue 的唯一顺序权威是 `IngressEvent.seq`。该序号在 `IngressHub` 锁内分配，只有 seq 重复、倒退或不连续才能让 `FrameAssembler` 生成 `SequenceGap` transition。
+
+`monotonicUs` 是 producer 在进入 hub 临界区前采集的观测时间。即使两个事件共享同一个粗粒度 `IngressSource`，它们也可能来自不同线程或不同时钟域；先采集的线程还可能后获得 hub 锁。因此，时间戳倒退不能证明事件丢失。`FrameAssembler` 必须保留 seq 已排序的事实，只以全局 max 推进不倒退的帧评估时间。
 
 ## 双 cutoff
 
@@ -23,6 +25,8 @@ ordered queue 的跨 producer 顺序权威只有 `IngressEvent.seq`。该序号�
 2. 内部完整的 latest state/source generations。
 
 latest analog 可以领先仍在 backlog 中的同 context/device digital edge，但 normal digital reducer 只由已 drain edge 推进。`currentDownMask` 只用于 overflow 后建立 clean physical baseline，不能在正常路径猜造 press/release。
+
+`LatestSourceEvidence` 也可能已经描述仍位于本轮 ordered cutoff 之后的 `DeviceFamilyChanged` marker。此时 assembler 必须延迟 latest generation，直到匹配 revision 的 marker 被消费；不能把“latest 快照领先 capture cutoff”当作 marker mismatch 或 `ExplicitReset`。配对完成前，latest pad 与 ordered pad facts 均不得生成新 boundary 的 `Stable` frame。真正同一 ordered pairing 内的不一致仍保持 fail-closed。
 
 ## Budget 与调度
 
