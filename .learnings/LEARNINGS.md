@@ -172,3 +172,16 @@ Windows PowerShell 不会替 `rg` 展开 `path/*.cpp` 形式的文件参数；�
 
 ### Detail
 在 PowerShell 中多次使用 `rg pattern src/input/Foo.*` 时，未展开的 `*` 被传给 Windows 文件 API 并报“文件名、目录名或卷标语法不正确”。稳定写法是 `rg pattern src/input -g 'Foo.*'`，或明确列出具体文件。该规则适用于本仓库所有 `rg` 复查命令。
+
+## [LRN-20260711-002] correction
+
+**Logged**: 2026-07-11T08:05:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: runtime / single-writer ownership
+
+### Summary
+Skyrim 的 `BSInputDeviceManager` input event sink 在读档生命周期中可能串行迁移到另一条 OS 线程；逻辑单 writer 不能等同于进程全生命周期固定 thread ID。
+
+### Detail
+匹配 build `1b3ca5a2bc7a` 的实机日志证明：owner 在线程 `29128` 完成 frame token 1-359 后，Loading/Fader 建立期间由线程 `22420` 进入 token 360。旧 guard 因固定 thread ID 假设永久 `thread_drift`。正确合同由 RAII owner ticket、`tickActive` 和严格单调 frame token 共同建立：前一 ticket 已释放时允许显式、可观察的串行 thread handoff；ticket 活跃期间的异线程进入仍必须永久 fail-closed。不要仅凭函数名或单次主菜单采样声称 Skyrim 输入入口固定线程。

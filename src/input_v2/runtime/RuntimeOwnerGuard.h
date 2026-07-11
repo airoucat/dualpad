@@ -27,6 +27,7 @@ namespace dualpad::input_v2::runtime
         std::uint64_t generation{ 0 };
         std::uint64_t lastFrameToken{ 0 };
         std::uint64_t ownerThreadHash{ 0 };
+        std::uint64_t ownerThreadHandoffs{ 0 };
         std::uint64_t rejectedTicks{ 0 };
         RuntimeOwnerFailure failure{ RuntimeOwnerFailure::None };
     };

@@ -2570,17 +2570,38 @@ namespace
         guard.ResetForTests();
         {
             auto first = guard.TryEnter(20);
-            Require(first.Accepted(), "thread-drift fixture must bind on the main test thread");
+            Require(first.Accepted(), "thread-handoff fixture must bind on the main test thread");
         }
-        runtime::RuntimeOwnerFailure driftFailure = runtime::RuntimeOwnerFailure::None;
-        std::thread drift([&]() {
+        bool handoffAccepted = false;
+        std::uint64_t handoffGeneration = 0;
+        std::thread handoff([&]() {
             auto otherThread = guard.TryEnter(21);
-            driftFailure = otherThread.Failure();
+            handoffAccepted = otherThread.Accepted();
+            handoffGeneration = otherThread.Generation();
         });
-        drift.join();
+        handoff.join();
         snapshot = guard.GetSnapshot();
-        Require(driftFailure == runtime::RuntimeOwnerFailure::ThreadDrift, "second thread must be rejected as ThreadDrift");
-        Require(snapshot.degraded && snapshot.generation == 1, "thread drift must not advance runtime generation");
+        Require(handoffAccepted, "a later monotonic tick may rebind after the previous owner lease is released");
+        Require(handoffGeneration == 2, "serialized thread handoff must advance exactly one runtime generation");
+        Require(!snapshot.degraded && snapshot.generation == 2, "serialized thread handoff must preserve healthy single-writer state");
+        Require(snapshot.ownerThreadHandoffs == 1, "serialized thread handoff must remain explicitly observable");
+
+        guard.ResetForTests();
+        runtime::RuntimeOwnerFailure concurrentFailure = runtime::RuntimeOwnerFailure::None;
+        {
+            auto first = guard.TryEnter(25);
+            Require(first.Accepted(), "concurrent-writer fixture must hold the first owner lease");
+            std::thread concurrent([&]() {
+                auto otherThread = guard.TryEnter(26);
+                concurrentFailure = otherThread.Failure();
+            });
+            concurrent.join();
+        }
+        snapshot = guard.GetSnapshot();
+        Require(
+            concurrentFailure == runtime::RuntimeOwnerFailure::ThreadDrift,
+            "a different thread must be rejected while an owner lease is active");
+        Require(snapshot.degraded && snapshot.generation == 1, "concurrent writer attempt must not advance runtime generation");
 
         guard.ResetForTests();
         {

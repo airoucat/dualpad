@@ -65,6 +65,20 @@ namespace dualpad::input_v2::runtime
         }
 
         const auto currentThread = std::this_thread::get_id();
+        if (_snapshot.tickActive) {
+            return RejectLocked(
+                _ownerThread == currentThread ?
+                    RuntimeOwnerFailure::ReentrantTick :
+                    RuntimeOwnerFailure::ThreadDrift,
+                frameToken);
+        }
+        if (_snapshot.lastFrameToken != 0 && frameToken == _snapshot.lastFrameToken) {
+            return RejectLocked(RuntimeOwnerFailure::RepeatedFrameToken, frameToken);
+        }
+        if (_snapshot.lastFrameToken != 0 && frameToken < _snapshot.lastFrameToken) {
+            return RejectLocked(RuntimeOwnerFailure::NonMonotonicFrameToken, frameToken);
+        }
+
         if (!_snapshot.ownerBound) {
             _ownerThread = currentThread;
             _snapshot.ownerBound = true;
@@ -74,17 +88,17 @@ namespace dualpad::input_v2::runtime
                 _snapshot.ownerThreadHash,
                 frameToken);
         } else if (_ownerThread != currentThread) {
-            return RejectLocked(RuntimeOwnerFailure::ThreadDrift, frameToken);
-        }
-
-        if (_snapshot.tickActive) {
-            return RejectLocked(RuntimeOwnerFailure::ReentrantTick, frameToken);
-        }
-        if (_snapshot.lastFrameToken != 0 && frameToken == _snapshot.lastFrameToken) {
-            return RejectLocked(RuntimeOwnerFailure::RepeatedFrameToken, frameToken);
-        }
-        if (_snapshot.lastFrameToken != 0 && frameToken < _snapshot.lastFrameToken) {
-            return RejectLocked(RuntimeOwnerFailure::NonMonotonicFrameToken, frameToken);
+            const auto previousThreadHash = _snapshot.ownerThreadHash;
+            _ownerThread = currentThread;
+            _snapshot.ownerThreadHash = static_cast<std::uint64_t>(std::hash<std::thread::id>{}(currentThread));
+            ++_snapshot.ownerThreadHandoffs;
+            logger::warn(
+                "[DualPad][RuntimeOwner] event=rebound handoff={} previousThreadHash={} currentThreadHash={} frameToken={} generation={}",
+                _snapshot.ownerThreadHandoffs,
+                previousThreadHash,
+                _snapshot.ownerThreadHash,
+                frameToken,
+                _snapshot.generation);
         }
 
         _snapshot.tickActive = true;
