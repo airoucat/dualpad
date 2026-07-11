@@ -249,7 +249,7 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: Phase 8 在 generated docs clean check 失败，因为较早的 `xmake.lua` provenance 改动尚未由 canonical DocGen 更新 manifest hash。
 - Detail: `DualPadDocGen` 的 provenance inputs 不只有 config，还包含 `xmake.lua`、manifest/catalog/prompt/schema 源码和 replay golden files。即使 config 没变，修改这些输入也会合法改变 4 份 generated docs 的 manifest hash。
 - Related files: `tools/docgen/DualPadDocGenMain.cpp`, `xmake.lua`, `docs/generated/*.md`
-- Resolution: 接受 canonical DocGen 生成的 `7ab15ab062bdd968`，连续再运行一次确认输出稳定，并重跑 Phase 8。后续任何 provenance input slice 都必须在同一 close-out 中运行 DocGen。
+- Resolution: 接受 canonical DocGen 生成的 `7ab15ab062bdd968`，连续再运行一次确认输出稳定，并重跑 Phase 8。后续任何 provenance input slice 都必须在同一 close-out 中运行 DocGen。dirty-tree close-out 中，`git diff --exit-code -- docs/generated` 只检查 unstaged diff；确认生成结果稳定后须先暂存这 4 份 generated docs，再运行 Phase 8，并用 `git diff --cached` 审查生成物。提交后的 clean-tree gate 仍负责最终复验。
 
 ## ERR-20260711-009
 

@@ -18,6 +18,18 @@
 
 `config/DualPadMenuPolicy.ini` 仍是 checked-in 配置输入，但它通过 current config/catalog compiler 进入 input-v2；不再由旧 policy singleton 独立裁决 runtime context。
 
+## 菜单名称与上下文名称
+
+配置节名、上下文别名和 Skyrim live menu name 是三种不同标识：
+
+- `[JournalMenu]` 是配置中的 canonical context section；
+- `JournalMenu` 是 context alias；
+- `Journal Menu` 是 Skyrim SE 1.5.97 在 `UI::menuMap` 中注册的 live menu name。
+
+`ContextCatalog::ResolveAlias()` 只服务显式 context 查询，`ContextCatalog::ResolveMenuName()` 只读取 `menuNameIndex` 来分类 live UI stack。字符串只存在于 alias 集合时，不能让 live menu 获得对应 action layer。Journal entry 因此必须同时把 `Journal Menu` 登记为 menu name，解析结果必须是 `UiContextId::Journal -> JournalLayer -> legacy JournalMenu`。
+
+菜单上下文测试必须至少包含一条从 live registered name 开始的 `UiMenuObserver / MenuInstanceRegistry -> ContextResolver -> actionSetStack` 路径；不能只用 canonical context name 代替实机名称。
+
 ## 目标绑定的菜单刷新
 
 refresh request 捕获同一份 `PublishedPresentationState` 中的：

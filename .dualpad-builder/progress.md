@@ -3278,3 +3278,17 @@
 - 最终差异审查把 Axis1D 的内部 change-threshold 基准恢复为原有“实际变化时更新”，避免把 current-state 修复扩大成去抖语义变更；非 neutral `values` 仍逐 stable frame materialize，`changes` 仍只在变化时发射。收紧后四组 focused tests 均重新 exit 0。
 - 最新工作树的 `scripts/ci/run_rc_readiness.ps1` 完整 exit 0，并内含最新 Phase 8：全部 canonical targets、17 个 Python tests、10 个 mandatory replay scenarios、reviewed/generated consistency、legacy/release/config/prompt/menu/glyph gates、`DualPadDInput8Proxy`、artifact manifest、builder JSON 与 `git diff --check` 均通过。Graphify manual close-out 为 `1974 nodes / 4690 edges / 148 communities`。
 - 自动化证明当前实现与治理合同一致，但不替代原症状实机验证。下一步是提交/推送、按新 HEAD 构建部署 matching DLL，再由用户短测摇杆与 Journal L2/R2；在实测通过前 release status 继续为 `NO-GO`，native Favorites 继续默认关闭。
+
+## 2026-07-11 10:26:50 +08:00
+
+- 用户完成 matching build `4d9a43e845db` 复测：摇杆已不卡，证明逐 stable frame 保留非 neutral current-state 的修复在实机生效；Journal L2/R2 翻页仍无效，因此 release status 保持 `NO-GO`。
+- live-log evaluator 确认 build/runtime 匹配、generation 到 1800、705 次 serialized handoff、`nativeFavorites=false`，但因缺少 clean shutdown marker 返回 `INCOMPLETE`。日志中的 live target 是 `Journal Menu`，refresh 记录 `uiContext=1`（`UnknownTrackedMenu`），interaction 记录 legacy `ctx=Menu`；该证据与 catalog 静态反向追踪一致。
+- 配置本身正确：`[JournalMenu] Axis:LeftTrigger=Journal.TabLeft`、`Axis:RightTrigger=Journal.TabRight`，两项 native descriptor 分别写 `NativeAxisTarget::LeftTrigger/RightTrigger`。根因是 `ContextCatalog` 只把无空格 `JournalMenu` 放入 `menuNameIndex`；有空格的实机名称只存在于 alias index，而 `ResolveMenuName()` 按设计不读取 alias，导致 `JournalLayer` 未启用。
+- TDD 红灯用 exact live name `Journal Menu` 经 `MenuInstanceRegistry -> ContextResolver` 稳定失败为 `live Skyrim 'Journal Menu' name must resolve to the Journal context`。最小修复只补齐该 entry 的 live menu name；绿灯后 `DualPadContextResolverTests` exit 0。`DualPadInputV2Tests` 的共享 Journal fixture 也改用 live name，包含真实 checked-in trigger binding 的端到端测试重新 exit 0。
+- matching commit/DLL、canonical RC readiness、Graphify 与新一轮 Journal L2/R2 实机复测尚未完成；native Favorites 继续默认关闭。
+
+## 2026-07-11 10:32:28 +08:00
+
+- live `Journal Menu` context 修复已完成未提交 canonical close-out：`scripts/ci/run_phase8_ci.ps1` exit 0，随后 `scripts/ci/run_rc_readiness.ps1` exit 0。全部 canonical targets、17 个 Python tests、10 个 mandatory replay scenarios、reviewed/generated consistency、legacy/release/config/prompt/menu/glyph gates、proxy build、artifact manifest、builder JSON 与 diff hygiene 均通过；Graphify 为 `1974 nodes / 4690 edges / 148 communities`。
+- 首轮 Phase 8 按设计在 generated-doc clean check 拦截 provenance drift；`ContextCatalog.cpp` 是 DocGen input，4 份 generated docs 的稳定 manifest hash 从 `7ab15ab062bdd968` 更新为 `c048fdb1677fa132`。连续生成一致后暂存生成物并重跑通过；`.learnings/ERRORS.md` 的既有 `ERR-20260711-008` 已补充 dirty-tree staging 规则。
+- 上述仍是 host/build/static 证据。提交/推送后必须用新 HEAD 强制重建并部署 matching DLL/PDB，再让用户只复测 Journal L2/R2；在通过前 release status 保持 `NO-GO`，native Favorites 保持默认关闭。

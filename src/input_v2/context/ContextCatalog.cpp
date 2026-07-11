@@ -80,7 +80,7 @@ namespace dualpad::input_v2::context
                     { "MapMenu" } }),
                 entry({ UiContextId::Journal, "JournalMenu", Legacy::JournalMenu, kMenuBase, { "JournalLayer" }, { kMenuBase, "JournalLayer" },
                     { "JournalMenu", "Journal Menu" },
-                    { "JournalMenu" } }),
+                    { "JournalMenu", "Journal Menu" } }),
                 entry({ UiContextId::Dialogue, "DialogueMenu", Legacy::DialogueMenu, kMenuBase, { "DialogueLayer" }, { kMenuBase, "DialogueLayer" },
                     { "DialogueMenu", "Dialogue Menu" },
                     { "DialogueMenu" } }),

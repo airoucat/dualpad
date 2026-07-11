@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": "S-DP5-RC20-HOTFIX",
-  "updated_at": "2026-07-11T10:01:00+08:00",
+  "updated_at": "2026-07-11T10:27:00+08:00",
   "sprints": [
     {
       "id": "S-DP5-RC20-HOTFIX",
@@ -41,7 +41,7 @@
         "Windows xmake DualPad / DualPadDInput8Proxy build、release/package smoke、builder JSON、generated docs、graphify rebuild 与 git diff --check",
         "IDA 0xC1AB40 / 0xC1AB9D caller contract、matching WinDbg/VS dump、vanilla/live SWF A/B（条件触发）",
         "修复 build 1edb1949ecc4 读档时记录 event=rebound，且后续 runtime generation 持续推进、无 failure=thread_drift",
-        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；build b5899084bf6d 已把 sequence_gap 降为 0，但手测仍复现摇杆卡顿与 Journal 扳机翻页无效；连续两帧相同非 neutral stick/trigger 以及真实 Journal.TabRight current-state 回归必须通过并完成下一 matching build 复测",
+        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；build 4d9a43e845db 已确认摇杆不卡，但 live Journal Menu 曾错误落到 UnknownTrackedMenu/legacy Menu，JournalLayer 未启用；真实菜单名必须解析到 Journal context，连续 trigger current-state 必须映射 Journal.TabLeft/Right，并完成下一 matching build 复测",
         "DualPadContextResolverTests 与 runtime UI boundary static tests 证明 owner tick 不读取 RE::UI，stale UI capture 不覆盖新 event，Scaleform attach 与 HUD mutation 只从 UI task 调用",
         "physical/synthetic DPadUp、vanilla 1000 次 open/close、每支持 UI profile 200 次与 2-hour soak"
       ]

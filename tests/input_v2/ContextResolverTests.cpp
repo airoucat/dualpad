@@ -227,6 +227,27 @@ void RunContextResolverTests()
     {
         menu::MenuInstanceRegistry registry;
         ctx::ContextResolver resolver;
+        const auto stack = registry.ReconcileAndPublish(
+            menu::ObservedMenuSnapshot{
+                .completeness = menu::ObserverCompleteness::Complete,
+                .nodes = { Node(0x6050, "Journal Menu", 7, 0x6150, 0x6250) }
+            },
+            catalog);
+        const auto resolved = resolver.ResolveAndPublish(stack, ctx::GameplaySubstate::None, catalog);
+        Require(
+            resolved.uiContextId == ctx::UiContextId::Journal,
+            "live Skyrim 'Journal Menu' name must resolve to the Journal context");
+        Require(
+            resolved.legacyInputContext == InputContext::JournalMenu,
+            "live Skyrim 'Journal Menu' name must select JournalMenu bindings");
+        Require(
+            resolved.actionSetStack.layerIds == std::vector<std::string>{ "JournalLayer" },
+            "live Skyrim 'Journal Menu' name must activate JournalLayer");
+    }
+
+    {
+        menu::MenuInstanceRegistry registry;
+        ctx::ContextResolver resolver;
         auto customCatalog = catalog;
         auto* journal = const_cast<ctx::CompiledContextEntry*>(
             ctx::ContextCatalog::FindById(customCatalog, ctx::UiContextId::Journal));

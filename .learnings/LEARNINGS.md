@@ -211,3 +211,23 @@ build `32617f1ed2fa` 的实机日志出现 429 次 `transition=sequence_gap`，�
 
 ### Detail
 用户对 matching build `b5899084bf6d` 复测后仍确认摇杆卡顿与 Journal 扳机翻页无效，证伪了“timestamp/cutoff 修复已覆盖主症状”的假设。代码反向追踪显示：`LatestPadState` 每帧提供完整模拟量，但 `InteractionEngine` 只在 `currentScalar` 变化时追加 `values`；`GameplayProjectionFrame` 每代从零构造，因而相同的 held stick/trigger 在下一代被错误归零。端到端红灯稳定失败为 `unchanged stick current-state must remain present in every complete projection frame`。正确合同是：`values` 为稀疏绝对 current-state，非 neutral 值每帧保留；`changes` 才是增量 phase/value-change。不能用“没有新的 Value phase”推断轴已回零。
+
+## [LRN-20260711-005] correction
+
+**Logged**: 2026-07-11T10:26:50+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: context / live menu identity
+
+### Summary
+Context alias 与 Skyrim live menu name 是不同命名空间；菜单测试必须从 `UI::menuMap` 的真实注册名称进入 `ResolveMenuName()`。
+
+### Detail
+build `4d9a43e845db` 的实测确认摇杆已不卡，但 Journal L2/R2 仍无效。配置已正确声明 `[JournalMenu] Axis:LeftTrigger/RightTrigger -> Journal.TabLeft/TabRight`，断点却在 context classification：live 日志目标名为 `Journal Menu`，refresh 发布 `uiContext=1`，interaction 使用 legacy `Menu`。`ContextCatalog` 虽把 `Journal Menu` 放入 alias 集合，却只把 `JournalMenu` 放入 `menuNameIndex`；`ResolveMenuName()` 按设计不读取 alias index。既有测试也一直用无空格的 synthetic `JournalMenu`，因此掩盖了实机差异。后续每个特殊菜单至少要有一条 exact live-name fixture，并验证 `UiContextId`、legacy context 和 action layer 三者同时正确。
+
+### Related Files
+
+- `src/input_v2/context/ContextCatalog.cpp`
+- `tests/input_v2/ContextResolverTests.cpp`
+- `tests/input_v2/InputV2Tests.cpp`
+- `docs/menu_context_policy_current_status_zh.md`

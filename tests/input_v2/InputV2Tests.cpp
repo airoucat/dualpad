@@ -174,7 +174,7 @@ namespace
         stack.menuStackRevision = 11;
         stack.trackedMenus.push_back(menu::TrackedMenuInstance{
             .instanceId = 1,
-            .menuName = "JournalMenu",
+            .menuName = "Journal Menu",
             .menuPtr = 0x100,
             .delegatePtr = 0x200,
             .moviePtr = 0x300,
