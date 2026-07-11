@@ -7,13 +7,13 @@
 `S-DP5-RC20-HOTFIX` 在 U5 closeout 之后继续处理现场 release blockers，不重开 runtime phase。当前已落地：
 
 - continuous state 拆为 `LatestPadState` / `LatestSourceEvidence`，ordered queue 只保留 edge/boundary/recovery facts；
-- verified single runtime owner；
+- verified single active runtime owner ticket；实机已证明 loading lifecycle 允许 serialized OS-thread handoff，并发 writer 仍 fail-closed；
 - immutable `PollOutputFrame` 与 2/4/8 readers stress；
 - owner-generation pulse；
 - target-bound menu refresh；
 - transactional hook install、exact rollback 与 `UnsafePartial` fail-closed。
 
-`Game.Favorites` native route 继续默认关闭。matching dump/IDA、真实 Skyrim loop 和 soak 尚未完成，因此本文原有 RC QA baseline 不构成当前 hotfix 的 `GO` 证据；当前发布状态为 `NO-GO`。详细验证见 [../testing/rc20_runtime_validation.md](../testing/rc20_runtime_validation.md)。
+`Game.Favorites` native route 继续默认关闭。IDA Poll call-site 静态调查已完成，但修复后的 owner handoff 尚待读档复测，matching Favorites dump、真实 Skyrim loop 和 soak 也未完成。因此，本文原有 RC QA baseline 不构成当前 hotfix 的 `GO` 证据；当前发布状态为 `NO-GO`。详细验证见 [../testing/rc20_runtime_validation.md](../testing/rc20_runtime_validation.md)。
 
 ## Gate hierarchy
 

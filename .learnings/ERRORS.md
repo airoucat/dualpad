@@ -238,3 +238,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: `xmake.lua` 顶层项目描述域不能假设标准 Lua 或脚本域函数可用；本机依次确认 `pcall`、`catch`、`import` 和 `os.iorun` 都不可在该域调用。需要加载模块的逻辑应进入 target `on_load` 脚本域。
 - Related files: `xmake.lua`, `src/main.cpp`
 - Resolution: 改用 xmake 自带 `devel.git.lastcommit` 模块并 fail closed；发布构建无法解析 Git commit 时不再生成来源不明的 DLL。`main.cpp` 仍保留宏缺失时的 `unknown`，仅服务于不经过 xmake 的独立编译。
+
+## ERR-20260711-008
+
+- Logged: 2026-07-11 08:13 CST
+- Priority: medium
+- Status: resolved
+- Area: CI / generated docs provenance
+- Summary: Phase 8 在 generated docs clean check 失败，因为较早的 `xmake.lua` provenance 改动尚未由 canonical DocGen 更新 manifest hash。
+- Detail: `DualPadDocGen` 的 provenance inputs 不只有 config，还包含 `xmake.lua`、manifest/catalog/prompt/schema 源码和 replay golden files。即使 config 没变，修改这些输入也会合法改变 4 份 generated docs 的 manifest hash。
+- Related files: `tools/docgen/DualPadDocGenMain.cpp`, `xmake.lua`, `docs/generated/*.md`
+- Resolution: 接受 canonical DocGen 生成的 `7ab15ab062bdd968`，连续再运行一次确认输出稳定，并重跑 Phase 8。后续任何 provenance input slice 都必须在同一 close-out 中运行 DocGen。

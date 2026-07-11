@@ -670,6 +670,8 @@ flowchart TB
 - 未完成本单元：`NO-GO` 或 `GO WITH NATIVE FAVORITES DISABLED`。
 - 只有全部动态门禁通过、faulting mechanism 闭环且风险可接受：才可评估 `GO`。
 
+**阶段性证据（2026-07-11）：** IDA 已确认 1.5.97 `BSWin32GamepadDevice::Poll`、`0xC1AB9D` call-site、original XInput thunk、ABI/lifetime 和 `PollInputDevices` 的 3 个 caller context；静态图不能证明固定线程或每帧次数。匹配 build `1b3ca5a2bc7a` 的主菜单/读档日志确认 hook 地址与单 target refresh，同时暴露 InputFramePump 在 token 359→360 之间串行迁移 OS thread。旧 guard 将逻辑单 writer 错绑为固定 thread ID；`1edb1949ecc4` 已改为「前一 RAII ticket 释放 + 严格递增 token」才允许可观察 handoff，并继续拒绝 active ticket 期间的异线程 writer。focused InputV2、ReplayHarness 和 Windows plugin build 已通过，修复后 DLL/PDB 已部署；仍需读档复测确认 `event=rebound` 后 generation 连续。matching Favorites dump、physical/synthetic A/B、1000/200 次循环和 2 小时 soak 均未完成，因此 Unit 10 保持未勾选，状态仍为 `NO-GO`。
+
 ## 系统级影响
 
 ```mermaid
@@ -695,7 +697,7 @@ flowchart TB
 
 | 风险 | 可能性 | 影响 | 缓解 |
 | --- | --- | --- | --- |
-| owner candidate 实际不是稳定单线程 tick | 中 | 高 | 先诊断和 guard，identity 不满足即 fail-closed，不静默重绑 |
+| owner candidate 会在 loading lifecycle 串行迁移 OS thread | 已观察 | 高 | owner authority 绑定唯一 active RAII ticket，不绑定终身 thread ID；仅在 ticket 已释放且 token 严格递增时记录并允许 handoff，并发异线程仍 fail-closed |
 | latest analog 领先 bounded edge cutoff 时误用 future digital baseline | 高 | 高 | capture 返回双 cutoff；normal digital 只由 drained edge reducer 推进，current-down mask 只用于 overflow recovery |
 | `atomic<shared_ptr>` 分配成本影响 1000 Hz 路径 | 中 | 中 | 仅 output owner tick publish，不在每 HID report 分配；先 profiler，再考虑有 reader ownership 的预分配 RCU |
 | down/up 跨 generation 但落在两个 Poll 之间而完全不可见 | 中 | 高 | E-POLL 先证明 ordering 并冻结 owner-only hold-generation；证据不足时 Favorites 保持 off，Poll diagnostics 不驱动 pulse |
@@ -749,7 +751,7 @@ flowchart TB
 NO-GO
 ```
 
-原因：S0-S6 尚未实施；current Poll hook 仍持有 runtime mutation；output/context publication 尚未 coherent；没有匹配当前 build 的 Favorites dump、IDA 调用合同或真实循环闭环。
+原因：S0-S6 代码与 host/canonical 证据已落地，IDA call-site 静态合同和匹配 build 主菜单/读档样本也已取得；但最新 serialized owner handoff 尚未完成读档复测，且没有匹配当前 build 的 Favorites crash dump、physical/synthetic A/B、真实循环与 soak 闭环。native Favorites 继续默认关闭。
 
 ## 来源与参考
 

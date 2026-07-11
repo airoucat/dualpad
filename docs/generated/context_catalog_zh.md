@@ -6,7 +6,7 @@
 
 - source config root: `config/`
 - replay root: `tests/replay/golden/`
-- manifest hash: `f32ed22b59cd387e`
+- manifest hash: `7ab15ab062bdd968`
 - trace schema version: `1`
 - generator version / command: `DualPadDocGen/phase8b-v1`, `xmake run DualPadDocGen`
 
