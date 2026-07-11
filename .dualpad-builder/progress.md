@@ -3318,3 +3318,10 @@
 - 当前生产断点已静态闭合：`DualPadRuntime` 将 6 个 KBM gameplay policy facts 全部硬编码为 false；`InputFramePump` 只发布 presentation source evidence；`HidReader -> LiveInputFactProducer` 对每份 HID report 无条件记录 gamepad activity，持续刷新约 1.5 秒 lease 并清除 KBM evidence；`SyncExternalHeldContributors` 仍固定 `kbmSprintHeld=false`。因此现有 arbitration/gate consumer 存在，但 live KBM producer 与 meaningful gamepad activity 分类未闭合。
 - 本轮通过 IDA MCP 重新反编译 matching 1.5.97 unpacked EXE：`0x140C150B0` 依次 Poll 四个 input device slots，`0x140C1AB40` 从 `XInputGetState` 消费完整 button/trigger/stick current-state，`0x140ECD970` 向菜单发布单一 `_root.SetPlatform`，`0x140ED2F90` 区分真实鼠标位置与手柄光标积分。SHA-256 已从磁盘复验为 `DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD`。
 - 结论与证据已写入 `docs/reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md`，包含可直接交给 GPT 的提示词、证据置信度、最小 `input_v2` 落点和实机矩阵。本条只完成调查与文档，不声称混合操作已修复；对该能力本身保持 `NO-GO`，是否迁移整体 RC 治理状态留待确认修复 slice 时原子处理。
+
+## 2026-07-11 12:40:42 +08:00
+
+- 为“让外部 GPT 基于源码与游戏事实制定更优且可执行方案”新增正式方案请求 `docs/reviews/2026-07-11-mixed-input-solution-plan-request_zh.md`。提示词要求先审计附件证据，再比较至少 4 种 engine mode 架构，并输出精确数据结构、线程 ownership、文件清单、逐任务 TDD 红/绿步骤、canonical 命令、IDA/debugger gate、实机矩阵、commit/rollback 和发布门禁；禁止只给模糊 phase 或直接实现代码。
+- 补充 IDA 证据写入 `docs/research/skyrim_mixed_input_mode_queries_zh.md`：`0x140C15240` 已由 device slot 和 vtable `+0x38` 识别为 gamepad `IsEnabled()` 语义查询，共有 26 个 direct code xrefs；`0x140705AE0` 会据此在 gamepad response curve/deadzone/acceleration 与 KBM 时间步/灵敏度缩放之间分支，且由 gameplay/camera-like 与菜单路径共同调用。该证据修正了“engine mode 是纯 presentation 字段”的过度简化。
+- 已生成定向附件 `DualPad_Mixed_Input_Solution_Plan_Bundle_2026-07-11.zip`：根目录包含 4 份按阅读顺序命名的提示词/证据，`repository/` 包含 72 个相关 source/doc/test/toolchain 文件；ZIP 为 260,003 bytes，SHA-256 `F2A40CBF7B75E086924BBFA9576F13FE09D00BC767C7C0F1CD782B9705A69CE2`。通过 .NET ZipArchive 验证 84 entries / 76 files、Unicode 文件名、无绝对/上跳路径，且 4 份根文档逐一与 repo 源文件 SHA-256 相同。
+- 本轮只增强调查材料和外部方案约束，没有修改 runtime 代码，也不声称 mixed-input blocker 已修复。后续应先审查 GPT 输出与 repo/IDA 事实的一致性，再决定是否建立正式修复 slice。

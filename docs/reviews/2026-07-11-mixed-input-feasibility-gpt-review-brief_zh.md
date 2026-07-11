@@ -2,6 +2,8 @@
 
 本文用于把 DualPad 的既有混合输入设计、当前 `input_v2` 实现、Skyrim SE 1.5.97 的 IDA 证据和尚未闭合的风险整理到同一处，方便交给外部 GPT 做第二轮架构审查。
 
+如果目标是让 GPT 直接制定可执行的正式方案，应优先使用 [2026-07-11-mixed-input-solution-plan-request_zh.md](2026-07-11-mixed-input-solution-plan-request_zh.md)。本页继续作为现状与可行性证据摘要。
+
 调查基线：
 
 - 日期：2026-07-11
@@ -45,6 +47,7 @@
 - BSWin32GamepadDevice::Poll，VA 0x140C1AB40：在 0x140C1AB9D 调 XInputGetState(userIndex, this+0x100)，成功后同步处理 14 个按钮、两扳机和左右摇杆 current-state。
 - 菜单平台刷新，VA 0x140ECD970：检查 movie 是否支持 _root.SetPlatform，然后调用一次 _root.SetPlatform，并更新菜单平台状态。
 - 菜单光标更新，VA 0x140ED2F90：鼠标路径读取 GetCursorPos；手柄路径从内部 cursorPos 按 gamepad cursor speed 积分。只切 owner 而不做坐标 handoff 会产生跳位风险。
+- gamepad-enabled 查询，VA 0x140C15240：读取 devices[kGamepad]->IsEnabled()，有 26 个 direct code xrefs；其中 0x140705AE0 会据此选择不同二维输入变换。因此这项 engine 状态不是纯 glyph/UI 字段。
 
 当前代码断点：
 1. src/input_v2/gameplay/DualPadRuntime.cpp 构造 GameplayPolicy 时，把 mouseLookActive、keyboardMoveActive、keyboardMouseCombatActive、keyboardMouseDigitalActive、keyboardPhysicalSustainedActive、mousePhysicalSustainedActive 全部硬编码为 false。
@@ -63,6 +66,7 @@
 - HidReader 将“设备已连接/有报文”与“有意义的手柄活动”分开；只有按键 edge、超过 deadzone/enter threshold 的轴或扳机、或明确的触控活动才能刷新 presentation activity。neutral/unchanged HID 不得抢 owner。
 - owner tick 一次采样 LatestPadState、LatestKbmGameplayFacts、boundary/context/config，生成同代 GameplayPolicy，再调用现有按通道仲裁。
 - Gameplay channel owner、Skyrim engine presentation owner、DualPad prompt device family 保持不同合同；菜单只消费单一 presentation owner。
+- 但 Skyrim engine gamepad-enabled 状态的最终驱动规则仍需结合 0x140705AE0 与其它 caller 裁决，不能预设为纯 presentation owner。
 - 对 Sprint 等 sustained action 使用每 action 的来源集合 OR 聚合，不使用 family-level owner。
 
 请重点审查：
@@ -70,7 +74,7 @@
 2. LatestKbmGameplayFacts 应放 ingress latest publication、runtime config envelope，还是 owner tick 内直接从事件列表构建？怎样保证与 context/boundary 同代？
 3. meaningful gamepad activity 应如何定义，才能避免 idle HID 抢 owner，同时不让 held stick 在值不变时丢失 current-state？请区分 activity evidence 与 output current-state。
 4. mouse-look + left-stick、WASD + right-stick 等不同通道同时工作时，按通道 gate 是否是正确模型？同通道冲突应采用 KBM 优先、last meaningful source、还是可配置策略？
-5. Skyrim IsUsingGamepad / GamepadControlsCursor 是否应保持更稳定的兼容状态，而让 DualPad glyph 单独跟随最近有意义来源？有哪些 Skyrim handler 会依赖这些查询而影响 gameplay？
+5. Skyrim IsUsingGamepad / IsGamepadEnabled 有 26 个直接调用点，且 0x140705AE0 会用它选择不同二维输入变换。engine mode 应跟随 LookOwner、last meaningful source、menu owner，还是需要 source-aware hook？请比较并给出证据门禁。
 6. sustained source aggregation 是否应放 GameplayProjectionFrame、PollCommitCoordinator，还是独立 aggregator？如何处理 context change、disconnect、overflow 和丢 release？
 7. 请指出该方案中最可能的竞态、stuck key、owner 抖动、菜单回归和测试假阳性，并给出最小可审查的实现切片与测试清单。
 
@@ -99,6 +103,7 @@
 | 设计是否仍可直接照旧实现 | 概念可用，旧组件名和旧挂点已失效，必须按当前 `input_v2` 主线重接 | 高 |
 | Skyrim 底层是否允许键鼠与手柄进入同一输入周期 | 静态证据支持：输入管理器逐个 Poll 四类设备，并在之后统一分发事件 | 高 |
 | UI 是否也能采用多 owner | 不能；`_root.SetPlatform` 和菜单平台状态仍要求单一结论 | 高 |
+| engine gamepad-enabled 是否只是 presentation 状态 | 不是；它还会选择不同二维输入变换，最终治理策略尚需追加 caller 分类与实机 A/B | 高（行为）/ 中（最终策略） |
 | 当前 production 是否已经完成混合输入 | 没有；KBM gameplay facts 被硬编码为 false，空闲 HID 又持续抢 gamepad evidence | 高 |
 | 是否需要推翻当前 runtime 架构 | 不需要；现有 `GameplayProjectionFrame`、gate、immutable output 可以保留 | 高 |
 | 当前混合输入能力是否可视为可发布 | 不可。对“混合操作”这项能力本身应判 `NO-GO`，直到自动化和实机矩阵通过 | 高 |
@@ -242,6 +247,23 @@ XInputGetState(userIndex, this + 0x100)
 
 这支持旧设计中的判断：只切 `CursorOwner` 而不同步位置，可能出现光标先跳到真实鼠标位置、随后又被手柄缓存位置拉回的问题。
 
+### Engine gamepad-enabled 不是纯 presentation 字段
+
+本轮补充追踪 `0x140C15240`：
+
+- 它读取 `BSInputDeviceManager::devices[2]`；
+- `devices[2]` 对应 `kGamepad`；
+- 调用目标是 device vtable `+0x38`；
+- CommonLib 的 `BSIInputDevice` 在该位置定义 `IsEnabled()`。
+
+IDA 找到 26 个 direct code xrefs。除菜单 `SetPlatform`、LevelUp、MessageBox、SleepWait、Stats、Training 和 remap 路径外，`0x140705AE0` 会直接用该结果选择两套不同二维输入变换：
+
+- gamepad-enabled 分支包含向量归一化、deadzone、response curve、指数、独立轴缩放和 acceleration；
+- KBM 分支采用另一套时间步与灵敏度缩放；
+- 该共享变换被 camera/gameplay-like 路径和菜单路径调用。
+
+因此，旧文档中“gameplay current-state 与 UI presentation 是不同问题”的分层方向仍成立，但不能进一步推导成“Skyrim engine mode 只影响 UI”。详细证据和后续逆向门禁见 [skyrim_mixed_input_mode_queries_zh.md](../research/skyrim_mixed_input_mode_queries_zh.md)。
+
 ### IDA 证据的边界
 
 已经证明：
@@ -250,11 +272,13 @@ XInputGetState(userIndex, this + 0x100)
 - gamepad gameplay 入口消费完整 XInput current-state；
 - menu platform 最终是单一 `SetPlatform` 结论；
 - mouse/gamepad cursor 使用不同的位置来源。
+- gamepad-enabled 查询会改变实际二维输入数值处理，不只是菜单图标。
 
 尚未仅靠静态证据证明：
 
 - 所有 `PlayerControls` handler 在所有状态下都能无条件接受同帧多设备事件；
-- `IsUsingGamepad` 的每一个下游查询都只影响 presentation，不影响某些特殊 handler；
+- `IsUsingGamepad / IsGamepadEnabled` 的 26 个 caller 应如何按 gameplay、camera、menu、cursor、remap 分类；
+- `0x140705AE0` 的正式类/方法身份，以及 mouse/right-stick 两种来源到达时的动态参数；
 - gameplay、paused、loading 各状态下完整的动态 event ordering；
 - 特定第三方输入 mod 是否会额外屏蔽某一设备。
 
@@ -457,7 +481,7 @@ verified runtime owner tick
 
 presentation/prompt
   -> menu PresentationOwner: single value
-  -> engine compatibility owner: conservative, explicitly governed
+  -> engine gamepad-enabled: explicit unresolved policy, gated by caller/transform evidence
   -> prompt device family: last meaningful source, not raw HID cadence
 ```
 
@@ -535,4 +559,5 @@ presentation/prompt
 3. 历史文档中的旧类名和旧挂点已经失效，不能恢复旧 authority。
 4. 当前 `input_v2` 消费端大体存在，但 KBM facts producer 和 meaningful gamepad activity 分类没有闭合。
 5. 现有自动化测试没有覆盖真实的 idle-HID 交错模型，用户实机结论应优先。
-6. 在上述事实链和实机矩阵闭合前，只能说“架构可行”，不能说“混合操作已实现”。
+6. engine gamepad-enabled 会参与实际输入变换，不能作为纯 presentation 字段处理；正式计划必须先裁决或调查该全局状态。
+7. 在上述事实链和实机矩阵闭合前，只能说“架构可行”，不能说“混合操作已实现”。

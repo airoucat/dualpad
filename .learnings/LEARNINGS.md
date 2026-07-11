@@ -268,3 +268,26 @@ build `4d9a43e845db` 的实测确认摇杆已不卡，但 Journal L2/R2 仍无�
 - `src/input_v2/gameplay/DualPadRuntime.cpp`
 - `tests/input_v2/InputV2Tests.cpp`
 - `docs/reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md`
+
+## [LRN-20260711-008] correction
+
+**Logged**: 2026-07-11T12:40:42+08:00
+**Priority**: high
+**Status**: open
+**Area**: Skyrim engine mode / mixed input / IDA
+
+### Summary
+
+Skyrim 的 gamepad-enabled 查询不是纯 presentation 字段；它还会选择不同的二维输入变换，不能在 mixed-input 方案中未经证据就固定或跟随任意全局 owner。
+
+### Detail
+
+补充 IDA 调查确认 `0x140C15240` 读取 `BSInputDeviceManager::devices[kGamepad]->IsEnabled()`，并有 26 个 direct code xrefs。`0x140705AE0` 会根据该结果在 gamepad response curve/deadzone/acceleration 与 KBM 时间步/灵敏度缩放之间分支，且被 camera/gameplay-like 与菜单路径共同调用。这修正了“engine presentation 可以完全独立、稳定固定，glyph 另算”的过度简化。正式方案必须先分类这些 caller，或用动态 A/B 证明选定的 engine mode 策略；prompt family 可以独立，但不能据此假设 engine mode 仅影响 UI。
+
+### Related Files
+
+- `src/input_v2/presentation/SkyrimCompatibilitySurface.cpp`
+- `docs/research/skyrim_mixed_input_mode_queries_zh.md`
+- `docs/reviews/2026-07-11-mixed-input-solution-plan-request_zh.md`
+- `lib/commonlibsse-ng/include/RE/B/BSIInputDevice.h`
+- `lib/commonlibsse-ng/include/RE/B/BSInputDeviceManager.h`

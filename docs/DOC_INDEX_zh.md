@@ -41,6 +41,8 @@
 - [runtime_backpressure_contract.md](runtime_backpressure_contract.md)
 - [testing/rc20_runtime_validation.md](testing/rc20_runtime_validation.md)
 - [research/skyrim_xinput_poll_callsite.md](research/skyrim_xinput_poll_callsite.md)
+- [research/skyrim_mixed_input_mode_queries_zh.md](research/skyrim_mixed_input_mode_queries_zh.md)（多设备 Poll、engine gamepad-enabled 查询和二维输入变换的 IDA 证据）
+- [reviews/2026-07-11-mixed-input-solution-plan-request_zh.md](reviews/2026-07-11-mixed-input-solution-plan-request_zh.md)（要求外部 GPT 制定可执行正式方案的主提示词）
 - [reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md](reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md)（专项可行性与外部审查材料，不替代 current truth）
 - [menu_context_policy_current_status_zh.md](menu_context_policy_current_status_zh.md)
 - [authoritative-baseline/README.md](authoritative-baseline/README.md)
