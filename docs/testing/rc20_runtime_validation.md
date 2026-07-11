@@ -42,6 +42,7 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 | 匹配 build 主菜单启动 | 已通过 | build `1b3ca5a2bc7a` 记录 runtime、hook 地址、`nativeFavorites=false`、owner generation 和单 target refresh |
 | 初次读档 owner lifecycle | 已完成并修复 blocker | token 359→360 时 OS thread 迁移；`1edb1949ecc4` 已改为 serialized ticket handoff |
 | build `71c57b30ae0a` 安全 smoke | 已执行，发现 blocker | generation 到 3000、1519 次 serialized handoff、无 owner degraded / queue overflow；用户观察到摇杆卡顿、进入菜单后部分按键无响应，gate off 下收藏菜单无法打开；日志有 31 次伪 `sequence_gap` |
+| build `b5899084bf6d` 修复复测 | 已执行，仍有 blocker | 44 秒 matching log 无 `sequence_gap` / queue overflow / owner degraded，只有 1 次 `explicit_reset`；用户仍观察到摇杆卡顿与 Journal 扳机翻页无效。该结果证伪“排序/配对修复已覆盖用户主症状” |
 | Poll capped diagnostics | 辅助样本 | 256 组 enter/exit、单线程、`inFlight <= 1`、约 16/17/18 ms；raw log 已被覆盖且缺 build commit，不作为 release proof |
 | matching crash dump | 未执行 | 当前没有与本轮 DLL/PDB/log/config/SWF 匹配的 `.dmp` 或 Crash Logger report |
 | physical/synthetic DPadUp A/B | 未执行 | 需要用户实机输入与 matching artifact capture |
@@ -50,7 +51,7 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 
 完整静态证据见 [../research/skyrim_xinput_poll_callsite.md](../research/skyrim_xinput_poll_callsite.md)。
 
-日志证明 `event=rebound` 可继续推进 generation，未再出现 `failure=thread_drift`。31 次 `sequence_gap` 均没有对应的设备 gap 或 queue overflow；已证实根因之一是 `FrameAssembler` 把独立 producer 的采集时间戳当成跨 producer 顺序权威。另一个已证实的合同缺口是 owner tick 在任意 handoff thread 上直接执行 `UiMenuObserver::Capture()`，读取无同步的 live `RE::UI::menuStack`；这与高频 menu stack/context revision 变化和用户观察到的菜单后失灵一致，但不能单凭日志量化各现象的因果占比。两项修复均已补 host/static 回归，尚待新 build 实机复测。
+build `b5899084bf6d` 证明 timestamp/cutoff 修复已消除伪 `sequence_gap` storm，UI capture/refresh 也保持可用，但用户主症状没有消失。后续端到端红灯定位到另一条独立断链：`LatestPadState` 每帧提供完整轴样本，`InteractionEngine` 却只在数值变化时写 `ResolvedActionFrame.values`；下游每代从零新建 projection，因此 held stick/trigger 会在首个非零 frame 后回零。最小修复把 `values` 与 `changes` 解耦：非 neutral 绝对值逐 stable frame 保留，`Value` phase 仍只在变化时产生。该修复已通过 host 端连续两帧摇杆/扳机与真实 `Journal.TabRight` 绑定测试，仍需 matching build 实机复测。
 
 ## 最简手工验证
 
@@ -84,4 +85,4 @@ python scripts/dev/check_rc20_live_log.py --expect-commit <当前 HEAD> --json
 
 ## 当前发布判定
 
-当前为 `NO-GO`。`enable_native_favorites=false` 继续是默认配置。build `71c57b30ae0a` 已完成读档安全 smoke，证明 serialized owner handoff 不再触发 `thread_drift`，但用户仍观察到摇杆卡顿和菜单后按键失灵；跨 producer timestamp 误判与 owner 直接读取 live UI 两项合同已修复，尚待新 build 实机复测。matching dump、Favorites loop 和 soak 也未完成。只有动态证据完成且无 blocker 时，才可评估 `GO WITH NATIVE FAVORITES DISABLED`；未完成真实 Favorites 循环和 crash dump 闭环不得给 `GO`。
+当前为 `NO-GO`。`enable_native_favorites=false` 继续是默认配置。build `b5899084bf6d` 已证实伪 `sequence_gap` storm 消失，但用户仍观察到摇杆卡顿和 Journal 扳机翻页无效；连续 current-state 修复只有 host 证据，尚未完成 matching build 实机复测。matching dump、Favorites loop 和 soak 也未完成。只有动态证据完成且无 blocker 时，才可评估 `GO WITH NATIVE FAVORITES DISABLED`；未完成真实 Favorites 循环和 crash dump 闭环不得给 `GO`。

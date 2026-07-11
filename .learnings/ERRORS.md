@@ -260,3 +260,13 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: 为阻止未配对 device marker 发布 stable frame，首次实现直接丢弃 pending 期间的 ordered pad facts，破坏了正常同批 marker/source 后的 Menu D-pad sustained output。
 - Detail: ordered pad facts 可以在 pending window 内暂存；禁止的是配对完成前 `FlushWindow()`，不是禁止收集事实。正常 capture 常按 `Manifest -> DeviceFamilyChanged -> UiSnapshot -> PadSnapshot` 排列，并在同一次 `Assemble()` 末尾用 latest source 完成配对。提前丢弃 pad 会让 source 虽然正常配对，D-pad edge 仍永久消失。
 - Resolution: pending window 保留 ordered facts但不更新 durable `_latestFacts`，`FlushWindow()` 在 marker pending 时不发布；matching source 清除 pending 后正常提交整窗。若 newer device marker 在旧 pair 完成前到达，则丢弃旧 unpaired window，避免把事实跨 boundary 重解释。`DualPadIngressTests` 与触发失败的 `DualPadInputV2Tests` 均重新通过。
+
+## ERR-20260711-010
+
+- Logged: 2026-07-11 10:06 CST
+- Priority: medium
+- Status: resolved
+- Area: tooling / canonical verification
+- Summary: 两次启动 RC canonical PowerShell 门禁时误把外层 `shell_command` timeout 设为 1 秒，命令被工具以 exit 124 提前终止。
+- Detail: `run_phase8_ci.ps1` / `run_rc_readiness.ps1` 本身需要数十秒；短时工具 yield 应使用异步 cell + `wait`，不能把进程 hard timeout 当作 yield。exit 124 只表示外层工具终止，不能记为测试失败或通过。
+- Resolution: canonical 门禁统一使用至少 600000 ms hard timeout；需要保持进度更新时，让 `shell_command` 返回 running cell，再以不超过 60 秒的 `wait` 轮询。

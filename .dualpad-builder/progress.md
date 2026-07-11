@@ -3258,3 +3258,23 @@
 - cutoff 安全复核又补出 2 个 TDD 红灯：未配对 marker 后的 `LatestPadState` 会绕过 source 延迟发布 stable，ordered `PadSnapshot` 也会提前发布。最初直接拒绝 pending 窗口内的 ordered pad facts，随后 Phase 8 的 live Menu D-pad fixture 正确拦截该过宽修法；最终实现允许 pending window 暂存同批 ordered facts，但 `FlushWindow()` 在配对完成前不发布，newer marker 会丢弃无法配对的旧窗口，`LatestPadState` 也延迟 generation。matching revision 到达后才一次释放 source、ordered facts 与 latest pad。
 - 本轮前一版实现已通过 Phase 8 与未启用 clean-manifest 的 RC readiness，包含 17 个 Python tests、10 个 replay scenarios、完整 canonical targets 与 Graphify `1972 nodes / 4674 edges / 148 communities`。由于随后新增了上述 cutoff 安全修复，这组结果只作为中间证据；最终 canonical / Graphify 必须在最新工作树上重跑。
 - 最终实现重新通过 `scripts/ci/run_phase8_ci.ps1` 与未启用 clean-manifest 的 `scripts/ci/run_rc_readiness.ps1`：完整 canonical targets 全绿，17 个 Python tests 通过，10 个 mandatory replay scenarios 全部 no diff，reviewed/generated docs、legacy/release/U4/U5 static gates、proxy build、artifact manifest 与 `git diff --check` 均通过。最终 Graphify 为 `1973 nodes / 4681 edges / 147 communities`。提交后仍需重建 matching DLL/PDB 并运行 `-ExpectCleanManifest`；实机复测未完成，release status 保持 `NO-GO`。
+
+## 2026-07-11 10:00:00 +08:00
+
+- 用户完成 matching build `b5899084bf6d` 复测并明确报告：摇杆依然卡顿，Journal 菜单扳机翻页依然无效。该主观结果优先于 live-log evaluator 的结构性 `PASS`，release status 继续为 `NO-GO`。
+- matching log 记录 build/runtime 正确、`nativeFavorites=false`、generation 推进、898 次 serialized owner handoff、0 次 `sequence_gap`、1 次 `explicit_reset`、36 次普通 boundary transition、0 次 queue overflow / owner permanent degraded，并有正常 screenshot service shutdown。timestamp/cutoff 修复已消除旧 storm，但没有解决用户主症状。
+- 根因反向追踪闭合为 `LatestPadState -> InteractionEngine -> GameplayProjectionFrame` 语义错配：latest 每帧提供完整 axes/triggers，`InteractionEngine` 却把 `ResolvedActionFrame.values` 与 `Value` phase 一起限制为 change-only；projection 每代从零构造，导致 held stick/trigger 在下一代回零。该断点同时解释摇杆跳变和全按下扳机只短暂存在一代、容易被 Skyrim Poll 错过。
+- TDD 红灯在同一 runtime/context 连续输入两帧相同 `RightStickX=0.5`、`RightTrigger=1.0`，旧代码稳定失败为 `unchanged stick current-state must remain present in every complete projection frame`。最小修复后，非 neutral Axis1D/Axis2D absolute value 每个 stable frame 都进入 `values`，只有实际变化才进入 `changes`；neutral 缺省仍投影为零。
+- focused `DualPadInputV2Tests` 已两次 exit 0；新增真实 checked-in `JournalMenu -> Axis:RightTrigger -> Journal.TabRight -> NativeAxisTarget::RightTrigger` 连续两帧回归也通过。canonical、Graphify、matching build 部署与新一轮实机复测尚未执行。
+
+## 2026-07-11 10:08:38 +08:00
+
+- 持续模拟量 current-state 修复已通过 focused 验证：`DualPadInputV2Tests`、`DualPadGameplayProjectionTests`、`DualPadPropertyTests`、`DualPadIngressTests` 均 exit 0；覆盖相同非 neutral stick/trigger 连续帧、真实 Journal `RightTrigger -> Journal.TabRight` 绑定以及 neutral release 回零。
+- `scripts/ci/run_phase8_ci.ps1` 在当前工作树完整 exit 0：canonical targets、DocGen、reviewed/generated consistency、legacy/release/config/prompt/menu/glyph gates 与 generated docs clean check 均通过。首次扩大并行编译命中本机已知 MSVC `C3859` / `C1076`（Windows 1455 pagefile limit），按既有低并发策略 `-j 4` 重试后通过；该资源错误不计为产品测试失败。
+- 以上仍是自动化证据。matching commit/DLL 部署与用户短复测尚未完成，release status 保持 `NO-GO`，`enable_native_favorites=false` 不变。
+
+## 2026-07-11 10:12:32 +08:00
+
+- 最终差异审查把 Axis1D 的内部 change-threshold 基准恢复为原有“实际变化时更新”，避免把 current-state 修复扩大成去抖语义变更；非 neutral `values` 仍逐 stable frame materialize，`changes` 仍只在变化时发射。收紧后四组 focused tests 均重新 exit 0。
+- 最新工作树的 `scripts/ci/run_rc_readiness.ps1` 完整 exit 0，并内含最新 Phase 8：全部 canonical targets、17 个 Python tests、10 个 mandatory replay scenarios、reviewed/generated consistency、legacy/release/config/prompt/menu/glyph gates、`DualPadDInput8Proxy`、artifact manifest、builder JSON 与 `git diff --check` 均通过。Graphify manual close-out 为 `1974 nodes / 4690 edges / 148 communities`。
+- 自动化证明当前实现与治理合同一致，但不替代原症状实机验证。下一步是提交/推送、按新 HEAD 构建部署 matching DLL，再由用户短测摇杆与 Journal L2/R2；在实测通过前 release status 继续为 `NO-GO`，native Favorites 继续默认关闭。

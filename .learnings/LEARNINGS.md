@@ -198,3 +198,16 @@ Skyrim 的 `BSInputDeviceManager` input event sink 在读档生命周期中可�
 
 ### Detail
 build `32617f1ed2fa` 的实机日志出现 429 次 `transition=sequence_gap`，但没有设备 sequence-gap marker 或 queue overflow。`DeviceFamilyPublisher` 标签同时承载 HID 与键鼠线程在不同采集时钟下生成的 marker，时间戳倒退并不表示数据丢失。另一个独立问题是 latest-wins `LatestSourceEvidence` 可以描述仍在本轮 capture cutoff 后方的 marker；这种 revision 超前必须延迟，不能当作 pairing corruption，且配对完成前 latest/ordered pad facts 不能发布新 boundary 的 stable frame。后续修改 ingress 时，应以 seq 检测真实顺序损坏，以时间戳全局 max 推进 evaluation time，并显式区分“latest 领先 cutoff”和“同一 ordered pair 不匹配”。
+
+## [LRN-20260711-004] correction
+
+**Logged**: 2026-07-11T10:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: interaction / analog current-state
+
+### Summary
+`ResolvedActionFrame.values` 与 `changes` 不能共用 change-only 发射条件；非 neutral axis/trigger absolute values 必须逐 stable frame 保留。
+
+### Detail
+用户对 matching build `b5899084bf6d` 复测后仍确认摇杆卡顿与 Journal 扳机翻页无效，证伪了“timestamp/cutoff 修复已覆盖主症状”的假设。代码反向追踪显示：`LatestPadState` 每帧提供完整模拟量，但 `InteractionEngine` 只在 `currentScalar` 变化时追加 `values`；`GameplayProjectionFrame` 每代从零构造，因而相同的 held stick/trigger 在下一代被错误归零。端到端红灯稳定失败为 `unchanged stick current-state must remain present in every complete projection frame`。正确合同是：`values` 为稀疏绝对 current-state，非 neutral 值每帧保留；`changes` 才是增量 phase/value-change。不能用“没有新的 Value phase”推断轴已回零。

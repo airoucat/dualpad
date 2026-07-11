@@ -79,6 +79,7 @@ Ingress overflow 可以丢弃 volatile input backlog，但不能把最新边界�
 - hysteresis 归属 gameplay owner enter / sustain threshold：例如 look / move / trigger 的 enter threshold 与 sustain threshold。`Axis2D` value 本身保持无状态 absolute value。
 - `Axis2D` 由同一 action 下 X / Y 两条 stick axis binding 合并成一个 value snapshot；同一帧最多输出一条该 action 的 `Axis2D` value。
 - 语义是 absolute，不是 delta。delta / pointer intent 只能在上游 evidence 或后续 consumer 中解释，不能污染 action value。
+- `ResolvedActionFrame.values` 是稀疏绝对 current-state：非 neutral 值必须在每个 stable frame 中保留，即使数值未变化；`ResolvedActionFrame.changes` 才是增量 phase/value-change 列表。没有新的 `Value` phase 不等于轴已回零。
 - timestamp / coalescing：若 frame 有 `monotonicUs`，coalesced value 与 `Value` phase 使用该 evaluation timestamp；否则使用本帧最新 component sample timestamp。
 
 ### Chord timestamp contract

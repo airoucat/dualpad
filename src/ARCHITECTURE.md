@@ -58,6 +58,8 @@ ordered ingress 的唯一顺序权威是 hub 锁内分配的 `IngressEvent.seq`�
 
 负责 compiled action graph、control samples、interaction state 和 resolved action frame。
 
+`ResolvedActionFrame.values` 是面向 current-state materialization 的稀疏绝对快照：经过 neutral 归一化后仍非零的 axis/trigger 必须在每个 stable frame 中继续出现，即使数值没有变化；归零可以由显式 zero change 或缺省值表达。`ResolvedActionFrame.changes` 才是 phase/edge 增量，未出现新的 `Value` phase 不代表物理轴已经回零。
+
 ### Gameplay projection / poll output
 
 - `src/input_v2/gameplay/*`

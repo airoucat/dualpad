@@ -20,6 +20,7 @@ Generated facts 固定由 `DualPadDocGen` 输出到：
 其中：
 
 - axes/triggers/current physical mask latest-wins，不按 HID report 排队；
+- interaction `values` 保留逐 stable frame 的非 neutral 绝对轴状态，`changes` 只保留实际变化；
 - digital edge、boundary、reset/overflow 进入 bounded ordered queue；
 - `InputFramePump` 经过 `RuntimeOwnerGuard` 后是唯一 mutation owner；
 - owner 一次发布完整 `PollOutputFrame`，任意 Poll reader 只 acquire/serialize；

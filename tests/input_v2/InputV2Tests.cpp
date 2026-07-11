@@ -783,6 +783,19 @@ namespace
             const auto resolved = engine.Resolve(analogCompiled.graph, stack, frame, state);
             Require(resolved.values.size() == 2, "ExactOnly axis bindings must resolve independently when multiple axes are active");
             Require(resolved.changes.size() == 2, "each active axis binding must emit a Value phase change");
+
+            legacy.monotonicUs = 1'626;
+            for (auto& sample : legacy.samples) {
+                sample.timestampUs = 1'626;
+            }
+            const auto unchangedFrame = actions::LegacyInteractionInputAdapter::BuildKernelFrame(legacy);
+            const auto unchangedResolved = engine.Resolve(analogCompiled.graph, stack, unchangedFrame, state);
+            Require(
+                unchangedResolved.values.size() == 2,
+                "unchanged non-neutral axes must remain in the absolute current-state snapshot");
+            Require(
+                unchangedResolved.changes.empty(),
+                "unchanged non-neutral axes must not repeat Value phase changes");
         }
 
         state.Reset();
@@ -2091,6 +2104,40 @@ namespace
         Require(
             result.projectionFrame.gamepadPlan.analog.rightTrigger == 1.0f,
             "Game.RightTrigger must resolve from frame-bound active config graph");
+
+        frame.firstSeq = 301;
+        frame.lastSeq = 301;
+        frame.facts.monotonicUs = 301'000;
+        frame.facts.controlSamples = {
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 0.5f, 301'000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger), 1.0f, 301'000)
+        };
+
+        RecordingPollOutputExecutor unchangedExecutor;
+        const auto unchanged = runtime.ProcessAssembledFrameForTests(frame, unchangedExecutor);
+        Require(unchanged.output.outputApplySucceeded, "unchanged current-state frame must still apply output");
+        Require(
+            unchanged.projectionFrame.gamepadPlan.analog.lookX == 0.5f,
+            "unchanged stick current-state must remain present in every complete projection frame");
+        Require(
+            unchanged.projectionFrame.gamepadPlan.analog.rightTrigger == 1.0f,
+            "unchanged trigger current-state must remain present in every complete projection frame");
+
+        frame.firstSeq = 302;
+        frame.lastSeq = 302;
+        frame.facts.monotonicUs = 302'000;
+        frame.facts.controlSamples = {
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightStickX), 0.0f, 302'000),
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger), 0.0f, 302'000)
+        };
+        RecordingPollOutputExecutor neutralExecutor;
+        const auto neutral = runtime.ProcessAssembledFrameForTests(frame, neutralExecutor);
+        Require(
+            neutral.projectionFrame.gamepadPlan.analog.lookX == 0.0f,
+            "stick current-state must return to neutral without sticky carry");
+        Require(
+            neutral.projectionFrame.gamepadPlan.analog.rightTrigger == 0.0f,
+            "trigger current-state must return to neutral without sticky carry");
     }
 
     void RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests()
@@ -2192,6 +2239,56 @@ namespace
         Require(
             scrollGlyph.buttonArtToken == "360_DPAD_DOWN",
             "live Menu ScrollDown legacy glyph descriptor must preserve the compiled ButtonArt token");
+    }
+
+    void RunRuntimeFrameEnvelopeKeepsJournalTriggerCurrentStateTests()
+    {
+        gameplay::DualPadRuntime runtime;
+        ResetRuntimeSurfaceState(runtime);
+        LoadRuntimeConfigForGameplayBindingTests();
+
+        const auto contextSnapshot = context::ContextResolver::GetSingleton().GetPublishedSnapshot();
+        Require(
+            contextSnapshot.legacyInputContext == dualpad::input::InputContext::JournalMenu,
+            "Journal trigger current-state test needs the JournalMenu context");
+        const auto bundle = config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
+        Require(bundle != nullptr, "Journal trigger current-state test needs an active config bundle");
+
+        ingress::AssembledFactFrame frame{};
+        frame.kind = ingress::AssembledFrameKind::Stable;
+        frame.firstSeq = 410;
+        frame.lastSeq = 410;
+        frame.boundaryKey = ingress::IngressBoundaryKey{
+            static_cast<std::uint32_t>(bundle->manifestEpoch),
+            contextSnapshot.contextRevision,
+            contextSnapshot.menuStackRevision,
+            1
+        };
+        frame.facts.manifestEpoch = frame.boundaryKey.manifestEpoch;
+        frame.facts.contextRevision = frame.boundaryKey.contextRevision;
+        frame.facts.menuStackRevision = frame.boundaryKey.menuStackRevision;
+        frame.facts.deviceFamilyRevision = frame.boundaryKey.deviceFamilyRevision;
+        frame.facts.monotonicUs = 410'000;
+        frame.facts.controlSamples = {
+            AxisSample(static_cast<std::uint32_t>(dualpad::input::PadAxisId::RightTrigger), 1.0f, 410'000)
+        };
+
+        RecordingPollOutputExecutor firstExecutor;
+        const auto first = runtime.ProcessAssembledFrameForTests(frame, firstExecutor);
+        Require(!first.RuntimeHealthDegraded(), "Journal trigger frame must not degrade before projection");
+        Require(
+            first.projectionFrame.gamepadPlan.analog.rightTrigger == 1.0f,
+            "Journal.TabRight must project the first trigger sample to native current-state");
+
+        frame.firstSeq = 411;
+        frame.lastSeq = 411;
+        frame.facts.monotonicUs = 411'000;
+        frame.facts.controlSamples.front().timestampUs = 411'000;
+        RecordingPollOutputExecutor unchangedExecutor;
+        const auto unchanged = runtime.ProcessAssembledFrameForTests(frame, unchangedExecutor);
+        Require(
+            unchanged.projectionFrame.gamepadPlan.analog.rightTrigger == 1.0f,
+            "held Journal.TabRight must remain nonzero in every complete projection frame");
     }
 
     void RunRuntimeFrameEnvelopeResolvesMenuLeftStickAsAxis2DTests()
@@ -2976,6 +3073,7 @@ int main()
         RunContextEpochChangeHardResetsOnceTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForGameplayBindingsTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuBindingsTests();
+        RunRuntimeFrameEnvelopeKeepsJournalTriggerCurrentStateTests();
         RunRuntimeFrameEnvelopeResolvesMenuLeftStickAsAxis2DTests();
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests();
         RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();

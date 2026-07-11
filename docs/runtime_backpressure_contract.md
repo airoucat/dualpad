@@ -28,6 +28,17 @@ latest analog 可以领先仍在 backlog 中的同 context/device digital edge�
 
 `LatestSourceEvidence` 也可能已经描述仍位于本轮 ordered cutoff 之后的 `DeviceFamilyChanged` marker。此时 assembler 必须延迟 latest generation，直到匹配 revision 的 marker 被消费；不能把“latest 快照领先 capture cutoff”当作 marker mismatch 或 `ExplicitReset`。配对完成前，latest pad 与 ordered pad facts 均不得生成新 boundary 的 `Stable` frame。真正同一 ordered pairing 内的不一致仍保持 fail-closed。
 
+## 连续 current-state materialization
+
+`LatestPadState` 为每个 stable owner frame 提供完整 axes/triggers 样本。interaction 输出必须区分快照与事件：
+
+- `ResolvedActionFrame.values` 是稀疏绝对 current-state；所有非 neutral axis/trigger 值必须逐 stable frame 保留，即使本轮数值未变化；
+- `ResolvedActionFrame.changes` 只记录实际 phase/value change，不因 held axis 重复产生 `Value` phase；
+- neutral 可以由显式 zero change 或 values 中缺省表达，下游完整 `GameplayProjectionFrame` 在缺省时使用零值；
+- 下游不得把“本轮没有新的 `Value` phase”解释成“物理轴已回零”。
+
+该分离保证 held stick 与 held trigger 在每个 immutable `PollOutputFrame` 中保持 current-state，同时避免把连续状态误塞入 ordered edge queue。
+
 ## Budget 与调度
 
 - pending、high-water、budget 和 drained telemetry 的单位统一为 event。

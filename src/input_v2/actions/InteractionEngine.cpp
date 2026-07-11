@@ -484,7 +484,9 @@ namespace dualpad::input_v2::actions
             });
 
             for (const auto* bucket : ordered) {
-                if (!bucket->changed) {
+                // values is sparse absolute current-state; changes remains the
+                // delta stream. Keep held non-neutral axes in every frame.
+                if (!bucket->changed && bucket->x == 0.0f && bucket->y == 0.0f) {
                     continue;
                 }
                 const auto timestampUs = frameTimestampUs != 0 ? frameTimestampUs : bucket->timestampUs;
@@ -500,7 +502,9 @@ namespace dualpad::input_v2::actions
                     .y = NormalizeAxisValue(bucket->y),
                     .timestampUs = timestampUs
                 });
-                EmitValue(resolved, bucket->actionId, bucket->bindingId, timestampUs);
+                if (bucket->changed) {
+                    EmitValue(resolved, bucket->actionId, bucket->bindingId, timestampUs);
+                }
             }
         }
     }
@@ -569,8 +573,7 @@ namespace dualpad::input_v2::actions
                     AccumulateAxis2D(axis2DBuckets, binding, *primary, value, changed, now);
                     break;
                 }
-                if (changed) {
-                    state.currentScalar = value;
+                if (changed || value != 0.0f) {
                     resolved.values.push_back(ActionValueSnapshot{
                         .actionId = binding.actionId,
                         .kind = ActionValueKind::Axis1D,
@@ -579,6 +582,9 @@ namespace dualpad::input_v2::actions
                         .y = 0.0f,
                         .timestampUs = now
                     });
+                }
+                if (changed) {
+                    state.currentScalar = value;
                     Emit(resolved, binding, ActionPhase::Value, now);
                 }
                 break;

@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": "S-DP5-RC20-HOTFIX",
-  "updated_at": "2026-07-11T09:46:00+08:00",
+  "updated_at": "2026-07-11T10:01:00+08:00",
   "sprints": [
     {
       "id": "S-DP5-RC20-HOTFIX",
@@ -22,7 +22,7 @@
       "status": "in_progress",
       "exit_criteria": [
         "src/input_v2 保持唯一 runtime mainline，Poll hook 只 acquire/serialize immutable PollOutputFrame",
-        "连续 axes/triggers 使用 complete-generation latest publication；current-down mask 仅作 overflow recovery baseline，ordered queue 只保留 edge、pulse request 和 boundary",
+        "连续 axes/triggers 使用 complete-generation latest publication；非 neutral absolute values 在每个 stable frame 保留，changes 只记录实际变化；current-down mask 仅作 overflow recovery baseline，ordered queue 只保留 edge、pulse request 和 boundary",
         "runtime mutation 由经过验证的唯一 owner tick 推进，pulse 不再以 Poll 调用次数为时钟",
         "runtime 单 writer 由唯一 active RAII ticket、tickActive 与严格单调 frame token 证明；实机允许已释放 ticket 之间的可观察 serialized thread handoff，并发异线程仍 fail-closed",
         "runtime owner 不获得 UI authority；UiMenuObserver live capture、Scaleform attach、HUD mutation 与 menu refresh 只在 AddUITask 内执行，pending/stale capture 有 fail-closed event-sequence 合同",
@@ -41,7 +41,7 @@
         "Windows xmake DualPad / DualPadDInput8Proxy build、release/package smoke、builder JSON、generated docs、graphify rebuild 与 git diff --check",
         "IDA 0xC1AB40 / 0xC1AB9D caller contract、matching WinDbg/VS dump、vanilla/live SWF A/B（条件触发）",
         "修复 build 1edb1949ecc4 读档时记录 event=rebound，且后续 runtime generation 持续推进、无 failure=thread_drift",
-        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；实机 build 32617f1ed2fa 暴露的同一粗粒度 IngressSource 跨线程/时钟 timestamp regression 与 latest-source cutoff 超前不得再制造 sequence_gap / explicit_reset storm",
+        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；build b5899084bf6d 已把 sequence_gap 降为 0，但手测仍复现摇杆卡顿与 Journal 扳机翻页无效；连续两帧相同非 neutral stick/trigger 以及真实 Journal.TabRight current-state 回归必须通过并完成下一 matching build 复测",
         "DualPadContextResolverTests 与 runtime UI boundary static tests 证明 owner tick 不读取 RE::UI，stale UI capture 不覆盖新 event，Scaleform attach 与 HUD mutation 只从 UI task 调用",
         "physical/synthetic DPadUp、vanilla 1000 次 open/close、每支持 UI profile 200 次与 2-hour soak"
       ]
