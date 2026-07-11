@@ -37,7 +37,15 @@ HANDOFF_RE = re.compile(
     r"event=rebound handoff=(\d+).*?currentThreadHash=(\d+).*?generation=(\d+)"
 )
 DEGRADED_RE = re.compile(r"\[RuntimeOwner\].*?event=degraded failure=([^\s]+)")
-REFRESH_RE = re.compile(r"\[MenuRefreshTrace\].*?refreshed=(\d+)")
+REFRESH_RE = re.compile(
+    r"\[MenuRefreshTrace\].*?refreshed=(\d+).*?notified=(\d+)"
+)
+UI_CAPTURE_RE = re.compile(
+    r"\[UiSnapshot\].*?event=captured.*?eventSeq=(\d+).*?published=(true|false)",
+    re.IGNORECASE,
+)
+
+MIN_SMOKE_GENERATION = 600
 
 
 def _short_commit(value: str) -> str:
@@ -90,6 +98,29 @@ def evaluate_live_log(
     latest_generation = max((generation for _, generation, _ in ticks), default=0)
     if latest_generation == 0:
         incomplete.append("runtime generation tick is missing")
+    elif latest_generation < MIN_SMOKE_GENERATION:
+        incomplete.append(
+            "runtime smoke is too short: "
+            f"latest generation {latest_generation}, require at least {MIN_SMOKE_GENERATION}"
+        )
+
+    ui_captures = [UI_CAPTURE_RE.search(line) for line in lines]
+    if not any(
+        match
+        and int(match.group(1)) > 0
+        and match.group(2).lower() == "true"
+        for match in ui_captures
+    ):
+        incomplete.append("successful menu-event UI-task snapshot capture is missing")
+
+    if any("[UiSnapshot] event=queue_failed" in line for line in lines):
+        failures.append("UI-task queue failed")
+
+    if not any(
+        "[CustomAction][Screenshot] Screenshot service stopped" in line
+        for line in lines
+    ):
+        incomplete.append("clean shutdown marker is missing")
 
     handoffs: list[tuple[int, int, int, int]] = []
     for index, line in enumerate(lines):
@@ -98,6 +129,7 @@ def evaluate_live_log(
             handoffs.append(
                 (index, int(match.group(1)), int(match.group(2)), int(match.group(3)))
             )
+    saw_completed_menu_refresh = False
     for line in lines:
         degraded = DEGRADED_RE.search(line)
         if degraded:
@@ -106,8 +138,17 @@ def evaluate_live_log(
         if "queue_overflow" in lowered or "sequence_gap" in lowered:
             failures.append("overflow or sequence gap observed")
         refresh = REFRESH_RE.search(line)
-        if refresh and int(refresh.group(1)) > 1:
-            failures.append(f"menu refresh touched multiple targets: refreshed={refresh.group(1)}")
+        if refresh:
+            affected_targets = int(refresh.group(1)) + int(refresh.group(2))
+            if affected_targets == 1:
+                saw_completed_menu_refresh = True
+            elif affected_targets > 1:
+                failures.append(
+                    "menu refresh touched multiple targets: "
+                    f"refreshed={refresh.group(1)} notified={refresh.group(2)}"
+                )
+    if not saw_completed_menu_refresh:
+        incomplete.append("completed single-target menu refresh evidence is missing")
 
     reasons = tuple(dict.fromkeys([*failures, *incomplete]))
     if failures:

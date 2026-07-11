@@ -9,6 +9,7 @@
 | `LatestPadState` / `LatestSourceEvidence` | HID / source producer，经 `IngressHub` 互斥临界区发布 | runtime owner | latest-wins；一次 capture 只能看到完整 generation |
 | `OrderedEdgeQueue` | ingress producer | runtime owner | 只保存 digital edge、boundary、reset/overflow 等有序事实；event hard cap |
 | `ContextResolver` publication | runtime owner | presentation/prompt/debug consumer | mutex-protected by-value snapshot，不返回内部动态对象引用 |
+| `UiMenuObserver` live capture | verified SKSE UI task | runtime owner | menu event 先发布 `Partial` transition facts；`RE::UI::menuStack` 只在 coalesced `AddUITask` 中读取，并以 event sequence 拒绝 stale capture |
 | `DualPadRuntime` mutation | `InputFramePump` 的唯一 active owner ticket | debug/replay view | `RuntimeOwnerGuard` 拒绝重入、重复/倒退 token、并发 thread drift 和 stop 后重绑；允许已释放 ticket 之间的显式串行 handoff |
 | pulse FSM / native commit | runtime owner | `PollOutputAdapter` | down/up 以 runtime generation 推进；Poll 调用次数不是时钟 |
 | `PollOutputFrame` | runtime owner | 任意数量 Poll readers | `atomic<shared_ptr<const PollOutputFrame>>` 一次发布；reader 只 acquire/serialize |
@@ -25,7 +26,7 @@ SKSE task fallback 必须经过同一个 `RuntimeOwnerGuard`。实机读档证�
 - 重复、倒退 token 或 stop 后进入仍 fail-closed；
 - 所有 runtime mutation 继续要求当前线程持有唯一 active ticket。
 
-host tests 已证明 serialized handoff 与 concurrent drift 两条相反路径。build `1b3ca5a2bc7a` 已证明真实读档会发生 thread migration；修复 build `1edb1949ecc4` 的 handoff 后 generation 连续性仍属于动态复测门。
+host tests 已证明 serialized handoff 与 concurrent drift 两条相反路径。build `1b3ca5a2bc7a` 已证明真实读档会发生 thread migration；build `71c57b30ae0a` 已证明 handoff 后 generation 可推进到 3000 且没有 `thread_drift`。同一日志的 1519 次 handoff 也证明 runtime owner 不能获得 UI authority，因此 owner tick 现在只消费 immutable menu snapshot，不读取 `RE::UI` 或执行 Scaleform attach。
 
 ## 不可变 Poll 输出
 
@@ -52,10 +53,12 @@ Poll hook 每次只 acquire 一份 frame 并序列化，不执行 ingress drain�
 
 Hook 安装使用 exact preflight、compare-write、replacement 复验和 expected-current rollback。安全回滚与 unsafe residue 分别记录为 `RolledBack` 和 `UnsafePartial + FailClosed`。compat entry gateway 保存完整指令边界，避免把普通 prologue 误当作原始 branch target。
 
+menu event 到达后，`UiMenuObserver` 立即发布保留上一稳定节点的 `Partial` snapshot，使 owner 在 UI capture 尚未完成时保持 menu-side fail-closed。live `RE::UI::menuStack` capture 只经 coalesced `AddUITask` 执行；capture 的 event sequence 落后时不能覆盖新 pending event，也不能清除 dirty。`ScaleformPromptAdapter::AttachToMenu()` 与 `ActionExecutor` 的 HUD UI mutation 同样只从 UI task 调用。
+
 菜单刷新不再遍历 `RE::UI::menuStack`。request 捕获 menu name、instance ID、menu/movie pointer、stack/context revision、presentation epoch 和 dirty flags；UI task 在调用前重新验证同一 target、movie、`_root` 与 callback readiness。
 
 ## 证据边界
 
-已证明：host 状态机、并发 publication、2/4/8 readers、stale target、transaction rollback 和 Windows build。
+已证明：host 状态机、并发 publication、2/4/8 readers、stale target、UI capture event-sequence rejection、owner/UI 静态隔离、transaction rollback 和 Windows build。
 
-待证明：Skyrim 1.5.97 修复后 owner handoff 的 generation 连续性、完整 owner/Poll/UI ordering、真实 pulse 可见性、长时间 soak 与 Favorites crash dump 闭环。在这些证据完成前，发布状态不得为 `GO`。
+待证明：Skyrim 1.5.97 新 build 的 owner/Poll/UI ordering、菜单后按键恢复、真实 pulse 可见性、长时间 soak 与 Favorites crash dump 闭环。在这些证据完成前，发布状态不得为 `GO`。

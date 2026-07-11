@@ -21,6 +21,7 @@ namespace dualpad::input
         auto* ui = RE::UI::GetSingleton();
         if (ui) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(this);
+            (void)dualpad::input_v2::menu::UiMenuObserver::GetSingleton().QueueCaptureOnUiThread();
             logger::info("[DualPad][ContextSink] Menu event listener registered");
         }
         else {
@@ -36,7 +37,7 @@ namespace dualpad::input
             logger::warn("[DualPad][ContextSink] Failed to get combat event source");
         }
 
-        logger::info("[DualPad][ContextSink] Gameplay context polling is driven by the main-thread snapshot pump");
+        logger::info("[DualPad][ContextSink] Runtime owner consumes immutable snapshots captured by UI tasks");
         logger::info("[DualPad][ContextSink] All event listeners registered");
     }
 
@@ -57,7 +58,8 @@ namespace dualpad::input
         logger::info("[DualPad][ContextSink] All event listeners unregistered");
     }
 
-    // Menu events mark UI truth dirty; PH2 samples RE::UI and publishes the legacy mirror.
+    // Menu events publish a partial transition fact immediately, then defer live
+    // RE::UI sampling to the verified UI task queue.
     RE::BSEventNotifyControl ContextEventSink::ProcessEvent(
         const RE::MenuOpenCloseEvent* event,
         RE::BSTEventSource<RE::MenuOpenCloseEvent>*)
@@ -73,6 +75,7 @@ namespace dualpad::input
 
         auto& observer = dualpad::input_v2::menu::UiMenuObserver::GetSingleton();
         observer.MarkMenuEvent(event->menuName.c_str(), event->opening);
+        (void)observer.QueueCaptureOnUiThread();
 
         auto& glyphBridge = dualpad::input::glyph::ScaleformGlyphBridge::GetSingleton();
         if (event->opening) {

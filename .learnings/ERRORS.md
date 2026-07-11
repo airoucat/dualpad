@@ -207,6 +207,7 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: 公共 presentation/context header 变更触发大范围重编译时，xmake 默认 34 jobs 导致 MSVC `C3859` / `C1076`，Windows 返回 pagefile error 1455。
 - Detail: focused ContextResolver target 已先构建并运行通过；随后 `xmake build -y DualPad` 并发重编译大量 PCH translation units 时耗尽 commit/pagefile。该错误是本机并发资源上限，不能当作代码编译结论。
 - Resolution: 对大范围 header 变更的本地全量重编译使用 `xmake build -y -j 4 DualPad`；focused targets 仍可使用默认并发。
+- Recurrence: 2026-07-11 08:55–08:57 CST，菜单/UI authority 变更在首次编译 `DualPad` 与 `DualPadReplayHarness` 时再次触发同一 1455；分别沿用 `-j 4` 预热目标后再执行 canonical CI。
 
 ## ERR-20260711-005
 

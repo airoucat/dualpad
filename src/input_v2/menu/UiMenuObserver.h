@@ -44,9 +44,10 @@ namespace dualpad::input_v2::menu
         void MarkMenuEvent(std::string_view menuName, bool opening);
         bool IsDirty() const;
         void ClearDirty();
+        bool QueueCaptureOnUiThread();
 
-        ObservedMenuSnapshot Capture();
         void Publish(ObservedMenuSnapshot snapshot);
+        bool PublishCapturedSnapshot(ObservedMenuSnapshot snapshot);
         ObservedMenuSnapshot GetPublishedSnapshot() const;
         void ResetForTests();
 
@@ -56,6 +57,10 @@ namespace dualpad::input_v2::menu
         std::uint64_t _eventSequence{ 0 };
         std::string _lastEventMenuName;
         bool _lastEventOpening{ false };
+        bool _captureQueued{ false };
         ObservedMenuSnapshot _published{};
+
+        ObservedMenuSnapshot CaptureOnUiThread();
+        void RunQueuedCaptureOnUiThread();
     };
 }

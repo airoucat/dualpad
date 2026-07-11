@@ -51,7 +51,7 @@ Invoke-Step python @(
 
 Invoke-Step python @("-m", "json.tool", ".dualpad-builder/feature_list.json", "NUL")
 Invoke-Step python @("-m", "json.tool", ".dualpad-builder/sprint_plan.json", "NUL")
-Invoke-Step python @("-m", "unittest", "tests/python/test_check_rc20_live_log.py")
+Invoke-Step python @("-m", "unittest", "discover", "-s", "tests/python", "-p", "test_*.py")
 Invoke-Step python @("scripts/ci/check_reviewed_docs_consistency.py")
 Invoke-Step python @("scripts/ci/check_legacy_authority_boundary.py")
 Invoke-Step python @("scripts/ci/check_release_readiness.py")

@@ -4,6 +4,7 @@
 #include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/menu/MenuInstanceRegistry.h"
+#include "input_v2/menu/UiMenuObserver.h"
 
 #include <iostream>
 #include <atomic>
@@ -54,6 +55,59 @@ void RunContextResolverTests()
     using dualpad::input::InputContext;
 
     const auto& catalog = ctx::ContextCatalog::BuiltInCatalog();
+
+    {
+        menu::UiMenuObserver observer;
+        observer.Publish(menu::ObservedMenuSnapshot{
+            .completeness = menu::ObserverCompleteness::Complete,
+            .nodes = { Node(0x9000, "InventoryMenu", 5) }
+        });
+
+        observer.MarkMenuEvent("JournalMenu", true);
+        const auto pending = observer.GetPublishedSnapshot();
+
+        Require(observer.IsDirty(), "menu event must remain dirty until a UI-task capture publishes");
+        Require(
+            pending.completeness == menu::ObserverCompleteness::Partial,
+            "menu event must immediately publish a fail-closed partial snapshot");
+        Require(
+            pending.nodes.size() == 1 && pending.nodes.front().menuName == "InventoryMenu",
+            "pending UI capture must retain the previous stable menu nodes");
+        Require(
+            pending.eventSequence == 1 && pending.lastEventMenuName == "JournalMenu" && pending.lastEventOpening,
+            "pending UI capture must publish immutable event metadata for the runtime owner");
+    }
+
+    {
+        menu::UiMenuObserver observer;
+        observer.MarkMenuEvent("InventoryMenu", true);
+        auto staleCapture = observer.GetPublishedSnapshot();
+        staleCapture.completeness = menu::ObserverCompleteness::Complete;
+        staleCapture.nodes = { Node(0x9100, "InventoryMenu", 5) };
+
+        observer.MarkMenuEvent("JournalMenu", true);
+        Require(
+            !observer.PublishCapturedSnapshot(std::move(staleCapture)),
+            "stale UI-task capture must not overwrite a newer menu event");
+        const auto pending = observer.GetPublishedSnapshot();
+        Require(observer.IsDirty(), "stale UI-task capture must not clear the newer dirty event");
+        Require(
+            pending.eventSequence == 2 && pending.lastEventMenuName == "JournalMenu",
+            "stale UI-task capture must preserve newer pending metadata");
+
+        auto currentCapture = pending;
+        currentCapture.completeness = menu::ObserverCompleteness::Complete;
+        currentCapture.nodes = { Node(0x9200, "JournalMenu", 6) };
+        Require(
+            observer.PublishCapturedSnapshot(std::move(currentCapture)),
+            "current UI-task capture must publish atomically");
+        Require(!observer.IsDirty(), "current UI-task capture must clear its matching dirty event");
+        const auto published = observer.GetPublishedSnapshot();
+        Require(
+            published.completeness == menu::ObserverCompleteness::Complete &&
+                published.nodes.size() == 1 && published.nodes.front().menuName == "JournalMenu",
+            "current UI-task capture must replace the pending snapshot with stable UI truth");
+    }
 
     {
         menu::MenuInstanceRegistry registry;

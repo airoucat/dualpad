@@ -34,17 +34,12 @@ namespace dualpad::input
             return true;
         }
 
-        auto* ui = RE::UI::GetSingleton();
-        if (!ui) {
-            return false;
-        }
-
         if (actionId == actions::ToggleHUD) {
-            logger::info("[DualPad][Executor] Scheduling HUD toggle on main thread");
+            logger::info("[DualPad][Executor] Scheduling HUD toggle on UI thread");
 
             auto* taskInterface = SKSE::GetTaskInterface();
             if (taskInterface) {
-                taskInterface->AddTask([]() {
+                taskInterface->AddUITask([]() {
                     auto* ui = RE::UI::GetSingleton();
                     if (!ui) {
                         logger::warn("[DualPad][Executor] UI not found");
@@ -64,7 +59,7 @@ namespace dualpad::input
                             }
                         }
                     }
-                    });
+                });
 
                 return true;
             }

@@ -3,6 +3,8 @@
 
 #include <RE/U/UI.h>
 
+namespace logger = SKSE::log;
+
 namespace dualpad::input_v2::menu
 {
     UiMenuObserver& UiMenuObserver::GetSingleton()
@@ -18,6 +20,10 @@ namespace dualpad::input_v2::menu
         ++_eventSequence;
         _lastEventMenuName = menuName;
         _lastEventOpening = opening;
+        _published.completeness = ObserverCompleteness::Partial;
+        _published.eventSequence = _eventSequence;
+        _published.lastEventMenuName = _lastEventMenuName;
+        _published.lastEventOpening = _lastEventOpening;
     }
 
     bool UiMenuObserver::IsDirty() const
@@ -32,7 +38,31 @@ namespace dualpad::input_v2::menu
         _dirty = false;
     }
 
-    ObservedMenuSnapshot UiMenuObserver::Capture()
+    bool UiMenuObserver::QueueCaptureOnUiThread()
+    {
+        {
+            std::scoped_lock lock(_mutex);
+            if (_captureQueued) {
+                return true;
+            }
+            _captureQueued = true;
+        }
+
+        auto* taskInterface = SKSE::GetTaskInterface();
+        if (!taskInterface) {
+            std::scoped_lock lock(_mutex);
+            _captureQueued = false;
+            logger::warn("[DualPad][UiSnapshot] event=queue_failed reason=no_skse_task_interface");
+            return false;
+        }
+
+        taskInterface->AddUITask([] {
+            UiMenuObserver::GetSingleton().RunQueuedCaptureOnUiThread();
+        });
+        return true;
+    }
+
+    ObservedMenuSnapshot UiMenuObserver::CaptureOnUiThread()
     {
         ObservedMenuSnapshot snapshot{};
         {
@@ -88,11 +118,49 @@ namespace dualpad::input_v2::menu
         return snapshot;
     }
 
+    void UiMenuObserver::RunQueuedCaptureOnUiThread()
+    {
+        auto snapshot = CaptureOnUiThread();
+        const auto eventSequence = snapshot.eventSequence;
+        const auto completeness = snapshot.completeness;
+        const auto nodeCount = snapshot.nodes.size();
+        const auto published = PublishCapturedSnapshot(std::move(snapshot));
+
+        bool retry = false;
+        {
+            std::scoped_lock lock(_mutex);
+            _captureQueued = false;
+            retry = _dirty;
+        }
+
+        logger::info(
+            "[DualPad][UiSnapshot] event=captured eventSeq={} completeness={} nodes={} published={} retry={}",
+            eventSequence,
+            static_cast<std::uint32_t>(completeness),
+            nodeCount,
+            published,
+            retry);
+        if (retry) {
+            (void)QueueCaptureOnUiThread();
+        }
+    }
+
     void UiMenuObserver::Publish(ObservedMenuSnapshot snapshot)
     {
         std::scoped_lock lock(_mutex);
         _published = std::move(snapshot);
         _dirty = false;
+    }
+
+    bool UiMenuObserver::PublishCapturedSnapshot(ObservedMenuSnapshot snapshot)
+    {
+        std::scoped_lock lock(_mutex);
+        if (snapshot.eventSequence != _eventSequence) {
+            return false;
+        }
+        _published = std::move(snapshot);
+        _dirty = false;
+        return true;
     }
 
     ObservedMenuSnapshot UiMenuObserver::GetPublishedSnapshot() const
@@ -108,6 +176,7 @@ namespace dualpad::input_v2::menu
         _eventSequence = 0;
         _lastEventMenuName.clear();
         _lastEventOpening = false;
+        _captureQueued = false;
         _published = ObservedMenuSnapshot{};
     }
 }

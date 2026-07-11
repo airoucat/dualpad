@@ -74,12 +74,14 @@ namespace dualpad::input_v2::prompt
     void ScaleformPromptAdapter::OnMenuOpened(std::string_view menuName)
     {
         const auto menu = std::string(menuName);
-        AttachToMenu(menu);
-
         if (auto* task = SKSE::GetTaskInterface(); task) {
             task->AddUITask([menu] {
                 (void)ScaleformPromptAdapter::GetSingleton().AttachToMenu(menu);
             });
+        } else {
+            logger::warn(
+                "[DualPad][PromptAdapter] Skipped prompt handler attach for {}: no UI task interface",
+                menu);
         }
     }
 
