@@ -2536,6 +2536,45 @@ namespace
             "replay boundary stable frame must resolve right trigger value");
     }
 
+    void RunFrameAssemblerMultiProducerTimestampOrderingTests()
+    {
+        ingress::FrameAssembler assembler;
+        std::vector<ingress::IngressEvent> events;
+
+        ingress::IngressEvent first{};
+        first.kind = ingress::IngressKind::PadSnapshot;
+        first.source = ingress::IngressSource::LegacyDispatcher;
+        first.seq = 1;
+        first.monotonicUs = 2'000;
+        first.pad.samples = {
+            AxisSample(
+                static_cast<std::uint32_t>(dualpad::input::PadAxisId::LeftStickX),
+                0.25f,
+                2'000)
+        };
+        events.push_back(first);
+
+        ingress::IngressEvent second{};
+        second.kind = ingress::IngressKind::SourceEvidence;
+        second.source = ingress::IngressSource::DeviceFamilyPublisher;
+        second.seq = 2;
+        second.monotonicUs = 1'999;
+        second.sourceEvidence.collectedTick = 1'999;
+        events.push_back(second);
+
+        const auto frames = assembler.Assemble(events);
+        Require(frames.size() == 1, "serialized multi-producer timestamps must not manufacture a transition frame");
+        Require(
+            frames.front().kind == ingress::AssembledFrameKind::Stable,
+            "strictly increasing ingress sequence remains the ordering authority when producer timestamps overlap");
+        Require(
+            !frames.front().facts.health.sequenceGap,
+            "a timestamp regression without an ingress sequence gap must not report sequence loss");
+        Require(
+            frames.front().facts.monotonicUs == 2'000,
+            "frame evaluation time must retain the maximum observed producer timestamp");
+    }
+
     void RunRuntimeOwnerGuardTests()
     {
         runtime::RuntimeOwnerGuard guard;
@@ -2941,6 +2980,7 @@ int main()
         RunRuntimeFrameEnvelopeUsesActiveConfigGraphForMenuCrossCancelTests();
         RunRuntimeFrameEnvelopeResolvesFirstStableAfterManifestTransitionTests();
         RunRuntimeFrameEnvelopeResolvesReplayBoundaryStackTests();
+        RunFrameAssemblerMultiProducerTimestampOrderingTests();
         RunRuntimeOwnerGuardTests();
         RunPollOutputPublicationTests();
         RunGenerationBasedPulseTests();

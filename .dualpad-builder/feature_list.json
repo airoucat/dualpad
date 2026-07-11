@@ -356,7 +356,7 @@
         "Unit 7 已将 menu refresh 收窄为同一 owner publication 捕获并在 UI task 复验的单一 allowlisted target；stale、replaced、half-initialized 与 denied menu 不再触发全 stack refresh",
         "Unit 8 已让 upstream call-site 与 Skyrim compatibility 三站点 hook 具备 exact preflight、expected-current rollback、UnsafePartial fail-closed 及 operational state / disposition 诊断合同",
         "Unit 9 已完成 500/1000 Hz producer x 30/60/120 Hz owner deterministic matrix、axis publication percentile telemetry、canonical Phase 8 / RC readiness、replay zero-diff、proxy build、artifact manifest、reviewed/generated docs、builder JSON、Graphify 与 diff hygiene 收口",
-        "Unit 10 阶段性证据已完成 Skyrim 1.5.97 Poll call-site IDA 调查，并由 build 1b3ca5a2bc7a 的读档日志证明 InputFramePump 会串行迁移 OS thread；1edb1949ecc4 已用唯一 active ticket + monotonic token 允许可观察 handoff，同时继续 fail-closed 并发 writer，修复后实机复测与 Favorites dump/循环仍未完成",
+        "Unit 10 阶段性证据已完成 Skyrim 1.5.97 Poll call-site IDA 调查；build 71c57b30ae0a 的读档安全 smoke 已证明 serialized owner handoff 可推进到 generation 3000 且不再 thread_drift，同时暴露 31 次由多 producer timestamp regression 误判的 sequence_gap；FrameAssembler 已改为以 ingress seq 为唯一排序权威并补回归，待新 build 实机复测，Favorites dump/循环仍未完成",
         "最终 release status 只能是 NO-GO、GO WITH NATIVE FAVORITES DISABLED 或 GO；未完成真实 Favorites 循环与 crash evidence 不得标记 GO"
       ]
     }

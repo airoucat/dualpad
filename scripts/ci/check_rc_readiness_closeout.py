@@ -82,6 +82,7 @@ def main() -> int:
             "scripts/dev/dualpad_trace_diff.py",
             ".dualpad-builder/feature_list.json",
             ".dualpad-builder/sprint_plan.json",
+            "tests/python/test_check_rc20_live_log.py",
             "scripts/ci/check_reviewed_docs_consistency.py",
             "scripts/ci/check_legacy_authority_boundary.py",
             "scripts/ci/check_release_readiness.py",
@@ -141,6 +142,17 @@ def main() -> int:
         ],
     )
 
+    require_tokens(
+        failures,
+        "scripts/dev/check_rc20_live_log.py",
+        [
+            "LiveLogStatus",
+            "event=rebound",
+            "event=degraded",
+            "native Favorites is enabled during safe smoke",
+            "overflow or sequence gap observed",
+        ],
+    )
     require_tokens(
         failures,
         "scripts/dev/generate_release_artifact_manifest.py",

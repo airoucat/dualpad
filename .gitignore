@@ -5,6 +5,7 @@
 .vs/
 .vscode/
 .xmake/
+__pycache__/
 # local archives
 .local_archive/
 # folders

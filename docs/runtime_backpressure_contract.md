@@ -11,6 +11,8 @@
 | digital press/release | bounded ordered queue | edge 不可覆盖、乱序或重复 |
 | manifest/UI/device boundary | bounded ordered queue | 必须在对应后续 edge 前消费 |
 | reset / overflow marker | bounded ordered queue | 建立显式 recovery barrier，不静默丢历史 |
+
+ordered queue 的跨 producer 顺序权威只有 `IngressEvent.seq`。该序号在 `IngressHub` 锁内分配，连续性用于检测真实 gap。`monotonicUs` 是各 producer 的采集时间：同一 `IngressSource` 内倒退仍 fail-closed；不同 producer 之间允许重叠或轻微倒退，只以 max 方式形成不倒退的帧评估时间，不能单独制造 `SequenceGap`。
 | legacy snapshot | 仅 compat/replay/debug payload | 不回流 core kernel authority |
 
 ## 双 cutoff

@@ -128,6 +128,7 @@ namespace dualpad::input_v2::ingress
         _window = Window{};
         _lastConsumedSeq = 0;
         _lastMonotonicUs = 0;
+        _lastMonotonicUsBySource = {};
         _lastLatestPadGeneration = 0;
         _lastLatestSourceGeneration = 0;
     }
@@ -260,16 +261,22 @@ namespace dualpad::input_v2::ingress
         }
 
         if (event.monotonicUs != 0) {
-            if (_window.open &&
-                _window.lastMonotonicUs != 0 &&
-                event.monotonicUs < _window.lastMonotonicUs) {
+            // Ingress seq is assigned under the hub lock and is the ordering
+            // authority. Producer timestamps are observations from independent
+            // threads and may overlap or arrive slightly out of timestamp order.
+            // A regression within one producer still rejects volatile history,
+            // while cross-producer overlap only advances the evaluation clock by max.
+            const auto sourceIndex = static_cast<std::size_t>(event.source);
+            auto& lastSourceMonotonicUs = _lastMonotonicUsBySource.at(sourceIndex);
+            if (lastSourceMonotonicUs != 0 && event.monotonicUs < lastSourceMonotonicUs) {
                 FlushWindow(frames);
                 FactHealth health{};
                 health.sequenceGap = true;
                 EmitTransition(frames, _currentKey, _currentKey, TransitionReason::SequenceGap, health);
                 return true;
             }
-            _lastMonotonicUs = event.monotonicUs;
+            lastSourceMonotonicUs = event.monotonicUs;
+            _lastMonotonicUs = std::max(_lastMonotonicUs, event.monotonicUs);
         }
 
         return false;

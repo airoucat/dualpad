@@ -13,6 +13,7 @@
 | target-bound refresh、hook operational state | `DualPadPresentationProjectionTests` |
 | transactional patch、rollback/tamper/post-write exception | `DualPadRouteHealthContractTests` |
 | replay/property/fuzz regression | `DualPadReplayTests`、`DualPadReplayHarnessTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests` |
+| RC20 实机日志判定 | `tests/python/test_check_rc20_live_log.py` |
 
 ## Canonical 命令
 
@@ -38,7 +39,7 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 | --- | --- | --- |
 | IDA `0xC1AB40 / 0xC1AB9D` | 已完成静态调查 | 已确认 identity、bytes、original target、caller graph、ABI 和生命周期；不能证明固定线程或每帧次数 |
 | 匹配 build 主菜单启动 | 已通过 | build `1b3ca5a2bc7a` 记录 runtime、hook 地址、`nativeFavorites=false`、owner generation 和单 target refresh |
-| 读档 owner lifecycle | 已发现并修复 blocker，待复测 | token 359→360 时 OS thread 迁移；`1edb1949ecc4` 已改为 serialized ticket handoff，但尚无修复后实机日志 |
+| 初次读档 owner lifecycle | 已完成并修复 blocker | token 359→360 时 OS thread 迁移；`1edb1949ecc4` 已改为 serialized ticket handoff |
 | Poll capped diagnostics | 辅助样本 | 256 组 enter/exit、单线程、`inFlight <= 1`、约 16/17/18 ms；raw log 已被覆盖且缺 build commit，不作为 release proof |
 | matching crash dump | 未执行 | 当前没有与本轮 DLL/PDB/log/config/SWF 匹配的 `.dmp` 或 Crash Logger report |
 | physical/synthetic DPadUp A/B | 未执行 | 需要用户实机输入与 matching artifact capture |
@@ -47,22 +48,27 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 
 完整静态证据见 [../research/skyrim_xinput_poll_callsite.md](../research/skyrim_xinput_poll_callsite.md)。
 
+| 修复后安全 smoke | 已执行，发现新 blocker | build `71c57b30ae0a` 正常启动、读档、操作菜单并退出；generation 到 3000，无 owner degraded、无 queue overflow，但出现 1519 次可接受的 serialized handoff 和 31 次误判 `sequence_gap` |
+
+修复后日志证明 `event=rebound` 可继续推进 generation，未再出现 `failure=thread_drift`。31 次 `sequence_gap` 均没有对应的设备 gap 或 queue overflow；根因是 `FrameAssembler` 把独立 producer 的采集时间戳当成 ingress 顺序权威。严格递增的 ingress `seq` 才是有序队列权威；时间戳只用于形成不倒退的帧评估时间。该修复已新增 host 回归测试，尚待部署后的第二轮实机复测。
+
 ## 最简手工验证
 
-以下 smoke 不修改配置，`enable_native_favorites=false` 保持安全默认值。它验证摇杆与 fail-closed containment，不等价于 native Favorites crash closure。
+以下 smoke 不修改配置，`enable_native_favorites=false` 保持安全默认值。它验证摇杆与 fail-closed containment，不等价于 native Favorites crash closure。用户只需执行前 4 步；退出后由维护者运行日志检查器。
 
 1. 从 MO2 启动 SKSE，确认日志 build commit 等于测试时的分支 HEAD；runtime code 必须包含 `1edb1949ecc4` 或其后代。
 2. 读取存档；连续转动左右摇杆 60 秒，观察卡顿、停顿、跳变或周期归零。
 3. 打开普通菜单，快速上下导航 30 秒。
 4. 尝试收藏键约 20 次并记录「正常 / 无反应 / 闪退」。gate off 时 synthetic native Favorites 可能无反应，这是 containment 结果，不是 native path 通过。
-5. 退出后检查：owner 若换线程，应出现 `event=rebound`，后续 generation 仍继续增长；不得出现 `failure=thread_drift`。
+5. 维护者运行：
 
-只需反馈：
+```powershell
+python scripts/dev/check_rc20_live_log.py --expect-commit <当前 HEAD> --json
+```
 
-- 摇杆：正常 / 卡顿；
-- 收藏菜单：正常 / 无反应 / 闪退；
-- 日志中是否有 `event=rebound` 或 `failure=thread_drift`；
-- 若异常，大约发生在读取存档后多少秒或第几次操作。
+检查器验证 build/runtime、native Favorites gate、Poll hook、owner generation、owner degraded、queue overflow / sequence gap 和 target refresh。`event=rebound` 本身表示串行 ticket 已被接受；不能要求每次 handoff 后都有 `event=tick`，因为 tick 日志只按 600 generation 采样。
+
+用户只需回复「完成」；若肉眼观察到卡顿、无反应或闪退，再补充现象和大约发生时间。日志字段由检查器读取。
 
 ## Native Favorites 完整验证
 
@@ -79,4 +85,4 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 
 ## 当前发布判定
 
-当前为 `NO-GO`。`enable_native_favorites=false` 继续是默认配置。`1edb1949ecc4` 的 serialized owner handoff 尚待读档实机复测；matching dump、Favorites loop 和 soak 也未完成。只有动态证据完成且无 blocker 时，才可评估 `GO WITH NATIVE FAVORITES DISABLED`；未完成真实 Favorites 循环和 crash dump 闭环不得给 `GO`。
+当前为 `NO-GO`。`enable_native_favorites=false` 继续是默认配置。build `71c57b30ae0a` 已完成读档安全 smoke，证明 serialized owner handoff 不再触发 `thread_drift`，但同时暴露并修复了多 producer 时间戳误报 `sequence_gap`；该修复尚待新 build 实机复测。matching dump、Favorites loop 和 soak 也未完成。只有动态证据完成且无 blocker 时，才可评估 `GO WITH NATIVE FAVORITES DISABLED`；未完成真实 Favorites 循环和 crash dump 闭环不得给 `GO`。
