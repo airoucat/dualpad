@@ -115,6 +115,6 @@ build `1b3ca5a2bc7a` 的实机日志记录：
 
 ## 当前发布影响
 
-当前部署 build 为 `1edb1949ecc4`，DLL SHA-256 为 `F377AF16E628BF6CE30F67BF79EC4F3F4BCD65B99AF4D4E15992E9CFA4A66D81`，PDB SHA-256 为 `F6097998AC2C7EF866F8108F3CFE1CD8FE5C3FB70DD2C621D13FF79969B6248B`。该 build 已包含串行 owner handoff 修复，但仍需新的读档实机样本确认 `event=rebound` 后 generation 持续推进。
+owner handoff 代码证据 build 为 `1edb1949ecc4`；提交后 matching DLL SHA-256 为 `F377AF16E628BF6CE30F67BF79EC4F3F4BCD65B99AF4D4E15992E9CFA4A66D81`，PDB SHA-256 为 `F6097998AC2C7EF866F8108F3CFE1CD8FE5C3FB70DD2C621D13FF79969B6248B`。后续 docs-only commit 会改变嵌入的 build commit 与 binary hash，但不改变该 runtime code slice。测试时必须以日志 build commit、当次 DLL/PDB hash 和分支 HEAD 重新建立 matching 关系。该代码仍需新的读档实机样本确认 `event=rebound` 后 generation 持续推进。
 
 `enable_native_favorites=false` 继续是默认值。没有 matching dump 和真实 Favorites 循环前，IDA 结果不能解除该 gate；发布状态保持 `NO-GO`。

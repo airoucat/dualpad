@@ -51,7 +51,7 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 
 以下 smoke 不修改配置，`enable_native_favorites=false` 保持安全默认值。它验证摇杆与 fail-closed containment，不等价于 native Favorites crash closure。
 
-1. 从 MO2 启动 SKSE，确认日志包含当前 build `1edb1949ecc4`。
+1. 从 MO2 启动 SKSE，确认日志 build commit 等于测试时的分支 HEAD；runtime code 必须包含 `1edb1949ecc4` 或其后代。
 2. 读取存档；连续转动左右摇杆 60 秒，观察卡顿、停顿、跳变或周期归零。
 3. 打开普通菜单，快速上下导航 30 秒。
 4. 尝试收藏键约 20 次并记录「正常 / 无反应 / 闪退」。gate off 时 synthetic native Favorites 可能无反应，这是 containment 结果，不是 native path 通过。
