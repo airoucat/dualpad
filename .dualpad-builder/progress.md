@@ -3220,3 +3220,9 @@
 - 按 systematic debugging + TDD 修复：旧 sequential cross-thread fixture 先以 `a later monotonic tick may rebind` 正确红灯；新 `ownerThreadHandoffs` API 再以成员缺失编译红灯。实现后，只有前一 RAII ticket 已释放且 frame token 严格递增时允许 `event=rebound`；ticket active 时异线程仍 `ThreadDrift` 永久 fail-closed。`DualPadInputV2Tests`、`DualPadReplayHarnessTests` 与 `xmake build -y -j 4 DualPad` 均 exit 0，Graphify 为 `1936 nodes / 4531 edges / 147 communities`。
 - owner handoff 修复已独立提交并推送为 `1edb1949ecc4`。提交后重新构建并部署 matching DLL/PDB；DLL SHA-256 `F377AF16E628BF6CE30F67BF79EC4F3F4BCD65B99AF4D4E15992E9CFA4A66D81`，PDB SHA-256 `F6097998AC2C7EF866F8108F3CFE1CD8FE5C3FB70DD2C621D13FF79969B6248B`，DLL 内嵌 commit 与 HEAD 一致。PDB copy warning 来自 target symbolfile 已位于部署目标后的 self-copy，目标 PDB 时间/hash 已更新。
 - 待用户简版复测：读取存档后日志必须出现可接受的 `event=rebound` 并继续推进 generation，不能再出现 `failure=thread_drift`；同时记录摇杆是否卡顿以及 Favorites 在默认 gate off 下正常/无反应/闪退。matching crash dump、physical/synthetic DPadUp A/B、1000 次 vanilla、每 profile 200 次和 2-hour soak 均未完成；Unit 10 保持未完成，release status 保持 `NO-GO`。
+
+## 2026-07-11 08:18:00 +08:00
+
+- Unit 10 阶段性 evidence close-out 对 commit `18bf1faf4076` 完成 canonical 验证：`scripts/ci/run_phase8_ci.ps1` exit 0；`scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest` exit 0。Phase 8 覆盖全部 canonical runtime targets、public-surface support proofs、DocGen、reviewed/generated consistency 和 static gates；RC readiness 额外证明 dispatcher replay 10 个 mandatory scenarios 全部 no diff、builder JSON、`DualPadDInput8Proxy`、release artifact manifest、Graphify `1936 nodes / 4531 edges / 147 communities` 与 diff hygiene。
+- 首轮 Phase 8 在 generated docs clean check 暴露 provenance drift：`xmake.lua` 是 DocGen hash input，构建来源日志 slice 修改它后，4 份 generated docs 需要更新到 manifest hash `7ab15ab062bdd968`。canonical DocGen 连续两次输出一致，修复记录为 `ERR-20260711-008`；提交生成物后 Phase 8 与 clean RC readiness 均通过。
+- 该自动化 close-out 不替代用户读档复测、Favorites matching dump、physical/synthetic A/B、循环和 soak。当前结论仍为 `NO-GO`，native Favorites 默认关闭。
