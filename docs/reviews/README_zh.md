@@ -34,3 +34,7 @@
 示例：
 
 - `2026-04-09-device-capture-protocol-review_zh.md`
+
+## 近期审查材料
+
+- [2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md](2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md)：键鼠与手柄混合操作的现有设计、当前实现断点、IDA 证据和外部 GPT 审查提示词。

@@ -244,3 +244,27 @@ build `4d9a43e845db` 的实测确认摇杆已不卡，但 Journal L2/R2 仍无�
 
 ### Detail
 发布状态升级应同时更新 feature/sprint JSON、progress、authoritative baseline、README/索引、验证记录，以及所有硬编码该状态的 CI 检查器。条件完成态还必须保留负向不变量：`enable_native_favorites=false`、native route fail-closed、完整 Favorites loop/dump 未闭合前禁止 `GO`。为状态迁移添加直接运行治理门禁的回归测试，可以在完整 canonical 流程之前暴露此类漂移。
+
+## [LRN-20260711-007] correction
+
+**Logged**: 2026-07-11T12:25:16+08:00
+**Priority**: high
+**Status**: open
+**Area**: mixed input / source evidence / gameplay facts
+
+### Summary
+
+顺序执行 `gamepad -> keyboard -> gamepad` 的 source-evidence 测试不能证明真实混合输入可用；必须模拟空闲手柄持续 HID 上报与 KBM 事件交错。
+
+### Detail
+
+用户在 matching build 上确认摇杆和 Journal 扳机问题修复后，进一步指出键鼠与手柄共同作用仍功能混乱、实际不可用。静态追踪发现两个互相放大的断点：`DualPadRuntime` 把所有 KBM gameplay policy facts 固定为 false；每份成功解析的 HID report 又无条件调用 `RecordGamepadEvidence(true)`，清除 KBM evidence 并续约 gamepad lease。现有测试只手动验证离散 takeover，没有生成 `idle HID -> KBM -> idle HID...` 的真实时间模型。后续 mixed-input 测试必须区分 connectivity、current-state 和 meaningful activity，并从 production fact producer 一直覆盖到 per-channel gate；不能只测纯仲裁函数或顺序 owner 翻转。
+
+### Related Files
+
+- `src/input/HidReader.cpp`
+- `src/input/InputFramePump.cpp`
+- `src/input_v2/ingress/LiveInputFactProducer.cpp`
+- `src/input_v2/gameplay/DualPadRuntime.cpp`
+- `tests/input_v2/InputV2Tests.cpp`
+- `docs/reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md`

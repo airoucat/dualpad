@@ -3311,3 +3311,10 @@
 - 更新治理状态后的 `scripts/ci/run_rc_readiness.ps1` 完整 exit 0。Phase 8 canonical targets 全部通过，Python discovery 为 19/19，10 个 mandatory dispatcher replay scenarios 全部 no diff；reviewed/generated consistency、legacy/release/U4/U5 gates、builder JSON、DualPadDInput8Proxy、release artifact manifest 与 `git diff --check` 均通过。
 - Graphify manual close-out 结果为 `1979 nodes / 4698 edges / 146 communities`。构建阶段仅有目标 PDB 正被占用而跳过同路径复制的 warning，DLL 与 proxy build 均明确 `build ok`，不改变门禁 exit 0 结论。
 - 该 fresh canonical 结果与 build `a7a75fac5281` 的 matching safe-smoke `PASS` 共同支持 `GO WITH NATIVE FAVORITES DISABLED`；提交后仍需对新 HEAD 生成 matching artifact，并运行 clean-manifest gate。
+
+## 2026-07-11 12:25:16 +08:00
+
+- 用户补充实机结论：当前键鼠与手柄共同作用仍功能混乱、实际不可用。专项可行性审查确认仓库已有 per-channel gameplay ownership、sustained source aggregation、single menu presentation owner 和 cursor handoff 设计，但旧文档中的 `InputModalityTracker / GameplayOwnershipCoordinator / PadEventSnapshotProcessor` 挂点已被 PH8a 主线替换。
+- 当前生产断点已静态闭合：`DualPadRuntime` 将 6 个 KBM gameplay policy facts 全部硬编码为 false；`InputFramePump` 只发布 presentation source evidence；`HidReader -> LiveInputFactProducer` 对每份 HID report 无条件记录 gamepad activity，持续刷新约 1.5 秒 lease 并清除 KBM evidence；`SyncExternalHeldContributors` 仍固定 `kbmSprintHeld=false`。因此现有 arbitration/gate consumer 存在，但 live KBM producer 与 meaningful gamepad activity 分类未闭合。
+- 本轮通过 IDA MCP 重新反编译 matching 1.5.97 unpacked EXE：`0x140C150B0` 依次 Poll 四个 input device slots，`0x140C1AB40` 从 `XInputGetState` 消费完整 button/trigger/stick current-state，`0x140ECD970` 向菜单发布单一 `_root.SetPlatform`，`0x140ED2F90` 区分真实鼠标位置与手柄光标积分。SHA-256 已从磁盘复验为 `DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD`。
+- 结论与证据已写入 `docs/reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md`，包含可直接交给 GPT 的提示词、证据置信度、最小 `input_v2` 落点和实机矩阵。本条只完成调查与文档，不声称混合操作已修复；对该能力本身保持 `NO-GO`，是否迁移整体 RC 治理状态留待确认修复 slice 时原子处理。
