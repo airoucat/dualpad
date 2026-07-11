@@ -9,6 +9,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 U5_DOC = ROOT / "docs/releases/dp5_rc20_u5_rc_readiness_closeout_zh.md"
+CONDITIONAL_RELEASE_STATUS = "GO WITH NATIVE FAVORITES DISABLED"
 
 
 def read(relative: str) -> str:
@@ -70,6 +71,7 @@ def main() -> int:
                 "log storm",
                 "旧 #5",
                 "non-authority cleanup",
+                CONDITIONAL_RELEASE_STATUS,
             ],
         )
 
@@ -232,25 +234,29 @@ def main() -> int:
         [
             "U5：verification / observability / governance closeout 已完成",
             "S-DP5-RC20-HOTFIX",
-            "NO-GO",
+            CONDITIONAL_RELEASE_STATUS,
         ],
     )
 
     for relative, tokens in {
         "docs/runtime_concurrency_contract.md": ["唯一 runtime owner", "PollOutputFrame", "generation"],
         "docs/runtime_backpressure_contract.md": ["LatestPadState", "ordered", "overflow"],
-        "docs/testing/rc20_runtime_validation.md": ["500/1000 Hz", "30/60/120 Hz", "P99", "NO-GO"],
+        "docs/testing/rc20_runtime_validation.md": ["500/1000 Hz", "30/60/120 Hz", "P99", CONDITIONAL_RELEASE_STATUS, "enable_native_favorites=false"],
     }.items():
         require_tokens(failures, relative, tokens)
 
     feature_data = json.loads(read(".dualpad-builder/feature_list.json"))
     dp5 = next((item for item in feature_data["features"] if item["id"] == "DP5"), None)
     if not dp5 or dp5.get("status") != "in_progress" or dp5.get("passes") is not False:
-        failures.append(".dualpad-builder/feature_list.json: DP5 must remain in_progress/passes=false before dynamic closeout.")
+        failures.append(".dualpad-builder/feature_list.json: DP5 must remain in_progress/passes=false until native Favorites dynamic closeout.")
 
     sprint_data = json.loads(read(".dualpad-builder/sprint_plan.json"))
-    if sprint_data.get("current_sprint") != "S-DP5-RC20-HOTFIX":
-        failures.append(".dualpad-builder/sprint_plan.json: RC20 hotfix must remain the current sprint before dynamic closeout.")
+    if sprint_data.get("current_sprint") is not None:
+        failures.append(".dualpad-builder/sprint_plan.json: current_sprint must be null after conditional hotfix closeout.")
+    hotfix = next((item for item in sprint_data["sprints"] if item["id"] == "S-DP5-RC20-HOTFIX"), None)
+    hotfix_evidence = " ".join((hotfix or {}).get("exit_criteria", []) + (hotfix or {}).get("verification", []))
+    if not hotfix or hotfix.get("status") != "completed" or CONDITIONAL_RELEASE_STATUS not in hotfix_evidence:
+        failures.append(".dualpad-builder/sprint_plan.json: RC20 hotfix must be completed with the conditional native-Favorites-disabled boundary.")
 
     if failures:
         print("RC readiness closeout check failed:")

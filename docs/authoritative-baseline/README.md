@@ -13,14 +13,14 @@
 
 ## 当前工作路（2026-07-11）
 
-- 当前活跃 Sprint：`S-DP5-RC20-HOTFIX`
-- 当前直接焦点：在 `DP5-RC20` U0-U5 closeout 之后，收口输入实时性、runtime concurrency、immutable poll publication、Favorites crash containment 与动态证据；这仍是 post-closeout field-readiness hotfix，不是新 runtime phase。
+- 当前活跃 Sprint：无；最近完成 `S-DP5-RC20-HOTFIX`。
+- 最近完成内容：在 `DP5-RC20` U0-U5 closeout 之后，收口输入实时性、runtime concurrency、immutable poll publication、Favorites crash containment 与 matching safe-smoke 动态证据；这是 post-closeout field-readiness hotfix，不是新 runtime phase。
 - 已完成阶段：`PH0` - `PH8b`
 - 当前边界：
   - `PH8a` 已完成 runtime closeout；`PH8b` 不负责 runtime 主线裁决。
   - `DP5-RC20` 是 post-closeout hardening / RC readiness，不是新的 runtime phase。
-  - `DP5` 当前为 `in_progress` / `passes=false`；Unit 1-8 已完成，Unit 9 正在收口 host stress、canonical gates、文档与 builder memory，Unit 10 仍需动态证据。
-  - native `Game.Favorites` 在 matching dump / IDA 与真实游戏循环闭环前保持 fail-closed；当前 release status 为 `NO-GO`。
+  - `DP5` 当前为 `in_progress` / `passes=false`；Unit 1-9 与摇杆/Journal matching safe smoke 已完成，Unit 10 只剩 native Favorites 的完整动态证据。
+  - native `Game.Favorites` 在 matching dump / IDA 与真实游戏循环闭环前保持 fail-closed；当前 release status 为 `GO WITH NATIVE FAVORITES DISABLED`。
   - `PR-A`、`PR-B1`、`PR-B2`、`PR-B3` 已合入；`PR-C` 只收口文档合同卫生、死链和状态滞后。
   - 只有最终 `main` head 同时通过远端 `phase8` 与 `rc-readiness` 后，才可称为 `RC QA baseline`。
   - generated facts 只能放在 `docs/generated/`。

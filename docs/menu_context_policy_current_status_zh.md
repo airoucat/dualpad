@@ -30,6 +30,8 @@
 
 菜单上下文测试必须至少包含一条从 live registered name 开始的 `UiMenuObserver / MenuInstanceRegistry -> ContextResolver -> actionSetStack` 路径；不能只用 canonical context name 代替实机名称。
 
+build `a7a75fac5281` 的 matching 实机日志记录 `Journal Menu` 为 `presentationUiContext=5 / legacyContext=JournalMenu`，用户同时确认 Journal 菜单 L2/R2 标签翻页有效。这条证据证明 live-name 分类已进入 `JournalLayer`；它不代表默认关闭的 native Favorites 路径已经完成验证。
+
 ## 目标绑定的菜单刷新
 
 refresh request 捕获同一份 `PublishedPresentationState` 中的：

@@ -8,7 +8,7 @@ Skyrim SE 1.5.97 / CommonLibSSE-NG 的 DualSense 输入重构项目。
 
 `PH8b` 当前只负责治理收口：DocGen provenance、`docs/generated/` generated facts、reviewed docs 去重、默认 CI canonical target 接线，以及 builder memory / baseline / graphify close-out 口径一致。
 
-当前活跃工作是 post-closeout `S-DP5-RC20-HOTFIX`：收口连续输入背压、唯一 runtime owner、不可变 Poll 输出、generation-based pulse、target-bound menu refresh 与事务化 hook。该工作不新增 runtime phase；真实游戏、matching dump/IDA 和 Favorites 循环尚未闭环，当前发布状态为 `NO-GO`，`enable_native_favorites=false` 保持默认。
+最近完成的 post-closeout `S-DP5-RC20-HOTFIX` 已收口连续输入背压、唯一 runtime owner、不可变 Poll 输出、generation-based pulse、target-bound menu refresh、事务化 hook，以及摇杆与 Journal L2/R2 的 matching 实机 smoke。该工作未新增 runtime phase；native Favorites 的 matching dump 与真实游戏循环仍未闭环，因此当前发布状态为 `GO WITH NATIVE FAVORITES DISABLED`，`enable_native_favorites=false` 保持默认。
 
 ## 事实与叙述边界
 

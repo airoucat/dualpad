@@ -270,3 +270,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Summary: 两次启动 RC canonical PowerShell 门禁时误把外层 `shell_command` timeout 设为 1 秒，命令被工具以 exit 124 提前终止。
 - Detail: `run_phase8_ci.ps1` / `run_rc_readiness.ps1` 本身需要数十秒；短时工具 yield 应使用异步 cell + `wait`，不能把进程 hard timeout 当作 yield。exit 124 只表示外层工具终止，不能记为测试失败或通过。
 - Resolution: canonical 门禁统一使用至少 600000 ms hard timeout；需要保持进度更新时，让 `shell_command` 返回 running cell，再以不超过 60 秒的 `wait` 轮询。
+
+## ERR-20260711-011
+
+- Logged: 2026-07-11 11:34 CST
+- Priority: medium
+- Status: resolved
+- Area: CI / governance status transition
+- Summary: matching safe smoke 已支持条件发布，但 reviewed-doc 与 RC closeout 门禁仍硬编码“活跃 hotfix + NO-GO”，拒绝合法的完成态。
+- Detail: build `a7a75fac5281` 的用户实测与 live-log evaluator 已闭合摇杆/Journal blocker，builder memory 因此切换为 `current_sprint=null`、hotfix `completed`、`GO WITH NATIVE FAVORITES DISABLED`。旧门禁仍把动态证据到达前的临时状态当成永久不变量，导致所有 runtime tests 通过后在文档一致性层失败。
+- Related files: `scripts/ci/check_reviewed_docs_consistency.py`, `scripts/ci/check_rc_readiness_closeout.py`, `tests/python/test_rc20_governance_state.py`, `.dualpad-builder/`, current-truth docs
+- Resolution: 先新增两条治理门禁集成测试并观察预期红灯，再把检查器和 current-truth docs 原子升级到条件完成态；检查器继续要求 native Favorites fail-closed、完整 `GO` 边界和 `DP5 in_progress/passes=false`。

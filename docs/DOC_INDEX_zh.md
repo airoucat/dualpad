@@ -2,9 +2,9 @@
 
 这份索引只负责路由与说明。可枚举事实由 `DualPadDocGen` 生成到 `docs/generated/`，reviewed docs 不再复制 generated facts。
 
-## 当前活跃 Sprint
+## 当前工作状态
 
-- `S-DP5-RC20-HOTFIX`：post-closeout field-readiness hardening，当前发布状态 `NO-GO`。
+- 当前无活跃 Sprint；最近完成的 `S-DP5-RC20-HOTFIX` 是 post-closeout field-readiness hardening，当前发布状态为 `GO WITH NATIVE FAVORITES DISABLED`。
 - `PH8b` 已完成；`PH0` - `PH8b` closeout 已收口。
 - `DP5-RC20` U0-U5 已完成；后续为 RC evidence / field-readiness fixes 与实机 QA，不是新 runtime phase。
 - `PR-A`、`PR-B1`、`PR-B2`、`PR-B3` 已合入；`PR-C` 只修正文档合同卫生、死链和状态滞后。

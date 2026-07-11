@@ -44,6 +44,7 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 | build `71c57b30ae0a` 安全 smoke | 已执行，发现 blocker | generation 到 3000、1519 次 serialized handoff、无 owner degraded / queue overflow；用户观察到摇杆卡顿、进入菜单后部分按键无响应，gate off 下收藏菜单无法打开；日志有 31 次伪 `sequence_gap` |
 | build `b5899084bf6d` 修复复测 | 已执行，仍有 blocker | 44 秒 matching log 无 `sequence_gap` / queue overflow / owner degraded，只有 1 次 `explicit_reset`；用户仍观察到摇杆卡顿与 Journal 扳机翻页无效。该结果证伪“排序/配对修复已覆盖用户主症状” |
 | build `4d9a43e845db` current-state 复测 | 部分通过，仍有 blocker | 用户确认摇杆已不卡；Journal L2/R2 仍无效。matching log 达 generation 1800、`nativeFavorites=false`，但缺 clean shutdown marker；live target 为 `Journal Menu` 时 refresh 记录 `uiContext=1`，interaction 仍落在 `ctx=Menu` |
+| build `a7a75fac5281` live-name 复测 | 已通过安全 smoke | 用户确认 Journal L2/R2 翻页有效；结合上一 build 的摇杆结果，两条非 Favorites 用户症状均已通过实机复测。matching evaluator 返回 `PASS`，generation 到 1200、506 次 serialized handoff、`nativeFavorites=false`；live `Journal Menu` 记录 `presentationUiContext=5 / legacyContext=JournalMenu` |
 | Poll capped diagnostics | 辅助样本 | 256 组 enter/exit、单线程、`inFlight <= 1`、约 16/17/18 ms；raw log 已被覆盖且缺 build commit，不作为 release proof |
 | matching crash dump | 未执行 | 当前没有与本轮 DLL/PDB/log/config/SWF 匹配的 `.dmp` 或 Crash Logger report |
 | physical/synthetic DPadUp A/B | 未执行 | 需要用户实机输入与 matching artifact capture |
@@ -52,7 +53,9 @@ RC readiness 会聚合 Phase8、dispatcher replay diff、builder JSON、reviewed
 
 完整静态证据见 [../research/skyrim_xinput_poll_callsite.md](../research/skyrim_xinput_poll_callsite.md)。
 
-build `4d9a43e845db` 的实测把两条症状拆开：用户确认持续模拟量修复已消除摇杆卡顿，但 Journal L2/R2 仍无效。配置中的 `[JournalMenu]` 已正确把 `Axis:LeftTrigger/RightTrigger` 绑定到 `Journal.TabLeft/TabRight`，native descriptor 也正确投影到 LT/RT；断点在更上游的 context classification。Skyrim live name 是 `Journal Menu`，旧 catalog 只把无空格 `JournalMenu` 写入 `menuNameIndex`，而 `ResolveMenuName()` 不读取 alias index，导致实机回退为 `UiContextId::UnknownTrackedMenu / legacy Menu`，`JournalLayer` 从未启用。新增 live-name 端到端测试已在旧目录上正确红灯；补齐 menu name 后，`DualPadContextResolverTests` 和使用 live name 的 `DualPadInputV2Tests` 均通过，仍需 matching build 实机复测。
+build `4d9a43e845db` 的实测把两条症状拆开：用户确认持续模拟量修复已消除摇杆卡顿，但 Journal L2/R2 仍无效。配置中的 `[JournalMenu]` 已正确把 `Axis:LeftTrigger/RightTrigger` 绑定到 `Journal.TabLeft/TabRight`，native descriptor 也正确投影到 LT/RT；断点在更上游的 context classification。Skyrim live name 是 `Journal Menu`，旧 catalog 只把无空格 `JournalMenu` 写入 `menuNameIndex`，而 `ResolveMenuName()` 不读取 alias index，导致实机回退为 `UiContextId::UnknownTrackedMenu / legacy Menu`，`JournalLayer` 从未启用。新增 live-name 端到端测试已在旧目录上正确红灯；补齐 menu name 后，`DualPadContextResolverTests` 和使用 live name 的 `DualPadInputV2Tests` 均通过。
+
+build `a7a75fac5281` 完成 matching 实机复测：用户确认 Journal L2/R2 标签翻页有效；日志中的同一 live menu 已解析为 `presentationUiContext=5 / legacyContext=JournalMenu`，RC20 evaluator 返回 `PASS`。该结果与 `4d9a43e845db` 的摇杆实测合并，闭合了 native Favorites 之外的两条用户可见 blocker。
 
 ## 最简手工验证
 
@@ -86,4 +89,4 @@ python scripts/dev/check_rc20_live_log.py --expect-commit <当前 HEAD> --json
 
 ## 当前发布判定
 
-当前为 `NO-GO`。`enable_native_favorites=false` 继续是默认配置。build `4d9a43e845db` 已由用户确认摇杆不卡，但 Journal 扳机翻页仍失败；live `Journal Menu` context classification 修复目前只有 host 端红绿测试，尚未完成 matching build 实机复测。matching dump、Favorites loop 和 soak 也未完成。只有动态证据完成且无 blocker 时，才可评估 `GO WITH NATIVE FAVORITES DISABLED`；未完成真实 Favorites 循环和 crash dump 闭环不得给 `GO`。
+当前为 `GO WITH NATIVE FAVORITES DISABLED`。build `a7a75fac5281` 的 matching safe smoke 已由用户确认摇杆流畅、Journal L2/R2 翻页有效，RC20 live-log evaluator 同时返回 `PASS`。`enable_native_favorites=false` 继续是默认配置，因此该判定不包含 native synthetic DPadUp 收藏菜单功能；physical/synthetic DPadUp A/B、matching dump、Favorites loop 和 soak 均未完成。未完成真实 Favorites 循环和对应 crash evidence 闭环前不得给 `GO`。

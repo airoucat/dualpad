@@ -4,7 +4,7 @@
 
 ## RC20 hotfix update（2026-07-11）
 
-`S-DP5-RC20-HOTFIX` 在 U5 closeout 之后继续处理现场 release blockers，不重开 runtime phase。当前已落地：
+`S-DP5-RC20-HOTFIX` 在 U5 closeout 之后处理现场 release blockers，现已完成且未重开 runtime phase。已落地：
 
 - continuous state 拆为 `LatestPadState` / `LatestSourceEvidence`，ordered queue 只保留 edge/boundary/recovery facts；
 - verified single active runtime owner ticket；实机已证明 loading lifecycle 允许 serialized OS-thread handoff，并发 writer 仍 fail-closed；
@@ -13,7 +13,7 @@
 - target-bound menu refresh；
 - transactional hook install、exact rollback 与 `UnsafePartial` fail-closed。
 
-`Game.Favorites` native route 继续默认关闭。IDA Poll call-site 静态调查已完成，但修复后的 owner handoff 尚待读档复测，matching Favorites dump、真实 Skyrim loop 和 soak 也未完成。因此，本文原有 RC QA baseline 不构成当前 hotfix 的 `GO` 证据；当前发布状态为 `NO-GO`。详细验证见 [../testing/rc20_runtime_validation.md](../testing/rc20_runtime_validation.md)。
+`Game.Favorites` native route 继续默认关闭。IDA Poll call-site 静态调查、serialized owner handoff、摇杆与 Journal L2/R2 matching safe smoke 已完成；matching Favorites dump、physical/synthetic DPadUp A/B、真实 Skyrim loop 和 soak 尚未完成。因此，本文证据只支持 `GO WITH NATIVE FAVORITES DISABLED`，不构成完整 `GO`。详细验证见 [../testing/rc20_runtime_validation.md](../testing/rc20_runtime_validation.md)。
 
 ## Gate hierarchy
 

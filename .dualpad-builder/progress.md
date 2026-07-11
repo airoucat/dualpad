@@ -3292,3 +3292,22 @@
 - live `Journal Menu` context 修复已完成未提交 canonical close-out：`scripts/ci/run_phase8_ci.ps1` exit 0，随后 `scripts/ci/run_rc_readiness.ps1` exit 0。全部 canonical targets、17 个 Python tests、10 个 mandatory replay scenarios、reviewed/generated consistency、legacy/release/config/prompt/menu/glyph gates、proxy build、artifact manifest、builder JSON 与 diff hygiene 均通过；Graphify 为 `1974 nodes / 4690 edges / 148 communities`。
 - 首轮 Phase 8 按设计在 generated-doc clean check 拦截 provenance drift；`ContextCatalog.cpp` 是 DocGen input，4 份 generated docs 的稳定 manifest hash 从 `7ab15ab062bdd968` 更新为 `c048fdb1677fa132`。连续生成一致后暂存生成物并重跑通过；`.learnings/ERRORS.md` 的既有 `ERR-20260711-008` 已补充 dirty-tree staging 规则。
 - 上述仍是 host/build/static 证据。提交/推送后必须用新 HEAD 强制重建并部署 matching DLL/PDB，再让用户只复测 Journal L2/R2；在通过前 release status 保持 `NO-GO`，native Favorites 保持默认关闭。
+
+## 2026-07-11 11:27:00 +08:00
+
+- 用户完成 matching build `a7a75fac5281` 的 Journal 复测并明确确认 L2/R2 标签翻页有效。结合 build `4d9a43e845db` 已确认的摇杆不卡，native Favorites 之外的两条用户可见 blocker 均获得实机通过证据。
+- `python scripts/dev/check_rc20_live_log.py --expect-commit a7a75fac5281 --json` exit 0，结果为 `PASS`、空 reasons、runtime `1-5-97-0`、latest generation 1200、506 次 serialized owner handoff、`native_favorites=false`。
+- matching 日志中的 live target 为 `Journal Menu`；交互记录已显示 `presentationUiContext=5 / resolverUiContext=5 / legacyContext=JournalMenu`，不再回退到 `UnknownTrackedMenu / Menu`。用户观察证明 L2/R2 的 `Journal.TabLeft/TabRight` 投影已被游戏实际消费。
+- `S-DP5-RC20-HOTFIX` 以 `GO WITH NATIVE FAVORITES DISABLED` 完成，`current_sprint` 清空。native Favorites 继续默认关闭；physical/synthetic DPadUp A/B、1000 次 open/close、各 UI profile 200 次、2-hour soak 与 matching crash dump 均未执行，因此不得标记完全 `GO`，DP5 后续验证仍保持 `in_progress`。
+
+## 2026-07-11 11:34:00 +08:00
+
+- 首轮条件 close-out 的 `scripts/ci/run_rc_readiness.ps1` 在全部已执行 runtime targets 通过后停于 reviewed-doc consistency：两个治理门禁仍硬编码 `NO-GO / current_sprint=S-DP5-RC20-HOTFIX / in_progress`。这是动态证据到达前的旧状态合同，不是产品回归。
+- TDD 红灯新增 `tests/python/test_rc20_governance_state.py`，分别直接运行 reviewed-doc 与 RC closeout gate；旧检查器稳定失败。最小修复把 builder、authoritative baseline、README/索引、U5 closeout 与检查器原子升级到 `current_sprint=null / hotfix completed / GO WITH NATIVE FAVORITES DISABLED`，同时继续要求 native Favorites fail-closed、DP5 `in_progress/passes=false` 与完整 `GO` 禁止边界。
+- focused 治理测试现为 2/2 通过；完整 RC readiness 仍需在更新后的工作树重新执行，当前不能用首轮失败前的部分输出宣称 canonical close-out 通过。
+
+## 2026-07-11 11:35:00 +08:00
+
+- 更新治理状态后的 `scripts/ci/run_rc_readiness.ps1` 完整 exit 0。Phase 8 canonical targets 全部通过，Python discovery 为 19/19，10 个 mandatory dispatcher replay scenarios 全部 no diff；reviewed/generated consistency、legacy/release/U4/U5 gates、builder JSON、DualPadDInput8Proxy、release artifact manifest 与 `git diff --check` 均通过。
+- Graphify manual close-out 结果为 `1979 nodes / 4698 edges / 146 communities`。构建阶段仅有目标 PDB 正被占用而跳过同路径复制的 warning，DLL 与 proxy build 均明确 `build ok`，不改变门禁 exit 0 结论。
+- 该 fresh canonical 结果与 build `a7a75fac5281` 的 matching safe-smoke `PASS` 共同支持 `GO WITH NATIVE FAVORITES DISABLED`；提交后仍需对新 HEAD 生成 matching artifact，并运行 clean-manifest gate。

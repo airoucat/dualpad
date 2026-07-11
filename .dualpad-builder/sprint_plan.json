@@ -1,8 +1,8 @@
 {
   "project": "DualPad Authoritative Baseline",
   "status": "active",
-  "current_sprint": "S-DP5-RC20-HOTFIX",
-  "updated_at": "2026-07-11T10:27:00+08:00",
+  "current_sprint": null,
+  "updated_at": "2026-07-11T11:27:00+08:00",
   "sprints": [
     {
       "id": "S-DP5-RC20-HOTFIX",
@@ -19,7 +19,7 @@
         "B6",
         "B7"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "exit_criteria": [
         "src/input_v2 保持唯一 runtime mainline，Poll hook 只 acquire/serialize immutable PollOutputFrame",
         "连续 axes/triggers 使用 complete-generation latest publication；非 neutral absolute values 在每个 stable frame 保留，changes 只记录实际变化；current-down mask 仅作 overflow recovery baseline，ordered queue 只保留 edge、pulse request 和 boundary",
@@ -41,9 +41,9 @@
         "Windows xmake DualPad / DualPadDInput8Proxy build、release/package smoke、builder JSON、generated docs、graphify rebuild 与 git diff --check",
         "IDA 0xC1AB40 / 0xC1AB9D caller contract、matching WinDbg/VS dump、vanilla/live SWF A/B（条件触发）",
         "修复 build 1edb1949ecc4 读档时记录 event=rebound，且后续 runtime generation 持续推进、无 failure=thread_drift",
-        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；build 4d9a43e845db 已确认摇杆不卡，但 live Journal Menu 曾错误落到 UnknownTrackedMenu/legacy Menu，JournalLayer 未启用；真实菜单名必须解析到 Journal context，连续 trigger current-state 必须映射 Journal.TabLeft/Right，并完成下一 matching build 复测",
+        "RC20 live-log evaluator 验证 matching build/runtime、native Favorites gate、Poll hook、owner lifecycle、queue/sequence health 与 target refresh；build 4d9a43e845db 已确认摇杆不卡，build a7a75fac5281 的用户实测确认 Journal L2/R2 翻页有效，matching evaluator PASS 且 live Journal Menu 解析为 uiContext=5 / legacy JournalMenu",
         "DualPadContextResolverTests 与 runtime UI boundary static tests 证明 owner tick 不读取 RE::UI，stale UI capture 不覆盖新 event，Scaleform attach 与 HUD mutation 只从 UI task 调用",
-        "physical/synthetic DPadUp、vanilla 1000 次 open/close、每支持 UI profile 200 次与 2-hour soak"
+        "physical/synthetic DPadUp、vanilla 1000 次 open/close、每支持 UI profile 200 次与 2-hour soak 尚未执行；因此 native Favorites 保持默认关闭，发布判定不得超过 GO WITH NATIVE FAVORITES DISABLED"
       ]
     },
     {

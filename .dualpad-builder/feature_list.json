@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-07-11T08:08:00+08:00",
+  "updated_at": "2026-07-11T11:27:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -359,8 +359,8 @@
         "Unit 10 阶段性证据已完成 Skyrim 1.5.97 Poll call-site IDA 调查；build 71c57b30ae0a 的读档安全 smoke 已证明 serialized owner handoff 可推进到 generation 3000 且不再 thread_drift，同时暴露 31 次由多 producer timestamp regression 误判的 sequence_gap；FrameAssembler 已改为以 ingress seq 为唯一排序权威并补回归，待新 build 实机复测，Favorites dump/循环仍未完成",
         "build 71c57b30ae0a 的 1519 次 owner handoff 证明 runtime owner 不具备 UI thread authority；UiMenuObserver 已改为 event-time Partial publication + coalesced AddUITask live capture + stale sequence rejection，ContextRefreshTick 不再读取 RE::UI，Scaleform attach 与 HUD mutation 也只经 UI task",
         "build 32617f1ed2fa 的实机日志确认 UI-task capture 与单 target refresh 生效，但仍出现 429 次伪 sequence_gap、121 次 explicit_reset 和 device boundary/refresh storm；根因已由 TDD 收敛为粗粒度 IngressSource 下跨线程/时钟 timestamp regression 被误作排序失败，以及 LatestSourceEvidence 领先 capture cutoff 时被误作 marker mismatch；配对完成前 latest/ordered pad facts 现在也不能绕过边界发布 Stable frame",
-        "build b5899084bf6d 的 matching smoke 已将 sequence_gap 降为 0；build 4d9a43e845db 的实测确认 current-state 修复已消除摇杆卡顿，但 Journal L2/R2 仍无效。matching log 中 live target 为 Journal Menu、refresh uiContext=1/interaction ctx=Menu；ContextCatalog 只把无空格 JournalMenu 放入 menuNameIndex，导致 JournalLayer 未启用。真实菜单名回归已先红后绿，当前 catalog 修复待 matching build 实机复测",
-        "最终 release status 只能是 NO-GO、GO WITH NATIVE FAVORITES DISABLED 或 GO；未完成真实 Favorites 循环与 crash evidence 不得标记 GO"
+        "build b5899084bf6d 的 matching smoke 已将 sequence_gap 降为 0；build 4d9a43e845db 的实测确认 current-state 修复已消除摇杆卡顿，并暴露 live Journal Menu 未进入 JournalLayer。build a7a75fac5281 补齐 live menu name 后，用户确认 Journal L2/R2 翻页有效；matching log evaluator PASS，generation 到 1200、506 次 serialized owner handoff、nativeFavorites=false，Journal Menu 解析为 uiContext=5 / legacy JournalMenu",
+        "当前 release status 为 GO WITH NATIVE FAVORITES DISABLED；native Favorites 默认保持关闭，未完成真实 Favorites 循环、physical/synthetic DPadUp A/B 与 matching crash evidence 前不得标记 GO"
       ]
     }
   ]

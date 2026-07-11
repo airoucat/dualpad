@@ -231,3 +231,16 @@ build `4d9a43e845db` 的实测确认摇杆已不卡，但 Journal L2/R2 仍无�
 - `tests/input_v2/ContextResolverTests.cpp`
 - `tests/input_v2/InputV2Tests.cpp`
 - `docs/menu_context_policy_current_status_zh.md`
+
+## [LRN-20260711-006] workflow
+
+**Logged**: 2026-07-11T11:34:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: CI / builder governance
+
+### Summary
+状态型静态门禁必须与 builder memory 和 current-truth docs 原子迁移；动态证据到达后，不能继续把旧 `NO-GO / active sprint` 快照当成永久合同。
+
+### Detail
+发布状态升级应同时更新 feature/sprint JSON、progress、authoritative baseline、README/索引、验证记录，以及所有硬编码该状态的 CI 检查器。条件完成态还必须保留负向不变量：`enable_native_favorites=false`、native route fail-closed、完整 Favorites loop/dump 未闭合前禁止 `GO`。为状态迁移添加直接运行治理门禁的回归测试，可以在完整 canonical 流程之前暴露此类漂移。

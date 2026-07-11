@@ -13,13 +13,13 @@
 - `DP4a`：`completed`
 - `PH0` - `PH8b`：`completed`
 - `DP5`：`in_progress` / `passes=false`（post-closeout field-readiness hotfix；不是新的 runtime phase）
-- 当前活跃 Sprint：`S-DP5-RC20-HOTFIX`
+- 当前无活跃 Sprint；最近完成：`S-DP5-RC20-HOTFIX`
 
 状态模型：
 
 - `PH0` - `PH8b` 是已完成的 rearchitecture / closeout 链。
 - `DP1` - `DP4` 已按 PH8b baseline 结算为 completed，不再代表未完成 current runtime work。
-- `DP5` / `S-DP5` 是既有 post-closeout hardening / RC readiness 记录面；U0-U5 已完成。当前 `S-DP5-RC20-HOTFIX` 只做 field-readiness 修复与证据闭环，不阻塞或重开 PH8b runtime closeout。
+- `DP5` / `S-DP5` 是既有 post-closeout hardening / RC readiness 记录面；U0-U5 已完成。`S-DP5-RC20-HOTFIX` 已完成 field-readiness 修复与 safe-smoke 证据闭环，不阻塞或重开 PH8b runtime closeout。
 
 ## PH8b Governance Closeout
 
@@ -35,9 +35,9 @@
 
 - `PH8b` / `S-PH8b` 已完成。
 - `DP1` - `DP4` 已同步结算为 `completed` / `passes=true`，避免与 `PH0` - `PH8b` closeout 形成第二状态口径。
-- `S-DP5` 保留为既有 U0-U5 closeout 记录；`DP5` 因 `S-DP5-RC20-HOTFIX` 激活而为 `in_progress` / `passes=false`。该 hotfix 是 field-readiness 修正，不是 U6 或新 runtime phase。
+- `S-DP5` 保留为既有 U0-U5 closeout 记录；`S-DP5-RC20-HOTFIX` 已完成，但 `DP5` 因 native Favorites 完整动态验证未完成而保持 `in_progress` / `passes=false`。该 hotfix 是 field-readiness 修正，不是 U6 或新 runtime phase。
 - `.dualpad-builder/feature_list.json` 中 `PH8b` 为 `completed` / `passes=true`。
-- `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 为 `completed`，`current_sprint=S-DP5-RC20-HOTFIX`。
+- `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 与 `S-DP5-RC20-HOTFIX` 均为 `completed`，`current_sprint=null`。
 - 本 closeout 不新增后续 runtime phase。
 
 ## DP5-RC20 Post-Closeout Hardening
@@ -59,8 +59,8 @@
 - PR-A/B1/B2/B3：RC evidence / field-readiness 修正已合入；远端 `phase8` 与 `rc-readiness` 对应 PR 均通过。
 - PR-C：文档合同卫生、死链和 stale-status cleanup；完成后最终 `main` head 需再次通过远端 `phase8` 与 `rc-readiness` 才能称为 `RC QA baseline`。
 - RC20 hotfix Unit 1-8：连续状态背压、bounded recovery、单 owner、immutable `PollOutputFrame`、generation pulse、target-bound refresh 与 transactional hook install 已完成 focused 验证。
-- RC20 hotfix Unit 9：host stress、canonical gates、文档、builder memory 与 graphify close-out 正在进行。
-- RC20 hotfix Unit 10：matching dump / IDA、真实 Skyrim Favorites 循环和 soak 证据仍待完成；native `Game.Favorites` 保持 fail-closed，当前 release status 为 `NO-GO`。
+- RC20 hotfix Unit 9：host stress、canonical gates、文档、builder memory 与 graphify close-out 已完成。
+- RC20 hotfix Unit 10：摇杆与 Journal L2/R2 matching safe smoke 已通过；matching Favorites dump、physical/synthetic DPadUp A/B、真实 Skyrim Favorites 循环和 soak 仍待完成。native `Game.Favorites` 保持 fail-closed，当前 release status 为 `GO WITH NATIVE FAVORITES DISABLED`。
 
 硬边界：
 

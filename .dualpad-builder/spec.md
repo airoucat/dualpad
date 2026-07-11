@@ -20,7 +20,7 @@
   - `legacy-named input adapters -> IngressHub -> FrameAssembler -> DualPadRuntime -> InteractionEngine -> GameplayProjectionFrame -> PollOutputAdapter -> GameplayPresentationPublisher -> PromptRuntimeOwner`
 - `src/input_v2/` 是唯一正式 runtime mainline；`PadEventSnapshotDispatcher / PadEventSnapshotProcessor` 只允许作为 shim / adapter。
 - HID / `PadState` 归一化只属于上游输入 adapter；`SkyrimCompatibilitySurface`、`ScaleformPromptAdapter`、`UpstreamGamepadHook`、`XInputStateBridge` 与 `AuthoritativePollState` 只属于 published / compat state 消费侧，不得写成 current mainline authority
-- `PH0` - `PH8b` closeout 已收口；当前活跃 `S-DP5-RC20-HOTFIX` 只做 post-closeout field-readiness 修复与动态证据，不新增后续 runtime phase
+- `PH0` - `PH8b` closeout 已收口；`S-DP5-RC20-HOTFIX` 已以 `GO WITH NATIVE FAVORITES DISABLED` 完成，当前无活跃 Sprint，且未新增后续 runtime phase
 - runtime 单 writer 由唯一 active owner ticket 表达，不假设 Skyrim event sink 终身固定 OS thread；只有前一 ticket 已释放且 frame token 严格递增时才允许记录并执行 serialized handoff，并发异线程必须 fail-closed
 - runtime owner 不拥有 UI authority：menu event 先发布 immutable `Partial` facts，live `RE::UI` capture、Scaleform attach、HUD mutation 与 target refresh 只能通过 SKSE `AddUITask`；stale capture 必须按 event sequence 拒绝
 - 当前 repo-owned prompt/glyph compatibility authority 固定为 `ScaleformGlyphBridge` shim、`ScaleformPromptAdapter`、`PromptRuntimeOwner` 和 `PromptService`
@@ -65,7 +65,7 @@
 ## Done Definition
 
 - `WF0`、`DP1-DP5` 的状态与验证结果都能在 `.dualpad-builder/` 中追溯
-- 若存在当前激活的 Sprint / slice，必须有明确退出标准和验证入口；当前 `current_sprint=S-DP5-RC20-HOTFIX`
+- 若存在当前激活的 Sprint / slice，必须有明确退出标准和验证入口；当前 `current_sprint=null`，最近完成 `S-DP5-RC20-HOTFIX`
 - `passes` 只在对应验证实际通过后更新
 - 代码工作结束前完成 graphify close-out
 - 最终 handoff 不把历史 fallback、旧实验或缺失 workspace 冒充成当前真相
