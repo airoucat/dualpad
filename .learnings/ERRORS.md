@@ -314,3 +314,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: `SubmitReset()` 与 `LiveInputFactProducer::Reset()` 会把 gamepad disconnect 扩大成全局 reset；当前正确合同由 Hub `PublishGamepadDisconnect()` 推进 session、producer classifier/baseline 清理及 haptics device detach 共同表达。
 - Related files: `scripts/ci/check_release_readiness.py`, `src/input/HidReader.cpp`
 - Resolution: 静态门禁改为同时要求 disconnect receipt/session handoff、classifier reset、previous-state/connection baseline 清理、reconnect 日志与 `SetDevice(nullptr)`；不恢复旧 global reset authority。
+
+## ERR-20260712-015
+
+- Logged: 2026-07-12 14:05 CST
+- Priority: high
+- Status: resolved
+- Area: replay harness / backend seam parity
+- Summary: WP6 为 production backend 新增 `SyncHeldContributors(...)` 后，replay-only `NativeButtonCommitBackendReplayStub` 未同步该 public seam；Phase8 runtime targets 全绿，但 RC readiness 在链接 `DualPadReplayHarness` 时失败。
+- Detail: replay target 编译 `DualPadRuntimeLive.cpp`，却用 replay stub 代替真实 backend implementation。header 新增虚拟输出依赖时，focused/runtime targets 可由真实 `.cpp` 满足，只有 RC replay harness 才会暴露 stub surface drift。
+- Related files: `src/input/backend/NativeButtonCommitBackend.h`, `src/input_v2/telemetry/NativeButtonCommitBackendReplayStub.cpp`, `xmake.lua`, `scripts/ci/run_rc_readiness.ps1`
+- Resolution: replay stub 补齐无副作用、返回成功的 `SyncHeldContributors(...)` seam；以原始 `DualPadReplayHarness` LNK2019 为红灯，重新构建 harness、运行 replay batch/diff，再重跑完整 RC readiness。后续修改 backend public surface 时必须同时审计 production implementation、focused fake 和 replay stub。

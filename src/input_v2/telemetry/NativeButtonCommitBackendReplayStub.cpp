@@ -38,6 +38,17 @@ namespace dualpad::input::backend
         return HeldEmitterSource::None;
     }
 
+    bool NativeButtonCommitBackend::SyncHeldContributors(
+        std::string_view,
+        NativeControlCode,
+        std::uint8_t,
+        bool,
+        InputContext,
+        std::uint32_t)
+    {
+        return true;
+    }
+
     void NativeButtonCommitBackend::BeginFrame(InputContext, std::uint32_t, std::uint64_t, std::uint64_t)
     {
     }

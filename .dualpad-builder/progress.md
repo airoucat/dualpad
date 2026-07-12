@@ -3561,3 +3561,5 @@
   - Focused GREEN：两个 evaluator Python suites、phase-aware closeout contract、good fixture CLI、dynamic checker、`DualPadIngressTests` 与 `DualPadInputV2Tests` 全部 exit 0。
   - canonical Phase8 GREEN：主 DLL、13 个 runtime/support targets build/run、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator 与 generated diff 全部 exit 0。
   - 架构、并发、背压、backend、menu、baseline、harness、builder spec 与索引已同步；active Sprint 仍为 `S-DP5-MIXED-INPUT`，因为 gated slices 需要 IDA/实机动态证据。下一步在干净 HEAD 运行 RC readiness 与 Graphify/diff close-out。
+  - 首次 clean-HEAD RC readiness 在 Phase8 全绿后，于 `DualPadReplayHarness` 铁接阶段以 LNK2019 失败：WP6 新增的 `NativeButtonCommitBackend::SyncHeldContributors(...)` 未同步到 replay-only stub。该失败不是动态门禁结果，也没有启用任何 production capability。
+  - 最小修复为 replay stub 补齐无副作用的同签名 seam。focused rerun：`xmake build -y DualPadReplayHarness` exit 0；dispatcher batch 10 scenarios matched；`dualpad_trace_diff.py` 10 scenarios 全部 `no diff`。完整 clean-HEAD RC readiness 继续重跑。
