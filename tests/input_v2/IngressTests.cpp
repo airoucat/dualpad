@@ -552,12 +552,20 @@ namespace
             std::move(connected),
             ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected });
         Require(connectedReceipt.accepted, "gamepad connection must publish");
+        const auto connectedSnapshot = hub.GetGamepadConnectionSnapshot();
+        Require(connectedSnapshot.connectivity == ingress::GamepadConnectivity::Connected &&
+                connectedSnapshot.gamepadSessionId == connectedReceipt.gamepadSessionId,
+            "read-only availability telemetry must observe the Hub-owned connected session");
         ingress::FrameAssembler assembler;
         (void)assembler.Assemble(hub.Capture(16));
 
         const auto disconnectedReceipt = hub.PublishGamepadDisconnect();
         const auto disconnected = hub.Capture(16);
         Require(disconnectedReceipt.accepted, "gamepad disconnect reset must publish");
+        const auto disconnectedSnapshot = hub.GetGamepadConnectionSnapshot();
+        Require(disconnectedSnapshot.connectivity == ingress::GamepadConnectivity::Disconnected &&
+                disconnectedSnapshot.gamepadSessionId == disconnectedReceipt.gamepadSessionId,
+            "read-only availability telemetry must observe the Hub-owned disconnect transition");
         Require(disconnected.inputStateEpoch == connectedReceipt.inputStateEpoch, "gamepad disconnect must not advance global input epoch");
         Require(disconnected.gamepadSessionId > connectedReceipt.gamepadSessionId, "gamepad disconnect must advance only gamepad session");
         Require(disconnected.latestKbmGameplay.has_value(), "gamepad disconnect must preserve KBM latest facts");

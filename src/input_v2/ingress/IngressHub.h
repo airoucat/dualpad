@@ -84,6 +84,7 @@ namespace dualpad::input_v2::ingress
         std::vector<IngressEvent> Drain();
         std::vector<IngressEvent> Drain(std::size_t maxEvents);
         IngressCapture Capture(std::size_t maxEvents);
+        GamepadConnectionFacts GetGamepadConnectionSnapshot() const;
         bool HasUncapturedLatest() const;
         std::size_t PendingCount() const;
         std::size_t PendingLegacySnapshotCount() const;

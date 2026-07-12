@@ -29,6 +29,7 @@ namespace dualpad::input
         constexpr std::ptrdiff_t kExpectedPollXInputWindowOffset = 0x3E;
         constexpr std::uint64_t kPollDiagnosticCapacity = 256;
         PollDiagnosticLimiter g_pollDiagnosticLimiter{ kPollDiagnosticCapacity };
+        I0AvailabilitySampler g_i0AvailabilitySampler{ 5'000 };
         constexpr std::array<std::uint8_t, 38> kExpectedPollXInputWindow = {
             0x8B, 0x89, 0xC8, 0x00, 0x00, 0x00, 0x83, 0xF9,
             0xFF, 0x0F, 0x84, 0x1F, 0x02, 0x00, 0x00, 0x80,
@@ -126,6 +127,66 @@ namespace dualpad::input
                 };
 
                 const auto* state = reinterpret_cast<const XInputStateView*>(currentState);
+                const auto currentStateClass = BuildI0AvailabilityStateClass(
+                    state->gamepad.buttons,
+                    state->gamepad.thumbLX,
+                    state->gamepad.thumbLY,
+                    state->gamepad.thumbRX,
+                    state->gamepad.thumbRY,
+                    state->gamepad.leftTrigger,
+                    state->gamepad.rightTrigger);
+                const auto availabilityFingerprint = BuildI0AvailabilityFingerprint(
+                    I0AvailabilityFingerprintInput{
+                        .xinputResult = result,
+                        .currentStateClass = currentStateClass,
+                        .gamepadSessionId = outputFrame->gamepadSessionId,
+                        .contextRevision = static_cast<std::uint32_t>(
+                            outputFrame->contextRevision),
+                        .menuStackRevision = outputFrame->menuStackRevision,
+                        .context = static_cast<std::uint16_t>(outputFrame->context),
+                        .routeHealth = static_cast<std::uint8_t>(outputFrame->routeHealth),
+                        .remapMode = outputFrame->remapMode,
+                        .connected = outputFrame->connected,
+                        .delegateReady = outputFrame->delegateReady
+                    });
+                const auto availabilitySample = g_i0AvailabilitySampler.Observe(
+                    GetTickCount64(),
+                    availabilityFingerprint);
+                if (availabilitySample.record) {
+                    const bool neutral = state->gamepad.buttons == 0 &&
+                        state->gamepad.thumbLX == 0 &&
+                        state->gamepad.thumbLY == 0 &&
+                        state->gamepad.thumbRX == 0 &&
+                        state->gamepad.thumbRY == 0 &&
+                        state->gamepad.leftTrigger == 0 &&
+                        state->gamepad.rightTrigger == 0;
+                    logger::info(
+                        "[DualPad][I0Availability] pollCount={} sampleReason={} thread={} caller=0x{:X} nativePollReached=true compatPatchGroup=disabled_i0_no_go xinputResult={} outputGeneration={} runtimeGeneration={} routeHealth={} context={} contextRevision={} menuStackRevision={} remapMode={} connected={} delegateReady={} gamepadSession={} packet={} neutral={} buttons=0x{:04X} lx={} ly={} rx={} ry={} lt={} rt={}",
+                        availabilitySample.pollCount,
+                        ToString(availabilitySample.reason),
+                        threadId,
+                        caller,
+                        result,
+                        outputFrame->publicationGeneration,
+                        outputFrame->runtimeGeneration,
+                        input_v2::gameplay::ToString(outputFrame->routeHealth),
+                        ToString(outputFrame->context),
+                        outputFrame->contextRevision,
+                        outputFrame->menuStackRevision,
+                        outputFrame->remapMode,
+                        outputFrame->connected,
+                        outputFrame->delegateReady,
+                        outputFrame->gamepadSessionId,
+                        state->packetNumber,
+                        neutral,
+                        state->gamepad.buttons,
+                        state->gamepad.thumbLX,
+                        state->gamepad.thumbLY,
+                        state->gamepad.thumbRX,
+                        state->gamepad.thumbRY,
+                        state->gamepad.leftTrigger,
+                        state->gamepad.rightTrigger);
+                }
                 const auto remainingInFlight = g_pollDiagnosticLimiter.End(pollDiagnosticsEnabled);
                 if (diagnostic.record) {
                     logger::info(

@@ -372,3 +372,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: DataLoaded probe 已合法证明 handler vftable、live vptr、slot 7 与 original target 一致，但 A/B availability matrix 尚未完成，因此完整 I-0 仍必须 NO-GO。旧断言混淆了“身份未验证”和“能力未获批准”两个独立状态。
 - Related files: `.dualpad-builder/mixed_input_evidence.json`, `tests/python/test_mixed_input_closeout_contracts.py`
 - Resolution: TDD 红灯保留为证据；测试改为接受 identity PASS，同时强制 `availabilityVerdict=pending-A-B-matrix`、`productionPatchEnabled=false`、`manualEvidenceComplete=false`、`capabilityEnabled=false` 与总状态 `NO-GO`。closeout 10 tests 和动态 gate checker 随后全绿。
+
+## ERR-20260712-020
+
+- Logged: 2026-07-12 16:34 CST
+- Priority: medium
+- Status: resolved
+- Area: CommonLibSSE-NG / cross-runtime layout access
+- Summary: I-0 remap telemetry 直接访问 `MenuControls::remapMode`，在 CommonLibSSE-NG cross-VR build 中编译失败。
+- Detail: NG 的 `MenuControls` 把 SE/VR 尾部布局包装为 `RUNTIME_DATA_ACCESSOR`；cross-runtime 类型本身不暴露直接字段，即使固定支持目标的 SE offset 已知也不能绕开正式 accessor 猜布局。
+- Related files: `lib/commonlibsse-ng/include/RE/M/MenuControls.h`, `src/input/injection/PadEventSnapshotDispatcher.cpp`
+- Resolution: 改为 `MenuControls::GetRuntimeData().remapMode`；focused、wiring 和主 DLL build 重新通过。后续访问 NG `RUNTIME_DATA` 字段统一优先使用正式 accessor。

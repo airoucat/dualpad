@@ -303,6 +303,95 @@ namespace
         Require(limiter.End(true) == 0, "final Poll completion must clear in-flight count");
     }
 
+    void TestI0AvailabilitySampler()
+    {
+        using dualpad::input::I0AvailabilitySampleReason;
+        dualpad::input::I0AvailabilitySampler sampler(5'000);
+
+        const auto first = sampler.Observe(100, 0xAA);
+        const auto unchanged = sampler.Observe(200, 0xAA);
+        const auto changed = sampler.Observe(300, 0xBB);
+        const auto beforeInterval = sampler.Observe(5'299, 0xBB);
+        const auto interval = sampler.Observe(5'300, 0xBB);
+        const auto afterInterval = sampler.Observe(6'000, 0xBB);
+        const auto regressed = sampler.Observe(5'900, 0xBB);
+
+        Require(first.record && first.pollCount == 1 &&
+                first.reason == I0AvailabilitySampleReason::First,
+            "I-0 availability telemetry must record the first native Poll call");
+        Require(!unchanged.record && unchanged.pollCount == 2,
+            "unchanged high-rate Poll calls must not flood the log");
+        Require(changed.record && changed.pollCount == 3 &&
+                changed.reason == I0AvailabilitySampleReason::StateChanged,
+            "state or context fingerprint changes must be recorded immediately");
+        Require(!beforeInterval.record && beforeInterval.pollCount == 4,
+            "held current-state must wait for the full health interval");
+        Require(interval.record && interval.pollCount == 5 &&
+                interval.reason == I0AvailabilitySampleReason::IntervalElapsed,
+            "a 30-second held case must retain periodic evidence after the initial change");
+        Require(!afterInterval.record && afterInterval.pollCount == 6,
+            "an unchanged sample inside the next interval must remain quiet");
+        Require(regressed.record && regressed.pollCount == 7 &&
+                regressed.reason == I0AvailabilitySampleReason::ClockRegressed,
+            "clock regression between unrecorded Poll calls must remain explicit");
+
+        const dualpad::input::I0AvailabilityFingerprintInput base{
+            .xinputResult = 0,
+            .currentStateClass = 10,
+            .gamepadSessionId = 20,
+            .contextRevision = 30,
+            .menuStackRevision = 40,
+            .context = 50,
+            .routeHealth = 1,
+            .remapMode = false,
+            .connected = true,
+            .delegateReady = true
+        };
+        const auto baseFingerprint = dualpad::input::BuildI0AvailabilityFingerprint(base);
+        auto changedInput = base;
+        ++changedInput.currentStateClass;
+        Require(baseFingerprint != dualpad::input::BuildI0AvailabilityFingerprint(changedInput),
+            "I-0 fingerprint must change with XInput semantic current-state class");
+        changedInput = base;
+        ++changedInput.contextRevision;
+        Require(baseFingerprint != dualpad::input::BuildI0AvailabilityFingerprint(changedInput),
+            "I-0 fingerprint must change at an owner-resolved context boundary");
+        changedInput = base;
+        ++changedInput.gamepadSessionId;
+        Require(baseFingerprint != dualpad::input::BuildI0AvailabilityFingerprint(changedInput),
+            "I-0 fingerprint must change across gamepad sessions");
+        changedInput = base;
+        ++changedInput.xinputResult;
+        Require(baseFingerprint != dualpad::input::BuildI0AvailabilityFingerprint(changedInput),
+            "I-0 fingerprint must expose an XInput availability result change");
+        changedInput = base;
+        changedInput.remapMode = true;
+        Require(baseFingerprint != dualpad::input::BuildI0AvailabilityFingerprint(changedInput),
+            "I-0 fingerprint must record remap entry and exit as separate native availability cases");
+        changedInput = base;
+        changedInput.connected = false;
+        Require(baseFingerprint != dualpad::input::BuildI0AvailabilityFingerprint(changedInput),
+            "I-0 fingerprint must record physical connectivity transitions");
+        changedInput = base;
+        changedInput.delegateReady = false;
+        Require(baseFingerprint != dualpad::input::BuildI0AvailabilityFingerprint(changedInput),
+            "I-0 fingerprint must record Skyrim delegate readiness transitions");
+        Require(std::string_view(dualpad::input::ToString(
+                    I0AvailabilitySampleReason::StateChanged)) == "state_changed",
+            "I-0 sample reason must be stable for live evidence parsing");
+
+        Require(dualpad::input::BuildI0AvailabilityStateClass(0, 0, 0, 0, 0, 0, 0) == 0,
+            "neutral current-state must retain a zero availability class");
+        const auto stateClass = dualpad::input::BuildI0AvailabilityStateClass(
+            0x1000, 1, 0, 0, -1, 1, 2);
+        Require((stateClass & 0xFFFF) == 0x1000 &&
+                (stateClass & (1U << 16)) != 0 &&
+                (stateClass & (1U << 17)) != 0 &&
+                (stateClass & (1U << 18)) != 0 &&
+                (stateClass & (1U << 19)) != 0,
+            "availability class must distinguish buttons, LS, RS, LT and RT without hashing analog noise");
+    }
+
     void TestTaskFallbackTruthTable()
     {
         using dualpad::input::ShouldScheduleTaskFallback;
@@ -347,6 +436,7 @@ int main()
     TestPatchTransactionRollback();
     TestPatchEncodingContracts();
     TestPollDiagnosticLimiter();
+    TestI0AvailabilitySampler();
     TestTaskFallbackTruthTable();
     return 0;
 }

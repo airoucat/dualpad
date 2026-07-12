@@ -52,6 +52,10 @@ namespace dualpad::input_v2::gameplay
 
         PollOutputRouteHealth routeHealth{ PollOutputRouteHealth::Initializing };
         bool neutral{ true };
+        // Owner-observed I-0 telemetry only; never participates in routing or payload identity.
+        bool remapMode{ false };
+        bool connected{ false };
+        bool delegateReady{ false };
     };
 
     class PollOutputPublication

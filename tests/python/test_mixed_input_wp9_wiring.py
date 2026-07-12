@@ -55,6 +55,38 @@ class MixedInputWp9WiringTests(unittest.TestCase):
         self.assertLess(data_loaded, probe)
         self.assertLess(probe, frame_pump)
 
+    def test_i0_availability_shadow_samples_the_existing_native_poll_callsite(self) -> None:
+        upstream = self.read("src/input/injection/UpstreamGamepadHook.cpp")
+        dispatcher = self.read("src/input/injection/PadEventSnapshotDispatcher.cpp")
+        serialize = upstream.index("FillSyntheticXInputState")
+        fingerprint = upstream.index("BuildI0AvailabilityFingerprint", serialize)
+        sample = upstream.index("g_i0AvailabilitySampler.Observe", fingerprint)
+        log = upstream.index("[DualPad][I0Availability]", sample)
+
+        self.assertLess(serialize, fingerprint)
+        self.assertLess(fingerprint, sample)
+        self.assertLess(sample, log)
+        self.assertIn("nativePollReached=true", upstream)
+        self.assertIn("compatPatchGroup=disabled_i0_no_go", upstream)
+        self.assertIn("state->gamepad.buttons", upstream)
+        self.assertIn("state->gamepad.thumbLX", upstream)
+        self.assertIn("state->gamepad.thumbRY", upstream)
+        self.assertIn("state->gamepad.leftTrigger", upstream)
+        self.assertIn("state->gamepad.rightTrigger", upstream)
+        self.assertIn("BuildI0AvailabilityStateClass", upstream)
+        self.assertNotIn(".packetNumber = state->packetNumber", upstream)
+        self.assertIn("outputFrame->remapMode", upstream)
+        self.assertIn("remapMode={}", upstream)
+        self.assertIn("RE::MenuControls::GetSingleton()", dispatcher)
+        self.assertIn("GetRuntimeData().remapMode", dispatcher)
+        self.assertIn(".remapMode = remapMode", dispatcher)
+        self.assertIn("GetGamepadConnectionSnapshot()", dispatcher)
+        self.assertIn("GetRuntimeData().currentPCGamePadDelegate", dispatcher)
+        self.assertIn("connected={}", upstream)
+        self.assertIn("delegateReady={}", upstream)
+        self.assertNotIn("MenuControls::GetSingleton", upstream)
+        self.assertNotIn("ResolveGamepadDeviceAvailability", upstream)
+
 
 if __name__ == "__main__":
     unittest.main()

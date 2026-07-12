@@ -127,6 +127,16 @@ namespace dualpad::input
             const bool routeActive = nativeBackend.IsRouteActive();
             const auto runtimeInput =
                 input_v2::gameplay::RuntimeInputPublication::GetSingleton().GetCommitted();
+            const auto* menuControls = RE::MenuControls::GetSingleton();
+            const bool remapMode = menuControls && menuControls->GetRuntimeData().remapMode;
+            const auto gamepadConnection =
+                input_v2::ingress::IngressHub::GetSingleton().GetGamepadConnectionSnapshot();
+            const bool connected = gamepadConnection.connectivity ==
+                input_v2::ingress::GamepadConnectivity::Connected;
+            auto* inputManager = RE::BSInputDeviceManager::GetSingleton();
+            auto* gamepadHandler = inputManager ? inputManager->GetGamepadHandler() : nullptr;
+            const bool delegateReady = gamepadHandler &&
+                gamepadHandler->GetRuntimeData().currentPCGamePadDelegate != nullptr;
 
             input_v2::gameplay::PollOutputFrame output{
                 .runtimeGeneration = runtimeGeneration,
@@ -164,7 +174,10 @@ namespace dualpad::input
                 .routeHealth = routeActive ?
                     input_v2::gameplay::PollOutputRouteHealth::Ready :
                     input_v2::gameplay::PollOutputRouteHealth::PublicationUnavailable,
-                .neutral = !routeActive
+                .neutral = !routeActive,
+                .remapMode = remapMode,
+                .connected = connected,
+                .delegateReady = delegateReady
             };
             (void)input_v2::gameplay::PollOutputPublication::GetSingleton().PublishOwnerFrame(
                 std::move(output));

@@ -887,6 +887,18 @@ namespace dualpad::input_v2::ingress
         return capture;
     }
 
+    GamepadConnectionFacts IngressHub::GetGamepadConnectionSnapshot() const
+    {
+        std::scoped_lock lock(_mutex);
+        if (_latestGamepadConnection) {
+            return *_latestGamepadConnection;
+        }
+        return GamepadConnectionFacts{
+            .connectivity = _gamepadConnectivity,
+            .gamepadSessionId = _gamepadSessionId
+        };
+    }
+
     bool IngressHub::HasUncapturedLatest() const
     {
         std::scoped_lock lock(_mutex);

@@ -3712,3 +3712,21 @@
   - 最小治理修正将身份和 availability 分离：允许 `identityVerdict=PASS`、runtime vtable/original target verified，同时强制 `availabilityVerdict=pending-A-B-matrix`、`productionPatchEnabled=false`、`manualEvidenceComplete=false`、`capabilityEnabled=false` 和 I-0 总状态 `NO-GO`。
   - GREEN：`python tests/python/test_mixed_input_closeout_contracts.py --phase closeout` 为 10/10；`python scripts/ci/check_mixed_input_dynamic_evidence.py` 报告 `releaseStatus=NO-GO gates=9`；JSON parse 与 `git diff --check` 通过。
   - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。Graphify manual closeout：`2375 nodes / 5662 edges / 169 communities`。
+
+## 2026-07-12 16:23:01 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 availability shadow telemetry slice start`：
+  - Current Phase Packet：只观测完整 original 链下 `0x140C1AB9D` 是否持续到达、virtual XInput 完整 current-state 是否在 neutral/LS/RS/LT-RT/button 与 gameplay/menu 场景中周期性可见；禁止安装 compatibility entry/device patch、改变返回值或推进 I-1/I-MENU/I-P。
+  - 已确认当前 candidate 的 `ProductionEngineHookIdentityManifest().i0Approved=false`，`SkyrimCompatibilitySurface::Install()` 在 transaction 前 fail-closed；用户的 gameplay KBM 失败因此发生在 compatibility override 完全关闭的 original 环境。
+  - 单一假设：若 existing upstream hook 在 A/B 场景持续命中 native Poll callsite 且完整 non-neutral state 周期性序列化，则 availability 结果为 `Native`；只有 Poll/初始化被 original 稳定阻断且 caller 域可封闭时才允许 `ScopedConnectivity`。
+  - TDD RED 目标：现有 `PollDiagnosticLimiter` 只记录前 256 次，无法覆盖每个 30 秒 held case；先要求独立 sampler 对首次、state/context fingerprint 变化、5 秒健康间隔和时钟回退产生可判定样本。
+
+## 2026-07-12 16:34:44 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 availability shadow telemetry implementation ready`：
+  - TDD RED：`I0AvailabilitySampler`/fingerprint API 不存在；runtime wiring 未调用 sampler；remap、Hub-owned connectivity 与 verified handler delegate readiness 均未进入 observation。最小实现后 focused `DualPadRouteHealthContractTests`、`DualPadIngressTests` 与 WP9 wiring `6 tests` 全绿。
+  - telemetry 固定在已验证 `0x140C1AB9D` upstream hook：首次、semantic state class/context/session/connectivity/delegate/remap 变化立即记录，unchanged held 每 5 秒记录一次完整 buttons/LS/RS/LT/RT current-state。`packetNumber` 不参与 fingerprint，避免 analog noise 每帧刷日志。
+  - `connected` 只读自 IngressHub authority；`delegateReady` 只读 `BSPCGamepadDeviceHandler::GetRuntimeData().currentPCGamePadDelegate`；remap 由 owner transaction 读取 `MenuControls::GetRuntimeData().remapMode` 后随 immutable Poll frame 携带。三者均不参与 route、payload identity 或 packet number。
+  - ce:review 顺序覆盖 correctness、testing、maintainability、project standards、agent-native、learnings、performance、reliability、api-contract 与 adversarial；修复两个 safe-auto finding：analog packet 日志洪泛，以及 I.2 缺少 connected/delegateReady。复审无剩余 actionable finding；唯一 testing gap 为 matching 1.5.97 A/B live matrix。
+  - 相邻 `DualPadInputV2Tests`、`DualPadGameplayProjectionTests`、`DualPadPresentationProjectionTests` 与主 DLL build 全部 exit 0。Gate 不变：`availabilityVerdict=pending-A-B-matrix`、`productionPatchEnabled=false`，I-0 总状态继续 NO-GO。
+  - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。Graphify manual closeout：`2378 nodes / 5670 edges / 172 communities`。
