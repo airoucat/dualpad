@@ -206,6 +206,7 @@ local ph6_scaleform_prompt_files = {
 }
 
 local mixed_input_ingress_scaffold_files = {
+    "src/input_v2/ingress/GamepadActivityClassifier.cpp",
     "src/input_v2/ingress/IngressHub.cpp",
     "src/input_v2/ingress/FrameAssembler.cpp",
     "src/input_v2/ingress/IngressBoundaryKey.cpp"

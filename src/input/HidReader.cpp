@@ -3,12 +3,11 @@
 
 #include "input/hid/DualSenseDevice.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
-#include "input/injection/PadEventSnapshot.h"
-#include "input_v2/context/ContextResolver.h"
-#include "input_v2/ingress/LiveInputFactProducer.h"
 #include "input/protocol/DualSenseProtocol.h"
 #include "input/state/PadStateDebugger.h"
 #include "input/state/PadStateNormalizer.h"
+#include "input_v2/ingress/GamepadActivityClassifier.h"
+#include "input_v2/ingress/IngressHub.h"
 #include "haptics/HidOutput.h"
 
 #include <SKSE/SKSE.h>
@@ -16,6 +15,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <utility>
 
@@ -38,6 +38,23 @@ namespace
         }
 
         dualpad::input::DualSenseDevice device;
+        dualpad::input_v2::ingress::GamepadActivityClassifier classifier;
+        dualpad::input::PadState previousState{};
+        bool havePreviousState = false;
+        bool connectionPublished = false;
+
+        const auto publishDisconnect = [&]() {
+            if (connectionPublished) {
+                (void)dualpad::input_v2::ingress::IngressHub::GetSingleton().PublishGamepadDisconnect();
+                dualpad::input::PadEventSnapshotDispatcher::GetSingleton().NotifyIngressPublished();
+            }
+            classifier.Reset(dualpad::input_v2::ingress::ToMask(
+                dualpad::input_v2::ingress::InputResetReason::DeviceDisconnected));
+            previousState = {};
+            havePreviousState = false;
+            connectionPublished = false;
+        };
+
         while (g_running.load(std::memory_order_acquire)) {
             if (!device.IsOpen()) {
                 if (!device.Open()) {
@@ -45,8 +62,6 @@ namespace
                     continue;
                 }
 
-                dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitReset();
-                dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().Reset();
                 dualpad::haptics::HidOutput::GetSingleton().SetDevice(device.GetNativeHandle());
             }
 
@@ -58,8 +73,7 @@ namespace
                 case dualpad::input::ReadStatus::Disconnected:
                 case dualpad::input::ReadStatus::Error:
                     logger::warn("[DualPad] HID device disconnected, reconnecting...");
-                    dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitReset();
-                    dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().Reset();
+                    publishDisconnect();
                     dualpad::haptics::HidOutput::GetSingleton().SetDevice(nullptr);
                     device.Close();
                     std::this_thread::sleep_for(500ms);
@@ -81,35 +95,32 @@ namespace
             dualpad::input::NormalizePadState(currentState);
             dualpad::input::LogStateSummary(currentState);
 
-            const auto contextSnapshot =
-                dualpad::input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
-            const auto snapshotContext = contextSnapshot.legacyInputContext;
-            const auto snapshotContextEpoch = contextSnapshot.legacyContextEpoch;
-            const auto snapshotContextRevision = contextSnapshot.contextRevision;
-
-            dualpad::input::PadEventBuffer events{};
-            const auto sourceEvidenceFrame =
-                dualpad::input_v2::ingress::LiveInputFactProducer::GetSingleton().CollectGamepadSourceEvidence(
-                contextSnapshot,
+            const auto& previous = havePreviousState ? previousState : dualpad::input::PadState{};
+            auto classified = classifier.Classify(
+                previous,
+                currentState,
+                currentState.sequence,
                 currentState.timestampUs);
-
-            dualpad::input::PadEventSnapshot snapshot{};
-            snapshot.type = dualpad::input::PadEventSnapshotType::Input;
-            snapshot.firstSequence = currentState.sequence;
-            snapshot.sequence = currentState.sequence;
-            snapshot.sourceTimestampUs = currentState.timestampUs;
-            snapshot.context = snapshotContext;
-            snapshot.contextEpoch = snapshotContextEpoch;
-            snapshot.contextRevision = snapshotContextRevision;
-            snapshot.state = currentState;
-            snapshot.events = events;
-            snapshot.overflowed = events.overflowed;
-            dualpad::input::PadEventSnapshotDispatcher::GetSingleton().SubmitSnapshot(
-                snapshot,
-                &sourceEvidenceFrame);
+            const auto connectionChange = connectionPublished ?
+                std::optional<dualpad::input_v2::ingress::GamepadConnectionDraft>{} :
+                std::optional<dualpad::input_v2::ingress::GamepadConnectionDraft>{
+                    dualpad::input_v2::ingress::GamepadConnectionDraft{
+                        .connectivity = dualpad::input_v2::ingress::GamepadConnectivity::Connected
+                    }
+                };
+            const auto receipt = dualpad::input_v2::ingress::IngressHub::GetSingleton().PublishGamepadBatch(
+                std::move(classified),
+                connectionChange);
+            if (receipt.accepted && connectionChange) {
+                connectionPublished = true;
+            }
+            previousState = currentState;
+            havePreviousState = true;
+            dualpad::input::PadEventSnapshotDispatcher::GetSingleton().NotifyIngressPublished();
 
         }
 
+        publishDisconnect();
         dualpad::haptics::HidOutput::GetSingleton().SetDevice(nullptr);
         device.Close();
         dualpad::input::HidTransport::ShutdownApi();

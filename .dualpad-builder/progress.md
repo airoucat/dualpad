@@ -1,5 +1,26 @@
 # DualPad Builder Progress
 
+## 2026-07-12 11:15:09 +08:00
+
+- `S-DP5-MIXED-INPUT / WP1 completed`：
+  - `GamepadActivityClassifier.cpp` 已实现 context-neutral raw 分类：每份有效 report 都发布 complete current-state；digital press/release 有序发布；只有 press、analog enter/change 和 touchpad press 生成 meaningful/source activity；unchanged held、release、回中与 neutral report 不生成 takeover activity。
+  - stick enter/change 阈值为 `0.25 / L1 0.12 / direction 12°`，trigger enter/change 阈值为 `0.15 / 0.08`，未改变计划既有手感阈值。
+  - live `HidReader` 已迁到 `Classify -> PublishGamepadBatch`，connect 使用独立 connection draft，disconnect 使用 `PublishGamepadDisconnect`；不再调用 `CollectGamepadSourceEvidence`、`LiveInputFactProducer` 或 legacy `SubmitSnapshot`。dispatcher 只提供 `NotifyIngressPublished` 调度 shim，不恢复 authority。
+  - `FrameAssembler` 只为 classified digital edge 保留现有 kernel/pulse 兼容入口；gamepad meaningful/source activity 仍是 ordered shadow，尚未在 WP4 前取得 presentation authority。
+  - RED：classifier 链接符号缺失；classified press 未进入 pulse ledger；live HID wiring static contract 仍检测到旧无条件 gamepad evidence 路径。
+  - GREEN：`xmake run -y DualPadIngressTests` exit 0；覆盖 500/1000 Hz producer × 30/60/120 Hz owner neutral interleave、120 次 unchanged held、release/no-takeover、connect/disconnect、context-neutral draft 与 classified digital kernel compatibility。
+  - Wiring：`python tests/python/test_mixed_input_wp1_wiring.py` exit 0，3 tests passed。
+  - 相邻回归：`xmake run -y DualPadPresentationProjectionTests`、`xmake run -y DualPadInputV2Tests`、`xmake build -y DualPad` 均 exit 0。
+  - `rg` 确认 `PublishGamepadBatch` 的唯一 production caller 是 `HidReader`；旧 `RecordGamepadEvidence(true)` 仅保留在未被 live HID 调用的 legacy source-evidence helper 中。
+  - 本 WP 未实现 WP2 KBM producer、WP3 coherence、WP4 routing/presentation、WP5 arbitration/receipt，也未启用任何 IDA gate capability。
+
+## 2026-07-12 11:08:09 +08:00
+
+- `S-DP5-MIXED-INPUT / WP1 start`：
+  - 从已推送 commit `63f439c5e92ad04eb7ee89151fbf25eeec2c8501` 继续，开工时工作树干净，分支为 `codex/mixed-input-implementation`。
+  - 本切片只实现 gamepad connectivity、complete current-state、digital edge 与 meaningful activity 分类，并把 live HID 从旧的无条件 gamepad evidence 路径迁到 WP0.5 batch API。
+  - classifier 继续保持 context-neutral；不实现 source routing、presentation projection、channel arbitration、Poll receipt 或任何 IDA gated patch。
+
 ## 2026-07-12 11:03:13 +08:00
 
 - `S-DP5-MIXED-INPUT / WP0.5 completed`：

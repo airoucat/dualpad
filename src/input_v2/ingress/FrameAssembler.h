@@ -10,6 +10,7 @@
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -131,6 +132,7 @@ namespace dualpad::input_v2::ingress
         std::uint64_t _lastMonotonicUs{ 0 };
         std::uint64_t _lastLatestPadGeneration{ 0 };
         std::uint64_t _lastLatestSourceGeneration{ 0 };
+        std::array<std::uint64_t, 32> _gamepadDownAtUs{};
 
         void ApplyEventToWindow(const IngressEvent& event);
         void ApplyOverflowCompaction(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);

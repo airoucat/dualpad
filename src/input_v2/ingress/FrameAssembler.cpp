@@ -4,6 +4,7 @@
 #include "input_v2/ingress/IngressHub.h"
 
 #include <algorithm>
+#include <bit>
 #include <sstream>
 
 namespace logger = SKSE::log;
@@ -132,6 +133,7 @@ namespace dualpad::input_v2::ingress
         _lastMonotonicUs = 0;
         _lastLatestPadGeneration = 0;
         _lastLatestSourceGeneration = 0;
+        _gamepadDownAtUs = {};
     }
 
     std::vector<AssembledFactFrame> FrameAssembler::Assemble(const std::vector<IngressEvent>& events)
@@ -325,6 +327,35 @@ namespace dualpad::input_v2::ingress
                 }
                 UpsertLatestSample(_window.facts.controlSamples, sample);
             }
+        } else if (event.kind == IngressKind::GamepadDigitalEdge) {
+            const auto controlCode = event.gamepadDigitalEdge.controlCode;
+            const auto bitIndex = controlCode != 0 ? static_cast<std::uint32_t>(std::countr_zero(controlCode)) : 32u;
+            const auto timestampUs = event.gamepadDigitalEdge.sourceTimestampUs != 0 ?
+                event.gamepadDigitalEdge.sourceTimestampUs : event.monotonicUs;
+            const bool pressed = event.gamepadDigitalEdge.phase == GamepadDigitalEdgePhase::Press;
+            auto downAtUs = timestampUs;
+            if (bitIndex < _gamepadDownAtUs.size()) {
+                if (pressed) {
+                    _gamepadDownAtUs[bitIndex] = timestampUs;
+                } else {
+                    downAtUs = _gamepadDownAtUs[bitIndex] != 0 ? _gamepadDownAtUs[bitIndex] : timestampUs;
+                    _gamepadDownAtUs[bitIndex] = 0;
+                }
+            }
+            const actions::ControlSample sample{
+                .path = actions::ControlPath{
+                    .kind = actions::ControlPathKind::DigitalButton,
+                    .code = controlCode
+                },
+                .down = pressed,
+                .pressed = pressed,
+                .released = !pressed,
+                .scalar = pressed ? 1.0F : 0.0F,
+                .downAtUs = downAtUs,
+                .timestampUs = timestampUs
+            };
+            _window.facts.pulseLedger.push_back(sample);
+            UpsertLatestSample(_window.facts.controlSamples, sample);
         } else if (event.kind == IngressKind::SourceEvidence) {
             _window.facts.sourceEvidence = event.sourceEvidence;
         }

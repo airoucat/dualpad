@@ -194,6 +194,11 @@ namespace dualpad::input
         SubmitSnapshot(snapshot);
     }
 
+    void PadEventSnapshotDispatcher::NotifyIngressPublished()
+    {
+        (void)TryScheduleDrainTask();
+    }
+
     std::size_t PadEventSnapshotDispatcher::DrainOnOwnerTick(
         std::size_t maxEvents,
         const DrainTelemetryContext* telemetryContext,

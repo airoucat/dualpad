@@ -25,6 +25,7 @@ namespace dualpad::input
             const PadEventSnapshot& snapshot,
             const input_v2::presentation::SourceEvidenceFrame* sourceEvidenceFrame = nullptr);
         void SubmitReset();
+        void NotifyIngressPublished();
         static constexpr std::size_t DefaultDrainBudget() { return kDefaultDrainBudgetEvents; }
         std::size_t DrainOnOwnerTick(
             std::size_t maxEvents = kDefaultDrainBudgetEvents,

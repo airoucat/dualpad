@@ -418,6 +418,231 @@ namespace
         Require(secondEmpty.orderedCutoffSeq == 7, "second empty capture must preserve cumulative cutoff");
     }
 
+    void NeutralHidInterleaveFixture()
+    {
+        constexpr std::array producerRates{ 500u, 1000u };
+        constexpr std::array ownerRates{ 30u, 60u, 120u };
+
+        for (const auto producerRate : producerRates) {
+            for (const auto ownerRate : ownerRates) {
+                ingress::IngressHub hub{ 256 };
+                ingress::GamepadActivityClassifier classifier;
+                input::PadState neutral{};
+                neutral.connected = true;
+
+                std::size_t gamepadActivities = 0;
+                std::size_t keyboardMouseActivities = 0;
+                const auto reportsPerOwnerTick = (producerRate + ownerRate - 1) / ownerRate;
+                const auto reportCount = producerRate * 2;
+
+                ingress::OwnerKbmIngressDraft initialKeyboard{};
+                initialKeyboard.kbm.sourceActivities.push_back(ingress::MeaningfulSourceActivityDraft{
+                    .source = ingress::PhysicalInputSource::Keyboard,
+                    .kind = ingress::SourceActivityKind::KeyboardPress,
+                    .controlCode = 0x1E,
+                    .producerTimestampUs = 1
+                });
+                Require(hub.PublishOwnerKbmBatch(std::move(initialKeyboard)).accepted, "keyboard takeover must publish");
+
+                for (std::uint32_t reportIndex = 1; reportIndex <= reportCount; ++reportIndex) {
+                    auto report = classifier.Classify(neutral, neutral, reportIndex, reportIndex * 1000ull);
+                    Require(report.meaningfulActivities.empty(), "neutral HID report must not create typed activity");
+                    Require(report.sourceActivities.empty(), "neutral HID report must not create source activity");
+                    Require(
+                        hub.PublishGamepadBatch(
+                            std::move(report),
+                            reportIndex == 1 ?
+                                std::optional<ingress::GamepadConnectionDraft>{ ingress::GamepadConnectionDraft{
+                                    .connectivity = ingress::GamepadConnectivity::Connected
+                                } } :
+                                std::nullopt)
+                            .accepted,
+                        "neutral HID current-state must publish");
+
+                    if ((reportIndex % reportsPerOwnerTick) == 0) {
+                        ingress::OwnerKbmIngressDraft interleavedKbm{};
+                        interleavedKbm.kbm.sourceActivities.push_back(ingress::MeaningfulSourceActivityDraft{
+                            .source = (reportIndex / reportsPerOwnerTick) % 2 == 0 ?
+                                ingress::PhysicalInputSource::Keyboard : ingress::PhysicalInputSource::Mouse,
+                            .kind = (reportIndex / reportsPerOwnerTick) % 2 == 0 ?
+                                ingress::SourceActivityKind::KeyboardPress : ingress::SourceActivityKind::MouseDelta,
+                            .controlCode = 0x1E,
+                            .deltaX = 1,
+                            .producerTimestampUs = reportIndex * 1000ull + 1
+                        });
+                        Require(hub.PublishOwnerKbmBatch(std::move(interleavedKbm)).accepted, "interleaved KBM activity must publish");
+                    }
+
+                    if ((reportIndex % reportsPerOwnerTick) == 0 || reportIndex == reportCount) {
+                        const auto capture = hub.Capture(256);
+                        for (const auto& event : capture.events) {
+                            if (event.kind != ingress::IngressKind::MeaningfulSourceActivity) {
+                                continue;
+                            }
+                            if (event.sourceActivity.source == ingress::PhysicalInputSource::Gamepad) {
+                                ++gamepadActivities;
+                            } else {
+                                ++keyboardMouseActivities;
+                            }
+                        }
+                        Require(capture.latestPadState.has_value(), "neutral reports must keep complete current-state visible");
+                    }
+                }
+
+                const auto latest = hub.Capture(0);
+                Require(latest.latestPadState.has_value(), "neutral rate matrix must retain latest pad state");
+                Require(latest.latestPadState->generation == reportCount, "every neutral report must advance current-state generation");
+                Require(gamepadActivities == 0, "neutral reports must never steal source ownership");
+                Require(keyboardMouseActivities != 0, "interleaved KBM source activities must retain Hub ordering");
+            }
+        }
+    }
+
+    void HeldStickUnchangedFixture()
+    {
+        ingress::IngressHub hub{ 256 };
+        ingress::GamepadActivityClassifier classifier;
+        input::PadState neutral{};
+        input::PadState held{};
+        held.connected = true;
+        held.rightStick.x = 0.60F;
+
+        auto entered = classifier.Classify(neutral, held, 1, 1000);
+        Require(entered.meaningfulActivities.size() == 1, "right stick enter must emit one typed activity");
+        Require(
+            entered.meaningfulActivities.front().reason == ingress::GamepadActivityReason::RightStickEntered,
+            "right stick enter must use RightStickEntered reason");
+        Require(entered.sourceActivities.size() == 1, "right stick enter must emit one context-neutral source activity");
+        Require(
+            hub.PublishGamepadBatch(
+                std::move(entered),
+                ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected })
+                .accepted,
+            "right stick enter batch must publish");
+        (void)hub.Capture(256);
+
+        for (std::uint64_t sequence = 2; sequence <= 121; ++sequence) {
+            auto unchanged = classifier.Classify(held, held, sequence, sequence * 1000);
+            Require(unchanged.meaningfulActivities.empty(), "unchanged held stick must not repeat typed activity");
+            Require(unchanged.sourceActivities.empty(), "unchanged held stick must not repeat source activity");
+            Require(hub.PublishGamepadBatch(std::move(unchanged), std::nullopt).accepted, "unchanged held state must publish");
+        }
+
+        const auto capture = hub.Capture(256);
+        Require(capture.events.empty(), "unchanged held reports must not amplify ordered queue");
+        Require(capture.latestPadState.has_value(), "held stick must remain available as latest current-state");
+        Require(capture.latestPadState->generation == 121, "held current-state generation must advance for every report");
+        Require(capture.latestPadState->state.rightStick.x == 0.60F, "held right stick current-state must not disappear");
+    }
+
+    void ReleaseDoesNotTakeoverFixture()
+    {
+        ingress::GamepadActivityClassifier classifier;
+        input::PadState held{};
+        held.connected = true;
+        held.buttons.digitalMask = 0x1;
+        held.rightStick.x = 0.60F;
+        input::PadState released{};
+        released.connected = true;
+
+        auto report = classifier.Classify(held, released, 2, 2000);
+        Require(report.orderedDigitalEdges.size() == 1, "button release must remain an ordered edge");
+        Require(
+            report.orderedDigitalEdges.front().phase == ingress::GamepadDigitalEdgePhase::Release,
+            "button release must retain release phase");
+        Require(report.meaningfulActivities.empty(), "release and stick return must not create typed activity");
+        Require(report.sourceActivities.empty(), "release and stick return must not create source takeover");
+
+        ingress::IngressHub hub{ 16 };
+        Require(
+            hub.PublishGamepadBatch(
+                std::move(report),
+                ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected })
+                .accepted,
+            "release current-state must publish");
+        const auto capture = hub.Capture(16);
+        Require(capture.events.size() == 1, "release batch must publish only its ordered digital edge");
+        Require(capture.latestPadState && capture.latestPadState->currentDownMask == 0, "release must clear current down mask");
+        Require(capture.latestPadState->state.rightStick.x == 0.0F, "stick return must update complete current-state");
+    }
+
+    void ConnectivityOnlyFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::GamepadActivityClassifier classifier;
+        input::PadState connected{};
+        connected.connected = true;
+
+        auto report = classifier.Classify({}, connected, 1, 1000);
+        const auto connectedReceipt = hub.PublishGamepadBatch(
+            std::move(report),
+            ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected });
+        Require(connectedReceipt.accepted, "connectivity-only connect must publish");
+        const auto connectedCapture = hub.Capture(16);
+        Require(connectedCapture.events.empty(), "connect must not create ordered source activity");
+        Require(!connectedCapture.latestSourceEvidence.has_value(), "connect must not mutate presentation evidence");
+
+        const auto disconnectedReceipt = hub.PublishGamepadDisconnect();
+        Require(disconnectedReceipt.accepted, "disconnect must publish");
+        const auto disconnectedCapture = hub.Capture(16);
+        Require(disconnectedCapture.events.empty(), "disconnect must not create ordered source activity");
+        Require(disconnectedCapture.gamepadSessionId > connectedCapture.gamepadSessionId, "disconnect must advance gamepad session");
+        Require(!disconnectedCapture.latestPadState.has_value(), "disconnect must clear gamepad current-state");
+        Require(
+            disconnectedCapture.latestGamepadConnection &&
+                disconnectedCapture.latestGamepadConnection->connectivity == ingress::GamepadConnectivity::Disconnected,
+            "disconnect must publish disconnected connection facts");
+    }
+
+    void ContextNeutralGamepadDraftFixture()
+    {
+        ingress::GamepadActivityClassifier classifier;
+        input::PadState previous{};
+        input::PadState current{};
+        current.connected = true;
+        current.buttons.digitalMask = 0x4;
+        current.leftStick.y = 0.50F;
+
+        const auto gameplayDraft = classifier.Classify(previous, current, 7, 7000);
+        const auto menuDraft = classifier.Classify(previous, current, 7, 7000);
+        Require(gameplayDraft.orderedDigitalEdges.size() == menuDraft.orderedDigitalEdges.size(), "raw edge count must be context-neutral");
+        Require(gameplayDraft.meaningfulActivities.size() == menuDraft.meaningfulActivities.size(), "typed activity count must be context-neutral");
+        Require(gameplayDraft.sourceActivities.size() == menuDraft.sourceActivities.size(), "source activity count must be context-neutral");
+        for (std::size_t index = 0; index < gameplayDraft.meaningfulActivities.size(); ++index) {
+            Require(
+                gameplayDraft.meaningfulActivities[index].reason == menuDraft.meaningfulActivities[index].reason &&
+                    gameplayDraft.meaningfulActivities[index].controlCode == menuDraft.meaningfulActivities[index].controlCode,
+                "classifier must emit identical raw activity independent of owner context");
+        }
+    }
+
+    void ClassifiedDigitalEdgeFeedsExistingKernelFixture()
+    {
+        ingress::GamepadActivityClassifier classifier;
+        input::PadState previous{};
+        input::PadState pressed{};
+        pressed.connected = true;
+        pressed.buttons.digitalMask = 0x1;
+
+        ingress::IngressHub hub{ 16 };
+        Require(
+            hub.PublishGamepadBatch(
+                classifier.Classify(previous, pressed, 1, 1000),
+                ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected })
+                .accepted,
+            "classified digital press must publish");
+        const auto capture = hub.Capture(16);
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(capture);
+        const auto stable = std::find_if(frames.begin(), frames.end(), [](const ingress::AssembledFactFrame& frame) {
+            return frame.kind == ingress::AssembledFrameKind::Stable;
+        });
+        Require(stable != frames.end(), "classified digital press must assemble a stable frame");
+        Require(stable->facts.pulseLedger.size() == 1, "classified digital press must reach the existing pulse ledger");
+        Require(stable->facts.pulseLedger.front().pressed, "classified digital press must retain press phase");
+        Require(stable->facts.pulseLedger.front().path.code == 0x1, "classified digital press must retain raw control code");
+    }
+
     void TestLatestPadStatePreventsSteadyAnalogQueueGrowth()
     {
         ingress::IngressHub hub{ 64 };
@@ -1784,6 +2009,12 @@ int main()
     BatchApiCompileFixture();
     BatchCapacityAtomicityFixture();
     CumulativeEmptyCaptureFixture();
+    NeutralHidInterleaveFixture();
+    HeldStickUnchangedFixture();
+    ReleaseDoesNotTakeoverFixture();
+    ConnectivityOnlyFixture();
+    ContextNeutralGamepadDraftFixture();
+    ClassifiedDigitalEdgeFeedsExistingKernelFixture();
     TestLatestPadStatePreventsSteadyAnalogQueueGrowth();
     TestLatestAnalogCanLeadBoundedDigitalEdgeCutoff();
     TestFrameAssemblerKeepsLatestAnalogSeparateFromOrderedEdgeCutoff();

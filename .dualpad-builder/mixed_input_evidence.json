@@ -65,6 +65,25 @@
       ],
       "sourceListParity": "passed",
       "productionAuthorityEnabled": false
+    },
+    "WP1": {
+      "status": "completed",
+      "red": [
+        "DualPadIngressTests linked with unresolved GamepadActivityClassifier::Classify",
+        "classified digital press did not reach the existing pulse ledger",
+        "live HID wiring contract still found unconditional legacy gamepad evidence and SubmitSnapshot"
+      ],
+      "focused": [
+        "xmake run -y DualPadIngressTests",
+        "python tests/python/test_mixed_input_wp1_wiring.py"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadPresentationProjectionTests",
+        "xmake run -y DualPadInputV2Tests",
+        "xmake build -y DualPad"
+      ],
+      "productionAuthorityEnabled": false,
+      "dynamicGateRequired": false
     }
   },
   "closeoutPolicy": {
