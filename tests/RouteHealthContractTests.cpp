@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input/injection/RouteHealthContract.h"
+#include "input/injection/NativeKbmSemanticPolicy.h"
 #include "input/injection/HookPatchTransaction.h"
 #include "input/injection/KbmIngressDiagnostics.h"
 #include "input/injection/PollDiagnostics.h"
@@ -147,6 +148,25 @@ namespace
             std::string_view(dualpad::input::ToString(
                 dualpad::input::UpstreamGamepadHookInstallStatus::DisabledByConfig)) == "disabled_by_config",
             "disabled-by-config install status label should stay stable");
+    }
+
+    void TestNativeKbmSemanticPolicy()
+    {
+        bool ignoreKeyboardMouse = true;
+        Require(
+            dualpad::input::ApplyNativeKbmSemanticPolicy(false, ignoreKeyboardMouse) &&
+                !ignoreKeyboardMouse,
+            "mixed-input gameplay must release native KBM semantic suppression");
+
+        Require(
+            !dualpad::input::ApplyNativeKbmSemanticPolicy(false, ignoreKeyboardMouse) &&
+                !ignoreKeyboardMouse,
+            "native KBM semantic release must be idempotent");
+
+        Require(
+            dualpad::input::ApplyNativeKbmSemanticPolicy(true, ignoreKeyboardMouse) &&
+                ignoreKeyboardMouse,
+            "remap mode must retain native raw-event semantics");
     }
 
     void TestPatchTransactionRollback()
@@ -492,6 +512,7 @@ int main()
     TestTelemetryLabels();
     TestInstallStatusFailureMapping();
     TestControlMapOverlayGate();
+    TestNativeKbmSemanticPolicy();
     TestInstallStatusLabels();
     TestPatchTransactionRollback();
     TestPatchEncodingContracts();

@@ -12,6 +12,7 @@
 
 #include "input/XInputStateBridge.h"
 #include "input/injection/HookPatchTransaction.h"
+#include "input/injection/NativeKbmSemanticPolicy.h"
 #include "input/injection/PollDiagnostics.h"
 #include "input/injection/PollMaterializationReceipt.h"
 #include "input/injection/RouteHealthContract.h"
@@ -103,6 +104,18 @@ namespace dualpad::input
                 auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
                 upstreamHook.NotePollCallActivity();
                 const auto outputFrame = input_v2::gameplay::PollOutputPublication::GetSingleton().AcquireForPoll();
+                if (auto* controlMap = RE::ControlMap::GetSingleton(); controlMap) {
+                    auto& ignoreKeyboardMouse =
+                        controlMap->GetRuntimeData().ignoreKeyboardMouse;
+                    if (ApplyNativeKbmSemanticPolicy(
+                            outputFrame->remapMode,
+                            ignoreKeyboardMouse)) {
+                        logger::info(
+                            "[DualPad][NativeKbmSemantics] ignoreKeyboardMouse={} remapMode={} phase=before_controlmap_mapping",
+                            ignoreKeyboardMouse,
+                            outputFrame->remapMode);
+                    }
+                }
                 const auto result = FillSyntheticXInputState(currentState, *outputFrame);
                 if (result == ERROR_SUCCESS) {
                     (void)PollMaterializationReceiptStore::GetSingleton()

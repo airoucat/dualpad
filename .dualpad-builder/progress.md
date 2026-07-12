@@ -3807,3 +3807,11 @@
   - 从 clean commit 执行 `xmake build -r -y DualPad`，exit 0；部署 DLL 内嵌 commit `06cbde9805ef`，SHA-256=`5F579EA9E4D175577AF16F5D4B1BFB35CEED104D2AAD96802859BB02D7827BE0`。
   - PDB staging 文件被占用而未覆盖，不作为本候选身份依据；DLL 已成功覆盖且 commit/hash 均已核对。
   - 下一步仅需 gameplay 内按住 W 约 1 秒并点击一次鼠标后立即退出；根据 native userEvent/value/duration 直接判定下一边界，不做长 soak。
+
+## 2026-07-12 17:52:00 +08:00
+
+- `S-DP5-MIXED-INPUT / native KBM semantic mapping fix candidate`：
+  - matching `06cbde9805ef` 实机样本确认 keyboard `0x11` 与 mouse `0x0` 的 native value/duration 正常，但 `userEvent` 在所有 press/held/release 上均为空。
+  - IDA 反向追踪闭合根因：`0x140C150B0` 在四设备 Poll 后调用 `0x140C11600` 做 ControlMap 语义映射；后者在 `ControlMap + 0x121`（`ignoreKeyboardMouse`）为 true 时主动拒绝 keyboard/mouse gameplay mapping。
+  - TDD RED/GREEN：新增 pure policy 覆盖 release、幂等与 remap 保留；新增 wiring contract 锁定 policy 位于 `AcquireForPoll -> FillSyntheticXInputState` 之间且禁止 `SetUserEvent/AddButtonEvent`。focused tests 与主 DLL build exit 0。
+  - 最小实现复用已验证的 gamepad Poll callsite，在原生 ControlMap mapping 之前同步设置 `ignoreKeyboardMouse=remapMode`；不改写 event、不安装新 query/callsite patch，下一步仅做短 gameplay WASD/攻击实机验证。
