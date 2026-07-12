@@ -3649,3 +3649,22 @@
   - `ce:review` 主线程顺序复核覆盖 correctness、testing、maintainability、project standards、reliability、api-contract 与 adversarial；已修复首轮发现的“只读 relocation vtable、未证明 live `devices[kGamepad]` identity 且未 dump 0–9 slots”缺口。无剩余可自动修复 finding；剩余 testing gap 仅为 matching 1.5.97 实机 DataLoaded 日志与用户三类复现结果。
   - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。实现提交 `17fd5b4413a1` 后从 clean code HEAD 重新构建并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`，内嵌 build identity `17fd5b4413a1`，SHA-256 `DB51A0A9459304DE3ECBE06CCC2710B8205648615A8605A5C3373C6330F10E58`；同路径 PDB 占用仅为既有 copy warning。
   - Graphify manual closeout：`2373 nodes / 5657 edges / 171 communities`。Gate 不变：I-0 仍等待本次实机 snapshot 与 IDA 对照；I-1/I-MENU/I-P 分别等待 caller-domain、menu SetPlatform 和 current-cycle consumer 动态证据，9 个动态 gate 全部继续 `NO-GO`。
+
+## 2026-07-12 15:40:22 +08:00
+
+- `S-DP5-MIXED-INPUT / live Main Menu selection reset triage + TDD start`：
+  - 用户 matching build 实测：退出列表选中“回到桌面”后，手柄或键盘确认都会把焦点重置到第一项“回到主菜单”。
+  - live 日志排除 ordered D-pad Up：退出前 `Menu.Confirm` 只 materialize `xinputButtons=0x1000` pulse；每个 pulse 同时产生 `dirty=0x07` 并对同一 `Main Menu instance=12` 执行一次 `RefreshPlatform()`。
+  - 根因缩到 presentation dirty 计算：`prompt/menu/cursor` 的 `acceptedActivitySeq` 每次 meaningful activity 都推进，当前 full-struct equality 把内部 ledger 变化误报为 `Family|Owner|Cursor` 外部投影变化，导致 same-owner 每次输入都刷新菜单并重置 selection。
+  - I-0 runtime snapshot 另行判定：DataLoaded `staticQueryIdentityMatched=true`、runtime device present，但 `REL 560029 RVA=0x175E848`、live vptr `RVA=0x175E850`，当前 equality contract FAIL；I-0 继续 NO-GO，不把 `+0x8` 猜成批准的 address-point 修正。
+  - 本切片只允许 TDD 收紧 dirty/change detection，使内部 accepted sequence/reason 变化不触发 platform refresh；真实 family/owner/cursor/context/policy 变化仍必须保留 dirty。不得修改 SWF、bindings 或启用 I-MENU/I-0 production patch。
+
+## 2026-07-12 15:45:11 +08:00
+
+- `S-DP5-MIXED-INPUT / Main Menu same-owner refresh reset fix implementation`：
+  - TDD RED：新增 ordered same-gamepad activity fixture 后，旧实现稳定失败于 `same-owner activity must not manufacture family/owner/cursor dirty or refresh the menu`，并观测到 accepted ledger 已正确推进。
+  - 最小修复：presentation change detection 改为比较外部投影字段；prompt 排除 accepted seq/reason，menu 排除 accepted seq/context bookkeeping，cursor 排除 accepted seq/reason/epoch，同时保留 requested/committed owner、position sync、pending identity 与 pending-context 变化。未改 ingress ordering、owner 选择、SWF、bindings 或 gate 状态。
+  - focused GREEN：`xmake run -y DualPadPresentationProjectionTests` exit 0；相邻 `xmake run -y DualPadInputV2Tests` exit 0；mixed close-out `10 tests` exit 0。既有 keyboard/gamepad owner takeover、context dirty、policy/action-set 与 cursor handoff 回归继续证明真实投影变化仍触发 dirty。
+  - `ce:review` 主线程顺序覆盖 correctness、testing、maintainability、project standards、agent-native 与 learnings，无置信度不低于 0.60 的 actionable finding；唯一剩余 testing gap 是 matching 1.5.97 退出列表实机复测。
+  - canonical Phase 8 GREEN：主 DLL与全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。Graphify manual closeout：`2373 nodes / 5657 edges / 171 communities`。
+  - Gate 不变：该修复只移除伪 dirty/refresh side effect，不构成 I-MENU approval。I-0 因 runtime vptr 与 `REL 560029` identity contract 相差 `+0x8` 继续 FAIL/NO-GO；其它 8 个 dynamic gate 同样保持 NO-GO。

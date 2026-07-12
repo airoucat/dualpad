@@ -152,6 +152,35 @@ void RunOrderedActivityRoutingAndIndependentProjectionTests()
             gamepadDecision.state.prompt.acceptedActivitySeq == 51 &&
             gamepadDecision.state.menu.owner == presentation::PresentationOwner::Gamepad,
         "higher ingress seq gamepad activity must win prompt/menu regardless of producer timestamp");
+
+    const auto routedSameGamepad = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Gamepad,
+            ingress::SourceActivityKind::GamepadButtonPress,
+            52,
+            2) },
+        routedGamepad.next,
+        context,
+        resolved,
+        1001);
+    const auto sameGamepadDecision = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = gamepadDecision.state,
+            .context = context,
+            .routedActivities = routedSameGamepad.activities,
+            .inputStateEpoch = 8,
+            .ownerTickToken = 12
+        });
+    Require(sameGamepadDecision.state.prompt.acceptedActivitySeq == 52 &&
+            sameGamepadDecision.state.menu.acceptedActivitySeq == 52 &&
+            sameGamepadDecision.state.cursor.acceptedActivitySeq == 52,
+        "same-owner activity must still advance consume-once presentation ledgers");
+    Require(sameGamepadDecision.state.dirty == presentation::PresentationDirtyFlags::None &&
+            sameGamepadDecision.state.presentationEpoch ==
+                gamepadDecision.state.presentationEpoch &&
+            !sameGamepadDecision.refreshTargetMenu,
+        "same-owner activity must not manufacture family/owner/cursor dirty or refresh the menu");
+
     const auto neutralDecision = presentation::ProjectPresentation(
         presentation::PresentationProjectionInput{
             .previous = gamepadDecision.state,

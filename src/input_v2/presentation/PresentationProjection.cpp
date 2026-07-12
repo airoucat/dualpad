@@ -237,12 +237,17 @@ namespace dualpad::input_v2::presentation
             next.cursor.reason = CursorOwnerDecisionReason::HandoffPending;
         }
 
-        const bool promptChanged = next.prompt != previous.prompt;
+        const bool promptChanged = next.prompt.family != previous.prompt.family ||
+            next.prompt.revision != previous.prompt.revision;
         const bool menuChanged = next.menu.owner != previous.menu.owner ||
-            next.menu.navigationOwner != previous.menu.navigationOwner ||
-            next.menu.acceptedActivitySeq != previous.menu.acceptedActivitySeq ||
-            next.menu.contextRevision != previous.menu.contextRevision;
-        const bool cursorChanged = next.cursor != previous.cursor;
+            next.menu.navigationOwner != previous.menu.navigationOwner;
+        const bool cursorChanged =
+            next.cursor.requestedOwner != previous.cursor.requestedOwner ||
+            next.cursor.committedOwner != previous.cursor.committedOwner ||
+            next.cursor.positionSyncRequired != previous.cursor.positionSyncRequired ||
+            next.cursor.pendingToken != previous.cursor.pendingToken ||
+            (next.cursor.pendingToken != 0 &&
+                next.cursor.contextRevision != previous.cursor.contextRevision);
 
         next.family = next.prompt.family;
         next.deviceFamilyRevision = next.prompt.revision;

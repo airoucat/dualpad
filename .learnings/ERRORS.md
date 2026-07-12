@@ -338,3 +338,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Related files: `xmake.lua`, `scripts/ci/run_phase8_ci.ps1`
 - Suggested fix: 同一工作树的 xmake target 必须串行执行；需要并行时只能使用彼此隔离的 worktree/build root。Python-only 检查可与单个 xmake process 并行，但 canonical Phase 8/RC 仍按脚本串行。
 - Resolution: 确认没有残留 `xmake` / `cl` / `mspdbsrv` 进程后，按 `DualPadInputV2Tests -> DualPadReplayTests -> DualPadReplayHarness -> DualPad` 串行重跑，全部 exit 0；后续本工作树不再并行启动 xmake process。
+
+## ERR-20260712-017
+
+- Logged: 2026-07-12 15:45 CST
+- Priority: medium
+- Status: resolved
+- Area: builder memory / learning status update
+- Summary: 更新新 learning 的重复 `Status: open` 字段时，缺少稳定 ID 上下文的 patch 首次命中了更早条目。
+- Detail: `.learnings/LEARNINGS.md` 存在多个相同状态行；仅以字段文本匹配无法保证目标 entry。diff 复核立即发现 `LRN-20260711` 被误标 resolved，而目标 `LRN-20260712-002` 仍为 open。
+- Related files: `.learnings/LEARNINGS.md`
+- Resolution: 恢复旧条目并用 `Logged` 时间与目标 entry ID 邻域限定 patch，将 `LRN-20260712-002` 正确标为 resolved。后续修改重复 Markdown/JSON 字段必须把稳定 ID 一并放入 patch context，并在提交前检查 scoped diff。

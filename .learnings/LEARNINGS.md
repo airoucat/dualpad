@@ -315,3 +315,28 @@ matching build 的实机反馈明确区分了三个失败面：gameplay 中 WASD
 - `src/input/injection/SkyrimCurrentCycleEventAdapter.cpp`
 - `docs/research/skyrim_mixed_input_dynamic_evidence_zh.md`
 - `.learnings/LEARNINGS.md` (`LRN-20260711-007`, `LRN-20260711-008`)
+
+## [LRN-20260712-002] correction
+
+**Logged**: 2026-07-12T15:40:22+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: menu presentation / dirty flags / selection preservation
+
+### Summary
+
+Presentation dirty 必须表示可观察投影变化，不能把 `acceptedActivitySeq`、decision reason 等内部 ledger 推进当成 family/owner/cursor 变化。
+
+### Detail
+
+matching 1.5.97 实机中，同一 owner 的每个 `Menu.Confirm` 都产生 `dirty=0x07`，随后对同一 Main Menu 实例调用 `RefreshPlatform()`，把退出列表焦点重置到第一项。源码反向追踪证明 `promptChanged = next.prompt != previous.prompt`、`menuChanged` 比较 `acceptedActivitySeq`、`cursorChanged = next.cursor != previous.cursor`，因此任何 meaningful activity 都会伪造 `Family|Owner|Cursor` dirty。后续 dirty/change detection 只能比较对外投影字段；accepted sequence 仍可推进用于 consume-once，但不能触发 UI side effect。
+
+### Related Files
+
+- `src/input_v2/presentation/PresentationProjection.cpp`
+- `src/input_v2/presentation/SkyrimCompatibilitySurface.cpp`
+- `tests/input_v2/PresentationProjectionTests.cpp`
+
+### Resolution
+
+`ProjectPresentation` 的 dirty 比较已收缩为可观察字段：prompt 只比较 family/revision，menu 只比较 owner/navigationOwner，cursor 只比较 requested/committed owner、sync/pending identity 与 pending context。same-owner activity 继续推进 accepted ledger，但不再推进 presentation epoch、dirty 或 menu refresh request；真实 owner/context/cursor 变化的既有回归保持通过。
