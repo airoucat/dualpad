@@ -340,3 +340,5 @@ matching 1.5.97 实机中，同一 owner 的每个 `Menu.Confirm` 都产生 `dir
 ### Resolution
 
 `ProjectPresentation` 的 dirty 比较已收缩为可观察字段：prompt 只比较 family/revision，menu 只比较 owner/navigationOwner，cursor 只比较 requested/committed owner、sync/pending identity 与 pending context。same-owner activity 继续推进 accepted ledger，但不再推进 presentation epoch、dirty 或 menu refresh request；真实 owner/context/cursor 变化的既有回归保持通过。
+
+matching Skyrim SE 1.5.97 的构建 `9157d57c7d79` 已完成手柄与键盘两条退出列表实机复测并由用户明确报告 PASS；日志同时证明 owner 首次切换后的 same-owner confirm 保持 `presentationDirty=0x00`，不再重复请求 platform refresh。

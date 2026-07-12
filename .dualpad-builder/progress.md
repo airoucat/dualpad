@@ -3668,3 +3668,11 @@
   - `ce:review` 主线程顺序覆盖 correctness、testing、maintainability、project standards、agent-native 与 learnings，无置信度不低于 0.60 的 actionable finding；唯一剩余 testing gap 是 matching 1.5.97 退出列表实机复测。
   - canonical Phase 8 GREEN：主 DLL与全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。Graphify manual closeout：`2373 nodes / 5657 edges / 171 communities`。
   - Gate 不变：该修复只移除伪 dirty/refresh side effect，不构成 I-MENU approval。I-0 因 runtime vptr 与 `REL 560029` identity contract 相差 `+0x8` 继续 FAIL/NO-GO；其它 8 个 dynamic gate 同样保持 NO-GO。
+
+## 2026-07-12 15:48:51 +08:00
+
+- `S-DP5-MIXED-INPUT / Main Menu same-owner refresh reset live verification PASS`：
+  - 用户在 matching Skyrim SE 1.5.97 实机分别使用手柄与键盘复测退出列表，两个路径均明确报告 PASS；选中“回到桌面”后确认不再跳回“回到主菜单”。
+  - live `DualPad.log` 冻结构建身份 `9157d57c7d79`。首次 `KeyboardMouse -> Gamepad` owner 切换按预期产生一次 `dirty=0x07` / `RefreshPlatform()`；随后同一 Gamepad owner 的确认在 `poll=43/78/1547/1571/1611` 等样本中均保持 `presentationDirty=0x00`，未再次请求同实例 platform refresh。
+  - 自动化证据与实机证据闭合后，退出列表 same-owner selection reset 缺陷关闭。该结论只覆盖本缺陷，不代表 gameplay WASD/攻击、菜单 glyph/platform、I-P current-cycle 或任何动态 Gate 已通过。
+  - Gate 不变：I-0 仍因 `REL 560029 RVA=0x175E848` 与 live vptr `RVA=0x175E850` 的 `+0x8` identity 差异保持 FAIL/NO-GO；I-1、I-2、I-MENU、I-5、I-P、I-CURSOR、I-SPRINT、I-KBM 继续 NO-GO。
