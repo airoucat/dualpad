@@ -296,6 +296,22 @@
     "targetRuntime": "Skyrim SE 1.5.97",
     "targetSha256": "DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD",
     "releaseStatus": "NO-GO",
+    "kbmIngressShadow": {
+      "status": "candidate-static-verified-live-pending",
+      "productionMutationEnabled": false,
+      "enginePatchEnabled": false,
+      "healthIntervalMs": 5000,
+      "markers": [
+        "[DualPad][KbmIngressShadow]",
+        "[DualPad][KbmRuntimeShadow]"
+      ],
+      "boundaries": [
+        "SkyrimKbmInputAdapter observation",
+        "KbmGameplayFactProducer draft and IngressHub receipt",
+        "assembled KbmGameplay facts and runtime policy"
+      ],
+      "liveVerdict": "pending-short-W-mouse-sample"
+    },
     "idaStaticInventory": {
       "status": "inventory-complete-classification-pending",
       "file": ".dualpad-builder/mixed_input_ida_static_evidence.json",

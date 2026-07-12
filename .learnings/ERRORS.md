@@ -383,3 +383,25 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: NG 的 `MenuControls` 把 SE/VR 尾部布局包装为 `RUNTIME_DATA_ACCESSOR`；cross-runtime 类型本身不暴露直接字段，即使固定支持目标的 SE offset 已知也不能绕开正式 accessor 猜布局。
 - Related files: `lib/commonlibsse-ng/include/RE/M/MenuControls.h`, `src/input/injection/PadEventSnapshotDispatcher.cpp`
 - Resolution: 改为 `MenuControls::GetRuntimeData().remapMode`；focused、wiring 和主 DLL build 重新通过。后续访问 NG `RUNTIME_DATA` 字段统一优先使用正式 accessor。
+
+## ERR-20260712-021
+
+- Logged: 2026-07-12 17:04 CST
+- Priority: low
+- Status: resolved
+- Area: C++ telemetry wiring / local verification
+- Summary: `KbmRuntimeShadow` 的条件日志块首次实现漏写闭合花括号，导致后续成员函数被编译器识别为非法本地函数。
+- Detail: MSVC 明确从 `DualPadRuntime::BuildStableRuntimeInput` 起报告 unmatched `{`，并把 `ProcessTransitionFrame` 等后续定义全部报为 `C2601`。该失败发生在 read-only telemetry 局部接线，不涉及 runtime 行为或 gate 状态。
+- Related files: `src/input_v2/gameplay/DualPadRuntime.cpp`
+- Resolution: 在 `logger::info` 后闭合 `if (kbmSample.record)`，不改变日志字段或任何生产路径；随后重跑主 DLL 编译和 focused/adjacent tests。
+
+## ERR-20260712-022
+
+- Logged: 2026-07-12 17:12 CST
+- Priority: medium
+- Status: open
+- Area: RC readiness / replay harness host environment
+- Summary: `run_rc_readiness.ps1 -ExpectCleanManifest` 的 Phase8 全绿，但 standalone `DualPadReplayHarness` 在 host 进程中无法取得 `SkyrimSE.exe` module handle；直接复现随后停滞，必须终止残留 harness/xmake 进程。
+- Detail: 首次失败明确输出 CommonLib `Module.h:300 Failed to obtain module handle for: \"SkyrimSE.exe\"`，RC 在 dispatcher replay batch 退出 1。再次运行同一 harness 命令 64 秒无输出并留下进程；已只终止本轮创建的 PID 50728/79952。当前变更仅新增 header-only sampler 与日志，没有新增 REL/module 调用；canonical Phase8、focused/adjacent 和 mixed-input closeout checks 均独立通过，因此不得把 RC 失败误报为本切片通过，也不得据此改生产能力。
+- Related files: `scripts/ci/run_rc_readiness.ps1`, `src/input_v2/telemetry/ReplayHarnessMain.cpp`, `src/input_v2/gameplay/DualPadRuntime.cpp`
+- Resolution: pending；后续单独审计 replay-only runtime seam 为什么重新触达真实 CommonLib module identity。当前 KBM shadow candidate 保持 `NO-GO`，实机短采样不依赖 ReplayHarness。

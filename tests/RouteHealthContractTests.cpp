@@ -2,6 +2,7 @@
 
 #include "input/injection/RouteHealthContract.h"
 #include "input/injection/HookPatchTransaction.h"
+#include "input/injection/KbmIngressDiagnostics.h"
 #include "input/injection/PollDiagnostics.h"
 
 #include <stdexcept>
@@ -392,6 +393,65 @@ namespace
             "availability class must distinguish buttons, LS, RS, LT and RT without hashing analog noise");
     }
 
+    void TestKbmIngressDiagnosticSampler()
+    {
+        using dualpad::input::KbmIngressDiagnosticInput;
+        using dualpad::input::KbmIngressSampleReason;
+        dualpad::input::KbmIngressDiagnosticSampler sampler(5'000);
+
+        const KbmIngressDiagnosticInput empty{
+            .contextRevision = 7,
+            .bindingsComplete = true,
+            .eventListComplete = true,
+            .batchBuilt = true,
+            .batchAccepted = true
+        };
+        const auto first = sampler.Observe(100, empty);
+        const auto quiet = sampler.Observe(200, empty);
+
+        auto keyboardMove = empty;
+        keyboardMove.observedEventCount = 1;
+        keyboardMove.mappedEdgeCount = 1;
+        keyboardMove.sourceActivityCount = 1;
+        keyboardMove.keyboardMoveHeldMask = 1;
+        keyboardMove.firstDevice = 0;
+        keyboardMove.firstIdCode = 0x11;
+        keyboardMove.firstPhase = 0;
+        keyboardMove.firstInitialPress = true;
+        const auto activity = sampler.Observe(300, keyboardMove);
+        const auto activityQuiet = sampler.Observe(400, keyboardMove);
+        const auto interval = sampler.Observe(5'300, keyboardMove);
+
+        auto rejected = keyboardMove;
+        rejected.batchAccepted = false;
+        const auto rejection = sampler.Observe(5'400, rejected);
+        const auto regressed = sampler.Observe(5'200, rejected);
+
+        Require(first.record && first.callbackCount == 1 &&
+                first.reason == KbmIngressSampleReason::First,
+            "KBM ingress shadow must record its first owner callback");
+        Require(!quiet.record && quiet.callbackCount == 2,
+            "empty owner callbacks inside the health interval must remain quiet");
+        Require(activity.record && activity.callbackCount == 3 &&
+                activity.reason == KbmIngressSampleReason::StateChanged,
+            "physical KBM observation and mapped current-state must record immediately");
+        Require(!activityQuiet.record,
+            "unchanged held KBM state must not flood the log");
+        Require(interval.record && interval.reason == KbmIngressSampleReason::IntervalElapsed,
+            "unchanged KBM ingress health must retain a periodic sample");
+        Require(rejection.record && rejection.reason == KbmIngressSampleReason::BatchRejected,
+            "Hub rejection must be recorded immediately");
+        Require(regressed.record && regressed.reason == KbmIngressSampleReason::ClockRegressed,
+            "KBM ingress clock regression must remain explicit");
+        Require(
+            dualpad::input::BuildKbmIngressFingerprint(empty) !=
+                dualpad::input::BuildKbmIngressFingerprint(keyboardMove),
+            "KBM ingress fingerprint must expose observed/mapped/current-state changes");
+        Require(std::string_view(dualpad::input::ToString(
+                    KbmIngressSampleReason::BatchRejected)) == "batch_rejected",
+            "KBM ingress sample labels must remain stable for live evidence parsing");
+    }
+
     void TestTaskFallbackTruthTable()
     {
         using dualpad::input::ShouldScheduleTaskFallback;
@@ -437,6 +497,7 @@ int main()
     TestPatchEncodingContracts();
     TestPollDiagnosticLimiter();
     TestI0AvailabilitySampler();
+    TestKbmIngressDiagnosticSampler();
     TestTaskFallbackTruthTable();
     return 0;
 }

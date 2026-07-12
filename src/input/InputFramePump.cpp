@@ -4,6 +4,7 @@
 #include "input/HidReader.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
+#include "input/injection/KbmIngressDiagnostics.h"
 #include "input/injection/PollMaterializationReceipt.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input/injection/SkyrimKbmInputAdapter.h"
@@ -26,6 +27,7 @@ namespace dualpad::input
     namespace
     {
         constexpr std::uint64_t kUpstreamPollAssistWindowMs = 250;
+        KbmIngressDiagnosticSampler g_kbmIngressSampler{ 5'000 };
 
         std::uint64_t NowMonotonicUs()
         {
@@ -183,12 +185,31 @@ namespace dualpad::input
             ownerNowUs);
         input_v2::ingress::PublishedIngressBatchReceipt kbmReceipt{};
         bool kbmBatchAccepted = false;
+        bool kbmBatchBuilt = false;
+        std::uint32_t mappedEdgeCount = 0;
+        std::uint32_t sourceActivityCount = 0;
+        std::uint32_t physicalDownCount = 0;
+        std::uint32_t quarantineCount = 0;
+        input_v2::ingress::KbmGameplayCurrentFacts kbmCurrent{};
+        input_v2::ingress::KbmGameplayClass firstMappedClass =
+            input_v2::ingress::KbmGameplayClass::TransientDigital;
+        std::string firstMappedAction;
         if (bindings.complete && observed.eventListComplete) {
             auto kbmBatch = _kbmProducer.BuildIngressBatch(
                 observed,
                 bindings,
                 contextSnapshot,
                 ownerNowUs);
+            kbmBatchBuilt = true;
+            mappedEdgeCount = static_cast<std::uint32_t>(kbmBatch.orderedEdges.size());
+            sourceActivityCount = static_cast<std::uint32_t>(kbmBatch.sourceActivities.size());
+            physicalDownCount = static_cast<std::uint32_t>(kbmBatch.physical.downCodes.count);
+            quarantineCount = static_cast<std::uint32_t>(kbmBatch.physical.quarantineCodes.count);
+            kbmCurrent = kbmBatch.completeCurrent;
+            if (!kbmBatch.orderedEdges.empty()) {
+                firstMappedClass = kbmBatch.orderedEdges.front().gameplayClass;
+                firstMappedAction = kbmBatch.orderedEdges.front().actionId;
+            }
             kbmReceipt = input_v2::ingress::IngressHub::GetSingleton().PublishOwnerKbmBatch(
                 input_v2::ingress::OwnerKbmIngressDraft{
                     .boundary = input_v2::ingress::IngressBoundaryObservation{
@@ -200,6 +221,78 @@ namespace dualpad::input
                     .kbm = std::move(kbmBatch)
                 });
             kbmBatchAccepted = kbmReceipt.accepted;
+        }
+        KbmIngressDiagnosticInput kbmDiagnostic{
+            .contextRevision = contextSnapshot.contextRevision,
+            .menuStackRevision = contextSnapshot.menuStackRevision,
+            .controlMapRevision = kbmReceipt.controlMapRevision,
+            .bindingGeneration = bindings.generation,
+            .observedEventCount = static_cast<std::uint32_t>(observed.events.size()),
+            .mappedEdgeCount = mappedEdgeCount,
+            .sourceActivityCount = sourceActivityCount,
+            .physicalDownCount = physicalDownCount,
+            .quarantineCount = quarantineCount,
+            .keyboardMoveHeldMask = kbmCurrent.keyboardMoveHeldMask,
+            .keyboardCombatHeldMask = kbmCurrent.keyboardCombatHeldMask,
+            .mouseCombatHeldMask = kbmCurrent.mouseCombatHeldMask,
+            .keyboardTransientHeldMask = kbmCurrent.keyboardTransientHeldMask,
+            .mouseTransientHeldMask = kbmCurrent.mouseTransientHeldMask,
+            .keyboardSustainedHeldMask = kbmCurrent.keyboardSustainedHeldMask,
+            .mouseSustainedHeldMask = kbmCurrent.mouseSustainedHeldMask,
+            .bindingsComplete = bindings.complete,
+            .eventListComplete = observed.eventListComplete,
+            .batchBuilt = kbmBatchBuilt,
+            .batchAccepted = kbmBatchAccepted
+        };
+        if (!observed.events.empty()) {
+            const auto& first = observed.events.front();
+            kbmDiagnostic.firstDevice = static_cast<std::uint8_t>(first.physical.device);
+            kbmDiagnostic.firstIdCode = first.physical.idCode;
+            kbmDiagnostic.firstPhase = static_cast<std::uint8_t>(first.phase);
+            kbmDiagnostic.firstInitialPress = first.initialPress;
+        }
+        const auto kbmFingerprint = BuildKbmIngressFingerprint(kbmDiagnostic);
+        const auto kbmSample = g_kbmIngressSampler.Observe(ownerNowUs / 1000, kbmDiagnostic);
+        if (kbmSample.record) {
+            logger::info(
+                "[DualPad][KbmIngressShadow] callbackCount={} sampleReason={} fingerprint=0x{:X} thread={} frameToken={} eventBatchToken={} contextRevision={} menuStackRevision={} bindingGeneration={} bindingsComplete={} eventListComplete={} observedEventCount={} firstDevice={} firstIdCode=0x{:X} firstPhase={} firstInitialPress={} batchBuilt={} mappedEdgeCount={} firstMappedClass={} firstMappedAction='{}' sourceActivityCount={} currentComplete={} keyboardMove=0x{:X} keyboardCombat=0x{:X} mouseCombat=0x{:X} keyboardTransient=0x{:X} mouseTransient=0x{:X} keyboardSustained=0x{:X} mouseSustained=0x{:X} physicalDownCount={} quarantineCount={} batchAccepted={} firstOrderedSeq={} causalTail={} inputStateEpoch={} gamepadSessionId={} controlMapRevision={} productionMutationEnabled=false enginePatchEnabled=false",
+                kbmSample.callbackCount,
+                ToString(kbmSample.reason),
+                kbmFingerprint,
+                ::GetCurrentThreadId(),
+                frameToken,
+                eventBatchToken,
+                contextSnapshot.contextRevision,
+                contextSnapshot.menuStackRevision,
+                bindings.generation,
+                bindings.complete,
+                observed.eventListComplete,
+                observed.events.size(),
+                kbmDiagnostic.firstDevice,
+                kbmDiagnostic.firstIdCode,
+                kbmDiagnostic.firstPhase,
+                kbmDiagnostic.firstInitialPress,
+                kbmBatchBuilt,
+                mappedEdgeCount,
+                static_cast<std::uint8_t>(firstMappedClass),
+                firstMappedAction,
+                sourceActivityCount,
+                kbmCurrent.complete,
+                kbmCurrent.keyboardMoveHeldMask,
+                kbmCurrent.keyboardCombatHeldMask,
+                kbmCurrent.mouseCombatHeldMask,
+                kbmCurrent.keyboardTransientHeldMask,
+                kbmCurrent.mouseTransientHeldMask,
+                kbmCurrent.keyboardSustainedHeldMask,
+                kbmCurrent.mouseSustainedHeldMask,
+                physicalDownCount,
+                quarantineCount,
+                kbmBatchAccepted,
+                kbmReceipt.firstOrderedSeq,
+                kbmReceipt.causalOrderedTailSeq,
+                kbmReceipt.inputStateEpoch,
+                kbmReceipt.gamepadSessionId,
+                kbmReceipt.controlMapRevision);
         }
         const auto currentCyclePlan = input_v2::gameplay::BuildCurrentCycleGatePlan(
             BuildCurrentCycleInput(consumedReceipt, observed, bindings, kbmBatchAccepted));

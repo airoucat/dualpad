@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": "S-DP5-MIXED-INPUT",
-  "updated_at": "2026-07-12T16:34:44+08:00",
+  "updated_at": "2026-07-12T16:56:00+08:00",
   "sprints": [
     {
       "id": "S-DP5-MIXED-INPUT",
@@ -34,7 +34,7 @@
         { "id": "WP8", "status": "completed" },
         { "id": "WP9", "status": "completed" },
         { "id": "WP10", "status": "completed" },
-        { "id": "gated-slices", "status": "in_progress", "current": "I-0 availability shadow telemetry ready; A/B live matrix pending" }
+        { "id": "gated-slices", "status": "in_progress", "current": "KBM ingress shadow boundary telemetry; I-0 soak and A/B matrix remain pending" }
       ],
       "exit_criteria": [
         "严格按 WP0 -> WP0.5 -> WP1 -> WP2 -> WP3 -> WP4 -> WP5 shadow -> gated slices 推进",

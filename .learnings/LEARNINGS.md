@@ -370,3 +370,26 @@ Skyrim SE 1.5.97 中 `REL 560029 -> RVA 0x175E848`，其 qword 指向 `BSPCGamep
 probe 同时记录 `REL 560029` 的 COL entry/target 和 `REL 285457` 的 vftable address point；verifier 将 `IsEnabled` 唯一锁定到 slot `7`。production manifest 继续 `i0Approved=false`，等待 clean-build DataLoaded runtime 重检。
 
 clean build `f76a53a91263` 的 DataLoaded 实机日志已完成该重检：COL、正式 vftable、live vptr 与 slot `7 -> 0xC19E00` 全部匹配。该结果只关闭 identity 子门；I-0 availability 的 A/B 动态矩阵仍独立 pending。
+
+## [LRN-20260712-004] correction
+
+**Logged**: 2026-07-12T16:56:00+08:00
+**Priority**: high
+**Status**: open
+**Area**: mixed input / live validation / information gain
+
+### Summary
+
+实机 Gate 的长时 held/soak 条件不能替代根因定位；当短样本已证明 current-state continuity 时，应保留 soak 为 pending，并优先采集能区分相邻边界的诊断证据。
+
+### Detail
+
+I-0 RS 样本已经同时证明镜头持续转动、原生 Poll 连续到达、XInput current-state 非零以及 connectivity/delegate 稳定。继续要求用户重复 30–35 秒只提高 liveness 置信度，不能区分 gameplay KBM event 未被 Skyrim materialize，还是已进入 DualPad 后丢失。批准计划的 30 秒退出条件仍不得擅自判 PASS，但它可以保留为 pending；当前更高信息增益的动作是对 `RE::InputEvent list -> KbmGameplayFactProducer -> IngressHub receipt` 添加低噪声 read-only telemetry，再用一次短 W/鼠标测试定位首个断裂点。
+
+### Related Files
+
+- `src/input/InputFramePump.cpp`
+- `src/input/injection/SkyrimKbmInputAdapter.cpp`
+- `src/input_v2/ingress/KbmGameplayFactProducer.cpp`
+- `.dualpad-builder/mixed_input_evidence.json`
+- `.dualpad-builder/progress.md`

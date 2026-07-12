@@ -13,6 +13,7 @@
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
 #include "input/RuntimeConfig.h"
+#include "input/injection/KbmIngressDiagnostics.h"
 #include "input/injection/RouteHealthContract.h"
 
 #include <SKSE/Logger.h>
@@ -26,6 +27,8 @@ namespace dualpad::input_v2::gameplay
 {
     namespace
     {
+        input::KbmIngressDiagnosticSampler g_kbmRuntimeSampler{ 5'000 };
+
         const char* ToString(actions::ActionPhase phase)
         {
             switch (phase) {
@@ -494,13 +497,73 @@ namespace dualpad::input_v2::gameplay
                 frame.facts.kbmGameplay->ownerTickToken);
         }
 
+        const auto policy = BuildGameplayPolicyFromFacts(
+            frame.facts,
+            contextSnapshot.hostMode == context::HostMode::Gameplay,
+            recovery);
+        const auto* kbm = frame.facts.kbmGameplay ? &*frame.facts.kbmGameplay : nullptr;
+        const input::KbmIngressDiagnosticInput kbmDiagnostic{
+            .contextRevision = frame.facts.contextRevision,
+            .menuStackRevision = contextSnapshot.menuStackRevision,
+            .controlMapRevision = frame.facts.coherence.controlMapRevision,
+            .bindingGeneration = kbm ? kbm->bindingGeneration : 0,
+            .physicalDownCount = kbm ? static_cast<std::uint32_t>(kbm->physical.downCodes.count) : 0,
+            .quarantineCount = kbm ? static_cast<std::uint32_t>(kbm->physical.quarantineCodes.count) : 0,
+            .keyboardMoveHeldMask = kbm ? kbm->current.keyboardMoveHeldMask : 0,
+            .keyboardCombatHeldMask = kbm ? kbm->current.keyboardCombatHeldMask : 0,
+            .mouseCombatHeldMask = kbm ? kbm->current.mouseCombatHeldMask : 0,
+            .keyboardTransientHeldMask = kbm ? kbm->current.keyboardTransientHeldMask : 0,
+            .mouseTransientHeldMask = kbm ? kbm->current.mouseTransientHeldMask : 0,
+            .keyboardSustainedHeldMask = kbm ? kbm->current.keyboardSustainedHeldMask : 0,
+            .mouseSustainedHeldMask = kbm ? kbm->current.mouseSustainedHeldMask : 0,
+            .bindingsComplete = kbm && kbm->current.complete,
+            .eventListComplete = kbm && kbm->physical.complete,
+            .batchBuilt = kbm != nullptr,
+            .batchAccepted = kbm && kbm->virtualGameplayEligible
+        };
+        const auto kbmSample = g_kbmRuntimeSampler.Observe(
+            frame.facts.monotonicUs / 1000,
+            kbmDiagnostic);
+        if (kbmSample.record) {
+            logger::info(
+                "[DualPad][KbmRuntimeShadow] callbackCount={} sampleReason={} fingerprint=0x{:X} captureGeneration={} ownerTickToken={} eventBatchToken={} contextRevision={} menuStackRevision={} inputStateEpoch={} gamepadSessionId={} controlMapRevision={} orderedCutoffSeq={} factPresent={} virtualGameplayEligible={} currentComplete={} physicalComplete={} keyboardMove=0x{:X} keyboardCombat=0x{:X} mouseCombat=0x{:X} keyboardTransient=0x{:X} mouseTransient=0x{:X} keyboardSustained=0x{:X} mouseSustained=0x{:X} physicalDownCount={} quarantineCount={} policyGameplayContext={} policyMoveActive={} policyCombatActive={} policyDigitalActive={} policyMouseLookActive={} runtimeHealth=0x{:X} productionMutationEnabled=false enginePatchEnabled=false",
+                kbmSample.callbackCount,
+                input::ToString(kbmSample.reason),
+                input::BuildKbmIngressFingerprint(kbmDiagnostic),
+                frame.facts.coherence.captureGeneration,
+                kbm ? kbm->ownerTickToken : 0,
+                kbm ? kbm->eventBatchToken : 0,
+                frame.facts.contextRevision,
+                contextSnapshot.menuStackRevision,
+                frame.facts.coherence.inputStateEpoch,
+                frame.facts.coherence.gamepadSessionId,
+                frame.facts.coherence.controlMapRevision,
+                frame.facts.coherence.orderedCutoffSeq,
+                kbm != nullptr,
+                kbm && kbm->virtualGameplayEligible,
+                kbm && kbm->current.complete,
+                kbm && kbm->physical.complete,
+                kbm ? kbm->current.keyboardMoveHeldMask : 0,
+                kbm ? kbm->current.keyboardCombatHeldMask : 0,
+                kbm ? kbm->current.mouseCombatHeldMask : 0,
+                kbm ? kbm->current.keyboardTransientHeldMask : 0,
+                kbm ? kbm->current.mouseTransientHeldMask : 0,
+                kbm ? kbm->current.keyboardSustainedHeldMask : 0,
+                kbm ? kbm->current.mouseSustainedHeldMask : 0,
+                kbm ? kbm->physical.downCodes.count : 0,
+                kbm ? kbm->physical.quarantineCodes.count : 0,
+                policy.gameplayContext,
+                policy.keyboardMoveActive,
+                policy.keyboardMouseCombatActive,
+                policy.keyboardMouseDigitalActive,
+                policy.mouseLookActive,
+                runtimeHealthReasons);
+        }
+
         return DualPadRuntimeInput{
             .kernel = kernel,
             .resolved = std::move(resolved),
-            .policy = BuildGameplayPolicyFromFacts(
-                frame.facts,
-                contextSnapshot.hostMode == context::HostMode::Gameplay,
-                recovery),
+            .policy = policy,
             .recovery = recovery,
             .currentCyclePlan = currentCycle ?
                 std::optional{ currentCycle->plan } : std::nullopt,

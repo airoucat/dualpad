@@ -3752,3 +3752,23 @@
   - 用户报告 RS 能持续转动镜头；matching `76895173dda7 / Skyrim 1-5-97-0` 日志同步观测到 Gameplay RS non-neutral current-state，`rx` 从 `10922` 达到 `32767`，原生 Poll 持续返回成功。
   - RS non-neutral 从 `16:51:22.163` 到 `16:51:31.342`，实际约 `9179 ms`，只有 1 个 5 秒 interval 样本；因此行为 PASS，但批准计划要求的 30 秒 held case 未完成，不能升级为 Gate PASS。
   - 本轮同时观测到 `JournalMenu`，ready 后 28 个样本中 native Poll、XInput、connectivity 与 delegate 均零失败；remap 仍未覆盖。I-0 继续 `NO-GO`，production patch 继续关闭。
+
+## 2026-07-12 16:56:00 +08:00
+
+- `S-DP5-MIXED-INPUT / KBM ingress shadow boundary slice start`：
+  - Current Phase Packet：保持 I-0 30 秒 held 与 remap/Inventory 等未完成项为 pending；当前只对 `RE::InputEvent list -> SkyrimKbmInputAdapter -> KbmGameplayFactProducer -> IngressHub receipt` 增加低噪声 read-only telemetry，定位 gameplay W/鼠标攻击的首个断裂点。
+  - Must not do：不修改 event payload，不启用 current-cycle mutation，不批准 I-0/I-1，不安装 entry/device/caller override，不改变 engine result、menu、cursor、bindings、glyph、haptics 或 rumble。
+  - 单一假设：如果短实机样本中 adapter 根本看不到 keyboard/mouse event，则断裂在 Skyrim materialization/engine caller 之前；如果 observed/mapped/accepted 均存在但 runtime facts 不可见，则继续沿 ingress causal cutoff 与 runtime policy 边界追踪。
+  - TDD 目标：空 callback 只记录首次/低频健康样本；physical KBM event、producer mapped edge/current-mask 变化或 Hub rejection 必须立即记录；telemetry 不得参与 routing、ledger、event mutation 或 capability gate。
+
+## 2026-07-12 17:08:00 +08:00
+
+- `S-DP5-MIXED-INPUT / KBM ingress shadow boundary implementation + review`：
+  - RED：`DualPadRouteHealthContractTests` 首先因缺少 `KbmIngressDiagnostics.h` 编译失败；`test_mixed_input_kbm_shadow_wiring.py` 首先因 ingress/runtime marker 与边界接线不存在而失败。
+  - GREEN：新增低噪声 sampler，并分别记录 `[DualPad][KbmIngressShadow]` 与 `[DualPad][KbmRuntimeShadow]`；覆盖 event observation、producer edge/current-state、Hub receipt、assembled fact、policy 与 causal identity。日志固定声明 `productionMutationEnabled=false enginePatchEnabled=false`。
+  - Focused/adjacent：`xmake run -y DualPadRouteHealthContractTests`、`python tests/python/test_mixed_input_kbm_shadow_wiring.py`、`xmake run -y DualPadIngressTests`、`xmake run -y DualPadInputV2Tests`、`xmake run -y DualPadGameplayProjectionTests`、`xmake run -y DualPadPresentationProjectionTests` 全部 exit 0。
+  - Review：correctness/testing/maintainability/project-standards/agent-native/learnings/performance/reliability/api-contract/adversarial 顺序审查无 actionable finding；记录见 `.context/compound-engineering/ce-review/20260712-kbm-ingress-shadow/review.md`。
+  - Canonical/close-out：`scripts/ci/run_phase8_ci.ps1` exit 0，日志确认 GameplayProjection 等 canonical targets 实际 build/run；closeout contracts 10/10、trace evaluator 11/11、dynamic evidence checker（releaseStatus=`NO-GO`）与 good trace evaluator 全部 PASS。
+  - Graphify：`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` exit 0，生成 `2389 nodes / 5682 edges / 172 communities`；`git diff --check` exit 0。
+  - RC readiness：`run_rc_readiness.ps1 -ExpectCleanManifest` 内嵌 Phase8 再次全绿，但 standalone `DualPadReplayHarness` 因 host 无 `SkyrimSE.exe` module handle 失败；直接复现随后超时并留下 harness/xmake 子进程，已仅终止本轮 PID。该 RC gate 明确保留失败，不作为本切片通过证据；详见 `ERR-20260712-022`。
+  - Gate：仅批准 clean shadow candidate 的后续构建和短实机采样；I-0 30 秒 soak 继续 pending，I-0/I-1/I-P/I-KBM 与全部 production capability 继续 `NO-GO`。
