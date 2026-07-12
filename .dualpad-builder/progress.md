@@ -3730,3 +3730,10 @@
   - ce:review 顺序覆盖 correctness、testing、maintainability、project standards、agent-native、learnings、performance、reliability、api-contract 与 adversarial；修复两个 safe-auto finding：analog packet 日志洪泛，以及 I.2 缺少 connected/delegateReady。复审无剩余 actionable finding；唯一 testing gap 为 matching 1.5.97 A/B live matrix。
   - 相邻 `DualPadInputV2Tests`、`DualPadGameplayProjectionTests`、`DualPadPresentationProjectionTests` 与主 DLL build 全部 exit 0。Gate 不变：`availabilityVerdict=pending-A-B-matrix`、`productionPatchEnabled=false`，I-0 总状态继续 NO-GO。
   - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。Graphify manual closeout：`2378 nodes / 5670 edges / 172 communities`。
+
+## 2026-07-12 16:42:00 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 availability shadow candidate deployed`：
+  - 实现提交 `7689517 feat(skyrim): add I-0 availability shadow telemetry` 已推送至 `origin/codex/mixed-input-implementation`。
+  - 从 clean implementation commit 强制重建 `xmake build -r -y DualPad` 成功；主 DLL 部署至机器私有 Skyrim mod 路径，内嵌 build identity 精确为 `76895173dda7`，SHA-256 为 `34639E78AEB1F92815CB22B5AF0F0642836FFD1143709CF1546AB6CFDDD5FDA1`。
+  - 该候选只增加 `[DualPad][I0Availability]` 只读 shadow telemetry；`productionPatchEnabled=false`、I-0 总状态 `NO-GO`，gameplay KBM 缺陷尚未宣称修复。下一步仅执行 matching 1.5.97 的 availability A/B live matrix。

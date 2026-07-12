@@ -330,6 +330,9 @@
         "availabilityShadowTelemetryAvailable": true,
         "availabilityLogMarker": "[DualPad][I0Availability]",
         "availabilityHealthIntervalMs": 5000,
+        "availabilityCandidateBuildCommit": "76895173dda7",
+        "availabilityCandidateDllSha256": "34639E78AEB1F92815CB22B5AF0F0642836FFD1143709CF1546AB6CFDDD5FDA1",
+        "availabilityCandidateDeployedAt": "2026-07-12T16:41:14+08:00",
         "availabilityFields": [
           "pollCount",
           "thread",
