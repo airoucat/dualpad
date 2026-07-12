@@ -3620,5 +3620,6 @@
   - Tier 2 顺序审查覆盖 correctness、testing、maintainability、project standards、agent-native、reliability、API/CLI contract、Python、adversarial 与 learnings；审查发现的 exact callsite、slot、embedded path、classification evidence 与 exporter round-trip 缺口均已修复，未留下高置信可操作项。
   - Focused GREEN：IDA checker tests `7 passed`；mixed-input close-out `10 passed`；Python discovery `71 passed`；static checker 输出 `26 xrefs / 6 signatures / dynamicGatesRemain=NO-GO`；dynamic checker 输出 `releaseStatus=NO-GO / 9 gates`；exporter 与 checker `py_compile` 通过。
   - canonical Phase 8 GREEN：主 DLL 与全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 均 exit 0；同路径 PDB 占用仍只是已知 copy warning，DLL 明确 `build ok`。
-  - Graphify manual closeout：`2366 nodes / 5632 edges / 172 communities`。实现提交在本条之后形成，并由后续 builder closeout 记录精确 hash。
+  - clean-HEAD RC readiness GREEN：Phase 8、Python discovery `71 passed`、mixed close-out `10 passed`、good trace `3 records / 0 violations`、dynamic/static evidence checker、dispatcher replay `10 scenarios / zero-diff`、DInput8 proxy、release artifact manifest、RC closeout、Graphify 与 `git diff --check` 全部 exit 0。
+  - Graphify manual closeout：`2366 nodes / 5632 edges / 172 communities`。实现提交：`69739aa test(ci): freeze Skyrim IDA static evidence`。
   - Gate 不变：I-0 仍缺 runtime original target/availability 唯一出口；I-1 的 26 个 caller 全部保留 `Unknown`，未做地址邻近猜测；I-5 仍缺最终 enabled-site transaction/rollback 动态证明。9 个动态 Gate 全部继续 `NO-GO`，未安装或启用任何 production patch。
