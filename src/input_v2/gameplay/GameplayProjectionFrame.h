@@ -5,6 +5,7 @@
 #include "input/backend/NativeActionDescriptor.h"
 #include "input/backend/NativeControlCode.h"
 #include "input_v2/actions/InteractionEngine.h"
+#include "input_v2/gameplay/ChannelArbitration.h"
 #include "input_v2/gameplay/RecoveryPlan.h"
 #include "input_v2/presentation/PresentationProjection.h"
 
@@ -22,12 +23,6 @@ namespace dualpad::input_v2::gameplay
         Console
     };
 
-    enum class ChannelOwner : std::uint8_t
-    {
-        Gamepad = 0,
-        KeyboardMouse
-    };
-
     enum class AnalogGateMode : std::uint8_t
     {
         Open = 0,
@@ -39,23 +34,6 @@ namespace dualpad::input_v2::gameplay
         Open = 0,
         SuppressNewTransient,
         CancelAndSuppressNewTransient
-    };
-
-    enum class GameplayReasonCode : std::uint8_t
-    {
-        None = 0,
-        NonGameplayContext,
-        CarryPreviousOwner,
-        MouseLookActive,
-        MeaningfulRightStick,
-        KeyboardMoveActive,
-        MeaningfulLeftStick,
-        KeyboardMouseCombatActive,
-        MeaningfulTrigger,
-        KeyboardMouseTransientDigitalActive,
-        GamepadTransientDigitalActive,
-        SoftResync,
-        HardReset
     };
 
     template <class T, std::size_t N>
@@ -155,41 +133,6 @@ namespace dualpad::input_v2::gameplay
         GameplayReasonCode recovery{ GameplayReasonCode::None };
     };
 
-    struct PrimaryPathArbitrationInput
-    {
-        ChannelOwner previousLookOwner{ ChannelOwner::KeyboardMouse };
-        ChannelOwner previousMoveOwner{ ChannelOwner::KeyboardMouse };
-        ChannelOwner previousCombatOwner{ ChannelOwner::KeyboardMouse };
-        ChannelOwner previousDigitalOwner{ ChannelOwner::KeyboardMouse };
-        bool gameplayContext{ true };
-        bool gamepadLookActive{ false };
-        bool gamepadLookSustained{ false };
-        bool gamepadMoveActive{ false };
-        bool gamepadMoveSustained{ false };
-        bool gamepadCombatActive{ false };
-        bool gamepadCombatSustained{ false };
-        bool gamepadTransientDigitalActive{ false };
-        bool mouseLookActive{ false };
-        bool keyboardMoveActive{ false };
-        bool keyboardMouseCombatActive{ false };
-        bool keyboardMouseDigitalActive{ false };
-        bool gamepadMenuEntryActive{ false };
-        presentation::PresentationOwner uiOwner{ presentation::PresentationOwner::KeyboardMouse };
-        presentation::CursorOwner menuCursorOwner{ presentation::CursorOwner::KeyboardMouse };
-    };
-
-    struct PrimaryPathArbitrationDecision
-    {
-        ChannelOwner lookOwner{ ChannelOwner::KeyboardMouse };
-        ChannelOwner moveOwner{ ChannelOwner::KeyboardMouse };
-        ChannelOwner combatOwner{ ChannelOwner::KeyboardMouse };
-        ChannelOwner digitalOwner{ ChannelOwner::KeyboardMouse };
-        presentation::PresentationOwner engineOwner{ presentation::PresentationOwner::KeyboardMouse };
-        presentation::PresentationOwner menuEntryOwner{ presentation::PresentationOwner::KeyboardMouse };
-        presentation::CursorOwner cursorOwner{ presentation::CursorOwner::KeyboardMouse };
-        DecisionReasonByChannel reasons{};
-    };
-
     struct GameplayPresentationPlan
     {
         presentation::PresentationOwner engineOwner{ presentation::PresentationOwner::KeyboardMouse };
@@ -212,6 +155,7 @@ namespace dualpad::input_v2::gameplay
         RecoveryPlan recoveryPlan{};
         GameplayPresentationPlan presentationPlan{};
         DecisionReasonByChannel reasons{};
+        ChannelArbitrationStateSet nextArbitration{};
     };
 
     struct GameplayPolicy
@@ -222,13 +166,21 @@ namespace dualpad::input_v2::gameplay
         float moveSustainThreshold{ 0.15f };
         float triggerEnterThreshold{ 0.15f };
         float triggerSustainThreshold{ 0.08f };
+        std::uint64_t outputTickUs{ 0 };
+        std::uint64_t lastPhysicalMouseMoveOwnerUs{ 0 };
+        std::uint64_t mouseLookQuietWindowUs{ 200'000 };
         bool gameplayContext{ true };
         bool mouseLookActive{ false };
+        bool mouseLookActivatedThisFrame{ false };
         bool keyboardMoveActive{ false };
+        bool keyboardMoveActivatedThisFrame{ false };
         bool keyboardMouseCombatActive{ false };
+        bool keyboardMouseCombatActivatedThisFrame{ false };
         bool keyboardMouseDigitalActive{ false };
+        bool keyboardMouseDigitalActivatedThisFrame{ false };
         bool keyboardPhysicalSustainedActive{ false };
         bool mousePhysicalSustainedActive{ false };
+        ChannelArbitrationResetMode arbitrationResetMode{ ChannelArbitrationResetMode::None };
     };
 
     GameplayProjectionFrame ResolveGameplayProjection(
@@ -238,5 +190,4 @@ namespace dualpad::input_v2::gameplay
         const GameplayProjectionFrame& previous,
         const GameplayRecoveryInput& recoveryInput);
 
-    PrimaryPathArbitrationDecision ResolvePrimaryPathArbitration(const PrimaryPathArbitrationInput& input);
 }

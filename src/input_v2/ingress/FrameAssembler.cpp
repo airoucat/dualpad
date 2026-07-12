@@ -211,6 +211,10 @@ namespace dualpad::input_v2::ingress
                     reason = TransitionReason::QueueOverflow;
                 }
                 EmitTransition(frames, _currentKey, _currentKey, reason);
+                if (event.kind == IngressKind::InputReset) {
+                    frames.back().transition.resetScope = event.inputReset.scope;
+                    frames.back().transition.hasResetScope = true;
+                }
                 const auto clearGamepad = [&]() {
                     _latestFacts.controlSamples.clear();
                     _latestFacts.pulseLedger.clear();

@@ -3,6 +3,7 @@
 #include "input/RuntimeConfig.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
+#include "input_v2/gameplay/ChannelArbitration.h"
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
@@ -136,6 +137,167 @@ namespace
         resolved.manifestEpoch = 42;
         resolved.contextRevision = contextRevision;
         return resolved;
+    }
+
+    actions::ResolvedActionFrame ResolvedAxes(
+        float look,
+        float move,
+        float leftTrigger = 0.0f,
+        float rightTrigger = 0.0f)
+    {
+        auto resolved = Resolved();
+        resolved.values = {
+            actions::ActionValueSnapshot{
+                .actionId = "Game.Look",
+                .kind = actions::ActionValueKind::Axis2D,
+                .x = look,
+                .timestampUs = 10'000 },
+            actions::ActionValueSnapshot{
+                .actionId = "Game.Move",
+                .kind = actions::ActionValueKind::Axis2D,
+                .x = move,
+                .timestampUs = 10'000 },
+            actions::ActionValueSnapshot{
+                .actionId = "Game.LeftTrigger",
+                .kind = actions::ActionValueKind::Axis1D,
+                .scalar = leftTrigger,
+                .timestampUs = 10'000 },
+            actions::ActionValueSnapshot{
+                .actionId = "Game.RightTrigger",
+                .kind = actions::ActionValueKind::Axis1D,
+                .scalar = rightTrigger,
+                .timestampUs = 10'000 }
+        };
+        return resolved;
+    }
+
+    gameplay::ChannelArbitrationDecision DecideChannel(
+        gameplay::ChannelArbitrationState previous,
+        bool keyboardMouseActive,
+        bool keyboardMouseActivation,
+        float gamepadMagnitude,
+        std::uint64_t nowUs,
+        std::uint64_t lastKeyboardMouseActivityUs,
+        std::uint64_t quietWindowUs = 0,
+        gameplay::ChannelArbitrationResetMode resetMode = gameplay::ChannelArbitrationResetMode::None)
+    {
+        return gameplay::ResolveChannelArbitration(gameplay::ChannelArbitrationInput{
+            .previous = previous,
+            .gameplayContext = true,
+            .keyboardMouseActive = keyboardMouseActive,
+            .keyboardMouseActivation = keyboardMouseActivation,
+            .gamepadMagnitude = gamepadMagnitude,
+            .gamepadEnterThreshold = 0.25f,
+            .gamepadSustainThreshold = 0.15f,
+            .nowUs = nowUs,
+            .lastKeyboardMouseActivityUs = lastKeyboardMouseActivityUs,
+            .keyboardMouseQuietWindowUs = quietWindowUs,
+            .keyboardMouseReason = gameplay::GameplayReasonCode::MouseLookActive,
+            .gamepadReason = gameplay::GameplayReasonCode::MeaningfulRightStick,
+            .resetMode = resetMode
+        });
+    }
+
+    void RunPerChannelMixedInputArbitrationTests()
+    {
+        static_assert(static_cast<std::uint8_t>(gameplay::ChannelOwner::Gamepad) == 0);
+        static_assert(static_cast<std::uint8_t>(gameplay::ChannelOwner::KeyboardMouse) == 1);
+        static_assert(static_cast<std::uint8_t>(gameplay::ChannelOwner::None) == 2);
+
+        const auto mixed = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            ResolvedAxes(0.65f, 0.70f),
+            gameplay::GameplayPolicy{
+                .outputTickUs = 100'000,
+                .lastPhysicalMouseMoveOwnerUs = 100'000,
+                .mouseLookActive = true,
+                .mouseLookActivatedThisFrame = true },
+            gameplay::GameplayProjectionFrame{},
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+        Require(mixed.lookOwner == gameplay::ChannelOwner::KeyboardMouse, "mouse delta must own Look while LS remains independent");
+        Require(mixed.moveOwner == gameplay::ChannelOwner::Gamepad, "LS 0.70 must own Move while mouse owns Look");
+        Require(mixed.gatePlan.lookGate == gameplay::AnalogGateMode::ZeroedByKeyboardMouse, "mouse-owned Look must gate RS");
+        Require(mixed.gatePlan.moveGate == gameplay::AnalogGateMode::Open, "gamepad-owned Move must preserve LS");
+        Require(mixed.gamepadPlan.analog.lookX == 0.0f, "gated RS must be neutral");
+        Require(mixed.gamepadPlan.analog.moveX == 0.70f, "independent LS must pass");
+        Require(mixed.nextArbitration.look.gamepadCandidate, "same-frame physical mouse priority must latch the RS candidate");
+
+        const auto inverse = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            ResolvedAxes(0.70f, 0.80f),
+            gameplay::GameplayPolicy{
+                .outputTickUs = 100'000,
+                .keyboardMoveActive = true,
+                .keyboardMoveActivatedThisFrame = true },
+            gameplay::GameplayProjectionFrame{},
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+        Require(inverse.lookOwner == gameplay::ChannelOwner::Gamepad, "RS must own Look independently of keyboard Move");
+        Require(inverse.moveOwner == gameplay::ChannelOwner::KeyboardMouse, "mapped move held must own Move");
+
+        auto lookPrevious = mixed.nextArbitration.look;
+        const auto at199ms = DecideChannel(lookPrevious, false, false, 0.16f, 299'000, 100'000, 200'000);
+        Require(at199ms.owner == gameplay::ChannelOwner::KeyboardMouse, "mouse quiet window must retain Look at 199 ms");
+        const auto at201ms = DecideChannel(at199ms.next, false, false, 0.16f, 301'000, 100'000, 200'000);
+        Require(at201ms.owner == gameplay::ChannelOwner::Gamepad, "latched RS must reclaim Look on the first tick after 200 ms");
+
+        const auto unlatched = DecideChannel({}, false, false, 0.24f, 301'000, 100'000, 200'000);
+        Require(unlatched.owner == gameplay::ChannelOwner::None, "unlatched sub-enter RS must leave Look neutral");
+        const auto enters = DecideChannel(unlatched.next, false, false, 0.26f, 302'000, 100'000, 200'000);
+        Require(enters.owner == gameplay::ChannelOwner::Gamepad, "RS must enter only above enter threshold when unlatched");
+
+        const auto moveHeld = DecideChannel({}, true, true, 0.80f, 100'000, 100'000);
+        Require(moveHeld.owner == gameplay::ChannelOwner::KeyboardMouse && moveHeld.next.gamepadCandidate,
+            "keyboard Move must win and latch an eligible LS candidate");
+        const auto moveRelease = DecideChannel(moveHeld.next, false, false, 0.16f, 101'000, 100'000);
+        Require(moveRelease.owner == gameplay::ChannelOwner::Gamepad, "latched LS must reclaim on the key-release tick");
+        const auto unlatchedMoveRelease = DecideChannel({}, false, false, 0.16f, 101'000, 100'000);
+        Require(unlatchedMoveRelease.owner == gameplay::ChannelOwner::None, "unlatched LS at sustain must not enter Move");
+
+        const auto combat = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            ResolvedAxes(0.70f, 0.80f, 0.9f, 0.8f),
+            gameplay::GameplayPolicy{
+                .outputTickUs = 100'000,
+                .keyboardMouseCombatActive = true,
+                .keyboardMouseCombatActivatedThisFrame = true },
+            gameplay::GameplayProjectionFrame{},
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+        Require(combat.combatOwner == gameplay::ChannelOwner::KeyboardMouse, "physical combat held must own Combat");
+        Require(combat.gatePlan.leftTriggerGate == gameplay::AnalogGateMode::ZeroedByKeyboardMouse &&
+                combat.gatePlan.rightTriggerGate == gameplay::AnalogGateMode::ZeroedByKeyboardMouse,
+            "Combat ownership must gate both triggers");
+        Require(combat.lookOwner == gameplay::ChannelOwner::Gamepad && combat.moveOwner == gameplay::ChannelOwner::Gamepad,
+            "Combat arbitration must not affect Look or Move");
+
+        const auto inactive = DecideChannel({}, false, false, 0.0f, 100'000, 0);
+        Require(inactive.owner == gameplay::ChannelOwner::None && inactive.gateGamepad,
+            "inactive channel must be None and virtual-neutral");
+
+        gameplay::ChannelArbitrationState gamepadLook{
+            .owner = gameplay::ChannelOwner::Gamepad,
+            .gamepadCandidate = true };
+        gameplay::ChannelArbitrationState keyboardMove{
+            .owner = gameplay::ChannelOwner::KeyboardMouse,
+            .gamepadCandidate = true,
+            .lastKeyboardMouseActivityUs = 90'000 };
+        const auto disconnectedLook = DecideChannel(
+            gamepadLook, false, false, 0.8f, 100'000, 0, 0,
+            gameplay::ChannelArbitrationResetMode::GamepadSource);
+        const auto disconnectedMove = DecideChannel(
+            keyboardMove, true, false, 0.8f, 100'000, 90'000, 0,
+            gameplay::ChannelArbitrationResetMode::GamepadSource);
+        Require(disconnectedLook.owner == gameplay::ChannelOwner::None && !disconnectedLook.next.gamepadCandidate,
+            "GamepadSource reset must clear gamepad owner and candidate");
+        Require(disconnectedMove.owner == gameplay::ChannelOwner::KeyboardMouse &&
+                disconnectedMove.next.lastKeyboardMouseActivityUs == 90'000 &&
+                !disconnectedMove.next.gamepadCandidate,
+            "GamepadSource reset must preserve KBM owner/quiet state and clear candidate");
+        const auto globalMove = DecideChannel(
+            keyboardMove, true, false, 0.8f, 100'000, 90'000, 0,
+            gameplay::ChannelArbitrationResetMode::Global);
+        Require(globalMove.owner == gameplay::ChannelOwner::None &&
+                globalMove.next.lastKeyboardMouseActivityUs == 0,
+            "Global reset must clear every channel state");
     }
 
     void RunFrozenFrameShapeTests()
@@ -428,82 +590,6 @@ namespace
         Require(result.steps == expected, "output result must expose pre-output handoff ordering");
     }
 
-    void RunPrimaryPathArbitrationContractTests()
-    {
-        const auto keyboardMouseWins = gameplay::ResolvePrimaryPathArbitration(gameplay::PrimaryPathArbitrationInput{
-            .previousLookOwner = gameplay::ChannelOwner::Gamepad,
-            .previousMoveOwner = gameplay::ChannelOwner::Gamepad,
-            .previousCombatOwner = gameplay::ChannelOwner::Gamepad,
-            .previousDigitalOwner = gameplay::ChannelOwner::Gamepad,
-            .gameplayContext = true,
-            .gamepadLookActive = true,
-            .gamepadMoveActive = true,
-            .gamepadCombatActive = true,
-            .gamepadTransientDigitalActive = true,
-            .mouseLookActive = true,
-            .keyboardMoveActive = true,
-            .keyboardMouseCombatActive = true,
-            .keyboardMouseDigitalActive = true,
-            .uiOwner = presentation::PresentationOwner::KeyboardMouse,
-            .menuCursorOwner = presentation::CursorOwner::KeyboardMouse
-        });
-        Require(
-            keyboardMouseWins.lookOwner == gameplay::ChannelOwner::KeyboardMouse,
-            "primary path table must give mouse look precedence over gamepad look");
-        Require(
-            keyboardMouseWins.moveOwner == gameplay::ChannelOwner::KeyboardMouse,
-            "primary path table must give keyboard move precedence over gamepad move");
-        Require(
-            keyboardMouseWins.combatOwner == gameplay::ChannelOwner::KeyboardMouse,
-            "primary path table must give keyboard/mouse combat precedence over gamepad combat");
-        Require(
-            keyboardMouseWins.digitalOwner == gameplay::ChannelOwner::KeyboardMouse,
-            "primary path table must give keyboard/mouse digital precedence over gamepad digital");
-        Require(
-            keyboardMouseWins.engineOwner == presentation::PresentationOwner::KeyboardMouse,
-            "primary path table must publish a single UI engine owner");
-        Require(
-            keyboardMouseWins.cursorOwner == presentation::CursorOwner::KeyboardMouse,
-            "primary path table must preserve menu cursor owner coherence");
-
-        const auto gamepadReclaims = gameplay::ResolvePrimaryPathArbitration(gameplay::PrimaryPathArbitrationInput{
-            .previousLookOwner = gameplay::ChannelOwner::KeyboardMouse,
-            .previousMoveOwner = gameplay::ChannelOwner::KeyboardMouse,
-            .previousCombatOwner = gameplay::ChannelOwner::KeyboardMouse,
-            .previousDigitalOwner = gameplay::ChannelOwner::KeyboardMouse,
-            .gameplayContext = true,
-            .gamepadLookActive = true,
-            .gamepadMoveActive = true,
-            .gamepadCombatActive = true,
-            .gamepadTransientDigitalActive = true,
-            .uiOwner = presentation::PresentationOwner::Gamepad,
-            .menuCursorOwner = presentation::CursorOwner::Gamepad
-        });
-        Require(gamepadReclaims.lookOwner == gameplay::ChannelOwner::Gamepad, "gamepad look must reclaim when no mouse look is active");
-        Require(gamepadReclaims.moveOwner == gameplay::ChannelOwner::Gamepad, "gamepad move must reclaim when no keyboard move is active");
-        Require(gamepadReclaims.combatOwner == gameplay::ChannelOwner::Gamepad, "gamepad combat must reclaim when no keyboard/mouse combat is active");
-        Require(gamepadReclaims.digitalOwner == gameplay::ChannelOwner::Gamepad, "gamepad digital must reclaim when no keyboard/mouse digital is active");
-        Require(gamepadReclaims.engineOwner == presentation::PresentationOwner::Gamepad, "gamepad analog path must publish Gamepad engine owner");
-        Require(gamepadReclaims.cursorOwner == presentation::CursorOwner::Gamepad, "gamepad menu cursor owner must stay coherent with the table");
-
-        const auto menuContext = gameplay::ResolvePrimaryPathArbitration(gameplay::PrimaryPathArbitrationInput{
-            .previousLookOwner = gameplay::ChannelOwner::Gamepad,
-            .previousMoveOwner = gameplay::ChannelOwner::Gamepad,
-            .previousCombatOwner = gameplay::ChannelOwner::Gamepad,
-            .previousDigitalOwner = gameplay::ChannelOwner::Gamepad,
-            .gameplayContext = false,
-            .gamepadLookActive = true,
-            .gamepadMoveActive = true,
-            .gamepadCombatActive = true,
-            .gamepadTransientDigitalActive = true,
-            .uiOwner = presentation::PresentationOwner::KeyboardMouse,
-            .menuCursorOwner = presentation::CursorOwner::KeyboardMouse
-        });
-        Require(menuContext.lookOwner == gameplay::ChannelOwner::KeyboardMouse, "non-gameplay context must not keep gamepad look owner");
-        Require(menuContext.moveOwner == gameplay::ChannelOwner::KeyboardMouse, "non-gameplay context must not keep gamepad move owner");
-        Require(menuContext.engineOwner == presentation::PresentationOwner::KeyboardMouse, "non-gameplay context must use UI owner");
-    }
-
     void RunOverflowFailClosedTests()
     {
         auto resolved = Resolved();
@@ -692,6 +778,43 @@ namespace
         Require(
             failedRuntime.GetPublishedGameplayPresentation().gameplayPresentationRevision == 0,
             "runtime owner must not publish gameplay presentation when outputApplySucceeded=false");
+
+        gameplay::DualPadRuntime arbitrationRuntime;
+        arbitrationRuntime.ResetForTests();
+        gameplay::DualPadRuntimeInput mouseAndStick{
+            .kernel = Kernel(),
+            .resolved = ResolvedAxes(0.65f, 0.0f),
+            .policy = gameplay::GameplayPolicy{
+                .outputTickUs = 100'000,
+                .lastPhysicalMouseMoveOwnerUs = 100'000,
+                .mouseLookActive = true,
+                .mouseLookActivatedThisFrame = true },
+            .recovery = gameplay::GameplayRecoveryInput{ .cleanFrame = true },
+            .outputTick = 100'000
+        };
+        RecordingPollOutputExecutor failedCandidateExecutor;
+        failedCandidateExecutor.failOnAnalogPublish = true;
+        const auto failedCandidate = arbitrationRuntime.ProcessGameplayFrameForTests(
+            mouseAndStick,
+            failedCandidateExecutor);
+        Require(!failedCandidate.output.outputApplySucceeded && failedCandidate.projectionFrame.nextArbitration.look.gamepadCandidate,
+            "failed output fixture must calculate but not commit an RS candidate");
+
+        gameplay::DualPadRuntimeInput sustainOnly{
+            .kernel = Kernel(),
+            .resolved = ResolvedAxes(0.16f, 0.0f),
+            .policy = gameplay::GameplayPolicy{
+                .outputTickUs = 301'000,
+                .lastPhysicalMouseMoveOwnerUs = 100'000 },
+            .recovery = gameplay::GameplayRecoveryInput{ .cleanFrame = true },
+            .outputTick = 301'000
+        };
+        RecordingPollOutputExecutor afterFailureExecutor;
+        const auto afterFailure = arbitrationRuntime.ProcessGameplayFrameForTests(
+            sustainOnly,
+            afterFailureExecutor);
+        Require(afterFailure.projectionFrame.lookOwner == gameplay::ChannelOwner::None,
+            "failed output apply must not advance channel candidate state");
     }
 
     void RunCoordinatorAuthorityCutoverTests()
@@ -707,12 +830,12 @@ int main()
     try {
         RunFrozenFrameShapeTests();
         RunRecoveryPlanTests();
+        RunPerChannelMixedInputArbitrationTests();
         RunProjectionClassificationAndGateTests();
         RunMenuContextGamepadOutputTests();
         RunGameplayActivateKeepsMinDownWindowLifecycleTests();
         RunGameplayFavoritesFailClosedByDefaultTests();
         RunGameplayFavoritesOptInPresentationHandoffTests();
-        RunPrimaryPathArbitrationContractTests();
         RunOverflowFailClosedTests();
         RunSoftRecoveryDoesNotClearOutputTests();
         RunPresentationPublisherTests();

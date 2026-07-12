@@ -3414,3 +3414,21 @@
   - owner KBM batch在容量检查通过后原子提交 boundary marker、new `IngressBoundaryKey`、binding generation、首个 ordered event与 latest；overflow只保留完整物理 current-state，标记 virtual-ineligible，不制造 ordered/semantic action，也不让旧 held在后续 KBM frame重附着。
   - focused 与相邻回归已通过：Ingress、InputV2、Replay、Property、Fuzz、两个 Python boundary tests及主 DLL build 均 exit 0；最终 fresh rerun 与 Graphify 在 commit 前执行。
   - WP4 channel arbitration、WP5 current-cycle receipt/runtime mutation和所有 IDA-gated capability仍未启用。
+## 2026-07-12 11:51:43 +08:00
+
+- `S-DP5-MIXED-INPUT / WP4 start`：
+  - 按批准计划开始 Look、Move、Combat、TransientDigital 四份独立 next-Poll arbitration state；先写 mixed-channel、200 ms quiet/candidate、None owner 与 scoped reset 红灯。
+  - 本切片只建立 next-Poll owner/gate/reason/state，不实现 WP5 current-cycle event mutation、Poll receipt 或任何 engine/menu/cursor patch。
+
+## 2026-07-12 12:06:25 +08:00
+
+- `S-DP5-MIXED-INPUT / WP4 completed`：
+  - RED 先以缺失 `ChannelArbitration.h` 证明独立 per-channel 状态机尚不存在；第二个 RED 证明 production `BuildStableRuntimeInput` 尚无可验证的 KBM policy builder。随后相邻回归捕获 global transition 被重复应用到首个 stable frame、错误中和新鲜 RS 的边界问题，并修正为 global 只在 transition 原子清空一次。
+  - 新增 `ChannelArbitration` pure decision：`ChannelOwner` 固定保留 `Gamepad=0 / KeyboardMouse=1` 并追加 `None=2`；Look、Move、Combat、TransientDigital 各自持有 owner、gamepad candidate 与 KBM quiet timestamp，低于 sustain 会清 candidate，双方 inactive 会进入 None 并中和 virtual channel。
+  - Look 使用 200 ms owner-clock physical mouse quiet window；同帧 physical KBM 优先但会锁存已达 enter 的 gamepad candidate，quiet 到期或最后 move key release 时可在同 tick 按 sustain reclaim。Combat 只同时 gate LT/RT，不影响 Look/Move；通道之间不再共享 primary owner writer。
+  - live runtime 已消费 coherent `LatestKbmGameplayFacts` 的 mouse、Move、Combat、TransientDigital 与 keyboard/mouse sustained 六类字段；只有 `current.complete && virtualGameplayEligible` 的 facts 可进入 policy，sustained 仍只作为 WP6 shadow contributor 输入。
+  - gameplay arbitration 已从 engine/menu/cursor 字段中抽离；旧 `PrimaryPathArbitration` 双 writer 已删除。presentation plan 在仲裁之后独立投影，未增加 engine query、menu 或 cursor patch。
+  - `GamepadSource` reset scope 现在从 `FrameAssembler -> IngressRecovery -> DualPadRuntime` 保真传递，只清 gamepad owner/candidate并保留 KBM owner/quiet；Global reset 才清全部四份 state。channel next state 仅在 `PollOutputAdapter` apply 成功后提交，失败帧不推进 candidate。
+  - Focused GREEN：`xmake run -y DualPadGameplayProjectionTests`、`xmake run -y DualPadInputV2Tests` 均 exit 0；覆盖 mixed Look/Move、199/201 ms、latched/unlatched sustain、双 trigger gate、None neutral、scoped reset、production KBM builder 与 failed-apply rollback。
+  - 相邻回归：`xmake run -y DualPadIngressTests`、`xmake run -y DualPadReplayTests` 均 exit 0；`xmake build -y DualPad` exit 0。构建仅出现目标 PDB 同路径占用的已知 copy warning，DLL 明确 `build ok`。
+  - WP5 current-cycle receipt/prepare/apply/commit、event mutation、Sprint bridge、engine query、cursor side effect 与全部 IDA 动态门禁 capability 仍未启用；下一切片固定为 `WP5 shadow`。

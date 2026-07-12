@@ -89,6 +89,8 @@ namespace dualpad::input_v2::ingress
         bool requestSoftResync{ false };
         bool requestHardResync{ false };
         bool flushPendingPulseEdges{ false };
+        InputResetScope resetScope{ InputResetScope::GlobalInputState };
+        bool hasResetScope{ false };
     };
 
     struct AssembledFactFrame

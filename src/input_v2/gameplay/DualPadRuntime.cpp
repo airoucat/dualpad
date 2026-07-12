@@ -73,8 +73,8 @@ namespace dualpad::input_v2::gameplay
 
         bool ShouldClearProjectionStickyOwners(const GameplayRecoveryInput& recovery)
         {
-            return recovery.hardResetRequested ||
-                recovery.explicitResetRequested;
+            return (recovery.hardResetRequested || recovery.explicitResetRequested) &&
+                recovery.resetScope == RecoveryResetScope::Global;
         }
 
         bool HasRecoveryRequest(const GameplayRecoveryInput& recovery)
@@ -87,10 +87,16 @@ namespace dualpad::input_v2::gameplay
 
         void MergeRecovery(GameplayRecoveryInput& target, const GameplayRecoveryInput& source)
         {
+            const bool targetHadRequest = HasRecoveryRequest(target);
             target.softResyncRequested = target.softResyncRequested || source.softResyncRequested;
             target.hardResetRequested = target.hardResetRequested || source.hardResetRequested;
             target.sequenceGapObserved = target.sequenceGapObserved || source.sequenceGapObserved;
             target.explicitResetRequested = target.explicitResetRequested || source.explicitResetRequested;
+            if (!targetHadRequest) {
+                target.resetScope = source.resetScope;
+            } else if (source.resetScope == RecoveryResetScope::Global) {
+                target.resetScope = RecoveryResetScope::Global;
+            }
         }
 
         RuntimeHealthReasonMask RuntimeHealthReasonsFromIngress(const ingress::AssembledFactFrame& frame)
@@ -334,6 +340,42 @@ namespace dualpad::input_v2::gameplay
         return envelope;
     }
 
+    GameplayPolicy BuildGameplayPolicyFromFacts(
+        const ingress::FactFrame& facts,
+        bool gameplayContext,
+        const GameplayRecoveryInput& recovery)
+    {
+        const auto* kbm = facts.kbmGameplay &&
+                facts.kbmGameplay->virtualGameplayEligible &&
+                facts.kbmGameplay->current.complete ?
+            &*facts.kbmGameplay : nullptr;
+        const auto keyboardMoveActive = kbm && kbm->current.keyboardMoveHeldMask != 0;
+        const auto keyboardMouseCombatActive = kbm &&
+            (kbm->current.keyboardCombatHeldMask != 0 || kbm->current.mouseCombatHeldMask != 0);
+        const auto keyboardMouseDigitalActive = kbm &&
+            (kbm->current.keyboardTransientHeldMask != 0 || kbm->current.mouseTransientHeldMask != 0);
+
+        return GameplayPolicy{
+            .outputTickUs = facts.monotonicUs,
+            .lastPhysicalMouseMoveOwnerUs = kbm ? kbm->lastPhysicalMouseMoveOwnerUs : 0,
+            .gameplayContext = gameplayContext,
+            .mouseLookActive = kbm && kbm->physicalMouseMoveThisFrame,
+            .mouseLookActivatedThisFrame = kbm && kbm->physicalMouseMoveThisFrame,
+            .keyboardMoveActive = keyboardMoveActive,
+            .keyboardMoveActivatedThisFrame = keyboardMoveActive,
+            .keyboardMouseCombatActive = keyboardMouseCombatActive,
+            .keyboardMouseCombatActivatedThisFrame = keyboardMouseCombatActive,
+            .keyboardMouseDigitalActive = keyboardMouseDigitalActive,
+            .keyboardMouseDigitalActivatedThisFrame = keyboardMouseDigitalActive,
+            .keyboardPhysicalSustainedActive = kbm && kbm->current.keyboardSustainedHeldMask != 0,
+            .mousePhysicalSustainedActive = kbm && kbm->current.mouseSustainedHeldMask != 0,
+            .arbitrationResetMode = recovery.resetScope == RecoveryResetScope::GamepadSource &&
+                    HasRecoveryRequest(recovery) ?
+                ChannelArbitrationResetMode::GamepadSource :
+                ChannelArbitrationResetMode::None
+        };
+    }
+
     DualPadRuntimeInput DualPadRuntime::BuildStableRuntimeInput(const FrameRuntimeEnvelope& envelope)
     {
         const auto& frame = envelope.frame;
@@ -391,15 +433,10 @@ namespace dualpad::input_v2::gameplay
         return DualPadRuntimeInput{
             .kernel = kernel,
             .resolved = std::move(resolved),
-            .policy = GameplayPolicy{
-                .gameplayContext = contextSnapshot.hostMode == context::HostMode::Gameplay,
-                .mouseLookActive = false,
-                .keyboardMoveActive = false,
-                .keyboardMouseCombatActive = false,
-                .keyboardMouseDigitalActive = false,
-                .keyboardPhysicalSustainedActive = false,
-                .mousePhysicalSustainedActive = false
-            },
+            .policy = BuildGameplayPolicyFromFacts(
+                frame.facts,
+                contextSnapshot.hostMode == context::HostMode::Gameplay,
+                recovery),
             .recovery = recovery,
             .runtimeHealthReasons = runtimeHealthReasons,
             .outputTick = kernel.facts.monotonicUs,
@@ -415,6 +452,7 @@ namespace dualpad::input_v2::gameplay
         if (ShouldClearProjectionStickyOwners(recovery)) {
             _interactionState.Reset();
             _lastProjectionFrame = GameplayProjectionFrame{};
+            _channelArbitration = ChannelArbitrationStateSet{};
         }
         if (HasRecoveryRequest(recovery)) {
             MergeRecovery(_pendingRecovery, recovery);
@@ -488,9 +526,12 @@ namespace dualpad::input_v2::gameplay
             };
         }
 
-        const auto previous = ShouldClearProjectionStickyOwners(input.recovery) ?
+        auto previous = ShouldClearProjectionStickyOwners(input.recovery) ?
             GameplayProjectionFrame{} :
             _lastProjectionFrame;
+        previous.nextArbitration = ShouldClearProjectionStickyOwners(input.recovery) ?
+            ChannelArbitrationStateSet{} :
+            _channelArbitration;
         auto projection = ResolveGameplayProjection(
             input.kernel,
             input.resolved,
@@ -507,6 +548,7 @@ namespace dualpad::input_v2::gameplay
 
         if (output.outputApplySucceeded) {
             _lastProjectionFrame = projection;
+            _channelArbitration = projection.nextArbitration;
         }
 
         auto runtimeHealthReasons = input.runtimeHealthReasons;
@@ -553,6 +595,7 @@ namespace dualpad::input_v2::gameplay
     void DualPadRuntime::ResetMutableState()
     {
         _lastProjectionFrame = GameplayProjectionFrame{};
+        _channelArbitration = ChannelArbitrationStateSet{};
         _lastDebugSnapshot = RuntimeDebugSnapshot{};
         _diagnosticsLogState = RuntimeDiagnosticsLogState{};
         _pendingRecovery = GameplayRecoveryInput{};

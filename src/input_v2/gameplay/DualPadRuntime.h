@@ -42,6 +42,11 @@ namespace dualpad::input_v2::gameplay
         }
     };
 
+    GameplayPolicy BuildGameplayPolicyFromFacts(
+        const ingress::FactFrame& facts,
+        bool gameplayContext,
+        const GameplayRecoveryInput& recovery);
+
     class DualPadRuntime
     {
     public:
@@ -85,6 +90,7 @@ namespace dualpad::input_v2::gameplay
         void ResetMutableState();
 
         GameplayProjectionFrame _lastProjectionFrame{};
+        ChannelArbitrationStateSet _channelArbitration{};
         GameplayRecoveryInput _pendingRecovery{};
         bool _hasPendingRecovery{ false };
         actions::InteractionStateStore _interactionState{};

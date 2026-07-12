@@ -18,6 +18,10 @@ namespace dualpad::input_v2::ingress
         input.explicitResetRequested = frame.transition.reason == TransitionReason::ExplicitReset ||
             frame.transition.reason == TransitionReason::ManifestEpochChanged ||
             frame.transition.reason == TransitionReason::QueueOverflow;
+        input.resetScope = frame.transition.hasResetScope &&
+            frame.transition.resetScope == InputResetScope::GamepadSource ?
+            gameplay::RecoveryResetScope::GamepadSource :
+            gameplay::RecoveryResetScope::Global;
         return input;
     }
 }

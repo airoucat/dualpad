@@ -180,6 +180,7 @@ local ph4_action_graph_files = {
 }
 
 local ph5_gameplay_projection_files = {
+    "src/input_v2/gameplay/ChannelArbitration.cpp",
     "src/input_v2/gameplay/DualPadRuntime.cpp",
     "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
     "src/input_v2/gameplay/PollOutputFrame.cpp",

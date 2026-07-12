@@ -2954,6 +2954,37 @@ namespace
         };
     }
 
+    void RunProductionKbmGameplayPolicyBuilderTests()
+    {
+        ingress::FactFrame facts{};
+        facts.monotonicUs = 900'000;
+        facts.kbmGameplay = ingress::LatestKbmGameplayFacts{};
+        auto& kbm = *facts.kbmGameplay;
+        kbm.virtualGameplayEligible = true;
+        kbm.current.complete = true;
+        kbm.current.keyboardMoveHeldMask = 1u;
+        kbm.current.keyboardCombatHeldMask = 2u;
+        kbm.current.mouseCombatHeldMask = 4u;
+        kbm.current.keyboardTransientHeldMask = 8u;
+        kbm.current.mouseTransientHeldMask = 16u;
+        kbm.current.keyboardSustainedHeldMask = 32u;
+        kbm.current.mouseSustainedHeldMask = 64u;
+        kbm.lastPhysicalMouseMoveOwnerUs = 899'000;
+        kbm.physicalMouseMoveThisFrame = true;
+
+        const auto policy = gameplay::BuildGameplayPolicyFromFacts(
+            facts,
+            true,
+            gameplay::GameplayRecoveryInput{});
+        Require(policy.mouseLookActive, "production policy must consume physical mouse Look facts");
+        Require(policy.keyboardMoveActive, "production policy must consume keyboard Move facts");
+        Require(policy.keyboardMouseCombatActive, "production policy must consume keyboard/mouse Combat facts");
+        Require(policy.keyboardMouseDigitalActive, "production policy must consume keyboard/mouse transient facts");
+        Require(policy.keyboardPhysicalSustainedActive, "production policy must expose keyboard sustained shadow facts");
+        Require(policy.mousePhysicalSustainedActive, "production policy must expose mouse sustained shadow facts");
+        Require(policy.lastPhysicalMouseMoveOwnerUs == 899'000, "production policy must preserve the owner-clock mouse timestamp");
+    }
+
     void RunGenerationBasedPulseTests()
     {
         input_backend::PollCommitCoordinator coordinator;
@@ -3081,6 +3112,7 @@ int main()
         RunFrameAssemblerMultiProducerTimestampOrderingTests();
         RunRuntimeOwnerGuardTests();
         RunPollOutputPublicationTests();
+        RunProductionKbmGameplayPolicyBuilderTests();
         RunGenerationBasedPulseTests();
         return 0;
     } catch (const std::exception& e) {

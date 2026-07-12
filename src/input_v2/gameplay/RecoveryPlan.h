@@ -12,6 +12,12 @@ namespace dualpad::input_v2::gameplay
         HardResetOutputs
     };
 
+    enum class RecoveryResetScope : std::uint8_t
+    {
+        Global = 0,
+        GamepadSource
+    };
+
     struct RecoveryPlan
     {
         RecoveryMode mode{ RecoveryMode::None };
@@ -30,6 +36,7 @@ namespace dualpad::input_v2::gameplay
         bool sequenceGapObserved{ false };
         bool explicitResetRequested{ false };
         bool cleanFrame{ false };
+        RecoveryResetScope resetScope{ RecoveryResetScope::Global };
     };
 
     enum class RecoveryExecutionStep : std::uint8_t

@@ -88,13 +88,6 @@ namespace dualpad::input_v2::gameplay
             frame.reasons.recovery = GameplayReasonCode::HardReset;
         }
 
-        presentation::PresentationOwner ToPresentationOwner(ChannelOwner owner)
-        {
-            return owner == ChannelOwner::Gamepad ?
-                presentation::PresentationOwner::Gamepad :
-                presentation::PresentationOwner::KeyboardMouse;
-        }
-
         float Magnitude(float x, float y)
         {
             return std::sqrt((x * x) + (y * y));
@@ -155,93 +148,18 @@ namespace dualpad::input_v2::gameplay
                 break;
             }
         }
-    }
 
-    PrimaryPathArbitrationDecision ResolvePrimaryPathArbitration(const PrimaryPathArbitrationInput& input)
-    {
-        PrimaryPathArbitrationDecision decision{};
-        decision.cursorOwner = input.menuCursorOwner;
-
-        if (!input.gameplayContext) {
-            decision.lookOwner = ChannelOwner::KeyboardMouse;
-            decision.moveOwner = ChannelOwner::KeyboardMouse;
-            decision.combatOwner = ChannelOwner::KeyboardMouse;
-            decision.digitalOwner = ChannelOwner::KeyboardMouse;
-            decision.engineOwner = input.uiOwner;
-            decision.menuEntryOwner = input.uiOwner;
-            decision.reasons.look = GameplayReasonCode::NonGameplayContext;
-            decision.reasons.move = GameplayReasonCode::NonGameplayContext;
-            decision.reasons.combat = GameplayReasonCode::NonGameplayContext;
-            decision.reasons.digital = GameplayReasonCode::NonGameplayContext;
-            return decision;
+        ChannelArbitrationState PreviousChannelState(
+            const ChannelArbitrationState& state,
+            ChannelOwner compatibilityOwner)
+        {
+            if (state.owner != ChannelOwner::None || compatibilityOwner == ChannelOwner::None) {
+                return state;
+            }
+            auto seeded = state;
+            seeded.owner = compatibilityOwner;
+            return seeded;
         }
-
-        decision.lookOwner = input.previousLookOwner;
-        decision.moveOwner = input.previousMoveOwner;
-        decision.combatOwner = input.previousCombatOwner;
-        decision.digitalOwner = input.previousDigitalOwner;
-
-        if (input.mouseLookActive) {
-            decision.lookOwner = ChannelOwner::KeyboardMouse;
-            decision.reasons.look = GameplayReasonCode::MouseLookActive;
-        } else if (input.gamepadLookActive || input.gamepadLookSustained) {
-            decision.lookOwner = ChannelOwner::Gamepad;
-            decision.reasons.look = GameplayReasonCode::MeaningfulRightStick;
-        } else {
-            decision.reasons.look = GameplayReasonCode::CarryPreviousOwner;
-        }
-
-        if (input.keyboardMoveActive) {
-            decision.moveOwner = ChannelOwner::KeyboardMouse;
-            decision.reasons.move = GameplayReasonCode::KeyboardMoveActive;
-        } else if (input.gamepadMoveActive || input.gamepadMoveSustained) {
-            decision.moveOwner = ChannelOwner::Gamepad;
-            decision.reasons.move = GameplayReasonCode::MeaningfulLeftStick;
-        } else {
-            decision.reasons.move = GameplayReasonCode::CarryPreviousOwner;
-        }
-
-        if (input.keyboardMouseCombatActive) {
-            decision.combatOwner = ChannelOwner::KeyboardMouse;
-            decision.reasons.combat = GameplayReasonCode::KeyboardMouseCombatActive;
-        } else if (input.gamepadCombatActive || input.gamepadCombatSustained) {
-            decision.combatOwner = ChannelOwner::Gamepad;
-            decision.reasons.combat = GameplayReasonCode::MeaningfulTrigger;
-        } else {
-            decision.reasons.combat = GameplayReasonCode::CarryPreviousOwner;
-        }
-
-        if (input.keyboardMouseDigitalActive) {
-            decision.digitalOwner = ChannelOwner::KeyboardMouse;
-            decision.reasons.digital = GameplayReasonCode::KeyboardMouseTransientDigitalActive;
-        } else if (input.gamepadTransientDigitalActive) {
-            decision.digitalOwner = ChannelOwner::Gamepad;
-            decision.reasons.digital = GameplayReasonCode::GamepadTransientDigitalActive;
-        } else {
-            decision.reasons.digital = GameplayReasonCode::CarryPreviousOwner;
-        }
-
-        const bool keyboardMousePrimary =
-            input.keyboardMouseDigitalActive ||
-            input.keyboardMouseCombatActive ||
-            input.keyboardMoveActive ||
-            input.mouseLookActive;
-        const bool gamepadAnalogPrimary =
-            decision.lookOwner == ChannelOwner::Gamepad ||
-            decision.moveOwner == ChannelOwner::Gamepad ||
-            decision.combatOwner == ChannelOwner::Gamepad;
-        const bool gamepadPresentationPrimary =
-            gamepadAnalogPrimary ||
-            input.gamepadMenuEntryActive;
-
-        decision.engineOwner = keyboardMousePrimary ?
-            presentation::PresentationOwner::KeyboardMouse :
-            (gamepadPresentationPrimary ? presentation::PresentationOwner::Gamepad : input.uiOwner);
-        decision.menuEntryOwner =
-            input.gamepadMenuEntryActive && !keyboardMousePrimary ?
-            presentation::PresentationOwner::Gamepad :
-            decision.engineOwner;
-        return decision;
     }
 
     GameplayProjectionFrame ResolveGameplayProjection(
@@ -283,42 +201,89 @@ namespace dualpad::input_v2::gameplay
         const auto rightTriggerMagnitude = AxisMagnitudeForTarget(resolved, NativeAxisTarget::RightTrigger);
         const auto triggerMagnitude = std::max(leftTriggerMagnitude, rightTriggerMagnitude);
 
-        const auto recoveryReason = frame.reasons.recovery;
-        const auto primaryPath = ResolvePrimaryPathArbitration(PrimaryPathArbitrationInput{
-            .previousLookOwner = previous.lookOwner,
-            .previousMoveOwner = previous.moveOwner,
-            .previousCombatOwner = previous.combatOwner,
-            .previousDigitalOwner = previous.digitalOwner,
+        const auto nowUs = policy.outputTickUs != 0 ? policy.outputTickUs : kernel.facts.monotonicUs;
+        const auto look = ResolveChannelArbitration(ChannelArbitrationInput{
+            .previous = PreviousChannelState(previous.nextArbitration.look, previous.lookOwner),
             .gameplayContext = policy.gameplayContext,
-            .gamepadLookActive = lookMagnitude >= policy.lookEnterThreshold,
-            .gamepadLookSustained = previous.lookOwner == ChannelOwner::Gamepad && lookMagnitude >= policy.lookSustainThreshold,
-            .gamepadMoveActive = moveMagnitude >= policy.moveEnterThreshold,
-            .gamepadMoveSustained = previous.moveOwner == ChannelOwner::Gamepad && moveMagnitude >= policy.moveSustainThreshold,
-            .gamepadCombatActive = triggerMagnitude >= policy.triggerEnterThreshold,
-            .gamepadCombatSustained = previous.combatOwner == ChannelOwner::Gamepad && triggerMagnitude >= policy.triggerSustainThreshold,
-            .gamepadTransientDigitalActive = hasTransientGamepadDigital,
-            .mouseLookActive = policy.mouseLookActive,
-            .keyboardMoveActive = policy.keyboardMoveActive,
-            .keyboardMouseCombatActive = policy.keyboardMouseCombatActive,
-            .keyboardMouseDigitalActive = policy.keyboardMouseDigitalActive,
-            .gamepadMenuEntryActive = hasGameplayMenuEntryDigital,
-            .uiOwner = presentation::PresentationOwner::KeyboardMouse,
-            .menuCursorOwner = presentation::CursorOwner::KeyboardMouse
+            .keyboardMouseActive = policy.mouseLookActive,
+            .keyboardMouseActivation = policy.mouseLookActivatedThisFrame,
+            .gamepadMagnitude = lookMagnitude,
+            .gamepadEnterThreshold = policy.lookEnterThreshold,
+            .gamepadSustainThreshold = policy.lookSustainThreshold,
+            .nowUs = nowUs,
+            .lastKeyboardMouseActivityUs = policy.lastPhysicalMouseMoveOwnerUs,
+            .keyboardMouseQuietWindowUs = policy.mouseLookQuietWindowUs,
+            .keyboardMouseReason = GameplayReasonCode::MouseLookActive,
+            .gamepadReason = GameplayReasonCode::MeaningfulRightStick,
+            .resetMode = policy.arbitrationResetMode
         });
-        frame.lookOwner = primaryPath.lookOwner;
-        frame.moveOwner = primaryPath.moveOwner;
-        frame.combatOwner = primaryPath.combatOwner;
-        frame.digitalOwner = primaryPath.digitalOwner;
-        frame.reasons = primaryPath.reasons;
+        const auto move = ResolveChannelArbitration(ChannelArbitrationInput{
+            .previous = PreviousChannelState(previous.nextArbitration.move, previous.moveOwner),
+            .gameplayContext = policy.gameplayContext,
+            .keyboardMouseActive = policy.keyboardMoveActive,
+            .keyboardMouseActivation = policy.keyboardMoveActivatedThisFrame,
+            .gamepadMagnitude = moveMagnitude,
+            .gamepadEnterThreshold = policy.moveEnterThreshold,
+            .gamepadSustainThreshold = policy.moveSustainThreshold,
+            .nowUs = nowUs,
+            .lastKeyboardMouseActivityUs = policy.keyboardMoveActive ? nowUs : 0,
+            .keyboardMouseReason = GameplayReasonCode::KeyboardMoveActive,
+            .gamepadReason = GameplayReasonCode::MeaningfulLeftStick,
+            .resetMode = policy.arbitrationResetMode
+        });
+        const auto combat = ResolveChannelArbitration(ChannelArbitrationInput{
+            .previous = PreviousChannelState(previous.nextArbitration.combat, previous.combatOwner),
+            .gameplayContext = policy.gameplayContext,
+            .keyboardMouseActive = policy.keyboardMouseCombatActive,
+            .keyboardMouseActivation = policy.keyboardMouseCombatActivatedThisFrame,
+            .gamepadMagnitude = triggerMagnitude,
+            .gamepadEnterThreshold = policy.triggerEnterThreshold,
+            .gamepadSustainThreshold = policy.triggerSustainThreshold,
+            .nowUs = nowUs,
+            .lastKeyboardMouseActivityUs = policy.keyboardMouseCombatActive ? nowUs : 0,
+            .keyboardMouseReason = GameplayReasonCode::KeyboardMouseCombatActive,
+            .gamepadReason = GameplayReasonCode::MeaningfulTrigger,
+            .resetMode = policy.arbitrationResetMode
+        });
+        const auto digital = ResolveChannelArbitration(ChannelArbitrationInput{
+            .previous = PreviousChannelState(previous.nextArbitration.digital, previous.digitalOwner),
+            .gameplayContext = policy.gameplayContext,
+            .keyboardMouseActive = policy.keyboardMouseDigitalActive,
+            .keyboardMouseActivation = policy.keyboardMouseDigitalActivatedThisFrame,
+            .gamepadMagnitude = hasTransientGamepadDigital ? 1.0f : 0.0f,
+            .gamepadEnterThreshold = 0.5f,
+            .gamepadSustainThreshold = 0.5f,
+            .nowUs = nowUs,
+            .lastKeyboardMouseActivityUs = policy.keyboardMouseDigitalActive ? nowUs : 0,
+            .keyboardMouseReason = GameplayReasonCode::KeyboardMouseTransientDigitalActive,
+            .gamepadReason = GameplayReasonCode::GamepadTransientDigitalActive,
+            .resetMode = policy.arbitrationResetMode
+        });
+
+        const auto recoveryReason = frame.reasons.recovery;
+        frame.lookOwner = look.owner;
+        frame.moveOwner = move.owner;
+        frame.combatOwner = combat.owner;
+        frame.digitalOwner = digital.owner;
+        frame.nextArbitration = ChannelArbitrationStateSet{
+            .look = look.next,
+            .move = move.next,
+            .combat = combat.next,
+            .digital = digital.next
+        };
+        frame.reasons.look = look.reason;
+        frame.reasons.move = move.reason;
+        frame.reasons.combat = combat.reason;
+        frame.reasons.digital = digital.reason;
         frame.reasons.recovery = recoveryReason;
 
         if (policy.gameplayContext) {
-            frame.gatePlan.lookGate = frame.lookOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
-            frame.gatePlan.moveGate = frame.moveOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
-            frame.gatePlan.leftTriggerGate = frame.combatOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
-            frame.gatePlan.rightTriggerGate = frame.combatOwner == ChannelOwner::KeyboardMouse ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+            frame.gatePlan.lookGate = look.gateGamepad ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+            frame.gatePlan.moveGate = move.gateGamepad ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+            frame.gatePlan.leftTriggerGate = combat.gateGamepad ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
+            frame.gatePlan.rightTriggerGate = combat.gateGamepad ? AnalogGateMode::ZeroedByKeyboardMouse : AnalogGateMode::Open;
         }
-        if (policy.gameplayContext && frame.digitalOwner == ChannelOwner::KeyboardMouse) {
+        if (policy.gameplayContext && digital.gateGamepad) {
             frame.gatePlan.transientDigitalGate = previous.digitalOwner == ChannelOwner::Gamepad ?
                 DigitalGateMode::CancelAndSuppressNewTransient :
                 DigitalGateMode::SuppressNewTransient;
@@ -407,11 +372,27 @@ namespace dualpad::input_v2::gameplay
             }
         }
 
-        frame.presentationPlan.engineOwner = primaryPath.engineOwner;
-        frame.presentationPlan.menuEntryOwner = primaryPath.menuEntryOwner;
+        const bool keyboardMousePrimary =
+            policy.keyboardMouseDigitalActive ||
+            policy.keyboardMouseCombatActive ||
+            policy.keyboardMoveActive ||
+            policy.mouseLookActive;
+        const bool gamepadPrimary =
+            frame.lookOwner == ChannelOwner::Gamepad ||
+            frame.moveOwner == ChannelOwner::Gamepad ||
+            frame.combatOwner == ChannelOwner::Gamepad ||
+            frame.digitalOwner == ChannelOwner::Gamepad ||
+            hasGameplayMenuEntryDigital;
+        frame.presentationPlan.engineOwner = keyboardMousePrimary ?
+            presentation::PresentationOwner::KeyboardMouse :
+            (gamepadPrimary ? presentation::PresentationOwner::Gamepad : presentation::PresentationOwner::KeyboardMouse);
+        frame.presentationPlan.menuEntryOwner =
+            hasGameplayMenuEntryDigital && !keyboardMousePrimary ?
+            presentation::PresentationOwner::Gamepad :
+            frame.presentationPlan.engineOwner;
         frame.presentationPlan.preOutputPresentationHandoff =
             hasGameplayMenuEntryDigital &&
-            primaryPath.engineOwner == presentation::PresentationOwner::Gamepad;
+            frame.presentationPlan.engineOwner == presentation::PresentationOwner::Gamepad;
         if (frame.recoveryPlan.mode == RecoveryMode::HardResetOutputs) {
             frame.presentationPlan.reason = presentation::GameplayPresentationReasonCode::RecoveryRepublish;
         } else {

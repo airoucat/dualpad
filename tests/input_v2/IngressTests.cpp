@@ -997,6 +997,20 @@ namespace
             disconnectedCapture.latestGamepadConnection &&
                 disconnectedCapture.latestGamepadConnection->connectivity == ingress::GamepadConnectivity::Disconnected,
             "disconnect must publish disconnected connection facts");
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(disconnectedCapture);
+        const auto transition = std::find_if(frames.begin(), frames.end(), [](const auto& frame) {
+            return frame.kind == ingress::AssembledFrameKind::Transition &&
+                frame.transition.reason == ingress::TransitionReason::ExplicitReset;
+        });
+        Require(transition != frames.end(), "disconnect reset must assemble a transition frame");
+        Require(transition->transition.hasResetScope &&
+                transition->transition.resetScope == ingress::InputResetScope::GamepadSource,
+            "assembled disconnect transition must retain GamepadSource scope");
+        const auto recovery = ingress::ToGameplayRecoveryInput(*transition);
+        Require(recovery.resetScope == gameplay::RecoveryResetScope::GamepadSource,
+            "runtime recovery must preserve GamepadSource scope instead of widening to Global");
     }
 
     void ContextNeutralGamepadDraftFixture()

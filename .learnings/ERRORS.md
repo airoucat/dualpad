@@ -281,3 +281,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: build `a7a75fac5281` 的用户实测与 live-log evaluator 已闭合摇杆/Journal blocker，builder memory 因此切换为 `current_sprint=null`、hotfix `completed`、`GO WITH NATIVE FAVORITES DISABLED`。旧门禁仍把动态证据到达前的临时状态当成永久不变量，导致所有 runtime tests 通过后在文档一致性层失败。
 - Related files: `scripts/ci/check_reviewed_docs_consistency.py`, `scripts/ci/check_rc_readiness_closeout.py`, `tests/python/test_rc20_governance_state.py`, `.dualpad-builder/`, current-truth docs
 - Resolution: 先新增两条治理门禁集成测试并观察预期红灯，再把检查器和 current-truth docs 原子升级到条件完成态；检查器继续要求 native Favorites fail-closed、完整 `GO` 边界和 `DP5 in_progress/passes=false`。
+
+## ERR-20260712-012
+
+- Logged: 2026-07-12 12:07 CST
+- Priority: low
+- Status: resolved
+- Area: mixed-input workflow / preflight audit
+- Summary: WP4 close-out 误重跑 `test_mixed_input_closeout_contracts.py --phase preflight`，被冻结 implementation base 检查按设计拒绝。
+- Detail: `--phase preflight` 只用于 WP0 且要求当前 HEAD 精确等于 `3985eea35a84ec7952a88f8dfd13c068391fc28b`；后续 WP 的合法独立 commit 必然不满足该条件。冻结 base 只需继续保持为当前 HEAD 的祖先，不能把 preflight 的零推进条件误用为逐 WP close-out gate。
+- Related files: `tests/python/test_mixed_input_closeout_contracts.py`, `.dualpad-builder/mixed_input_evidence.json`, `docs/plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md`
+- Resolution: 将该失败归类为命令阶段误用而非代码回归；WP4 继续使用计划规定的 focused/adjacent tests、主 DLL build、builder JSON、Graphify、ancestor check 与 `git diff --check`。后续只在最终计划定义的对应 phase/gate 调用该脚本，不再重跑 `--phase preflight`。
