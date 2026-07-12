@@ -527,6 +527,9 @@ void RunEngineHookIdentityTests()
 
     constexpr std::uintptr_t moduleBase = 0x140000000;
     constexpr std::uintptr_t queryRva = 0xC15240;
+    constexpr std::uintptr_t handlerColRva = 0x175E848;
+    constexpr std::uintptr_t handlerVtableRva = 0x175E850;
+    constexpr std::uintptr_t handlerColTargetRva = 0x194DA20;
     constexpr std::uintptr_t approvedTarget = 0x140C1A000;
     std::array<std::uint8_t, 32> entryBytes{};
     for (std::size_t index = 0; index < entryBytes.size(); ++index) {
@@ -536,21 +539,34 @@ void RunEngineHookIdentityTests()
     const presentation::EngineHookIdentityManifest manifest{
         .expectedQueryRva = queryRva,
         .expectedQueryBytes = entryBytes,
+        .handlerCompleteObjectLocatorRelocationId = 560029,
+        .handlerVtableRelocationId = 285457,
+        .expectedHandlerCompleteObjectLocatorTargetRva = handlerColTargetRva,
+        .approvedDeviceVfuncSlot = 7,
         .approvedDeviceVfuncTarget = approvedTarget,
         .i0Approved = true
     };
     presentation::EngineHookIdentityObservation observed{
+        .handlerCompleteObjectLocatorRelocationId = 560029,
+        .handlerVtableRelocationId = 285457,
         .moduleBase = moduleBase,
         .resolvedQueryAddress = moduleBase + queryRva,
         .queryBytes = entryBytes,
-        .resolvedHandlerVtableAddress = 0x140F00000,
+        .resolvedHandlerCompleteObjectLocatorAddress = moduleBase + handlerColRva,
+        .handlerCompleteObjectLocatorTarget = moduleBase + handlerColTargetRva,
+        .resolvedHandlerVtableAddress = moduleBase + handlerVtableRva,
         .runtimeGamepadDeviceAddress = 0x200000000,
-        .runtimeGamepadDeviceVtableAddress = 0x140F00000
+        .runtimeGamepadDeviceVtableAddress = moduleBase + handlerVtableRva
     };
     observed.handlerVtableTargets[0] = 0x140C19000;
     observed.handlerVtableTargets[7] = approvedTarget;
     observed.handlerVtableTargets[8] = 0x140C1B000;
     observed.handlerVtableTargets[9] = 0x140C1C000;
+
+    Require(presentation::kGamepadHandlerVtableRelocationId == 285457,
+        "I-0 must resolve the CommonLib BSPCGamepadDeviceHandler vftable ID, not the adjacent COL ID");
+    Require(presentation::kGamepadHandlerCompleteObjectLocatorRelocationId == 560029,
+        "I-0 must retain REL 560029 as the adjacent Complete Object Locator entry identity");
 
     const auto verified = presentation::VerifyEngineHookIdentity(manifest, observed);
     Require(verified.status == presentation::EngineHookIdentityStatus::Verified &&
@@ -584,14 +600,42 @@ void RunEngineHookIdentityTests()
     Require(
         presentation::VerifyEngineHookIdentity(manifest, mismatchedRuntimeVtable).status ==
             presentation::EngineHookIdentityStatus::RuntimeHandlerVtableMismatch,
-        "I-0 must prove the live devices[kGamepad] object uses REL 560029");
+        "I-0 must prove the live devices[kGamepad] object uses the handler vftable relocation");
+
+    auto mismatchedHandlerCol = observed;
+    mismatchedHandlerCol.handlerCompleteObjectLocatorTarget += sizeof(std::uintptr_t);
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, mismatchedHandlerCol).status ==
+            presentation::EngineHookIdentityStatus::HandlerCompleteObjectLocatorMismatch,
+        "I-0 must prove REL 560029 is the handler COL entry adjacent to the actual vftable");
+
+    auto missingHandlerCol = observed;
+    missingHandlerCol.resolvedHandlerCompleteObjectLocatorAddress = 0;
+    missingHandlerCol.handlerCompleteObjectLocatorTarget = 0;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, missingHandlerCol).status ==
+            presentation::EngineHookIdentityStatus::HandlerCompleteObjectLocatorMissing,
+        "I-0 must fail closed when the handler COL entry cannot be observed");
+
+    auto wrongHandlerColId = observed;
+    ++wrongHandlerColId.handlerCompleteObjectLocatorRelocationId;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, wrongHandlerColId).status ==
+            presentation::EngineHookIdentityStatus::RelocationIdMismatch,
+        "I-0 must reject a COL observation from any relocation other than REL 560029");
+    Require(
+        !presentation::BuildEngineHookIdentityProbe(
+            manifest,
+            wrongHandlerColId).handlerCompleteObjectLocatorMatched,
+        "the read-only probe must not report COL identity matched when its relocation ID drifts");
 
     auto swappedSlot = observed;
     swappedSlot.handlerVtableTargets[7] = 0x140C1B000;
     swappedSlot.handlerVtableTargets[8] = approvedTarget;
     Require(
-        presentation::VerifyEngineHookIdentity(manifest, swappedSlot).deviceVfuncSlot == 8,
-        "only the slot matching the I-0 original target may be selected");
+        presentation::VerifyEngineHookIdentity(manifest, swappedSlot).status ==
+            presentation::EngineHookIdentityStatus::DeviceSlotMismatch,
+        "I-0 static proof must reject an approved target moved from IsEnabled slot 7 to slot 8");
 
     auto ambiguousSlots = observed;
     ambiguousSlots.handlerVtableTargets[8] = approvedTarget;
@@ -599,6 +643,13 @@ void RunEngineHookIdentityTests()
         presentation::VerifyEngineHookIdentity(manifest, ambiguousSlots).status ==
             presentation::EngineHookIdentityStatus::DeviceTargetAmbiguous,
         "matching both handler slots must fail closed as ambiguous");
+
+    auto wrongApprovedSlot = manifest;
+    wrongApprovedSlot.approvedDeviceVfuncSlot = 8;
+    Require(
+        presentation::VerifyEngineHookIdentity(wrongApprovedSlot, observed).status ==
+            presentation::EngineHookIdentityStatus::DeviceSlotMismatch,
+        "I-0 approval must pin IsEnabled to the statically proven slot 7");
 
     auto unapproved = manifest;
     unapproved.i0Approved = false;
@@ -617,7 +668,9 @@ void RunEngineHookIdentityTests()
             pendingProbe.verificationStatus ==
                 presentation::EngineHookIdentityStatus::GateNotApproved &&
             pendingProbe.queryRva == queryRva &&
-            pendingProbe.handlerVtableRva == 0xF00000 &&
+            pendingProbe.handlerCompleteObjectLocatorRva == handlerColRva &&
+            pendingProbe.handlerCompleteObjectLocatorTargetRva == handlerColTargetRva &&
+            pendingProbe.handlerVtableRva == handlerVtableRva &&
             pendingProbe.handlerVfuncTargetRvas[7] == 0xC1A000 &&
             pendingProbe.handlerVfuncTargetRvas[8] == 0xC1B000,
         "unapproved I-0 probe must capture ASLR-independent identity without enabling patch writes");
@@ -625,7 +678,10 @@ void RunEngineHookIdentityTests()
     Require(pendingDebug.find("patchEligible=false") != std::string::npos &&
             pendingDebug.find("runtimeDevicePresent=true") != std::string::npos &&
             pendingDebug.find("runtimeVtableMatched=true") != std::string::npos &&
+            pendingDebug.find("handlerColMatched=true") != std::string::npos &&
             pendingDebug.find("queryRva=0xC15240") != std::string::npos &&
+            pendingDebug.find("handlerColRva=0x175E848") != std::string::npos &&
+            pendingDebug.find("handlerVtableRva=0x175E850") != std::string::npos &&
             pendingDebug.find("slot0TargetRva=0xC19000") != std::string::npos &&
             pendingDebug.find("slot7TargetRva=0xC1A000") != std::string::npos &&
             pendingDebug.find("slot8TargetRva=0xC1B000") != std::string::npos &&
@@ -642,6 +698,9 @@ void RunEngineHookIdentityTests()
     Require(!production.i0Approved &&
             production.expectedQueryRva == queryRva &&
             production.expectedQueryBytes == approvedStaticEntryBytes &&
+            production.expectedHandlerCompleteObjectLocatorTargetRva ==
+                handlerColTargetRva &&
+            production.approvedDeviceVfuncSlot == 7 &&
             production.approvedDeviceVfuncTarget == 0,
         "matching static query bytes may seed the read-only probe but cannot pre-approve the runtime target");
 }

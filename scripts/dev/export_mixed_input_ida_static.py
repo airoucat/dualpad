@@ -18,6 +18,9 @@ from typing import Any
 
 TARGET_SHA256 = "DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD"
 QUERY_TARGET = 0x140C15240
+HANDLER_COL_ENTRY = 0x14175E848
+HANDLER_VFTABLE = 0x14175E850
+HANDLER_DECLARED_SLOT_COUNT = 9
 SIGNATURE_REGIONS = (
     (0x140C15240, 64),
     (0x140705AE0, 32),
@@ -42,6 +45,7 @@ def collect() -> dict[str, Any]:
     import ida_ida
     import ida_kernwin
     import ida_nalt
+    import ida_name
     import ida_xref
     import idaapi
     import idc
@@ -94,8 +98,25 @@ def collect() -> dict[str, Any]:
             }
         )
 
+    handler_entries = []
+    for index in range(HANDLER_DECLARED_SLOT_COUNT + 1):
+        entry_va = HANDLER_VFTABLE + index * 8
+        handler_entries.append(
+            {
+                "index": index,
+                "entryVa": hex(entry_va),
+                "targetVa": hex(ida_bytes.get_qword(entry_va)),
+                "kind": "vfunc"
+                if index < HANDLER_DECLARED_SLOT_COUNT
+                else "adjacent-complete-object-locator",
+            }
+        )
+
+    handler_col_target = ida_bytes.get_qword(HANDLER_COL_ENTRY)
+    handler_slot7_target = ida_bytes.get_qword(HANDLER_VFTABLE + 7 * 8)
+
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "evidenceKind": "SkyrimMixedInputIdaStatic",
         "staticEvidenceStatus": "inventory-complete-classification-pending",
         "dynamicGatesRemain": "NO-GO",
@@ -114,7 +135,23 @@ def collect() -> dict[str, Any]:
             "virtualSlotOffset": 56,
             "virtualSlotIndex": 7,
             "staticMeaning": "non-null delegate device then call byte-returning vfunc",
-            "runtimeOriginalTarget": "unresolved-until-I-0-dynamic",
+            "runtimeOriginalTarget": "0x140c19e00-static-live-vptr-recheck-pending",
+        },
+        "handlerTypeIdentity": {
+            "completeObjectLocatorRelocationId": 560029,
+            "completeObjectLocatorEntryVa": hex(HANDLER_COL_ENTRY),
+            "completeObjectLocatorTargetVa": hex(handler_col_target),
+            "completeObjectLocatorTargetName": ida_name.get_name(handler_col_target),
+            "vftableRelocationId": 285457,
+            "vftableVa": hex(HANDLER_VFTABLE),
+            "vftableName": ida_name.get_name(HANDLER_VFTABLE),
+            "addressPointDeltaBytes": HANDLER_VFTABLE - HANDLER_COL_ENTRY,
+            "declaredSlotCount": HANDLER_DECLARED_SLOT_COUNT,
+            "isEnabledSlotIndex": 7,
+            "isEnabledTargetVa": hex(handler_slot7_target),
+            "isEnabledBytes": bytes_at(handler_slot7_target, 16),
+            "isEnabledStaticMeaning": "return qword[this+8] != 0",
+            "entries0Through9": handler_entries,
         },
         "directCodeXrefCount": len(direct_xrefs),
         "releaseRelevantUnknownCallers": len(direct_xrefs),

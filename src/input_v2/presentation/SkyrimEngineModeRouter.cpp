@@ -52,8 +52,12 @@ namespace dualpad::input_v2::presentation
             return { .status = EngineHookIdentityStatus::GateNotApproved };
         }
         if (manifest.queryRelocationId != kIsUsingGamepadRelocationId ||
+            manifest.handlerCompleteObjectLocatorRelocationId !=
+                kGamepadHandlerCompleteObjectLocatorRelocationId ||
             manifest.handlerVtableRelocationId != kGamepadHandlerVtableRelocationId ||
             observed.queryRelocationId != manifest.queryRelocationId ||
+            observed.handlerCompleteObjectLocatorRelocationId !=
+                manifest.handlerCompleteObjectLocatorRelocationId ||
             observed.handlerVtableRelocationId != manifest.handlerVtableRelocationId) {
             return { .status = EngineHookIdentityStatus::RelocationIdMismatch };
         }
@@ -67,6 +71,23 @@ namespace dualpad::input_v2::presentation
         if (observed.resolvedHandlerVtableAddress == 0) {
             return { .status = EngineHookIdentityStatus::HandlerVtableMissing };
         }
+        if (observed.resolvedHandlerCompleteObjectLocatorAddress == 0 ||
+            observed.handlerCompleteObjectLocatorTarget == 0) {
+            return {
+                .status = EngineHookIdentityStatus::HandlerCompleteObjectLocatorMissing
+            };
+        }
+        if (manifest.expectedHandlerCompleteObjectLocatorTargetRva == 0 ||
+            observed.resolvedHandlerCompleteObjectLocatorAddress +
+                    sizeof(std::uintptr_t) !=
+                observed.resolvedHandlerVtableAddress ||
+            observed.handlerCompleteObjectLocatorTarget !=
+                observed.moduleBase +
+                    manifest.expectedHandlerCompleteObjectLocatorTargetRva) {
+            return {
+                .status = EngineHookIdentityStatus::HandlerCompleteObjectLocatorMismatch
+            };
+        }
         if (observed.runtimeGamepadDeviceAddress == 0 ||
             observed.runtimeGamepadDeviceVtableAddress == 0) {
             return { .status = EngineHookIdentityStatus::RuntimeDeviceMissing };
@@ -75,27 +96,27 @@ namespace dualpad::input_v2::presentation
             observed.resolvedHandlerVtableAddress) {
             return { .status = EngineHookIdentityStatus::RuntimeHandlerVtableMismatch };
         }
+        if (manifest.approvedDeviceVfuncSlot != 7) {
+            return { .status = EngineHookIdentityStatus::DeviceSlotMismatch };
+        }
         if (manifest.approvedDeviceVfuncTarget == 0) {
             return { .status = EngineHookIdentityStatus::DeviceTargetMissing };
         }
-
-        std::size_t matchedSlot = kInvalidDeviceVfuncSlot;
-        std::size_t matchCount = 0;
-        for (const auto slot : { std::size_t{ 7 }, std::size_t{ 8 } }) {
-            if (observed.handlerVtableTargets[slot] == manifest.approvedDeviceVfuncTarget) {
-                matchedSlot = slot;
-                ++matchCount;
-            }
+        if (observed.handlerVtableTargets[manifest.approvedDeviceVfuncSlot] !=
+            manifest.approvedDeviceVfuncTarget) {
+            return {
+                .status = observed.handlerVtableTargets[8] ==
+                        manifest.approvedDeviceVfuncTarget ?
+                    EngineHookIdentityStatus::DeviceSlotMismatch :
+                    EngineHookIdentityStatus::DeviceTargetMissing
+            };
         }
-        if (matchCount == 0) {
-            return { .status = EngineHookIdentityStatus::DeviceTargetMissing };
-        }
-        if (matchCount != 1) {
+        if (observed.handlerVtableTargets[8] == manifest.approvedDeviceVfuncTarget) {
             return { .status = EngineHookIdentityStatus::DeviceTargetAmbiguous };
         }
         return {
             .status = EngineHookIdentityStatus::Verified,
-            .deviceVfuncSlot = matchedSlot
+            .deviceVfuncSlot = manifest.approvedDeviceVfuncSlot
         };
     }
 
@@ -109,6 +130,8 @@ namespace dualpad::input_v2::presentation
                 0xFF, 0x50, 0x38, 0x84, 0xC0, 0x74, 0x07, 0xB0,
                 0x01, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0x32, 0xC0
             },
+            .expectedHandlerCompleteObjectLocatorTargetRva = 0x194DA20,
+            .approvedDeviceVfuncSlot = 7,
             .i0Approved = false
         };
     }
@@ -122,11 +145,27 @@ namespace dualpad::input_v2::presentation
             .staticQueryIdentityMatched = observed.moduleBase != 0 &&
                 manifest.expectedQueryRva != 0 &&
                 observed.queryRelocationId == manifest.queryRelocationId &&
+                observed.handlerCompleteObjectLocatorRelocationId ==
+                    manifest.handlerCompleteObjectLocatorRelocationId &&
                 observed.handlerVtableRelocationId ==
                     manifest.handlerVtableRelocationId &&
                 observed.resolvedQueryAddress ==
                     observed.moduleBase + manifest.expectedQueryRva &&
                 observed.queryBytes == manifest.expectedQueryBytes,
+            .handlerCompleteObjectLocatorMatched =
+                observed.moduleBase != 0 &&
+                observed.handlerCompleteObjectLocatorRelocationId ==
+                    manifest.handlerCompleteObjectLocatorRelocationId &&
+                observed.handlerVtableRelocationId ==
+                    manifest.handlerVtableRelocationId &&
+                manifest.expectedHandlerCompleteObjectLocatorTargetRva != 0 &&
+                observed.resolvedHandlerCompleteObjectLocatorAddress != 0 &&
+                observed.resolvedHandlerCompleteObjectLocatorAddress +
+                        sizeof(std::uintptr_t) ==
+                    observed.resolvedHandlerVtableAddress &&
+                observed.handlerCompleteObjectLocatorTarget ==
+                    observed.moduleBase +
+                        manifest.expectedHandlerCompleteObjectLocatorTargetRva,
             .runtimeGamepadDevicePresent =
                 observed.runtimeGamepadDeviceAddress != 0 &&
                 observed.runtimeGamepadDeviceVtableAddress != 0,
@@ -136,6 +175,12 @@ namespace dualpad::input_v2::presentation
                     observed.resolvedHandlerVtableAddress,
             .queryRva = RelativeToModule(
                 observed.resolvedQueryAddress,
+                observed.moduleBase),
+            .handlerCompleteObjectLocatorRva = RelativeToModule(
+                observed.resolvedHandlerCompleteObjectLocatorAddress,
+                observed.moduleBase),
+            .handlerCompleteObjectLocatorTargetRva = RelativeToModule(
+                observed.handlerCompleteObjectLocatorTarget,
                 observed.moduleBase),
             .handlerVtableRva = RelativeToModule(
                 observed.resolvedHandlerVtableAddress,
@@ -166,12 +211,18 @@ namespace dualpad::input_v2::presentation
             return "query_rva_mismatch";
         case EngineHookIdentityStatus::QueryBytesMismatch:
             return "query_bytes_mismatch";
+        case EngineHookIdentityStatus::HandlerCompleteObjectLocatorMissing:
+            return "handler_col_missing";
+        case EngineHookIdentityStatus::HandlerCompleteObjectLocatorMismatch:
+            return "handler_col_mismatch";
         case EngineHookIdentityStatus::HandlerVtableMissing:
             return "handler_vtable_missing";
         case EngineHookIdentityStatus::RuntimeDeviceMissing:
             return "runtime_gamepad_device_missing";
         case EngineHookIdentityStatus::RuntimeHandlerVtableMismatch:
             return "runtime_handler_vtable_mismatch";
+        case EngineHookIdentityStatus::DeviceSlotMismatch:
+            return "device_slot_mismatch";
         case EngineHookIdentityStatus::DeviceTargetMissing:
             return "device_target_missing";
         case EngineHookIdentityStatus::DeviceTargetAmbiguous:
@@ -188,6 +239,8 @@ namespace dualpad::input_v2::presentation
         stream << "verification=" << ToString(probe.verificationStatus)
                << " staticQueryIdentityMatched="
                << (probe.staticQueryIdentityMatched ? "true" : "false")
+               << " handlerColMatched="
+               << (probe.handlerCompleteObjectLocatorMatched ? "true" : "false")
                << " runtimeDevicePresent="
                << (probe.runtimeGamepadDevicePresent ? "true" : "false")
                << " runtimeVtableMatched="
@@ -195,6 +248,9 @@ namespace dualpad::input_v2::presentation
                << " patchEligible=" << (probe.patchEligible ? "true" : "false")
                << std::hex << std::uppercase
                << " queryRva=0x" << probe.queryRva
+               << " handlerColRva=0x" << probe.handlerCompleteObjectLocatorRva
+               << " handlerColTargetRva=0x"
+               << probe.handlerCompleteObjectLocatorTargetRva
                << " handlerVtableRva=0x" << probe.handlerVtableRva
                << " runtimeDevice=0x" << probe.runtimeGamepadDeviceAddress
                << " runtimeVtableRva=0x" << probe.runtimeGamepadDeviceVtableRva;

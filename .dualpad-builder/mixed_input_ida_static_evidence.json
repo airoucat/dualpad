@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "evidenceKind": "SkyrimMixedInputIdaStatic",
   "staticEvidenceStatus": "inventory-complete-classification-pending",
   "dynamicGatesRemain": "NO-GO",
@@ -18,7 +18,34 @@
     "virtualSlotOffset": 56,
     "virtualSlotIndex": 7,
     "staticMeaning": "non-null delegate device then call byte-returning vfunc",
-    "runtimeOriginalTarget": "unresolved-until-I-0-dynamic"
+    "runtimeOriginalTarget": "0x140c19e00-static-live-vptr-recheck-pending"
+  },
+  "handlerTypeIdentity": {
+    "completeObjectLocatorRelocationId": 560029,
+    "completeObjectLocatorEntryVa": "0x14175e848",
+    "completeObjectLocatorTargetVa": "0x14194da20",
+    "completeObjectLocatorTargetName": "??_R4BSPCGamepadDeviceHandler@@6B@",
+    "vftableRelocationId": 285457,
+    "vftableVa": "0x14175e850",
+    "vftableName": "??_7BSPCGamepadDeviceHandler@@6B@",
+    "addressPointDeltaBytes": 8,
+    "declaredSlotCount": 9,
+    "isEnabledSlotIndex": 7,
+    "isEnabledTargetVa": "0x140c19e00",
+    "isEnabledBytes": "33 C0 48 39 41 08 0F 95 C0 C3 CC CC CC CC CC CC",
+    "isEnabledStaticMeaning": "return qword[this+8] != 0",
+    "entries0Through9": [
+      { "index": 0, "entryVa": "0x14175e850", "targetVa": "0x140c19c80", "kind": "vfunc" },
+      { "index": 1, "entryVa": "0x14175e858", "targetVa": "0x140c19880", "kind": "vfunc" },
+      { "index": 2, "entryVa": "0x14175e860", "targetVa": "0x140c198b0", "kind": "vfunc" },
+      { "index": 3, "entryVa": "0x14175e868", "targetVa": "0x140c19900", "kind": "vfunc" },
+      { "index": 4, "entryVa": "0x14175e870", "targetVa": "0x140c19920", "kind": "vfunc" },
+      { "index": 5, "entryVa": "0x14175e878", "targetVa": "0x140c19940", "kind": "vfunc" },
+      { "index": 6, "entryVa": "0x14175e880", "targetVa": "0x140c19960", "kind": "vfunc" },
+      { "index": 7, "entryVa": "0x14175e888", "targetVa": "0x140c19e00", "kind": "vfunc" },
+      { "index": 8, "entryVa": "0x14175e890", "targetVa": "0x140c19980", "kind": "vfunc" },
+      { "index": 9, "entryVa": "0x14175e898", "targetVa": "0x14194d988", "kind": "adjacent-complete-object-locator" }
+    ]
   },
   "directCodeXrefCount": 26,
   "releaseRelevantUnknownCallers": 26,

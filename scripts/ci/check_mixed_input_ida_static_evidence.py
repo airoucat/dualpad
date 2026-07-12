@@ -38,6 +38,31 @@ REQUIRED_SIGNATURES = {
     "0x140c150b0": "48 89 5C 24 10 48 89 74 24 18",
     "0x140c1ab40": "48 89 5C 24 20 57 48 83 EC 50",
 }
+EXPECTED_HANDLER_TYPE_IDENTITY = {
+    "completeObjectLocatorRelocationId": 560029,
+    "completeObjectLocatorEntryVa": "0x14175e848",
+    "completeObjectLocatorTargetVa": "0x14194da20",
+    "vftableRelocationId": 285457,
+    "vftableVa": "0x14175e850",
+    "addressPointDeltaBytes": 8,
+    "declaredSlotCount": 9,
+    "isEnabledSlotIndex": 7,
+    "isEnabledTargetVa": "0x140c19e00",
+    "isEnabledBytes": "33 C0 48 39 41 08 0F 95 C0 C3 CC CC CC CC CC CC",
+    "isEnabledStaticMeaning": "return qword[this+8] != 0",
+}
+EXPECTED_HANDLER_ENTRIES = [
+    (0, "0x14175e850", "0x140c19c80", "vfunc"),
+    (1, "0x14175e858", "0x140c19880", "vfunc"),
+    (2, "0x14175e860", "0x140c198b0", "vfunc"),
+    (3, "0x14175e868", "0x140c19900", "vfunc"),
+    (4, "0x14175e870", "0x140c19920", "vfunc"),
+    (5, "0x14175e878", "0x140c19940", "vfunc"),
+    (6, "0x14175e880", "0x140c19960", "vfunc"),
+    (7, "0x14175e888", "0x140c19e00", "vfunc"),
+    (8, "0x14175e890", "0x140c19980", "vfunc"),
+    (9, "0x14175e898", "0x14194d988", "adjacent-complete-object-locator"),
+]
 ALLOWED_CAUSALITIES = {"AfterOwnerPublication", "EventLocalSource", "OriginalOnly"}
 WINDOWS_ABSOLUTE = re.compile(r"(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]")
 
@@ -74,8 +99,8 @@ def xref_inventory_sha256(xrefs: list[dict[str, Any]]) -> str:
 
 def validate(evidence: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if evidence.get("schemaVersion") != 1:
-        errors.append("schemaVersion must be 1")
+    if evidence.get("schemaVersion") != 2:
+        errors.append("schemaVersion must be 2")
     if evidence.get("evidenceKind") != "SkyrimMixedInputIdaStatic":
         errors.append("evidenceKind must identify Skyrim mixed-input IDA static evidence")
     if evidence.get("inputSha256") != TARGET_SHA256:
@@ -142,12 +167,36 @@ def validate(evidence: dict[str, Any]) -> list[str]:
         "virtualSlotOffset": 56,
         "virtualSlotIndex": 7,
         "staticMeaning": "non-null delegate device then call byte-returning vfunc",
-        "runtimeOriginalTarget": "unresolved-until-I-0-dynamic",
+        "runtimeOriginalTarget": "0x140c19e00-static-live-vptr-recheck-pending",
     }
     if not isinstance(query_entry, dict) or any(
         query_entry.get(key) != value for key, value in expected_entry.items()
     ):
         errors.append("query entry delegate offset or virtual slot semantics drifted")
+
+    handler_identity = evidence.get("handlerTypeIdentity")
+    if not isinstance(handler_identity, dict):
+        errors.append("handler COL/vftable identity is required")
+    else:
+        for key, expected in EXPECTED_HANDLER_TYPE_IDENTITY.items():
+            actual = handler_identity.get(key)
+            if isinstance(expected, str) and expected.startswith("0x"):
+                actual = normalized_va(actual)
+            if actual != expected:
+                errors.append(f"handler {key} drifted")
+        entries = handler_identity.get("entries0Through9")
+        actual_entries = [
+            (
+                entry.get("index"),
+                normalized_va(entry.get("entryVa")),
+                normalized_va(entry.get("targetVa")),
+                entry.get("kind"),
+            )
+            for entry in entries
+            if isinstance(entry, dict)
+        ] if isinstance(entries, list) else []
+        if actual_entries != EXPECTED_HANDLER_ENTRIES:
+            errors.append("handler vftable entries 0 through 9 drifted")
 
     sites = evidence.get("signatureSites")
     by_va = {

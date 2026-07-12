@@ -11,7 +11,8 @@
 namespace dualpad::input_v2::presentation
 {
     inline constexpr std::uint64_t kIsUsingGamepadRelocationId = 67320;
-    inline constexpr std::uint64_t kGamepadHandlerVtableRelocationId = 560029;
+    inline constexpr std::uint64_t kGamepadHandlerCompleteObjectLocatorRelocationId = 560029;
+    inline constexpr std::uint64_t kGamepadHandlerVtableRelocationId = 285457;
     inline constexpr std::size_t kEngineQueryIdentityByteCount = 32;
     inline constexpr std::size_t kHandlerVtableIdentitySlotCount = 10;
     inline constexpr std::size_t kInvalidDeviceVfuncSlot = static_cast<std::size_t>(-1);
@@ -21,7 +22,12 @@ namespace dualpad::input_v2::presentation
         std::uint64_t queryRelocationId{ kIsUsingGamepadRelocationId };
         std::uintptr_t expectedQueryRva{ 0 };
         std::array<std::uint8_t, kEngineQueryIdentityByteCount> expectedQueryBytes{};
+        std::uint64_t handlerCompleteObjectLocatorRelocationId{
+            kGamepadHandlerCompleteObjectLocatorRelocationId
+        };
         std::uint64_t handlerVtableRelocationId{ kGamepadHandlerVtableRelocationId };
+        std::uintptr_t expectedHandlerCompleteObjectLocatorTargetRva{ 0 };
+        std::size_t approvedDeviceVfuncSlot{ kInvalidDeviceVfuncSlot };
         std::uintptr_t approvedDeviceVfuncTarget{ 0 };
         bool i0Approved{ false };
     };
@@ -29,10 +35,15 @@ namespace dualpad::input_v2::presentation
     struct EngineHookIdentityObservation
     {
         std::uint64_t queryRelocationId{ kIsUsingGamepadRelocationId };
+        std::uint64_t handlerCompleteObjectLocatorRelocationId{
+            kGamepadHandlerCompleteObjectLocatorRelocationId
+        };
         std::uint64_t handlerVtableRelocationId{ kGamepadHandlerVtableRelocationId };
         std::uintptr_t moduleBase{ 0 };
         std::uintptr_t resolvedQueryAddress{ 0 };
         std::array<std::uint8_t, kEngineQueryIdentityByteCount> queryBytes{};
+        std::uintptr_t resolvedHandlerCompleteObjectLocatorAddress{ 0 };
+        std::uintptr_t handlerCompleteObjectLocatorTarget{ 0 };
         std::uintptr_t resolvedHandlerVtableAddress{ 0 };
         std::array<std::uintptr_t, kHandlerVtableIdentitySlotCount> handlerVtableTargets{};
         std::uintptr_t runtimeGamepadDeviceAddress{ 0 };
@@ -45,9 +56,12 @@ namespace dualpad::input_v2::presentation
         RelocationIdMismatch,
         QueryRvaMismatch,
         QueryBytesMismatch,
+        HandlerCompleteObjectLocatorMissing,
+        HandlerCompleteObjectLocatorMismatch,
         HandlerVtableMissing,
         RuntimeDeviceMissing,
         RuntimeHandlerVtableMismatch,
+        DeviceSlotMismatch,
         DeviceTargetMissing,
         DeviceTargetAmbiguous,
         Verified
@@ -70,10 +84,13 @@ namespace dualpad::input_v2::presentation
             EngineHookIdentityStatus::GateNotApproved
         };
         bool staticQueryIdentityMatched{ false };
+        bool handlerCompleteObjectLocatorMatched{ false };
         bool runtimeGamepadDevicePresent{ false };
         bool runtimeHandlerVtableMatched{ false };
         bool patchEligible{ false };
         std::uintptr_t queryRva{ 0 };
+        std::uintptr_t handlerCompleteObjectLocatorRva{ 0 };
+        std::uintptr_t handlerCompleteObjectLocatorTargetRva{ 0 };
         std::uintptr_t handlerVtableRva{ 0 };
         std::uintptr_t runtimeGamepadDeviceAddress{ 0 };
         std::uintptr_t runtimeGamepadDeviceVtableRva{ 0 };

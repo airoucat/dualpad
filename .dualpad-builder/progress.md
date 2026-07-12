@@ -3676,3 +3676,22 @@
   - live `DualPad.log` 冻结构建身份 `9157d57c7d79`。首次 `KeyboardMouse -> Gamepad` owner 切换按预期产生一次 `dirty=0x07` / `RefreshPlatform()`；随后同一 Gamepad owner 的确认在 `poll=43/78/1547/1571/1611` 等样本中均保持 `presentationDirty=0x00`，未再次请求同实例 platform refresh。
   - 自动化证据与实机证据闭合后，退出列表 same-owner selection reset 缺陷关闭。该结论只覆盖本缺陷，不代表 gameplay WASD/攻击、菜单 glyph/platform、I-P current-cycle 或任何动态 Gate 已通过。
   - Gate 不变：I-0 仍因 `REL 560029 RVA=0x175E848` 与 live vptr `RVA=0x175E850` 的 `+0x8` identity 差异保持 FAIL/NO-GO；I-1、I-2、I-MENU、I-5、I-P、I-CURSOR、I-SPRINT、I-KBM 继续 NO-GO。
+
+## 2026-07-12 16:03:00 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 handler COL-vftable identity adjudication start`：
+  - Current Phase Packet：只裁决 `REL 560029`、正式 `BSPCGamepadDeviceHandler` vftable 与 live handler vptr 的唯一关系；依赖已完成的 matching binary hash、`REL 67320` 入口 bytes 和 DataLoaded read-only probe；禁止批准 I-0、安装 patch、改变 Original-first 返回值或推进 I-1/I-2/I-MENU/I-5。
+  - 1.5.97 Address Library v1 实读：`560029 -> RVA 0x175E848`，CommonLibSSE-NG 正式 `VTABLE_BSPCGamepadDeviceHandler` 的 SE ID `285457 -> RVA 0x175E850`；live handler vptr 也是 `RVA 0x175E850`。
+  - matching IDA 9.3 实读：`0x14175E848` 的 qword 指向 `??_R4BSPCGamepadDeviceHandler@@6B@` Complete Object Locator；`0x14175E850` 被命名为 `??_7BSPCGamepadDeviceHandler@@6B@`，首项为析构函数并有构造/析构 data xref。现有 probe 把 COL 地址误当 vftable base，解释了稳定 `+0x8` mismatch。
+  - TDD 边界：先要求正式 vftable relocation ID `285457` 能与 live vptr 唯一匹配；随后最小实现同时保留 `560029` 的 COL 语义审计，I-0 status 继续 NO-GO。
+
+## 2026-07-12 16:07:00 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 handler COL-vftable static identity slice completed`：
+  - TDD RED 1：focused C++ 明确失败于“正式 handler vftable ID 必须为 `285457`，不能使用相邻 COL ID”；GREEN 后 read-only probe 改为从 `285457 / RVA 0x175E850` dump slots，并单独读取 `560029 / RVA 0x175E848` 的 COL target。
+  - TDD RED 2：COL observation API 尚不存在导致 focused compile 失败；最小实现新增 COL entry/target/RVA 与 adjacency 审计，锁定 target `RVA 0x194DA20`，同时保持 `i0Approved=false`。
+  - TDD RED 3：review 证明 verifier 仍允许 approved target 移到 slot `8`；新增 manifest slot contract 后只允许静态证明的 `IsEnabled` slot `7`，slot `8` 明确判 `DeviceSlotMismatch`。TDD RED 4：新增必填 handler identity 后 checker 仍接受 schema v1；artifact/exporter/checker 已原子升级为 schema v2。
+  - matching IDA 9.3 证据：slot `7 -> 0x140C19E00`，函数语义 `return qword[this+8] != 0`；slot `8 -> 0x140C19980` 是 `ClearInputState` delegate 转发；index `9` 已进入相邻 delegate COL，不能当 handler vfunc。
+  - Focused/adjacent GREEN：IDA checker `9 tests`、WP9 wiring `5 tests`、mixed closeout `10 tests`、`DualPadPresentationProjectionTests`、`DualPadInputV2Tests` 与主 DLL build 全部 exit 0；`py_compile` 通过。PDB 同路径占用仍只是既有 copy warning，DLL 明确 build ok。
+  - 主线程顺序 `ce:review` 覆盖 correctness、testing、maintainability、project standards、agent-native、learnings、api-contract、reliability、kieran-python 与 adversarial；2 个 safe-auto finding（slot 7 唯一性、artifact schema version）均已修复，复审无剩余置信度不低于 `0.60` 的 finding。review artifact：`.context/compound-engineering/ce-review/20260712-i0-handler-vftable-identity/review.md`。
+  - canonical Phase 8 GREEN；Graphify manual closeout：`2375 nodes / 5662 edges / 169 communities`。Phase Closure：静态 COL/vftable/slot/original target 身份 PASS；clean-build DataLoaded runtime vptr 重检仍 pending，因此 I-0 整体继续 NO-GO，其他 8 个动态 Gate 不变。

@@ -19,7 +19,8 @@ namespace dualpad::input_v2::presentation
     namespace
     {
         constexpr REL::ID kIsUsingGamepadId{ 67320 };
-        constexpr REL::ID kGamepadHandlerVtblId{ 560029 };
+        constexpr REL::ID kGamepadHandlerColId{ 560029 };
+        constexpr REL::ID kGamepadHandlerVtblId{ 285457 };
         constexpr auto kSupportedRuntime = SKSE::RUNTIME_SSE_1_5_97;
         constexpr std::uint8_t kMaxDeferredAttempts = 3;
         constexpr std::size_t kBoolSurfaceEntryPatchSize = 8;
@@ -224,6 +225,7 @@ namespace dualpad::input_v2::presentation
 
         HookInstallResult VerifyHookSites(
             std::uintptr_t usingGamepadAddress,
+            std::uintptr_t gamepadHandlerColAddress,
             std::uintptr_t gamepadHandlerVtblAddress,
             std::string_view probePhase)
         {
@@ -236,8 +238,14 @@ namespace dualpad::input_v2::presentation
             EngineHookIdentityObservation observed{
                 .moduleBase = REL::Module::get().base(),
                 .resolvedQueryAddress = usingGamepadAddress,
+                .resolvedHandlerCompleteObjectLocatorAddress =
+                    gamepadHandlerColAddress,
                 .resolvedHandlerVtableAddress = gamepadHandlerVtblAddress
             };
+            std::memcpy(
+                &observed.handlerCompleteObjectLocatorTarget,
+                reinterpret_cast<const void*>(gamepadHandlerColAddress),
+                sizeof(std::uintptr_t));
             const auto queryBytes = ReadPatchBytes(
                 usingGamepadAddress,
                 kEngineQueryIdentityByteCount);
@@ -472,10 +480,12 @@ namespace dualpad::input_v2::presentation
         bool patchResiduePossible = false;
         try {
             REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId };
+            REL::Relocation<std::uintptr_t> gamepadHandlerCol{ kGamepadHandlerColId };
             REL::Relocation<std::uintptr_t> gamepadHandlerVtbl{ kGamepadHandlerVtblId };
 
             auto gate = VerifyHookSites(
                 usingGamepadHook.address(),
+                gamepadHandlerCol.address(),
                 gamepadHandlerVtbl.address(),
                 "plugin_load");
             if (IsInstallAttemptFailureStatus(gate.status)) {
@@ -942,9 +952,11 @@ namespace dualpad::input_v2::presentation
         }
         try {
             REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId };
+            REL::Relocation<std::uintptr_t> gamepadHandlerCol{ kGamepadHandlerColId };
             REL::Relocation<std::uintptr_t> gamepadHandlerVtbl{ kGamepadHandlerVtblId };
             const auto result = VerifyHookSites(
                 usingGamepadHook.address(),
+                gamepadHandlerCol.address(),
                 gamepadHandlerVtbl.address(),
                 "data_loaded");
             if (result.debugReason !=

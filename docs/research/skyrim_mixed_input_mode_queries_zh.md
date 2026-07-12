@@ -99,6 +99,23 @@ virtual bool IsEnabled() const = 0;  // vtable + 0x38
 
 因此，可以把 `0x140C15240` 识别为 `BSInputDeviceManager::IsGamepadEnabled()` 或语义等价查询，而不只是一个未分类的 presentation helper。
 
+### `BSPCGamepadDeviceHandler` 的 COL 与 vftable 身份
+
+2026-07-12 追加核对了 1.5.97 Address Library、CommonLibSSE-NG 符号与 matching IDA：
+
+| 项目 | REL ID | RVA / VA | 语义 |
+| --- | ---: | --- | --- |
+| Complete Object Locator entry | `560029` | `0x175E848 / 0x14175E848` | qword 指向 `??_R4BSPCGamepadDeviceHandler@@6B@` (`0x14194DA20`) |
+| `BSPCGamepadDeviceHandler` vftable | `285457` | `0x175E850 / 0x14175E850` | live object vptr 的正式 address point |
+| `IsEnabled` | — | slot `7`，target `0x140C19E00` | `return qword[this + 8] != 0` |
+| `ClearInputState` | — | slot `8`，target `0x140C19980` | delegate 非空时转发到 delegate slot `8` |
+
+`REL 560029` 与正式 vftable 相差 `8` bytes，但这不是可以在 runtime 中凭经验补偿的模糊偏移：matching IDA 明确显示前者是 MSVC Complete Object Locator entry，后者才是 `??_7BSPCGamepadDeviceHandler@@6B@`。CommonLibSSE-NG 的 `VTABLE_BSPCGamepadDeviceHandler` 也使用 SE ID `285457`。
+
+handler 实际声明 `0` 至 `8` 共 9 个虚函数。若为了边界审计读取 index `9`，`0x14175E898` 已进入相邻 `BSPCGamepadDeviceDelegate` 的 Complete Object Locator，不是 handler 的第 10 个虚函数。I-0 probe 因此必须分别记录 COL entry、vftable address point 与 slot `0` 至 `9` 边界，禁止把 `560029` 当作 vftable base。
+
+静态 original target 已唯一收缩为 slot `7` 的 `0x140C19E00`。I-0 仍需用修正后的 clean build 在 DataLoaded 重新证明 live handler vptr 等于 `0x14175E850`，并记录同一 address point 的 slot `7` target；在该动态重检完成前，`i0Approved` 与 production capability 继续保持关闭。
+
 IDA 找到该函数的 **26 个直接代码引用点**。其中包括：
 
 - 菜单 `SetPlatform` 路径；

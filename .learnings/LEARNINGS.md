@@ -342,3 +342,29 @@ matching 1.5.97 实机中，同一 owner 的每个 `Menu.Confirm` 都产生 `dir
 `ProjectPresentation` 的 dirty 比较已收缩为可观察字段：prompt 只比较 family/revision，menu 只比较 owner/navigationOwner，cursor 只比较 requested/committed owner、sync/pending identity 与 pending context。same-owner activity 继续推进 accepted ledger，但不再推进 presentation epoch、dirty 或 menu refresh request；真实 owner/context/cursor 变化的既有回归保持通过。
 
 matching Skyrim SE 1.5.97 的构建 `9157d57c7d79` 已完成手柄与键盘两条退出列表实机复测并由用户明确报告 PASS；日志同时证明 owner 首次切换后的 same-owner confirm 保持 `presentationDirty=0x00`，不再重复请求 platform refresh。
+
+## [LRN-20260712-003] correction
+
+**Logged**: 2026-07-12T16:07:00+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: CommonLibSSE-NG / Address Library / MSVC RTTI / vfunc hook identity
+
+### Summary
+
+Address Library 中与 vftable 相邻的 REL ID 可能指向 MSVC Complete Object Locator entry；live C++ object vptr 必须与正式 vftable address point 比较，不能对错误 ID 经验性加 `+0x8`。
+
+### Detail
+
+Skyrim SE 1.5.97 中 `REL 560029 -> RVA 0x175E848`，其 qword 指向 `BSPCGamepadDeviceHandler` Complete Object Locator；CommonLibSSE-NG 正式 `VTABLE_BSPCGamepadDeviceHandler` 的 SE ID 是 `285457 -> RVA 0x175E850`，也正是 live handler vptr。旧 probe 把 `560029` 命名为 handler vtable，导致稳定 `+0x8` mismatch。matching IDA 进一步证明 slot `7` target `0x140C19E00` 是 `IsEnabled`，slot `8` 是 `ClearInputState`，index `9` 已进入相邻类型 COL。
+
+### Related Files
+
+- `src/input_v2/presentation/SkyrimEngineModeRouter.*`
+- `src/input_v2/presentation/SkyrimCompatibilitySurface.cpp`
+- `.dualpad-builder/mixed_input_ida_static_evidence.json`
+- `docs/research/skyrim_mixed_input_mode_queries_zh.md`
+
+### Resolution
+
+probe 同时记录 `REL 560029` 的 COL entry/target 和 `REL 285457` 的 vftable address point；verifier 将 `IsEnabled` 唯一锁定到 slot `7`。production manifest 继续 `i0Approved=false`，等待 clean-build DataLoaded runtime 重检。

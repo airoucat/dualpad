@@ -108,6 +108,28 @@ class MixedInputIdaStaticEvidenceTests(unittest.TestCase):
         self.assertNotEqual(path_result.returncode, 0)
         self.assertIn("machine-private", path_result.stdout + path_result.stderr)
 
+    def test_handler_col_vftable_identity_is_required(self) -> None:
+        def remove_handler_identity(evidence: dict) -> None:
+            evidence.pop("handlerTypeIdentity", None)
+
+        missing_result = self.write_mutated(remove_handler_identity)
+        self.assertNotEqual(missing_result.returncode, 0)
+        self.assertIn("handler", missing_result.stdout + missing_result.stderr)
+
+        def move_vftable_to_col(evidence: dict) -> None:
+            evidence["handlerTypeIdentity"]["vftableVa"] = "0x14175e848"
+
+        drift_result = self.write_mutated(move_vftable_to_col)
+        self.assertNotEqual(drift_result.returncode, 0)
+        self.assertIn("vftable", drift_result.stdout + drift_result.stderr)
+
+    def test_extended_handler_identity_requires_schema_v2(self) -> None:
+        result = self.write_mutated(
+            lambda evidence: evidence.update(schemaVersion=1)
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schemaVersion", result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

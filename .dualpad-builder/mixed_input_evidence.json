@@ -313,6 +313,12 @@
         "capabilityEnabled": false,
         "queryEntrySignatureVerified": true,
         "delegateSlotIndex": 7,
+        "handlerCompleteObjectLocatorRelocationId": 560029,
+        "handlerCompleteObjectLocatorRva": "0x175E848",
+        "handlerVtableRelocationId": 285457,
+        "handlerVtableRva": "0x175E850",
+        "handlerColVtableStaticIdentityVerified": true,
+        "staticOriginalTargetRva": "0xC19E00",
         "runtimeOriginalTargetVerified": false
       },
       "I-P": {
