@@ -7,6 +7,7 @@
 #include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/gameplay/ChannelArbitration.h"
 #include "input_v2/gameplay/RecoveryPlan.h"
+#include "input_v2/gameplay/SustainedContributorDecision.h"
 #include "input_v2/presentation/PresentationProjection.h"
 
 #include <array>
@@ -76,6 +77,10 @@ namespace dualpad::input_v2::gameplay
         actions::ActionId actionId{};
         dualpad::input::backend::NativeControlCode control{ dualpad::input::backend::NativeControlCode::None };
         std::uint8_t activeSourceMask{ 0 };
+        bool virtualBridgeDesired{ false };
+        std::uint8_t joiningPressSuppressionMask{ 0 };
+        std::uint8_t nonFinalReleaseSuppressionMask{ 0 };
+        std::uint64_t releaseToken{ 0 };
         dualpad::input::backend::ActionOutputContract contract{ dualpad::input::backend::ActionOutputContract::None };
         dualpad::input::backend::ActionLifecyclePolicy lifecyclePolicy{ dualpad::input::backend::ActionLifecyclePolicy::None };
         std::uint32_t contextRevision{ 0 };
@@ -150,6 +155,7 @@ namespace dualpad::input_v2::gameplay
         ChannelOwner combatOwner{ ChannelOwner::KeyboardMouse };
         ChannelOwner digitalOwner{ ChannelOwner::KeyboardMouse };
         GamepadOutputPlan gamepadPlan{};
+        SustainedContributorDecision sprintDecision{};
         KeyboardHelperOutputPlan helperPlan{};
         GatePlan gatePlan{};
         RecoveryPlan recoveryPlan{};
@@ -180,6 +186,10 @@ namespace dualpad::input_v2::gameplay
         bool keyboardMouseDigitalActivatedThisFrame{ false };
         bool keyboardPhysicalSustainedActive{ false };
         bool mousePhysicalSustainedActive{ false };
+        std::uint64_t gamepadSustainedEventOrdinal{ 0 };
+        std::uint64_t keyboardSustainedEventOrdinal{ 0 };
+        std::uint64_t mouseSustainedEventOrdinal{ 0 };
+        bool clearGamepadSustainedContributor{ false };
         ChannelArbitrationResetMode arbitrationResetMode{ ChannelArbitrationResetMode::None };
     };
 

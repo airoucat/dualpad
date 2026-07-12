@@ -310,6 +310,14 @@ namespace
         ownerKbm.boundary.bindingGeneration = 3;
         ownerKbm.kbm.completeCurrent.complete = true;
         ownerKbm.kbm.physical.complete = true;
+        ownerKbm.kbm.orderedEdges.push_back(ingress::KbmGameplayEdgeDraft{
+            .eventOrdinal = 17,
+            .physical = { ingress::KbmPhysicalDevice::Keyboard, 0x72 },
+            .gameplayClass = ingress::KbmGameplayClass::SustainedDigital,
+            .actionId = "Game.Sprint",
+            .phase = ingress::KbmEdgePhase::Press,
+            .origin = ingress::KbmEdgeOrigin::Physical
+        });
         const auto kbmReceipt = hub.PublishOwnerKbmBatch(ownerKbm);
         Require(kbmReceipt.accepted, "empty KBM scaffold batch must publish atomically");
 
@@ -321,6 +329,8 @@ namespace
         Require(
             capture.latestKbmGameplay->causal.controlMapRevision == kbmReceipt.controlMapRevision,
             "KBM latest and receipt must share the transaction control-map revision");
+        Require(capture.latestKbmGameplay->keyboardSustainedEventOrdinal == 17,
+            "KBM latest must retain the earliest physical Sprint ordinal from the owner batch");
         Require(capture.inputStateEpoch == kbmReceipt.inputStateEpoch, "receipt and capture must expose one epoch");
         Require(capture.gamepadSessionId == gamepadReceipt.gamepadSessionId, "receipt and capture must expose one session");
 
@@ -1168,6 +1178,9 @@ namespace
             contextSnapshot,
             3000);
         Require(sprintBatch.completeCurrent.keyboardSustainedHeldMask == 0x10, "mapped Sprint press must set sustained current mask");
+        Require(sprintBatch.orderedEdges.size() == 1 &&
+                sprintBatch.orderedEdges.front().eventOrdinal == 3,
+            "mapped Sprint edge must preserve callback-local ordinal for contributor ordering");
 
         auto mouseMove = FakeKbmEvent(4, mouseLook, ingress::KbmEdgePhase::MouseDelta);
         mouseMove.deltaX = 5;

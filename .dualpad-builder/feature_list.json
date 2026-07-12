@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-07-12T12:33:00+08:00",
+  "updated_at": "2026-07-12T12:53:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -384,7 +384,8 @@
         "WP0、WP0.5、WP1、WP2、WP3、WP4 与 WP5 shadow 已完成；KBM facts、causal ingress coherence、per-channel next-Poll arbitration、exact Poll receipt 和 prepared current-cycle rollback 已进入 mainline，但 current-cycle mutation、raw reconcile 与 synthetic suppression production route 仍保持关闭",
         "gamepad connectivity、current-state 与 meaningful activity 分离，原生 KBM gameplay facts 以稳定 (device,idCode) 身份发布",
         "Look、Move、Combat 与 TransientDigital 按通道仲裁，current-cycle 使用 PollMaterializationReceipt -> Prepare -> Apply -> Commit",
-        "Sprint 使用多来源 contributor OR 和 virtual bridge；prompt、menu、cursor 独立投影",
+        "WP6 已实现 Sprint G/K/M 多来源 contributor OR、virtual bridge、full-mask backend materialization 与 prepared rollback；I-P 前 joining/non-final current-cycle suppression 保持 fail-closed，I-SPRINT 结果 B 前不安装 SprintHandler guard",
+        "prompt、menu、cursor 独立投影",
         "engine query 保持 original-first；只对 IDA 证明的 caller/domain 做最小覆盖，证据不足时保持 shadow 或 NO-GO",
         "disconnect、overflow、ControlMap reload 和 lost release 恢复路径闭合，且不修改 Favorites native gate、Interface/SWF、glyph、haptics、rumble 或无关 bindings"
       ]

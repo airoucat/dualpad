@@ -13,7 +13,8 @@ namespace dualpad::input_v2::gameplay
         Look = 1 << 0,
         Move = 1 << 1,
         Combat = 1 << 2,
-        TransientDigital = 1 << 3
+        TransientDigital = 1 << 3,
+        SustainedDigital = 1 << 4
     };
 
     using CurrentCycleChannelMaskType = std::uint8_t;
@@ -79,6 +80,7 @@ namespace dualpad::input_v2::gameplay
         CurrentCycleEventDisposition move{ CurrentCycleEventDisposition::Keep };
         CurrentCycleEventDisposition combat{ CurrentCycleEventDisposition::Keep };
         CurrentCycleEventDisposition transientDigital{ CurrentCycleEventDisposition::Keep };
+        CurrentCycleEventDisposition sustainedDigital{ CurrentCycleEventDisposition::Keep };
         CurrentCycleGateFailure failure{ CurrentCycleGateFailure::None };
         CurrentCycleChannelMaskType affectedChannels{ 0 };
         bool requiresEventMutation{ false };

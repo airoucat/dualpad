@@ -101,7 +101,8 @@ namespace dualpad::input_v2::gameplay
 
         void FailClosedAffectedChannels(
             GameplayProjectionFrame& projection,
-            CurrentCycleChannelMaskType affected)
+            CurrentCycleChannelMaskType affected,
+            const CurrentCycleSensitiveState& previousSensitive)
         {
             if ((affected & CurrentCycleChannelMask(CurrentCycleChannel::Look)) != 0) {
                 projection.lookOwner = ChannelOwner::None;
@@ -126,6 +127,25 @@ namespace dualpad::input_v2::gameplay
                 projection.digitalOwner = ChannelOwner::None;
                 projection.gatePlan.transientDigitalGate = DigitalGateMode::CancelAndSuppressNewTransient;
                 projection.gamepadPlan.transientDigital.count = 0;
+            }
+            if ((affected & CurrentCycleChannelMask(CurrentCycleChannel::SustainedDigital)) != 0) {
+                projection.sprintDecision = SustainedContributorDecision{
+                    .next = previousSensitive.sprint,
+                    .aggregateHeld = previousSensitive.sprint.activeSourceMask != 0,
+                    .virtualBridgeDesired = previousSensitive.sprint.virtualMaterialized
+                };
+                for (std::size_t index = 0;
+                     index < projection.gamepadPlan.sustainedDigital.count;
+                     ++index) {
+                    auto& command = projection.gamepadPlan.sustainedDigital.items[index];
+                    if (command.control == dualpad::input::backend::NativeControlCode::Sprint) {
+                        command.activeSourceMask = previousSensitive.sprint.activeSourceMask;
+                        command.virtualBridgeDesired = previousSensitive.sprint.virtualMaterialized;
+                        command.joiningPressSuppressionMask = 0;
+                        command.nonFinalReleaseSuppressionMask = 0;
+                        command.releaseToken = 0;
+                    }
+                }
             }
         }
 
@@ -399,6 +419,11 @@ namespace dualpad::input_v2::gameplay
             .keyboardMouseDigitalActivatedThisFrame = keyboardMouseDigitalActive,
             .keyboardPhysicalSustainedActive = kbm && kbm->current.keyboardSustainedHeldMask != 0,
             .mousePhysicalSustainedActive = kbm && kbm->current.mouseSustainedHeldMask != 0,
+            .keyboardSustainedEventOrdinal = kbm ? kbm->keyboardSustainedEventOrdinal : 0,
+            .mouseSustainedEventOrdinal = kbm ? kbm->mouseSustainedEventOrdinal : 0,
+            .clearGamepadSustainedContributor =
+                recovery.resetScope == RecoveryResetScope::GamepadSource &&
+                HasRecoveryRequest(recovery),
             .arbitrationResetMode = recovery.resetScope == RecoveryResetScope::GamepadSource &&
                     HasRecoveryRequest(recovery) ?
                 ChannelArbitrationResetMode::GamepadSource :
@@ -591,6 +616,15 @@ namespace dualpad::input_v2::gameplay
         if (input.currentCyclePlan) {
             currentCyclePlan = *input.currentCyclePlan;
         }
+        if (projection.sprintDecision.requiresCurrentCycleMutation) {
+            currentCyclePlan.sustainedDigital = CurrentCycleEventDisposition::Suppress;
+            currentCyclePlan.affectedChannels |=
+                CurrentCycleChannelMask(CurrentCycleChannel::SustainedDigital);
+            currentCyclePlan.requiresEventMutation = true;
+            currentCyclePlan.commitCurrentCycleSensitiveState = false;
+            currentCyclePlan.currentEventWriterCount = 1;
+            currentCyclePlan.nextPollWriterCount = 1;
+        }
         CurrentCycleAdapterAudit currentCycleAudit{
             .success = true,
             .shadowOnly = true,
@@ -601,14 +635,19 @@ namespace dualpad::input_v2::gameplay
             currentCycleAudit = *input.currentCycleAudit;
         }
 
-        auto proposedSensitive = RuntimeInputPublication::GetSingleton().GetCommitted();
+        const auto committedSensitive = RuntimeInputPublication::GetSingleton().GetCommitted();
+        auto proposedSensitive = committedSensitive;
         proposedSensitive.channels = projection.nextArbitration;
+        proposedSensitive.sprint = projection.sprintDecision.next;
         ++proposedSensitive.revision;
         proposedSensitive.inputStateEpoch = input.inputStateEpoch;
         proposedSensitive.gamepadSessionId = input.gamepadSessionId;
         proposedSensitive.controlMapRevision = input.controlMapRevision;
         proposedSensitive.orderedCutoffSeq = input.orderedCutoffSeq;
         proposedSensitive.eventBatchToken = input.eventBatchToken;
+        proposedSensitive.sprint.inputStateEpoch = input.inputStateEpoch;
+        proposedSensitive.sprint.contextRevision = input.kernel.facts.contextRevision;
+        proposedSensitive.sprint.runtimeGeneration = input.kernel.kernelRevision;
         const auto prepared = RuntimeInputPublication::GetSingleton().Prepare(
             proposedSensitive,
             currentCyclePlan);
@@ -617,9 +656,10 @@ namespace dualpad::input_v2::gameplay
             !IsCurrentCycleAuditCommitSafe(currentCyclePlan, currentCycleAudit)) {
             FailClosedAffectedChannels(
                 projection,
-                currentCycleAudit.affectedChannels != 0 ?
-                    currentCycleAudit.affectedChannels :
-                    currentCyclePlan.affectedChannels);
+                static_cast<CurrentCycleChannelMaskType>(
+                    currentCycleAudit.affectedChannels |
+                    currentCyclePlan.affectedChannels),
+                committedSensitive);
         }
         LogRuntimeProjectionPlan(input, projection);
 

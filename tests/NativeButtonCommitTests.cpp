@@ -10,6 +10,7 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 namespace
 {
@@ -167,6 +168,94 @@ namespace
                 release.requestKind == PollCommitRequestKind::None,
             "PulseMinDown release must not create a clear or force-cancel request");
     }
+
+    class RecordingEmitter final : public IPollCommitEmitter
+    {
+    public:
+        EmitResult Emit(const EmitRequest& request) override
+        {
+            edges.push_back(request.edge);
+            return { .submitted = true };
+        }
+
+        std::vector<EmitEdge> edges;
+    };
+
+    const PollCommitSlot& SprintSlot(const PollCommitCoordinator& coordinator)
+    {
+        for (const auto& slot : coordinator.Slots()) {
+            if (slot.actionId == actions::Sprint) {
+                return slot;
+            }
+        }
+        throw std::runtime_error("Sprint slot must exist");
+    }
+
+    void Sprint_FullContributorMask_MaterializesOneBridgeWithoutHandoffGap()
+    {
+        constexpr auto gamepad = static_cast<std::uint8_t>(HeldContributor::Gamepad);
+        constexpr auto keyboard = static_cast<std::uint8_t>(HeldContributor::KeyboardMouse);
+        constexpr auto mouse = static_cast<std::uint8_t>(HeldContributor::MousePhysical);
+        PollCommitCoordinator coordinator;
+        RecordingEmitter emitter;
+        std::uint64_t generation = 1;
+        std::uint64_t nowUs = 1'000;
+
+        const auto sync = [&](std::uint8_t mask, bool bridge) {
+            coordinator.BeginFrame(InputContext::Gameplay, 7, nowUs, generation);
+            Require(coordinator.SyncHeldContributors(
+                    actions::Sprint,
+                    NativeControlCode::Sprint,
+                    PollCommitMode::Hold,
+                    mask,
+                    bridge,
+                    7),
+                "full Sprint contributor mask must synchronize atomically");
+            coordinator.Tick(nowUs, true);
+            coordinator.Flush(emitter, nowUs);
+            ++generation;
+            nowUs += 1'000;
+        };
+
+        sync(gamepad, true);
+        sync(static_cast<std::uint8_t>(gamepad | keyboard), true);
+        sync(keyboard, true);
+        sync(0, false);
+        Require(emitter.edges.size() == 2 &&
+                emitter.edges[0] == EmitEdge::Down &&
+                emitter.edges[1] == EmitEdge::Up,
+            "G -> K handoff must keep one virtual bridge and emit one final release");
+        Require(SprintSlot(coordinator).emittedDownCount == 1 &&
+                SprintSlot(coordinator).emittedUpCount == 1,
+            "G -> K bridge must not introduce a handoff gap or duplicate edge");
+
+        coordinator.Reset();
+        emitter.edges.clear();
+        sync(keyboard, false);
+        Require(emitter.edges.empty(), "K-only Sprint must not synthesize a virtual press");
+        sync(static_cast<std::uint8_t>(keyboard | gamepad), true);
+        sync(gamepad, true);
+        sync(0, false);
+        Require(emitter.edges.size() == 2 &&
+                emitter.edges.front() == EmitEdge::Down &&
+                emitter.edges.back() == EmitEdge::Up,
+            "K -> G handoff must create one bridge and release it once without a gap");
+
+        coordinator.Reset();
+        emitter.edges.clear();
+        sync(static_cast<std::uint8_t>(keyboard | mouse), false);
+        const auto& physicalOnly = SprintSlot(coordinator);
+        Require(physicalOnly.heldContributorMask == static_cast<std::uint8_t>(keyboard | mouse) &&
+                !physicalOnly.virtualBridgeDesired && emitter.edges.empty(),
+            "Keyboard and Mouse Sprint contributors must remain independent physical bits");
+
+        coordinator.Reset();
+        emitter.edges.clear();
+        sync(gamepad, false);
+        Require(emitter.edges.empty() &&
+                SprintSlot(coordinator).activeHeldEmitter == HeldEmitterSource::None,
+            "fail-closed G mask without a bridge must not materialize or manage virtual Sprint");
+    }
 }
 
 int main()
@@ -179,6 +268,7 @@ int main()
         MenuConfirm_Release_IsNoop_NoTranslateFailed();
         PulseMinDown_Release_DoesNotReturnFalse();
         PulseMinDown_PressThenRelease_DoesNotStick();
+        Sprint_FullContributorMask_MaterializesOneBridgeWithoutHandoffGap();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

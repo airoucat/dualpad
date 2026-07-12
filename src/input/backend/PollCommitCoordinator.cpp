@@ -227,8 +227,8 @@ namespace dualpad::input::backend
             }
             slot.pending = {};
             slot.heldContributorMask = 0;
+            slot.virtualBridgeDesired = false;
             slot.activeHeldEmitter = HeldEmitterSource::None;
-            slot.pendingGamepadHandoff = false;
             ClearToken(slot);
             TransitionState(slot, ExecState::Idle, _nowUs);
         }
@@ -248,17 +248,33 @@ namespace dualpad::input::backend
         }
     }
 
-    void PollCommitCoordinator::SyncHeldContributor(
+    bool PollCommitCoordinator::SyncHeldContributors(
         std::string_view actionId,
-        HeldContributor contributor,
-        bool held)
+        NativeControlCode outputCode,
+        PollCommitMode mode,
+        std::uint8_t activeSourceMask,
+        bool virtualBridgeDesired,
+        std::uint32_t epoch)
     {
-        auto* slot = FindSlot(actionId);
-        if (!slot) {
-            return;
+        constexpr auto kKnownMask =
+            ToMask(HeldContributor::Gamepad) |
+            ToMask(HeldContributor::KeyboardMouse) |
+            ToMask(HeldContributor::MousePhysical);
+        if (actionId.empty() || outputCode == NativeControlCode::None ||
+            mode == PollCommitMode::None || (activeSourceMask & ~kKnownMask) != 0) {
+            return false;
         }
-
-        SetHeldContributor(*slot, contributor, held);
+        auto* slot = FindOrCreateSlot(actionId);
+        if (!slot) {
+            return false;
+        }
+        slot->context = _currentContext;
+        slot->outputCode = outputCode;
+        slot->mode = mode;
+        slot->epoch = epoch != 0 ? epoch : _currentEpoch;
+        slot->heldContributorMask = activeSourceMask;
+        slot->virtualBridgeDesired = virtualBridgeDesired && activeSourceMask != 0;
+        return true;
     }
 
     void PollCommitCoordinator::DumpState() const
@@ -364,6 +380,9 @@ namespace dualpad::input::backend
     {
         slot.context = request.context;
         SetHeldContributor(slot, request.contributor, true);
+        if (IsSprintAction(slot.actionId) && request.contributor == HeldContributor::Gamepad) {
+            slot.virtualBridgeDesired = true;
+        }
         if (slot.state == ExecState::Idle) {
             slot.pending.kind = PendingKind::HoldStart;
             slot.pending.queuedAtUs = request.timestampUs != 0 ? request.timestampUs : _nowUs;
@@ -374,6 +393,9 @@ namespace dualpad::input::backend
     void PollCommitCoordinator::QueueHoldClear(PollCommitSlot& slot)
     {
         SetHeldContributor(slot, HeldContributor::Gamepad, false);
+        if (IsSprintAction(slot.actionId)) {
+            slot.virtualBridgeDesired = HasHeldContributors(slot) && slot.token.active;
+        }
         if (!IsSingleEmitterHoldAction(slot.actionId)) {
             slot.pending.kind = PendingKind::HoldEnd;
         }
@@ -417,6 +439,7 @@ namespace dualpad::input::backend
     {
         slot.pending.kind = PendingKind::ForceCancel;
         slot.heldContributorMask = 0;
+        slot.virtualBridgeDesired = false;
         slot.activeHeldEmitter = HeldEmitterSource::None;
     }
 
@@ -511,29 +534,9 @@ namespace dualpad::input::backend
             if (slot.pending.kind == PendingKind::ForceCancel) {
                 slot.pending = {};
                 slot.activeHeldEmitter = HeldEmitterSource::None;
-                slot.pendingGamepadHandoff = false;
                 break;
             }
             if (syntheticHoldDemand) {
-                if (slot.activeHeldEmitter == HeldEmitterSource::KeyboardMouse &&
-                    desiredEmitter == HeldEmitterSource::Gamepad) {
-                    if (!slot.pendingGamepadHandoff) {
-                        slot.pendingGamepadHandoff = true;
-                        slot.activeHeldEmitter = HeldEmitterSource::Gamepad;
-                        if (ShouldLogCoordinator()) {
-                            logger::info(
-                                "[DualPad][SprintProbe] Queue KeyboardMouse -> Gamepad handoff gap (state={}, pending={})",
-                                ToString(slot.state),
-                                ToString(slot.pending.kind));
-                        }
-                        break;
-                    }
-
-                    slot.pendingGamepadHandoff = false;
-                } else {
-                    slot.pendingGamepadHandoff = false;
-                }
-
                 if (canOpen) {
                     StartHoldTransaction(slot, nowUs);
                 } else {
@@ -541,7 +544,6 @@ namespace dualpad::input::backend
                     TransitionState(slot, ExecState::WaitingForGate, nowUs);
                 }
             } else {
-                slot.pendingGamepadHandoff = false;
                 slot.activeHeldEmitter = desiredEmitter;
                 if (slot.pending.kind != PendingKind::None) {
                     slot.pending.kind = PendingKind::None;
@@ -553,13 +555,11 @@ namespace dualpad::input::backend
             if (slot.pending.kind == PendingKind::ForceCancel) {
                 slot.pending = {};
                 slot.activeHeldEmitter = HeldEmitterSource::None;
-                slot.pendingGamepadHandoff = false;
                 TransitionState(slot, ExecState::Idle, nowUs);
                 break;
             }
             if (!syntheticHoldDemand) {
                 slot.pending.kind = PendingKind::None;
-                slot.pendingGamepadHandoff = false;
                 slot.activeHeldEmitter = desiredEmitter;
                 TransitionState(slot, ExecState::Idle, nowUs);
                 break;
@@ -643,8 +643,8 @@ namespace dualpad::input::backend
     {
         slot.pending = {};
         slot.heldContributorMask = 0;
+        slot.virtualBridgeDesired = false;
         slot.activeHeldEmitter = HeldEmitterSource::None;
-        slot.pendingGamepadHandoff = false;
         ++slot.cancelledCount;
 
         if (slot.token.active && slot.token.downSubmitted && !slot.token.releaseSubmitted) {
@@ -737,7 +737,6 @@ namespace dualpad::input::backend
             return;
         }
 
-        slot.pendingGamepadHandoff = false;
         slot.activeHeldEmitter = ResolveHeldEmitter(slot);
         slot.pending.kind = PendingKind::None;
         TransitionState(slot, ExecState::Idle, nowUs);
@@ -800,38 +799,14 @@ namespace dualpad::input::backend
     HeldEmitterSource PollCommitCoordinator::ResolveHeldEmitter(const PollCommitSlot& slot) const
     {
         if (IsSingleEmitterHoldAction(slot.actionId)) {
-            const bool hasGamepad = HasHeldContributor(slot, HeldContributor::Gamepad);
-            const bool hasKeyboardMouse = HasHeldContributor(slot, HeldContributor::KeyboardMouse);
-
-            switch (slot.activeHeldEmitter) {
-            case HeldEmitterSource::Gamepad:
-                if (hasGamepad) {
-                    return HeldEmitterSource::Gamepad;
-                }
-                if (hasKeyboardMouse) {
-                    return HeldEmitterSource::KeyboardMouse;
-                }
-                return HeldEmitterSource::None;
-
-            case HeldEmitterSource::KeyboardMouse:
-                if (hasKeyboardMouse) {
-                    return HeldEmitterSource::KeyboardMouse;
-                }
-                if (hasGamepad) {
-                    return HeldEmitterSource::Gamepad;
-                }
-                return HeldEmitterSource::None;
-
-            case HeldEmitterSource::None:
-            default:
-                if (hasKeyboardMouse) {
-                    return HeldEmitterSource::KeyboardMouse;
-                }
-                if (hasGamepad) {
-                    return HeldEmitterSource::Gamepad;
-                }
-                return HeldEmitterSource::None;
+            if (slot.virtualBridgeDesired) {
+                return HeldEmitterSource::Gamepad;
             }
+            const bool hasKeyboardMouse =
+                HasHeldContributor(slot, HeldContributor::KeyboardMouse) ||
+                HasHeldContributor(slot, HeldContributor::MousePhysical);
+            return hasKeyboardMouse ?
+                HeldEmitterSource::KeyboardMouse : HeldEmitterSource::None;
         }
 
         if (HasHeldContributor(slot, HeldContributor::Gamepad)) {
@@ -853,7 +828,7 @@ namespace dualpad::input::backend
             return HasHeldContributors(slot);
         }
 
-        return ResolveHeldEmitter(slot) == HeldEmitterSource::Gamepad;
+        return slot.virtualBridgeDesired;
     }
 
     bool PollCommitCoordinator::HasHeldContributors(const PollCommitSlot& slot) const

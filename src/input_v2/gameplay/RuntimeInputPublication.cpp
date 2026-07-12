@@ -45,9 +45,8 @@ namespace dualpad::input_v2::gameplay
         _consumed.insert(token);
         if (!IsCurrentCycleAuditCommitSafe(prepared.plan, audit)) {
             return {
-                .failClosedChannels = audit.affectedChannels != 0 ?
-                    audit.affectedChannels :
-                    prepared.plan.affectedChannels
+                .failClosedChannels = static_cast<CurrentCycleChannelMaskType>(
+                    audit.affectedChannels | prepared.plan.affectedChannels)
             };
         }
 

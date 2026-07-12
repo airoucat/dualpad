@@ -3,7 +3,6 @@
 
 #include "input/Action.h"
 #include "input/AuthoritativePollState.h"
-#include "input/GameplayKbmFactTracker.h"
 #include "input_v2/compat/LegacyInputContextCompat.h"
 #include "input/PadProfile.h"
 #include "input/RuntimeConfig.h"
@@ -147,7 +146,7 @@ namespace dualpad::input::backend
         {
             if (slot.actionId == actions::Sprint &&
                 slot.mode == PollCommitMode::Hold &&
-                slot.activeHeldEmitter == HeldEmitterSource::KeyboardMouse &&
+                !slot.virtualBridgeDesired &&
                 !slot.token.active) {
                 return false;
             }
@@ -420,6 +419,26 @@ namespace dualpad::input::backend
         return HeldEmitterSource::None;
     }
 
+    bool NativeButtonCommitBackend::SyncHeldContributors(
+        std::string_view actionId,
+        NativeControlCode outputCode,
+        std::uint8_t activeSourceMask,
+        bool virtualBridgeDesired,
+        InputContext context,
+        std::uint32_t contextEpoch)
+    {
+        std::scoped_lock lock(_lock);
+        _frameContext = context;
+        _frameContextEpoch = contextEpoch;
+        return _pollCommit.SyncHeldContributors(
+            actionId,
+            outputCode,
+            PollCommitMode::Hold,
+            activeSourceMask,
+            virtualBridgeDesired,
+            contextEpoch);
+    }
+
     void NativeButtonCommitBackend::BeginFrame(
         InputContext context,
         std::uint32_t contextEpoch,
@@ -431,7 +450,6 @@ namespace dualpad::input::backend
         _frameContextEpoch = contextEpoch;
         _suppressGameplayDigitalTransientActions = false;
         _pollCommit.BeginFrame(context, contextEpoch, nowUs != 0 ? nowUs : NowUs(), runtimeGeneration);
-        SyncExternalHeldContributors(context, contextEpoch);
     }
 
     void NativeButtonCommitBackend::SetGameplayDigitalGatePlan(bool suppressNewTransientActions)
@@ -588,15 +606,12 @@ namespace dualpad::input::backend
         _frameContextEpoch = contextEpoch;
 
         _pollCommit.BeginFrame(context, contextEpoch, nowUs, runtimeGeneration);
-        SyncExternalHeldContributors(context, contextEpoch);
         _pollCommit.Tick(nowUs, IsGameplayGateOpen(context));
         _pollCommit.Flush(*this, nowUs);
 
         SprintProbeSnapshot sprintSnapshot{};
         sprintSnapshot.valid = true;
-        sprintSnapshot.kbmHeld =
-            context == InputContext::Gameplay &&
-            GameplayKbmFactTracker::GetSingleton().GetFacts().IsKeyboardMouseSprintActive();
+        sprintSnapshot.kbmHeld = false;
         sprintSnapshot.gameplayOwnerGamepad =
             dualpad::input_v2::gameplay::DualPadRuntime::GetSingleton().GetPublishedGameplayPresentation().engineOwner ==
             dualpad::input_v2::presentation::PresentationOwner::Gamepad;
@@ -670,7 +685,10 @@ namespace dualpad::input::backend
                 sprintSnapshot.gamepadContributor =
                     (slot.heldContributorMask & static_cast<std::uint8_t>(HeldContributor::Gamepad)) != 0;
                 sprintSnapshot.keyboardMouseContributor =
-                    (slot.heldContributorMask & static_cast<std::uint8_t>(HeldContributor::KeyboardMouse)) != 0;
+                    (slot.heldContributorMask &
+                        (static_cast<std::uint8_t>(HeldContributor::KeyboardMouse) |
+                         static_cast<std::uint8_t>(HeldContributor::MousePhysical))) != 0;
+                sprintSnapshot.kbmHeld = sprintSnapshot.keyboardMouseContributor;
                 sprintSnapshot.effectiveHeld = slot.heldContributorMask != 0;
                 sprintSnapshot.actionDown = SlotIsDown(slot);
                 sprintSnapshot.managed = SlotIsManaged(slot);
@@ -881,7 +899,7 @@ namespace dualpad::input::backend
     {
         if (slot.actionId == actions::Sprint &&
             slot.mode == PollCommitMode::Hold &&
-            slot.activeHeldEmitter == HeldEmitterSource::KeyboardMouse &&
+            !slot.virtualBridgeDesired &&
             !slot.token.active) {
             return false;
         }
@@ -893,18 +911,4 @@ namespace dualpad::input::backend
             slot.heldContributorMask != 0;
     }
 
-    void NativeButtonCommitBackend::SyncExternalHeldContributors(InputContext context, std::uint32_t)
-    {
-        constexpr bool kbmSprintHeld = false;
-        if (ShouldLogPollCommit()) {
-            logger::info(
-                "[DualPad][SprintProbe] SyncExternalHeldContributors kbmSprintHeld={} ctx={}",
-                kbmSprintHeld,
-                dualpad::input::ToString(context));
-        }
-        _pollCommit.SyncHeldContributor(
-            actions::Sprint,
-            HeldContributor::KeyboardMouse,
-            kbmSprintHeld);
-    }
 }

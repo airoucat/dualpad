@@ -3452,3 +3452,23 @@
   - Focused GREEN：`python tests/python/test_mixed_input_wp5_shadow_wiring.py`、`xmake run -y DualPadGameplayProjectionTests`、`xmake run -y DualPadInputV2Tests` 全部 exit 0。
   - 相邻回归：`xmake run -y DualPadReplayTests`、`xmake run -y DualPadPresentationProjectionTests`、`xmake run -y DualPadNativeButtonCommitTests`、`xmake build -y DualPad` 全部 exit 0；PDB 同路径占用仅产生已知 copy warning，DLL 明确 `build ok`。
   - 剩余硬门禁：I-P 决定真实 event mutation；I-SPRINT 结果 B 才允许 SprintHandler guard；I-KBM raw reconcile 与 synthetic suppression 仍分别 NO-GO；I-CURSOR 和 I-0/I-1/I-2/I-MENU/I-5 均未提前启用。
+
+## 2026-07-12 12:37:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP6 start`：
+  - 按批准计划进入 Sprint complete contributor、virtual bridge 与唯一 materialization authority；先覆盖 G/K/M 三来源 OR、joining/non-final disposition、final release one-shot、reset/disconnect 和 prepared rollback。
+  - 当前已确认 production 断点仍存在：`SyncExternalHeldContributors` 固定 `kbmSprintHeld=false`，coordinator 只有 G/K 两位并保留故意 handoff gap，live sustained executor 把完整 source mask 压扁为单一 Hold/Release。
+  - 本切片不新增 `SprintHandler` hook；I-SPRINT 未得到结果 B，因此 guard capability 保持不存在。需要 current-cycle mutation 的 joining/non-final suppression 只进入 pure/shadow plan，并继续服从 WP5 commit-safe rollback。
+
+## 2026-07-12 12:53:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP6 completed`：
+  - RED 先以缺失 `SustainedContributorDecision.h` 证明 G/K/M contributor pure model 尚不存在；第二个 RED 精确列出 coordinator 缺少 Mouse 位、full-mask API 与 `virtualBridgeDesired`；后续事务 RED 捕获 shadow audit 回滚 runtime ledger、但 proposed K|G mask 仍提前写入 backend 的漏洞。
+  - 新增 pure `SustainedContributorDecision`：G/K/M 三位 mask、aggregate hold、virtual materialized bridge、effective emitter、joining press / non-final release suppression、same-batch earliest physical ordinal 和 consumed-once final release token 均由 owner-frame 单次裁决。
+  - 两条序列 `G -> G|K -> K -> 0` 与 `K -> K|G -> G -> 0` 均保持 aggregate 无 gap；K-only/M-only 不合成 virtual press，G bridge 在 coordinator 中各只 materialize 一次 Down 和一次最终 Up。
+  - producer 保留 callback-local Sprint `eventOrdinal`，Hub latest 记录 K/M 最早 physical ordinal并传入 GameplayPolicy；production projection 不再只在 gamepad resolved edge 上拼 sustained mask，而是每 owner frame发布完整 Sprint mask/bridge/suppression/release metadata。
+  - `PollCommitCoordinator::SyncHeldContributors` 原子替换完整三来源 mask；旧 `GameplayKbmFactTracker` include/read、固定 `kbmSprintHeld=false`、单 contributor side channel、`pendingGamepadHandoff` 和故意 gap 已删除。其它 sustained action仍走原路径。
+  - Sprint 完整 state 已进入 WP5 `PreparedRuntimeInputCommit`。mutation required 且 shadow audit 未 apply 时，runtime、outbound command 与 backend 全部重放 previous committed mask/bridge/token；不会出现 ledger 回滚但 backend mask 先行。gamepad disconnect只清G并在K/M仍 held时保留已materialized bridge；global reset清全部mask/bridge/emitter/token。
+  - Focused GREEN：`xmake run -y DualPadGameplayProjectionTests`、`xmake run -y DualPadNativeButtonCommitTests`、`xmake run -y DualPadIngressTests` 全部 exit 0。
+  - 相邻回归：`xmake run -y DualPadInputV2Tests`、`xmake run -y DualPadReplayTests`、`xmake build -y DualPad` 全部 exit 0；PDB 同路径占用仅产生已知 copy warning，DLL 明确 `build ok`。
+  - Gate 保持：真实 joining/non-final event suppression 继续等待 I-P；没有新增 `SprintHandler` hook，I-SPRINT 结果 B 未到前 guard 继续 NO-GO。Favorites/SWF/glyph/haptics/rumble/bindings 均未修改。

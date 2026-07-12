@@ -19,7 +19,8 @@ namespace dualpad::input::backend
     {
         None = 0,
         Gamepad = 1u << 0,
-        KeyboardMouse = 1u << 1
+        KeyboardMouse = 1u << 1,
+        MousePhysical = 1u << 2
     };
 
     enum class HeldEmitterSource : std::uint8_t
@@ -161,6 +162,13 @@ namespace dualpad::input::backend
         bool IsActionDown(std::string_view actionId) const;
         bool HasHeldContributor(std::string_view actionId, HeldContributor contributor) const;
         HeldEmitterSource GetHeldEmitter(std::string_view actionId) const;
+        bool SyncHeldContributors(
+            std::string_view actionId,
+            NativeControlCode outputCode,
+            std::uint8_t activeSourceMask,
+            bool virtualBridgeDesired,
+            InputContext context,
+            std::uint32_t contextEpoch);
 
         void BeginFrame(
             InputContext context,
@@ -223,8 +231,6 @@ namespace dualpad::input::backend
         static bool IsGameplayGateOpen(InputContext context);
         static bool SlotIsDown(const PollCommitSlot& slot);
         static bool SlotIsManaged(const PollCommitSlot& slot);
-        void SyncExternalHeldContributors(InputContext context, std::uint32_t contextEpoch);
-
         PollCommitCoordinator _pollCommit{};
         InputContext _frameContext{ InputContext::Gameplay };
         std::uint32_t _frameContextEpoch{ 0 };

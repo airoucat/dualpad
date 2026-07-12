@@ -4,6 +4,7 @@
 #include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 #include "input/AuthoritativePollState.h"
+#include "input/Action.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/KeyboardHelperBackend.h"
 #include "input/backend/ModEventKeyPool.h"
@@ -180,6 +181,16 @@ namespace dualpad::input_v2::gameplay
 
             bool ApplySustainedDigital(const NativeSustainedCommand& command) override
             {
+                if (command.actionId == dualpad::input::actions::Sprint) {
+                    return dualpad::input::backend::NativeButtonCommitBackend::GetSingleton()
+                        .SyncHeldContributors(
+                            command.actionId,
+                            command.control,
+                            command.activeSourceMask,
+                            command.virtualBridgeDesired,
+                            _legacyContext,
+                            _legacyContextEpoch);
+                }
                 const auto phase = command.activeSourceMask == 0 ?
                     PlannedActionPhase::Release :
                     PlannedActionPhase::Hold;

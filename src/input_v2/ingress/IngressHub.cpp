@@ -599,6 +599,21 @@ namespace dualpad::input_v2::ingress
             [](const KbmGameplayEdgeDraft& edge) {
                 return edge.phase == KbmEdgePhase::MouseDelta && edge.origin == KbmEdgeOrigin::Physical;
             });
+        std::uint64_t keyboardSustainedEventOrdinal = 0;
+        std::uint64_t mouseSustainedEventOrdinal = 0;
+        for (const auto& edge : batch.kbm.orderedEdges) {
+            if (edge.gameplayClass != KbmGameplayClass::SustainedDigital ||
+                edge.phase != KbmEdgePhase::Press ||
+                edge.origin != KbmEdgeOrigin::Physical ||
+                edge.eventOrdinal == 0) {
+                continue;
+            }
+            auto& ordinal = edge.physical.device == KbmPhysicalDevice::Keyboard ?
+                keyboardSustainedEventOrdinal : mouseSustainedEventOrdinal;
+            if (ordinal == 0 || edge.eventOrdinal < ordinal) {
+                ordinal = edge.eventOrdinal;
+            }
+        }
         _latestKbmGameplay = LatestKbmGameplayFacts{
             .causal = CausalLatestHeader{
                 .generation = ++_latestKbmGameplayGeneration,
@@ -612,6 +627,8 @@ namespace dualpad::input_v2::ingress
             .bindingGeneration = batch.boundary.bindingGeneration,
             .current = batch.kbm.completeCurrent,
             .physical = batch.kbm.physical,
+            .keyboardSustainedEventOrdinal = keyboardSustainedEventOrdinal,
+            .mouseSustainedEventOrdinal = mouseSustainedEventOrdinal,
             .lastPhysicalMouseMoveOwnerUs = batch.kbm.lastPhysicalMouseMoveOwnerUs,
             .physicalMouseMoveThisFrame = physicalMouseMoveThisFrame,
             .baseline = batch.kbm.baseline,

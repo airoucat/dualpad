@@ -2,6 +2,7 @@
 
 #include "input_v2/gameplay/ChannelArbitration.h"
 #include "input_v2/gameplay/CurrentCycleGatePlan.h"
+#include "input_v2/gameplay/SustainedContributorDecision.h"
 #include "input_v2/gameplay/TransientActionGate.h"
 
 #include <cstdint>
@@ -16,8 +17,7 @@ namespace dualpad::input_v2::gameplay
     {
         ChannelArbitrationStateSet channels{};
         TransientActionGateState transient{};
-        std::uint8_t sprintContributorMask{ 0 };
-        bool virtualSprintBridgeHeld{ false };
+        SustainedContributorState sprint{};
         std::uint64_t revision{ 0 };
         std::uint64_t inputStateEpoch{ 0 };
         std::uint64_t gamepadSessionId{ 0 };

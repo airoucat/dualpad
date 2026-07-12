@@ -227,6 +227,7 @@ namespace dualpad::input_v2::ingress
                 continue;
             }
             batch.orderedEdges.push_back(KbmGameplayEdgeDraft{
+                .eventOrdinal = event.eventOrdinal,
                 .producerTimestampUs = event.producerTimestampUs,
                 .physical = event.physical,
                 .gameplayClass = binding.gameplayClass,

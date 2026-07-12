@@ -157,6 +157,7 @@ namespace dualpad::input_v2::ingress
 
     struct KbmGameplayEdgeDraft
     {
+        std::uint32_t eventOrdinal{ 0 };
         std::uint64_t producerTimestampUs{ 0 };
         KbmPhysicalCode physical{};
         KbmGameplayClass gameplayClass{ KbmGameplayClass::TransientDigital };
@@ -205,6 +206,8 @@ namespace dualpad::input_v2::ingress
         std::uint64_t bindingGeneration{ 0 };
         KbmGameplayCurrentFacts current{};
         KbmPhysicalLedger physical{};
+        std::uint64_t keyboardSustainedEventOrdinal{ 0 };
+        std::uint64_t mouseSustainedEventOrdinal{ 0 };
         std::uint64_t lastPhysicalMouseMoveOwnerUs{ 0 };
         bool physicalMouseMoveThisFrame{ false };
         KbmBaselineState baseline{ KbmBaselineState::Clean };

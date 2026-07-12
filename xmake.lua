@@ -188,6 +188,7 @@ local ph5_gameplay_projection_files = {
     "src/input_v2/gameplay/PollOutputAdapter.cpp",
     "src/input_v2/gameplay/RecoveryPlan.cpp",
     "src/input_v2/gameplay/RuntimeInputPublication.cpp",
+    "src/input_v2/gameplay/SustainedContributorDecision.cpp",
     "src/input_v2/gameplay/TransientActionGate.cpp",
     "src/input_v2/gameplay/GameplayPresentationPublisher.cpp",
     "src/input_v2/gameplay/RuntimeDiagnostics.cpp"
@@ -438,7 +439,9 @@ target("DualPadNativeButtonCommitTests")
     add_files(
         "tests/NativeButtonCommitTests.cpp",
         "src/input/XInputButtonSerialization.cpp",
-        "src/input/backend/NativeActionDescriptor.cpp")
+        "src/input/backend/NativeActionDescriptor.cpp",
+        "src/input/backend/PollCommitCoordinator.cpp",
+        "src/input/RuntimeConfig.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")

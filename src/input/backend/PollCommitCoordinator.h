@@ -37,7 +37,8 @@ namespace dualpad::input::backend
     {
         None = 0,
         Gamepad = 1u << 0,
-        KeyboardMouse = 1u << 1
+        KeyboardMouse = 1u << 1,
+        MousePhysical = 1u << 2
     };
 
     enum class HeldEmitterSource : std::uint8_t
@@ -114,6 +115,8 @@ namespace dualpad::input::backend
             return "Gamepad";
         case HeldContributor::KeyboardMouse:
             return "KeyboardMouse";
+        case HeldContributor::MousePhysical:
+            return "MousePhysical";
         case HeldContributor::None:
         default:
             return "None";
@@ -223,8 +226,8 @@ namespace dualpad::input::backend
         InFlightToken token{};
         PendingIntent pending{};
         std::uint8_t heldContributorMask{ 0 };
+        bool virtualBridgeDesired{ false };
         HeldEmitterSource activeHeldEmitter{ HeldEmitterSource::None };
-        bool pendingGamepadHandoff{ false };
         std::uint64_t lastTransitionUs{ 0 };
         std::uint32_t emittedDownCount{ 0 };
         std::uint32_t emittedUpCount{ 0 };
@@ -257,10 +260,13 @@ namespace dualpad::input::backend
             PulseBoundaryReason reason,
             std::uint64_t runtimeGeneration);
         void ForceCancelGateAwareTransientSlots();
-        void SyncHeldContributor(
+        bool SyncHeldContributors(
             std::string_view actionId,
-            HeldContributor contributor,
-            bool held);
+            NativeControlCode outputCode,
+            PollCommitMode mode,
+            std::uint8_t activeSourceMask,
+            bool virtualBridgeDesired,
+            std::uint32_t epoch);
 
         void DumpState() const;
 

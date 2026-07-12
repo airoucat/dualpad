@@ -22,6 +22,8 @@ namespace dualpad::input
                 return plan.combat;
             case CurrentCycleChannel::TransientDigital:
                 return plan.transientDigital;
+            case CurrentCycleChannel::SustainedDigital:
+                return plan.sustainedDigital;
             default:
                 return input_v2::gameplay::CurrentCycleEventDisposition::Keep;
             }
@@ -121,6 +123,7 @@ namespace dualpad::input
         append(CurrentCycleChannel::Move);
         append(CurrentCycleChannel::Combat);
         append(CurrentCycleChannel::TransientDigital);
+        append(CurrentCycleChannel::SustainedDigital);
         return AuditDescriptors(
             descriptors,
             plan,

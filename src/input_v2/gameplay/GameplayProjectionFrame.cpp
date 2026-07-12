@@ -2,6 +2,7 @@
 
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 
+#include "input/Action.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/backend/ModEventKeyPool.h"
 #include "input/backend/NativeActionDescriptor.h"
@@ -173,6 +174,9 @@ namespace dualpad::input_v2::gameplay
         frame.context = policy.gameplayContext ? LegacyInputContextCompat::Gameplay : LegacyInputContextCompat::Menu;
         frame.contextRevision = kernel.facts.contextRevision;
         frame.recoveryPlan = BuildRecoveryPlan(recoveryInput);
+        if (!frame.recoveryPlan.resetSustainedDigitalAggregator) {
+            frame.sprintDecision.next = previous.sprintDecision.next;
+        }
         if (frame.recoveryPlan.mode == RecoveryMode::SoftResyncOutputs) {
             frame.reasons.recovery = GameplayReasonCode::SoftResync;
         } else if (frame.recoveryPlan.mode == RecoveryMode::HardResetOutputs) {
@@ -308,6 +312,21 @@ namespace dualpad::input_v2::gameplay
         }
 
         bool overflow = false;
+        auto sprintMask = frame.sprintDecision.next.activeSourceMask;
+        const auto gamepadSprintMask = SustainedContributorMask(SustainedContributorBit::Gamepad);
+        const auto keyboardSprintMask = SustainedContributorMask(SustainedContributorBit::KeyboardPhysical);
+        const auto mouseSprintMask = SustainedContributorMask(SustainedContributorBit::MousePhysical);
+        if (policy.clearGamepadSustainedContributor) {
+            sprintMask = static_cast<std::uint8_t>(sprintMask & ~gamepadSprintMask);
+        }
+        sprintMask = policy.keyboardPhysicalSustainedActive ?
+            static_cast<std::uint8_t>(sprintMask | keyboardSprintMask) :
+            static_cast<std::uint8_t>(sprintMask & ~keyboardSprintMask);
+        sprintMask = policy.mousePhysicalSustainedActive ?
+            static_cast<std::uint8_t>(sprintMask | mouseSprintMask) :
+            static_cast<std::uint8_t>(sprintMask & ~mouseSprintMask);
+        bool sprintChanged = false;
+        std::uint64_t gamepadSprintOrdinal = policy.gamepadSustainedEventOrdinal;
         for (const auto& change : resolved.changes) {
             const auto decision = dualpad::input::backend::ActionBackendPolicy::Decide(change.actionId);
             const auto* descriptor = dualpad::input::backend::FindNativeActionDescriptor(change.actionId);
@@ -337,6 +356,15 @@ namespace dualpad::input_v2::gameplay
                             }) || overflow;
                     }
                 } else if (IsSustainedContract(decision.contract)) {
+                    if (change.actionId == dualpad::input::actions::Sprint) {
+                        sprintChanged = true;
+                        gamepadSprintOrdinal = gamepadSprintOrdinal != 0 ?
+                            gamepadSprintOrdinal : change.timestampUs;
+                        sprintMask = change.phase == actions::ActionPhase::Release ?
+                            static_cast<std::uint8_t>(sprintMask & ~gamepadSprintMask) :
+                            static_cast<std::uint8_t>(sprintMask | gamepadSprintMask);
+                        continue;
+                    }
                     std::uint8_t mask = 0;
                     if (change.phase != actions::ActionPhase::Release) {
                         mask = static_cast<std::uint8_t>(SustainedSourceBit::GamepadResolved);
@@ -370,6 +398,34 @@ namespace dualpad::input_v2::gameplay
                         .contextRevision = frame.contextRevision
                     }) || overflow;
             }
+        }
+
+        if (sprintChanged || sprintMask != 0 ||
+            previous.sprintDecision.next.activeSourceMask != 0) {
+            frame.sprintDecision = ResolveSustainedContributor(SustainedContributorInput{
+                .previous = frame.sprintDecision.next,
+                .activeSourceMask = sprintMask,
+                .gamepadEventOrdinal = gamepadSprintOrdinal,
+                .keyboardEventOrdinal = policy.keyboardSustainedEventOrdinal,
+                .mouseEventOrdinal = policy.mouseSustainedEventOrdinal,
+                .inputStateEpoch = previous.sprintDecision.next.inputStateEpoch,
+                .contextRevision = frame.contextRevision,
+                .runtimeGeneration = kernel.kernelRevision
+            });
+            overflow = !TryAppend(
+                frame.gamepadPlan.sustainedDigital,
+                NativeSustainedCommand{
+                    .actionId = std::string(dualpad::input::actions::Sprint),
+                    .control = NativeControlCode::Sprint,
+                    .activeSourceMask = frame.sprintDecision.next.activeSourceMask,
+                    .virtualBridgeDesired = frame.sprintDecision.virtualBridgeDesired,
+                    .joiningPressSuppressionMask = frame.sprintDecision.joiningPressSuppressionMask,
+                    .nonFinalReleaseSuppressionMask = frame.sprintDecision.nonFinalReleaseSuppressionMask,
+                    .releaseToken = frame.sprintDecision.releaseToken,
+                    .contract = ActionOutputContract::Hold,
+                    .lifecyclePolicy = dualpad::input::backend::ActionLifecyclePolicy::HoldOwner,
+                    .contextRevision = frame.contextRevision
+                }) || overflow;
         }
 
         const bool keyboardMousePrimary =

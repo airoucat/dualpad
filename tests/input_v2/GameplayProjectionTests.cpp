@@ -1,5 +1,6 @@
 #include "pch.h"
 
+#include "input/Action.h"
 #include "input/RuntimeConfig.h"
 #include "input/backend/ActionBackendPolicy.h"
 #include "input/injection/PollMaterializationReceipt.h"
@@ -12,12 +13,14 @@
 #include "input_v2/gameplay/PollOutputAdapter.h"
 #include "input_v2/gameplay/RecoveryPlan.h"
 #include "input_v2/gameplay/RuntimeInputPublication.h"
+#include "input_v2/gameplay/SustainedContributorDecision.h"
 #include "input_v2/gameplay/TransientActionGate.h"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -39,6 +42,7 @@ namespace
         bool failOnHelperCommand{ false };
         bool failOnAnalogPublish{ false };
         std::vector<gameplay::PollOutputApplyStep> steps;
+        std::optional<gameplay::NativeSustainedCommand> lastSustained;
         std::size_t sustainedCount{ 0 };
         std::size_t transientCount{ 0 };
         std::size_t helperCount{ 0 };
@@ -79,9 +83,10 @@ namespace
             return true;
         }
 
-        bool ApplySustainedDigital(const gameplay::NativeSustainedCommand&) override
+        bool ApplySustainedDigital(const gameplay::NativeSustainedCommand& command) override
         {
             steps.push_back(gameplay::PollOutputApplyStep::ApplySustainedDigital);
+            lastSustained = command;
             ++sustainedCount;
             return true;
         }
@@ -480,8 +485,8 @@ namespace
         previous.revision = 7;
         auto proposed = previous;
         proposed.channels.look.owner = gameplay::ChannelOwner::Gamepad;
-        proposed.sprintContributorMask = 0x03;
-        proposed.virtualSprintBridgeHeld = true;
+        proposed.sprint.activeSourceMask = 0x03;
+        proposed.sprint.virtualMaterialized = true;
         proposed.revision = 8;
 
         gameplay::RuntimeInputPublication publication;
@@ -497,7 +502,8 @@ namespace
                 gameplay::CurrentCycleChannelMask(gameplay::CurrentCycleChannel::Look),
             "adapter failure must roll back and fail closed affected channels");
         Require(publication.GetCommitted().revision == 7 &&
-                publication.GetCommitted().sprintContributorMask == 0,
+                publication.GetCommitted().sprint.activeSourceMask == 0 &&
+                !publication.GetCommitted().sprint.virtualMaterialized,
             "adapter failure must not advance channel/Sprint ledgers");
         Require(publication.CommitAfterCurrentCycleAudit(prepared.token, shadowAudit).alreadyConsumed,
             "prepared commit token must consume exactly once on rollback");
@@ -557,6 +563,151 @@ namespace
         });
         Require(physicalRelease.virtualDisposition == gameplay::TransientGateDisposition::Keep,
             "physical release must not suppress a new gamepad transient press");
+    }
+
+    void RunSprintContributorDecisionTests()
+    {
+        using gameplay::SustainedContributorBit;
+        const auto bit = [](SustainedContributorBit source) {
+            return gameplay::SustainedContributorMask(source);
+        };
+        const auto gamepad = bit(SustainedContributorBit::Gamepad);
+        const auto keyboard = bit(SustainedContributorBit::KeyboardPhysical);
+        const auto mouse = bit(SustainedContributorBit::MousePhysical);
+
+        gameplay::SustainedContributorState state{};
+        const auto step = [&](std::uint8_t mask) {
+            const auto decision = gameplay::ResolveSustainedContributor(gameplay::SustainedContributorInput{
+                .previous = state,
+                .activeSourceMask = mask,
+                .gamepadEventOrdinal = 30,
+                .keyboardEventOrdinal = 10,
+                .mouseEventOrdinal = 20
+            });
+            state = decision.next;
+            return decision;
+        };
+
+        const auto g = step(gamepad);
+        const auto gk = step(gamepad | keyboard);
+        const auto k = step(keyboard);
+        const auto none = step(0);
+        Require(g.aggregateHeld && g.virtualBridgeDesired &&
+                g.next.activeSourceMask == gamepad,
+            "G press must establish the virtual Sprint bridge");
+        Require(gk.aggregateHeld && gk.virtualBridgeDesired &&
+                gk.joiningPressSuppressionMask == keyboard,
+            "K joining an active G Sprint must be suppressed without dropping aggregate hold");
+        Require(k.aggregateHeld && k.virtualBridgeDesired &&
+                k.nonFinalReleaseSuppressionMask == gamepad,
+            "G non-final release must keep the materialized bridge while K remains held");
+        Require(!none.aggregateHeld && !none.virtualBridgeDesired &&
+                none.finalRelease && none.releaseToken != 0,
+            "last Sprint contributor must produce one final virtual release token");
+
+        state = {};
+        const auto kOnly = step(keyboard);
+        const auto kg = step(keyboard | gamepad);
+        const auto gOnly = step(gamepad);
+        const auto finalG = step(0);
+        Require(kOnly.aggregateHeld && !kOnly.virtualBridgeDesired &&
+                kOnly.next.effectiveEmitter == gameplay::SustainedEffectiveEmitter::KeyboardPhysical,
+            "K-only Sprint must remain physical and must not synthesize virtual press");
+        Require(kg.virtualBridgeDesired && kg.joiningPressSuppressionMask == gamepad,
+            "G joining physical Sprint must establish the bridge but suppress the joining edge");
+        Require(gOnly.virtualBridgeDesired &&
+                gOnly.nonFinalReleaseSuppressionMask == keyboard,
+            "K non-final release must not interrupt the virtual bridge while G remains");
+        Require(finalG.finalRelease && finalG.releaseToken != 0,
+            "G final release must release the bridge exactly once");
+
+        state = {};
+        const auto mouseOnly = step(mouse);
+        Require(mouseOnly.next.activeSourceMask == mouse &&
+                mouseOnly.next.effectiveEmitter == gameplay::SustainedEffectiveEmitter::MousePhysical &&
+                !mouseOnly.virtualBridgeDesired,
+            "mouse Sprint contributor must use an independent physical bit");
+
+        const auto sameBatch = gameplay::ResolveSustainedContributor(gameplay::SustainedContributorInput{
+            .activeSourceMask = static_cast<std::uint8_t>(gamepad | keyboard),
+            .gamepadEventOrdinal = 22,
+            .keyboardEventOrdinal = 11
+        });
+        Require(sameBatch.winningPressSource == SustainedContributorBit::KeyboardPhysical &&
+                sameBatch.joiningPressSuppressionMask == gamepad,
+            "same-batch Sprint press must prefer the earliest physical event ordinal");
+
+        const auto keyboardOnlyProjection = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            Resolved(),
+            gameplay::GameplayPolicy{ .keyboardPhysicalSustainedActive = true },
+            gameplay::GameplayProjectionFrame{},
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+        Require(keyboardOnlyProjection.gamepadPlan.sustainedDigital.count == 1 &&
+                keyboardOnlyProjection.gamepadPlan.sustainedDigital.items[0].actionId == input::actions::Sprint &&
+                keyboardOnlyProjection.gamepadPlan.sustainedDigital.items[0].activeSourceMask == keyboard &&
+                !keyboardOnlyProjection.gamepadPlan.sustainedDigital.items[0].virtualBridgeDesired,
+            "KBM-only Sprint must publish the complete physical mask without virtual press");
+
+        actions::ResolvedActionFrame gamepadJoin{};
+        gamepadJoin.changes.push_back(actions::ActionPhaseChange{
+            .actionId = std::string(input::actions::Sprint),
+            .phase = actions::ActionPhase::Press,
+            .timestampUs = 30
+        });
+        const auto joinedProjection = gameplay::ResolveGameplayProjection(
+            Kernel(),
+            gamepadJoin,
+            gameplay::GameplayPolicy{
+                .keyboardPhysicalSustainedActive = true,
+                .keyboardSustainedEventOrdinal = 10 },
+            keyboardOnlyProjection,
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+        const auto& joinedSprint = joinedProjection.gamepadPlan.sustainedDigital.items[0];
+        Require(joinedSprint.activeSourceMask == static_cast<std::uint8_t>(keyboard | gamepad) &&
+                joinedSprint.virtualBridgeDesired &&
+                joinedSprint.joiningPressSuppressionMask == gamepad,
+            "gamepad joining physical Sprint must publish bridge and suppression metadata");
+
+        gameplay::GameplayProjectionFrame released = joinedProjection;
+        released.sprintDecision = none;
+        const auto idleAfterRelease = gameplay::ResolveGameplayProjection(
+            Kernel(), Resolved(), gameplay::GameplayPolicy{}, released,
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+        Require(idleAfterRelease.sprintDecision.next.lastReleaseToken == none.releaseToken,
+            "idle frame must preserve the consumed-once Sprint release token sequence");
+        const auto resetAfterRelease = gameplay::ResolveGameplayProjection(
+            Kernel(), Resolved(), gameplay::GameplayPolicy{}, released,
+            gameplay::GameplayRecoveryInput{ .hardResetRequested = true, .cleanFrame = true });
+        Require(resetAfterRelease.sprintDecision.next.lastReleaseToken == 0 &&
+                resetAfterRelease.sprintDecision.next.activeSourceMask == 0,
+            "global hard reset must clear Sprint mask, bridge, emitter, and release token");
+
+        gameplay::GameplayProjectionFrame activeBeforeDisconnect{};
+        activeBeforeDisconnect.sprintDecision.next = gameplay::SustainedContributorState{
+            .activeSourceMask = static_cast<std::uint8_t>(gamepad | keyboard),
+            .virtualMaterialized = true,
+            .effectiveEmitter = gameplay::SustainedEffectiveEmitter::GamepadVirtualBridge,
+            .lastReleaseToken = 9
+        };
+        const auto disconnected = gameplay::ResolveGameplayProjection(
+            Kernel(), Resolved(),
+            gameplay::GameplayPolicy{
+                .keyboardPhysicalSustainedActive = true,
+                .clearGamepadSustainedContributor = true },
+            activeBeforeDisconnect,
+            gameplay::GameplayRecoveryInput{ .cleanFrame = true });
+        Require(disconnected.sprintDecision.next.activeSourceMask == keyboard &&
+                disconnected.sprintDecision.virtualBridgeDesired &&
+                disconnected.sprintDecision.nonFinalReleaseSuppressionMask == gamepad,
+            "gamepad disconnect must clear only G and preserve the materialized bridge while K remains");
+        const auto resetWhileActive = gameplay::ResolveGameplayProjection(
+            Kernel(), Resolved(), gameplay::GameplayPolicy{}, activeBeforeDisconnect,
+            gameplay::GameplayRecoveryInput{ .hardResetRequested = true, .cleanFrame = true });
+        Require(resetWhileActive.sprintDecision.next.activeSourceMask == 0 &&
+                !resetWhileActive.sprintDecision.next.virtualMaterialized &&
+                resetWhileActive.sprintDecision.next.lastReleaseToken == 0,
+            "global reset while Sprint is active must clear all contributor state");
     }
 
     void RunFrozenFrameShapeTests()
@@ -1106,6 +1257,50 @@ namespace
             "unapplied shadow mutation must publish a fail-closed affected next-Poll channel");
         Require(gameplay::RuntimeInputPublication::GetSingleton().GetCommitted().revision == 0,
             "unapplied shadow mutation must not commit runtime sensitive state");
+
+        gameplay::DualPadRuntime sprintRollbackRuntime;
+        sprintRollbackRuntime.ResetForTests();
+        gameplay::DualPadRuntimeInput keyboardSprintInput{
+            .kernel = Kernel(),
+            .resolved = Resolved(),
+            .policy = gameplay::GameplayPolicy{ .keyboardPhysicalSustainedActive = true },
+            .recovery = gameplay::GameplayRecoveryInput{ .cleanFrame = true },
+            .outputTick = 500'000
+        };
+        RecordingPollOutputExecutor keyboardSprintExecutor;
+        const auto keyboardSprint = sprintRollbackRuntime.ProcessGameplayFrameForTests(
+            keyboardSprintInput,
+            keyboardSprintExecutor);
+        const auto keyboardMask = gameplay::SustainedContributorMask(
+            gameplay::SustainedContributorBit::KeyboardPhysical);
+        Require(keyboardSprint.output.outputApplySucceeded &&
+                gameplay::RuntimeInputPublication::GetSingleton().GetCommitted()
+                    .sprint.activeSourceMask == keyboardMask,
+            "K-only Sprint must commit its physical contributor without a virtual bridge");
+
+        auto gamepadJoinResolved = Resolved();
+        gamepadJoinResolved.changes.push_back(actions::ActionPhaseChange{
+            .actionId = std::string(input::actions::Sprint),
+            .phase = actions::ActionPhase::Press,
+            .timestampUs = 30
+        });
+        keyboardSprintInput.resolved = std::move(gamepadJoinResolved);
+        keyboardSprintInput.policy.keyboardSustainedEventOrdinal = 10;
+        keyboardSprintInput.outputTick = 501'000;
+        RecordingPollOutputExecutor gamepadJoinExecutor;
+        const auto gamepadJoin = sprintRollbackRuntime.ProcessGameplayFrameForTests(
+            keyboardSprintInput,
+            gamepadJoinExecutor);
+        const auto committedAfterJoin =
+            gameplay::RuntimeInputPublication::GetSingleton().GetCommitted();
+        Require(gamepadJoin.output.outputApplySucceeded &&
+                !gamepadJoin.projectionFrame.sprintDecision.virtualBridgeDesired &&
+                gamepadJoinExecutor.lastSustained.has_value() &&
+                gamepadJoinExecutor.lastSustained->activeSourceMask == keyboardMask &&
+                committedAfterJoin.revision == 1 &&
+                committedAfterJoin.sprint.activeSourceMask == keyboardMask &&
+                !committedAfterJoin.sprint.virtualMaterialized,
+            "shadow-only joining suppression must fail-close output and preserve previous Sprint ledger");
     }
 
     void RunCoordinatorAuthorityCutoverTests()
@@ -1125,6 +1320,7 @@ int main()
         RunPollMaterializationReceiptTests();
         RunCurrentCycleGateAndPreparedCommitTests();
         RunTransientActionGateTests();
+        RunSprintContributorDecisionTests();
         RunProjectionClassificationAndGateTests();
         RunMenuContextGamepadOutputTests();
         RunGameplayActivateKeepsMinDownWindowLifecycleTests();
