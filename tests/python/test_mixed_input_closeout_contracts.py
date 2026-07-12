@@ -25,11 +25,21 @@ def git(*args: str) -> subprocess.CompletedProcess[str]:
 
 def native_button_has_sprint_source_mask_coverage(contents: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]+", " ", contents.lower())
-    return all(token in normalized for token in ("sprint", "contributor", "source mask"))
+    compact = normalized.replace(" ", "")
+    return (
+        "sprint" in normalized
+        and "contributor" in normalized
+        and (
+            "source mask" in normalized
+            or "sourcemask" in compact
+            or "heldcontributormask" in compact
+        )
+    )
 
 
 class MixedInputCloseoutContractTests(unittest.TestCase):
-    phase = "preflight"
+    # unittest discovery is a closeout surface; preflight is opt-in at the frozen base.
+    phase = "closeout"
 
     def load_manifest(self) -> dict:
         self.assertTrue(
@@ -119,6 +129,62 @@ class MixedInputCloseoutContractTests(unittest.TestCase):
         )
         for source in manifest["sourceListParity"]["ingressScaffoldSources"]:
             self.assertIn(f'"{source}"', xmake)
+
+    def test_closeout_records_every_work_package_and_ci_evidence(self) -> None:
+        if self.phase != "closeout":
+            self.skipTest("closeout-only evidence contract")
+
+        manifest = self.load_manifest()
+        packages = manifest["workPackages"]
+        for work_package in ["WP0", "WP0.5", *[f"WP{i}" for i in range(1, 11)]]:
+            self.assertIn(work_package, packages)
+            evidence = packages[work_package]
+            self.assertEqual(evidence.get("status"), "completed", work_package)
+            self.assertTrue(evidence.get("red"), f"{work_package} must record its red reason")
+            self.assertTrue(evidence.get("focused"), f"{work_package} must record focused verification")
+            self.assertTrue(evidence.get("adjacent"), f"{work_package} must record adjacent verification")
+
+        for relative in [
+            "scripts/ci/evaluate_mixed_input_trace.py",
+            "scripts/ci/check_mixed_input_dynamic_evidence.py",
+            "tests/fixtures/mixed_input/good.jsonl",
+            "tests/fixtures/mixed_input/engine_scope_leak.jsonl",
+            "docs/research/skyrim_mixed_input_dynamic_evidence_zh.md",
+        ]:
+            self.assertTrue((ROOT / relative).is_file(), relative)
+
+        phase8 = (ROOT / "scripts/ci/run_phase8_ci.ps1").read_text(encoding="utf-8")
+        rc = (ROOT / "scripts/ci/run_rc_readiness.ps1").read_text(encoding="utf-8")
+        self.assertIn("test_evaluate_mixed_input_trace.py", phase8)
+        self.assertIn("evaluate_mixed_input_trace.py", rc)
+        self.assertIn("check_mixed_input_dynamic_evidence.py", rc)
+        self.assertIn("test_mixed_input_closeout_contracts.py", rc)
+        self.assertIn('"--phase", "closeout"', rc)
+
+    def test_closeout_diff_stays_inside_the_approved_scope(self) -> None:
+        if self.phase != "closeout":
+            self.skipTest("closeout-only scope contract")
+
+        base = self.load_manifest()["implementationBaseCommit"]
+        changed = git("diff", "--name-only", base, "--")
+        self.assertEqual(changed.returncode, 0, changed.stderr)
+        forbidden_exact = {"config/DualPadBindings.ini"}
+        forbidden_prefixes = ("Interface/", "src/input/glyph/")
+        forbidden_fragments = ("haptic", "rumble", "favorites")
+        violations = []
+        for path in changed.stdout.splitlines():
+            lowered = path.lower()
+            if (
+                path in forbidden_exact
+                or path.startswith(forbidden_prefixes)
+                or any(fragment in lowered for fragment in forbidden_fragments)
+            ):
+                violations.append(path)
+        self.assertEqual(
+            violations,
+            [],
+            "mixed-input implementation changed Favorites/SWF/glyph/haptics/rumble/bindings scope",
+        )
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:

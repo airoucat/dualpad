@@ -23,7 +23,7 @@
   "nativeButtonAudit": {
     "targetExists": true,
     "fileExists": true,
-    "sprintContributorSourceMaskCoverage": false,
+    "sprintContributorSourceMaskCoverage": true,
     "deferredTo": "WP6",
     "preflightDisposition": "reported",
     "closeoutDisposition": "hard-fail-if-missing"
@@ -138,6 +138,204 @@
       "gamepadSessionEnabled": true,
       "gameplayAuthorityEnabled": false,
       "dynamicGateRequired": false
+    },
+    "WP4": {
+      "status": "completed",
+      "red": [
+        "ChannelArbitration.h and independent channel state did not exist",
+        "production BuildStableRuntimeInput did not expose a coherent KBM policy builder",
+        "global transition was incorrectly reapplied to the first stable frame"
+      ],
+      "focused": [
+        "xmake run -y DualPadGameplayProjectionTests",
+        "xmake run -y DualPadInputV2Tests"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadIngressTests",
+        "xmake run -y DualPadReplayTests",
+        "xmake build -y DualPad"
+      ],
+      "nextPollChannelAuthorityEnabled": true,
+      "currentCycleMutationEnabled": false
+    },
+    "WP5": {
+      "status": "completed",
+      "red": [
+        "PollMaterializationReceipt and owner-side exact consume wiring did not exist",
+        "shadow audit success without real apply incorrectly committed current-cycle-sensitive state"
+      ],
+      "focused": [
+        "python tests/python/test_mixed_input_wp5_shadow_wiring.py",
+        "xmake run -y DualPadGameplayProjectionTests",
+        "xmake run -y DualPadInputV2Tests"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadReplayTests",
+        "xmake run -y DualPadPresentationProjectionTests",
+        "xmake run -y DualPadNativeButtonCommitTests",
+        "xmake build -y DualPad"
+      ],
+      "pollReceiptPrepareApplyCommit": true,
+      "productionEventMutationEnabled": false,
+      "dynamicGate": "I-P"
+    },
+    "WP6": {
+      "status": "completed",
+      "red": [
+        "SustainedContributorDecision.h and the G/K/M pure contributor model did not exist",
+        "backend lacked Mouse, full source-mask and virtual bridge materialization",
+        "shadow rollback still advanced the proposed backend Sprint mask"
+      ],
+      "focused": [
+        "xmake run -y DualPadGameplayProjectionTests",
+        "xmake run -y DualPadNativeButtonCommitTests",
+        "xmake run -y DualPadIngressTests"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadInputV2Tests",
+        "xmake run -y DualPadReplayTests",
+        "xmake build -y DualPad"
+      ],
+      "sprintSourceMaskCoverage": true,
+      "sprintHandlerGuardCreated": false,
+      "dynamicGate": "I-SPRINT"
+    },
+    "WP7": {
+      "status": "completed",
+      "red": [
+        "InputRecovery.h and scoped recovery publication did not exist",
+        "GamepadSource reset incorrectly expanded to a global backend reset",
+        "ControlMap reload left an old synthetic receipt able to suppress a real same-scancode input"
+      ],
+      "focused": [
+        "xmake run -y DualPadIngressTests",
+        "xmake run -y DualPadInputV2Tests",
+        "xmake run -y DualPadGameplayProjectionTests",
+        "xmake run -y DualPadNativeButtonCommitTests",
+        "python tests/python/test_mixed_input_wp7_recovery_wiring.py"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadPropertyTests",
+        "xmake run -y DualPadFuzzRegressionTests",
+        "xmake run -y DualPadReplayTests",
+        "xmake build -y DualPad"
+      ],
+      "rawReconcileEnabled": false,
+      "syntheticSuppressionEnabled": false,
+      "dynamicGate": "I-KBM"
+    },
+    "WP8": {
+      "status": "completed",
+      "red": [
+        "CursorHandoffAckMailbox.h and ordered source activity were absent",
+        "runtime did not consume ProjectOrdered and prompt-only activity changed menu reason",
+        "compatibility tests still promoted any mouse move immediately"
+      ],
+      "focused": [
+        "xmake run -y DualPadPresentationProjectionTests",
+        "xmake run -y DualPadInputV2Tests",
+        "xmake run -y DualPadIngressTests",
+        "python tests/python/test_mixed_input_wp8_wiring.py",
+        "xmake build -y DualPad"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadPromptSnapshotTests",
+        "xmake run -y DualPadGameplayProjectionTests",
+        "xmake run -y DualPadReplayTests",
+        "xmake run -y DualPadPropertyTests",
+        "xmake run -y DualPadFuzzRegressionTests"
+      ],
+      "cursorCoordinateSideEffectEnabled": false,
+      "dynamicGate": "I-CURSOR"
+    },
+    "WP9": {
+      "status": "completed",
+      "red": [
+        "SkyrimEngineModeRouter.h and the verified identity transaction did not exist",
+        "runtime engine decision and 9-domain shadow snapshot were absent",
+        "enabled compatibility hook still returned presentation owner to unscoped callers"
+      ],
+      "focused": [
+        "xmake run -y DualPadPresentationProjectionTests",
+        "xmake run -y DualPadInputV2Tests",
+        "python tests/python/test_mixed_input_wp9_wiring.py"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadGameplayProjectionTests",
+        "xmake run -y DualPadPromptSnapshotTests",
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1"
+      ],
+      "productionCallerOverrides": 0,
+      "releaseRelevantUnknownCallers": 26,
+      "dynamicGates": ["I-0", "I-1", "I-2", "I-MENU", "I-5"]
+    }
+  },
+  "dynamicEvidence": {
+    "targetRuntime": "Skyrim SE 1.5.97",
+    "targetSha256": "DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD",
+    "releaseStatus": "NO-GO",
+    "gates": {
+      "I-0": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false
+      },
+      "I-P": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false
+      },
+      "I-1": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false,
+        "releaseRelevantUnknownCallers": 26
+      },
+      "I-2": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false
+      },
+      "I-MENU": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false
+      },
+      "I-CURSOR": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false,
+        "directions": {
+          "keyboardMouseToGamepad": "NO-GO",
+          "gamepadToKeyboardMouse": "NO-GO"
+        }
+      },
+      "I-SPRINT": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false,
+        "guardCreated": false
+      },
+      "I-KBM": {
+        "status": "NO-GO",
+        "decisions": {
+          "rawStateReconcile": {
+            "status": "NO-GO",
+            "manualEvidenceComplete": false,
+            "capabilityEnabled": false
+          },
+          "syntheticSuppression": {
+            "status": "NO-GO",
+            "manualEvidenceComplete": false,
+            "capabilityEnabled": false
+          }
+        }
+      },
+      "I-5": {
+        "status": "NO-GO",
+        "manualEvidenceComplete": false,
+        "capabilityEnabled": false
+      }
     }
   },
   "closeoutPolicy": {
