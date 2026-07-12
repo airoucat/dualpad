@@ -358,6 +358,45 @@
           "lt",
           "rt"
         ],
+        "availabilityLiveMatrix": {
+          "sampleId": "I0-AB-20260712-1645",
+          "status": "partial",
+          "buildCommit": "76895173dda7",
+          "observedAt": "2026-07-12T16:45:44+08:00",
+          "originalChain": {
+            "pollRange": [1, 2099],
+            "nativePollMisses": 0,
+            "xinputErrorSamples": 0,
+            "postReadySamples": 82,
+            "postReadyConnectivityDrops": 0,
+            "postReadyDelegateDrops": 0
+          },
+          "observedCoverage": {
+            "gameplayNeutralHealthSamples": 4,
+            "menuLeftStickSamples": 27,
+            "gameplayButtonSamples": 4,
+            "gameplayLeftTriggerSamples": 4,
+            "gameplayRightTriggerSamples": 3,
+            "gameplayRightStickSamples": 0,
+            "remapSamples": 0
+          },
+          "manualBehavior": {
+            "mappedKeyboardMove": "FAIL-no-gameplay-response",
+            "physicalMouseAttack": "FAIL-no-gameplay-response"
+          },
+          "leadingAvailabilityDisposition": "Native",
+          "pendingCases": [
+            "controller-connected-neutral-30s-in-gameplay",
+            "left-stick-held-30s-in-gameplay",
+            "right-stick-held-30s-in-gameplay",
+            "left-and-right-trigger-held-30s-in-gameplay",
+            "button-press-held-release",
+            "Inventory",
+            "Journal",
+            "remap",
+            "explicit-kbm-versus-gamepad-recent-activity"
+          ]
+        },
         "productionPatchEnabled": false
       },
       "I-P": {
