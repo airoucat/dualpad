@@ -2,12 +2,17 @@
 
 #include "input/RuntimeConfig.h"
 #include "input/backend/ActionBackendPolicy.h"
+#include "input/injection/PollMaterializationReceipt.h"
+#include "input/injection/SkyrimCurrentCycleEventAdapter.h"
 #include "input_v2/gameplay/DualPadRuntime.h"
 #include "input_v2/gameplay/ChannelArbitration.h"
+#include "input_v2/gameplay/CurrentCycleGatePlan.h"
 #include "input_v2/gameplay/GameplayPresentationPublisher.h"
 #include "input_v2/gameplay/GameplayProjectionFrame.h"
 #include "input_v2/gameplay/PollOutputAdapter.h"
 #include "input_v2/gameplay/RecoveryPlan.h"
+#include "input_v2/gameplay/RuntimeInputPublication.h"
+#include "input_v2/gameplay/TransientActionGate.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -298,6 +303,260 @@ namespace
         Require(globalMove.owner == gameplay::ChannelOwner::None &&
                 globalMove.next.lastKeyboardMouseActivityUs == 0,
             "Global reset must clear every channel state");
+    }
+
+    input::PollFrameIdentity ReceiptIdentity(
+        std::uint64_t publicationGeneration = 41,
+        std::uint32_t packetNumber = 9)
+    {
+        return input::PollFrameIdentity{
+            .publicationGeneration = publicationGeneration,
+            .runtimeGeneration = publicationGeneration,
+            .packetNumber = packetNumber,
+            .inputStateEpoch = 7,
+            .gamepadSessionId = 3,
+            .contextRevision = 11,
+            .controlMapRevision = 5
+        };
+    }
+
+    void RunPollMaterializationReceiptTests()
+    {
+        auto& receipts = input::PollMaterializationReceiptStore::GetSingleton();
+        receipts.ResetForTests();
+        Require(receipts.PublishForTests(input::PollMaterializationReceipt{
+                .hookCallSequence = 41,
+                .threadId = 1001,
+                .identity = ReceiptIdentity(),
+                .serializeSucceeded = true }),
+            "verified serialize receipt must publish");
+
+        const auto consumed = receipts.ConsumeExact(41, 1001);
+        Require(consumed.Succeeded(), "matching sequence/thread must consume receipt once");
+        Require(consumed.receipt->identity.publicationGeneration == 41 &&
+                consumed.receipt->identity.packetNumber == 9,
+            "receipt must freeze the exact materialized Poll identity");
+
+        gameplay::PollOutputPublication::GetSingleton().PublishForTests(gameplay::PollOutputFrame{
+            .runtimeGeneration = 42,
+            .routeHealth = gameplay::PollOutputRouteHealth::Ready
+        });
+        Require(consumed.receipt->identity.publicationGeneration == 41,
+            "later Poll publication must not rewrite consumed identity");
+        Require(receipts.ConsumeExact(41, 1001).failure == input::PollReceiptConsumeFailure::AlreadyConsumed,
+            "receipt must be consume-once");
+        Require(receipts.ConsumeExact(999, 1001).failure == input::PollReceiptConsumeFailure::Missing,
+            "missing receipt must return an exact failure");
+
+        receipts.ResetForTests();
+        (void)receipts.PublishForTests(input::PollMaterializationReceipt{
+            .hookCallSequence = 50, .threadId = 1001, .identity = ReceiptIdentity(50, 10), .serializeSucceeded = true });
+        Require(receipts.ConsumeForThread(2002).failure == input::PollReceiptConsumeFailure::ThreadMismatch,
+            "cross-thread receipt consume must fail closed");
+        (void)receipts.PublishForTests(input::PollMaterializationReceipt{
+            .hookCallSequence = 51, .threadId = 1001, .identity = ReceiptIdentity(51, 11), .serializeSucceeded = true });
+        Require(receipts.ConsumeForThread(1001).failure == input::PollReceiptConsumeFailure::Ambiguous,
+            "multiple unconsumed receipts for one callback thread must be ambiguous");
+    }
+
+    gameplay::CurrentCycleGateInput ExactCurrentCycleInput()
+    {
+        const auto receipt = input::PollMaterializationReceipt{
+            .hookCallSequence = 41,
+            .threadId = 1001,
+            .identity = ReceiptIdentity(),
+            .serializeSucceeded = true
+        };
+        return gameplay::CurrentCycleGateInput{
+            .receipt = receipt,
+            .observedIdentity = receipt.identity,
+            .physicalFactsComplete = true,
+            .routeAvailable = true,
+            .consumerOrderProven = true,
+            .scratchCapacitySufficient = true
+        };
+    }
+
+    void RunCurrentCycleGateAndPreparedCommitTests()
+    {
+        auto inputFrame = ExactCurrentCycleInput();
+        inputFrame.physicalLookActivation = true;
+        inputFrame.materializedLookEvent = true;
+        inputFrame.materializedMoveEvent = true;
+        const auto plan = gameplay::BuildCurrentCycleGatePlan(inputFrame);
+        Require(plan.failure == gameplay::CurrentCycleGateFailure::None,
+            "exact receipt and complete facts must build a current-cycle plan");
+        Require(plan.look == gameplay::CurrentCycleEventDisposition::Neutralize &&
+                plan.move == gameplay::CurrentCycleEventDisposition::Keep,
+            "physical mouse conflict must neutralize RS without modifying LS");
+        Require(plan.requiresEventMutation && plan.currentEventWriterCount == 1 &&
+                plan.nextPollWriterCount <= 1,
+            "current-cycle and next-Poll views must each remain single-writer");
+
+        auto mismatched = inputFrame;
+        ++mismatched.observedIdentity.packetNumber;
+        const auto mismatchPlan = gameplay::BuildCurrentCycleGatePlan(mismatched);
+        Require(mismatchPlan.failure == gameplay::CurrentCycleGateFailure::PollFrameMismatch &&
+                !mismatchPlan.requiresEventMutation && mismatchPlan.currentEventWriterCount == 0,
+            "Poll identity mismatch must produce zero event mutation");
+
+        const auto expectFailure = [&](auto mutate, gameplay::CurrentCycleGateFailure expected) {
+            auto fixture = ExactCurrentCycleInput();
+            mutate(fixture);
+            const auto failed = gameplay::BuildCurrentCycleGatePlan(fixture);
+            Require(failed.failure == expected && !failed.requiresEventMutation &&
+                    failed.currentEventWriterCount == 0,
+                "current-cycle failure table must return an exact failure with zero mutation");
+        };
+        expectFailure([](auto& fixture) { ++fixture.observedIdentity.inputStateEpoch; },
+            gameplay::CurrentCycleGateFailure::InputStateEpochMismatch);
+        expectFailure([](auto& fixture) { ++fixture.observedIdentity.gamepadSessionId; },
+            gameplay::CurrentCycleGateFailure::GamepadSessionMismatch);
+        expectFailure([](auto& fixture) { ++fixture.observedIdentity.contextRevision; },
+            gameplay::CurrentCycleGateFailure::ContextMismatch);
+        expectFailure([](auto& fixture) { ++fixture.observedIdentity.controlMapRevision; },
+            gameplay::CurrentCycleGateFailure::ControlMapMismatch);
+        expectFailure([](auto& fixture) { ++fixture.observedIdentity.orderedCutoffSeq; },
+            gameplay::CurrentCycleGateFailure::CutoffMismatch);
+        expectFailure([](auto& fixture) { fixture.physicalFactsComplete = false; },
+            gameplay::CurrentCycleGateFailure::PhysicalFactsIncomplete);
+        expectFailure([](auto& fixture) { fixture.routeAvailable = false; },
+            gameplay::CurrentCycleGateFailure::RouteUnavailable);
+        expectFailure([](auto& fixture) {
+            fixture.mutationCapabilityEnabled = true;
+            fixture.consumerOrderProven = false;
+        }, gameplay::CurrentCycleGateFailure::ConsumerOrderUnproven);
+        expectFailure([](auto& fixture) { fixture.scratchCapacitySufficient = false; },
+            gameplay::CurrentCycleGateFailure::ScratchCapacityExceeded);
+
+        const auto noMutationPlan = gameplay::BuildCurrentCycleGatePlan(ExactCurrentCycleInput());
+        Require(!noMutationPlan.requiresEventMutation && noMutationPlan.commitCurrentCycleSensitiveState,
+            "audited no-mutation plan must allow sensitive-state commit");
+
+        std::vector<input::CurrentCycleEventDescriptor> descriptors{
+            { .channel = gameplay::CurrentCycleChannel::Look, .virtualEvent = true },
+            { .channel = gameplay::CurrentCycleChannel::Move, .virtualEvent = true }
+        };
+        input::SkyrimCurrentCycleEventAdapter adapter;
+        const auto shadowAudit = adapter.AuditDescriptors(
+            descriptors,
+            plan,
+            input::CurrentCycleAdapterOptions{
+                .shadowOnly = true,
+                .consumerOrderProven = false,
+                .scratchCapacity = 8 });
+        Require(shadowAudit.success && !shadowAudit.mutationApplied && shadowAudit.wouldMutateCount == 1,
+            "WP5 shadow adapter must audit losing virtual events without mutation");
+        Require(descriptors[0].virtualEvent && descriptors[1].virtualEvent,
+            "shadow adapter must leave callback-local descriptors unchanged");
+
+        const auto scratchFailure = adapter.AuditDescriptors(
+            descriptors,
+            plan,
+            input::CurrentCycleAdapterOptions{
+                .shadowOnly = true,
+                .consumerOrderProven = false,
+                .scratchCapacity = 1 });
+        Require(!scratchFailure.success &&
+                scratchFailure.failure == gameplay::CurrentCycleGateFailure::ScratchCapacityExceeded,
+            "adapter scratch overflow must fail with zero mutation");
+
+        std::vector<input::CurrentCycleEventDescriptor> middleFixture{
+            { .channel = gameplay::CurrentCycleChannel::Move, .virtualEvent = true },
+            { .channel = gameplay::CurrentCycleChannel::Look, .virtualEvent = true },
+            { .channel = gameplay::CurrentCycleChannel::Combat, .virtualEvent = true }
+        };
+        const auto middleAudit = adapter.AuditDescriptors(
+            middleFixture,
+            plan,
+            input::CurrentCycleAdapterOptions{
+                .shadowOnly = true,
+                .scratchCapacity = 8 });
+        Require(middleAudit.success && middleAudit.wouldMutateCount == 1,
+            "shadow adapter must find a losing virtual event at list middle without touching head/tail");
+
+        gameplay::CurrentCycleSensitiveState previous{};
+        previous.channels.look.owner = gameplay::ChannelOwner::KeyboardMouse;
+        previous.revision = 7;
+        auto proposed = previous;
+        proposed.channels.look.owner = gameplay::ChannelOwner::Gamepad;
+        proposed.sprintContributorMask = 0x03;
+        proposed.virtualSprintBridgeHeld = true;
+        proposed.revision = 8;
+
+        gameplay::RuntimeInputPublication publication;
+        publication.ResetForTests(previous);
+        const auto prepared = publication.Prepare(proposed, plan);
+        const auto rollback = publication.CommitAfterCurrentCycleAudit(
+            prepared.token,
+            input::CurrentCycleAdapterAudit{
+                .success = false,
+                .failure = gameplay::CurrentCycleGateFailure::AdapterFailure,
+                .affectedChannels = gameplay::CurrentCycleChannelMask(gameplay::CurrentCycleChannel::Look) });
+        Require(!rollback.committed && rollback.failClosedChannels ==
+                gameplay::CurrentCycleChannelMask(gameplay::CurrentCycleChannel::Look),
+            "adapter failure must roll back and fail closed affected channels");
+        Require(publication.GetCommitted().revision == 7 &&
+                publication.GetCommitted().sprintContributorMask == 0,
+            "adapter failure must not advance channel/Sprint ledgers");
+        Require(publication.CommitAfterCurrentCycleAudit(prepared.token, shadowAudit).alreadyConsumed,
+            "prepared commit token must consume exactly once on rollback");
+
+        const auto preparedShadowOnly = publication.Prepare(proposed, plan);
+        const auto shadowOnlyRollback = publication.CommitAfterCurrentCycleAudit(
+            preparedShadowOnly.token,
+            shadowAudit);
+        Require(!shadowOnlyRollback.committed &&
+                shadowOnlyRollback.failClosedChannels ==
+                    gameplay::CurrentCycleChannelMask(gameplay::CurrentCycleChannel::Look) &&
+                publication.GetCommitted().revision == 7,
+            "shadow-only audit must not commit sensitive state when mutation is required");
+
+        const auto preparedNoMutation = publication.Prepare(proposed, noMutationPlan);
+        const auto committed = publication.CommitAfterCurrentCycleAudit(
+            preparedNoMutation.token,
+            input::CurrentCycleAdapterAudit{ .success = true });
+        Require(committed.committed && publication.GetCommitted().revision == 8,
+            "successful no-mutation audit must commit proposed sensitive state");
+
+        const auto preparedCallback = publication.PrepareCallbackAudit(9001, plan);
+        Require(preparedCallback.token != 0 &&
+                publication.CommitCallbackAudit(preparedCallback.token, shadowAudit),
+            "callback-local receipt plan must follow Prepare -> Apply -> Commit");
+        Require(!publication.CommitCallbackAudit(preparedCallback.token, shadowAudit),
+            "callback-local prepared token must be consume-once");
+        Require(publication.FindCallbackAudit(9001).has_value(),
+            "committed callback audit must remain visible only during its callback scope");
+        publication.ClearCallbackAudit(9001);
+        Require(!publication.FindCallbackAudit(9001).has_value(),
+            "callback audit must be cleared before the callback returns");
+    }
+
+    void RunTransientActionGateTests()
+    {
+        const gameplay::TransientDedupKey jump{
+            .actionId = "Game.Jump",
+            .materializationToken = 77,
+            .contextRevision = 11
+        };
+        const auto duplicatePress = gameplay::ResolveTransientActionGate(gameplay::TransientActionGateInput{
+            .key = jump,
+            .physicalPress = true,
+            .virtualPress = true,
+            .virtualDownVisible = true
+        });
+        Require(duplicatePress.physicalDisposition == gameplay::TransientGateDisposition::Keep &&
+                duplicatePress.virtualDisposition == gameplay::TransientGateDisposition::Cancel,
+            "physical and virtual transient with one key must materialize once");
+
+        const auto physicalRelease = gameplay::ResolveTransientActionGate(gameplay::TransientActionGateInput{
+            .previous = duplicatePress.next,
+            .key = jump,
+            .physicalRelease = true,
+            .virtualPress = true
+        });
+        Require(physicalRelease.virtualDisposition == gameplay::TransientGateDisposition::Keep,
+            "physical release must not suppress a new gamepad transient press");
     }
 
     void RunFrozenFrameShapeTests()
@@ -799,6 +1058,8 @@ namespace
             failedCandidateExecutor);
         Require(!failedCandidate.output.outputApplySucceeded && failedCandidate.projectionFrame.nextArbitration.look.gamepadCandidate,
             "failed output fixture must calculate but not commit an RS candidate");
+        Require(gameplay::RuntimeInputPublication::GetSingleton().GetCommitted().revision == 0,
+            "failed output apply must not commit current-cycle-sensitive state");
 
         gameplay::DualPadRuntimeInput sustainOnly{
             .kernel = Kernel(),
@@ -815,6 +1076,36 @@ namespace
             afterFailureExecutor);
         Require(afterFailure.projectionFrame.lookOwner == gameplay::ChannelOwner::None,
             "failed output apply must not advance channel candidate state");
+
+        gameplay::DualPadRuntime auditFailureRuntime;
+        auditFailureRuntime.ResetForTests();
+        auto conflictingPlanInput = ExactCurrentCycleInput();
+        conflictingPlanInput.physicalLookActivation = true;
+        conflictingPlanInput.materializedLookEvent = true;
+        const auto conflictingPlan = gameplay::BuildCurrentCycleGatePlan(conflictingPlanInput);
+        gameplay::DualPadRuntimeInput auditFailureInput{
+            .kernel = Kernel(),
+            .resolved = ResolvedAxes(0.70f, 0.0f),
+            .policy = gameplay::GameplayPolicy{ .outputTickUs = 400'000 },
+            .recovery = gameplay::GameplayRecoveryInput{ .cleanFrame = true },
+            .currentCyclePlan = conflictingPlan,
+            .currentCycleAudit = gameplay::CurrentCycleAdapterAudit{
+                .success = true,
+                .shadowOnly = true,
+                .mutationApplied = false,
+                .affectedChannels = gameplay::CurrentCycleChannelMask(gameplay::CurrentCycleChannel::Look) },
+            .outputTick = 400'000
+        };
+        RecordingPollOutputExecutor auditFailureExecutor;
+        const auto auditFailure = auditFailureRuntime.ProcessGameplayFrameForTests(
+            auditFailureInput,
+            auditFailureExecutor);
+        Require(auditFailure.output.outputApplySucceeded &&
+                auditFailure.projectionFrame.lookOwner == gameplay::ChannelOwner::None &&
+                auditFailure.projectionFrame.gamepadPlan.analog.lookX == 0.0f,
+            "unapplied shadow mutation must publish a fail-closed affected next-Poll channel");
+        Require(gameplay::RuntimeInputPublication::GetSingleton().GetCommitted().revision == 0,
+            "unapplied shadow mutation must not commit runtime sensitive state");
     }
 
     void RunCoordinatorAuthorityCutoverTests()
@@ -831,6 +1122,9 @@ int main()
         RunFrozenFrameShapeTests();
         RunRecoveryPlanTests();
         RunPerChannelMixedInputArbitrationTests();
+        RunPollMaterializationReceiptTests();
+        RunCurrentCycleGateAndPreparedCommitTests();
+        RunTransientActionGateTests();
         RunProjectionClassificationAndGateTests();
         RunMenuContextGamepadOutputTests();
         RunGameplayActivateKeepsMinDownWindowLifecycleTests();

@@ -4,6 +4,7 @@
 #include "input/HidReader.h"
 #include "input/RuntimeConfig.h"
 #include "input/injection/PadEventSnapshotDispatcher.h"
+#include "input/injection/PollMaterializationReceipt.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input/injection/SkyrimKbmInputAdapter.h"
 #include "input/injection/UpstreamGamepadHook.h"
@@ -11,7 +12,11 @@
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/ingress/IngressHub.h"
 #include "input_v2/ingress/KbmGameplayFactProducer.h"
+#include "input_v2/gameplay/CurrentCycleGatePlan.h"
+#include "input_v2/gameplay/RuntimeInputPublication.h"
 #include "input_v2/runtime/RuntimeOwnerGuard.h"
+
+#include <algorithm>
 
 namespace logger = SKSE::log;
 
@@ -24,6 +29,73 @@ namespace dualpad::input
         std::uint64_t NowMonotonicUs()
         {
             return ::GetTickCount64() * 1000;
+        }
+
+        input_v2::gameplay::CurrentCycleGateInput BuildCurrentCycleInput(
+            const PollReceiptConsumeResult& consumedReceipt,
+            const input_v2::ingress::KbmObservedBatch& observed,
+            const input_v2::ingress::KbmBindingSnapshot& bindings,
+            bool kbmBatchAccepted)
+        {
+            using namespace input_v2;
+            gameplay::CurrentCycleGateInput input{
+                .receipt = consumedReceipt.receipt,
+                .receiptFailure = consumedReceipt.failure,
+                .observedIdentity = consumedReceipt.receipt ?
+                    consumedReceipt.receipt->identity : PollFrameIdentity{},
+                .physicalFactsComplete = bindings.complete &&
+                    observed.eventListComplete &&
+                    kbmBatchAccepted,
+                .routeAvailable = consumedReceipt.receipt && consumedReceipt.receipt->routeAvailable,
+                .consumerOrderProven = false,
+                .mutationCapabilityEnabled = SkyrimCurrentCycleEventAdapter::ProductionMutationEnabled(),
+                .scratchCapacitySufficient = true,
+                .materializedLookEvent = consumedReceipt.receipt &&
+                    consumedReceipt.receipt->materializedLookEvent,
+                .materializedMoveEvent = consumedReceipt.receipt &&
+                    consumedReceipt.receipt->materializedMoveEvent,
+                .materializedCombatEvent = consumedReceipt.receipt &&
+                    consumedReceipt.receipt->materializedCombatEvent,
+                .materializedTransientEvent = consumedReceipt.receipt &&
+                    consumedReceipt.receipt->materializedTransientEvent
+            };
+
+            for (const auto& event : observed.events) {
+                if (event.phase == ingress::KbmEdgePhase::MouseDelta) {
+                    input.physicalLookActivation = true;
+                    continue;
+                }
+                if (event.phase != ingress::KbmEdgePhase::Press || !event.initialPress) {
+                    continue;
+                }
+                const auto binding = std::find_if(
+                    bindings.entries.begin(),
+                    bindings.entries.end(),
+                    [&](const ingress::KbmBindingEntry& entry) {
+                        return entry.physical == event.physical;
+                    });
+                if (binding == bindings.entries.end()) {
+                    continue;
+                }
+                switch (binding->gameplayClass) {
+                case ingress::KbmGameplayClass::Look:
+                    input.physicalLookActivation = true;
+                    break;
+                case ingress::KbmGameplayClass::Move:
+                    input.physicalMoveActivation = true;
+                    break;
+                case ingress::KbmGameplayClass::Combat:
+                    input.physicalCombatActivation = true;
+                    break;
+                case ingress::KbmGameplayClass::TransientDigital:
+                    input.physicalTransientActivation = true;
+                    break;
+                case ingress::KbmGameplayClass::SustainedDigital:
+                default:
+                    break;
+                }
+            }
+            return input;
         }
 
     }
@@ -70,6 +142,7 @@ namespace dualpad::input
 
         _registered = false;
         PadEventSnapshotDispatcher::GetSingleton().SetFramePumpEnabled(false);
+        PollMaterializationReceiptStore::GetSingleton().Reset();
         input_v2::runtime::RuntimeOwnerGuard::GetSingleton().Stop();
         logger::info("[DualPad][FramePump] Unregistered from BSInputDeviceManager input pump");
     }
@@ -81,6 +154,8 @@ namespace dualpad::input
         (void)source;
 
         const auto frameToken = input_v2::context::ContextRefreshTick::GetSingleton().BeginFrame();
+        const auto consumedReceipt = PollMaterializationReceiptStore::GetSingleton()
+            .ConsumeForThread(::GetCurrentThreadId());
         const auto eventBatchToken = NextEventBatchToken();
         const auto ownerNowUs = NowMonotonicUs();
         const auto contextSnapshot =
@@ -92,13 +167,14 @@ namespace dualpad::input
             frameToken,
             eventBatchToken,
             ownerNowUs);
+        bool kbmBatchAccepted = false;
         if (bindings.complete && observed.eventListComplete) {
             auto kbmBatch = _kbmProducer.BuildIngressBatch(
                 observed,
                 bindings,
                 contextSnapshot,
                 ownerNowUs);
-            (void)input_v2::ingress::IngressHub::GetSingleton().PublishOwnerKbmBatch(
+            const auto receipt = input_v2::ingress::IngressHub::GetSingleton().PublishOwnerKbmBatch(
                 input_v2::ingress::OwnerKbmIngressDraft{
                     .boundary = input_v2::ingress::IngressBoundaryObservation{
                         .contextRevision = contextSnapshot.contextRevision,
@@ -108,7 +184,18 @@ namespace dualpad::input
                     },
                     .kbm = std::move(kbmBatch)
                 });
+            kbmBatchAccepted = receipt.accepted;
         }
+        const auto currentCyclePlan = input_v2::gameplay::BuildCurrentCycleGatePlan(
+            BuildCurrentCycleInput(consumedReceipt, observed, bindings, kbmBatchAccepted));
+        const auto preparedCurrentCycle =
+            input_v2::gameplay::RuntimeInputPublication::GetSingleton()
+                .PrepareCallbackAudit(frameToken, currentCyclePlan);
+        const auto currentCycleAudit = _currentCycleAdapter.AuditEventListShadow(
+            event,
+            currentCyclePlan);
+        (void)input_v2::gameplay::RuntimeInputPublication::GetSingleton()
+            .CommitCallbackAudit(preparedCurrentCycle.token, currentCycleAudit);
 
         auto& upstreamHook = UpstreamGamepadHook::GetSingleton();
         if (RuntimeConfig::GetSingleton().UseUpstreamGamepadHook()) {
@@ -138,6 +225,7 @@ namespace dualpad::input
             PadEventSnapshotDispatcher::DefaultDrainBudget(),
             &telemetry,
             frameToken);
+        input_v2::gameplay::RuntimeInputPublication::GetSingleton().ClearCallbackAudit(frameToken);
 
         return RE::BSEventNotifyControl::kContinue;
     }

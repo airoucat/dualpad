@@ -13,6 +13,7 @@
 #include "input/XInputStateBridge.h"
 #include "input/injection/HookPatchTransaction.h"
 #include "input/injection/PollDiagnostics.h"
+#include "input/injection/PollMaterializationReceipt.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input_v2/gameplay/PollOutputFrame.h"
 
@@ -102,6 +103,10 @@ namespace dualpad::input
                 upstreamHook.NotePollCallActivity();
                 const auto outputFrame = input_v2::gameplay::PollOutputPublication::GetSingleton().AcquireForPoll();
                 const auto result = FillSyntheticXInputState(currentState, *outputFrame);
+                if (result == ERROR_SUCCESS) {
+                    (void)PollMaterializationReceiptStore::GetSingleton()
+                        .PublishAfterSuccessfulSerialize(*outputFrame, threadId);
+                }
 
                 struct XInputGamepadView
                 {

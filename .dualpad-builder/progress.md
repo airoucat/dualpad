@@ -3432,3 +3432,23 @@
   - Focused GREEN：`xmake run -y DualPadGameplayProjectionTests`、`xmake run -y DualPadInputV2Tests` 均 exit 0；覆盖 mixed Look/Move、199/201 ms、latched/unlatched sustain、双 trigger gate、None neutral、scoped reset、production KBM builder 与 failed-apply rollback。
   - 相邻回归：`xmake run -y DualPadIngressTests`、`xmake run -y DualPadReplayTests` 均 exit 0；`xmake build -y DualPad` exit 0。构建仅出现目标 PDB 同路径占用的已知 copy warning，DLL 明确 `build ok`。
   - WP5 current-cycle receipt/prepare/apply/commit、event mutation、Sprint bridge、engine query、cursor side effect 与全部 IDA 动态门禁 capability 仍未启用；下一切片固定为 `WP5 shadow`。
+
+## 2026-07-12 12:09:28 +08:00
+
+- `S-DP5-MIXED-INPUT / WP5 shadow start`：
+  - 从独立 WP4 commit `1c0390f` 开始 Poll materialization receipt、current-cycle pure gate plan、transient dedup disposition 与 prepared runtime commit。
+  - current-cycle identity 固定只来自 verified serialize 后的 `PollMaterializationReceipt`，owner/Pump 只 exact consume-once；禁止重新 Acquire 最新 Poll frame 猜测本轮 materialized identity。
+  - 本切片只运行 callback-local shadow adapter/audit，真实 event mutation 在 I-P 动态证据通过前保持关闭；任何 audit/adapter failure 都不得推进 channel、transient、Sprint contributor 或其它 current-cycle-sensitive ledger。
+
+## 2026-07-12 12:33:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP5 shadow completed`：
+  - RED 先证明仓库缺失 `PollMaterializationReceipt` 与 Pump receipt consume wiring；随后新增事务断言准确捕获“shadow audit 成功但未实际 apply 时错误提交 sensitive ledger”的漏洞，并以 focused target 进程 exit 1 验证红灯原因。
+  - verified XInput serialize 现在发布 bounded immutable receipt，冻结 publication/runtime/packet、epoch/session、context/control-map、cutoff 与 event batch identity；Pump 只按 callback thread consume-once，missing、ambiguous、already-consumed 与 thread mismatch 均返回精确 failure，且没有重新 `AcquireForPoll()` 猜测 materialized identity。
+  - `CurrentCycleGatePlan` 独立计算 Look、Move、Combat、TransientDigital current-cycle disposition 与双时间视图 writer count；物理 release 不作为 activation，identity/physical/route/consumer/scratch 任一不满足均零 event mutation。
+  - callback-local 顺序固定为 receipt consume -> KBM batch publish -> Prepare audit token -> shadow Apply -> Commit audit -> owner drain；prepared runtime state 仅在 Poll output 成功且 current-cycle audit commit-safe 后提交。mutation required 时，只有 `success && mutationApplied && !shadowOnly` 可推进 channel/transient/Sprint 等 sensitive ledger；否则 previous state 保持不变并只对受影响 next-Poll channel fail-closed。
+  - `SkyrimCurrentCycleEventAdapter::ProductionMutationEnabled()` 仍编译期返回 false；当前只扫描 callback list、检查 cycle/scratch 并报告 would-mutate descriptor，不改写物理或 virtual event。I-P 未完成，production current-cycle capability 明确保持 NO-GO。
+  - transient dedup 已按 action/token/context 生成 physical-first disposition；physical release 不会误杀新的 virtual press。receipt mailbox 在 Pump unregister 时清空，避免重载后消费陈旧 identity。
+  - Focused GREEN：`python tests/python/test_mixed_input_wp5_shadow_wiring.py`、`xmake run -y DualPadGameplayProjectionTests`、`xmake run -y DualPadInputV2Tests` 全部 exit 0。
+  - 相邻回归：`xmake run -y DualPadReplayTests`、`xmake run -y DualPadPresentationProjectionTests`、`xmake run -y DualPadNativeButtonCommitTests`、`xmake build -y DualPad` 全部 exit 0；PDB 同路径占用仅产生已知 copy warning，DLL 明确 `build ok`。
+  - 剩余硬门禁：I-P 决定真实 event mutation；I-SPRINT 结果 B 才允许 SprintHandler guard；I-KBM raw reconcile 与 synthetic suppression 仍分别 NO-GO；I-CURSOR 和 I-0/I-1/I-2/I-MENU/I-5 均未提前启用。

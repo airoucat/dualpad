@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input/injection/RouteHealthContract.h"
+#include "input/injection/PollMaterializationReceipt.h"
 #include "input/injection/PadEventSnapshot.h"
 #include "input/Action.h"
 #include "input/PadProfile.h"
@@ -2784,6 +2785,11 @@ namespace
                 .contextEpoch = revision * 5u,
                 .menuStackRevision = revision * 9u,
                 .sourceTimestampUs = generation * 11u,
+                .inputStateEpoch = generation * 13u,
+                .gamepadSessionId = generation * 17u,
+                .controlMapRevision = revision * 19u,
+                .orderedCutoffSeq = generation * 23u,
+                .eventBatchToken = generation * 29u,
                 .buttons = static_cast<std::uint16_t>(revision),
                 .pressedMask = revision ^ 0x0F0F0F0Fu,
                 .releasedMask = revision ^ 0xF0F0F0F0u,
@@ -2834,6 +2840,11 @@ namespace
                             acquired->contextRevision != revision ||
                             acquired->presentationEpoch != (revision ^ 0x55AA55AAu) ||
                             acquired->actionEpoch != revision * 3u ||
+                            acquired->inputStateEpoch != generation * 13u ||
+                            acquired->gamepadSessionId != generation * 17u ||
+                            acquired->controlMapRevision != revision * 19u ||
+                            acquired->orderedCutoffSeq != generation * 23u ||
+                            acquired->eventBatchToken != generation * 29u ||
                             acquired->contextEpoch != revision * 5u ||
                             acquired->menuStackRevision != revision * 9u ||
                             acquired->sourceTimestampUs != generation * 11u ||
@@ -2907,6 +2918,17 @@ namespace
                 serialized.gamepad.leftTrigger == serializedFrame->lt &&
                 serialized.gamepad.rightTrigger == serializedFrame->rt,
             "Poll serializer must copy one frame without consulting mutable runtime state");
+
+        auto& receipts = dualpad::input::PollMaterializationReceiptStore::GetSingleton();
+        receipts.ResetForTests();
+        const auto receipt = receipts.PublishAfterSuccessfulSerialize(*serializedFrame, 1234);
+        Require(receipt && receipt->identity.publicationGeneration == serializedFrame->publicationGeneration &&
+                receipt->identity.packetNumber == serializedFrame->packetNumber &&
+                receipt->identity.inputStateEpoch == serializedFrame->inputStateEpoch &&
+                receipt->identity.gamepadSessionId == serializedFrame->gamepadSessionId,
+            "verified serializer must freeze complete Poll identity into a receipt");
+        Require(receipts.ConsumeExact(receipt->hookCallSequence, 1234).Succeeded(),
+            "materialization receipt must be exact-consume compatible");
 
         publication.SetUnavailableForTests(true);
         frame = publication.AcquireForPoll();

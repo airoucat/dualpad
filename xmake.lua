@@ -181,11 +181,14 @@ local ph4_action_graph_files = {
 
 local ph5_gameplay_projection_files = {
     "src/input_v2/gameplay/ChannelArbitration.cpp",
+    "src/input_v2/gameplay/CurrentCycleGatePlan.cpp",
     "src/input_v2/gameplay/DualPadRuntime.cpp",
     "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
     "src/input_v2/gameplay/PollOutputFrame.cpp",
     "src/input_v2/gameplay/PollOutputAdapter.cpp",
     "src/input_v2/gameplay/RecoveryPlan.cpp",
+    "src/input_v2/gameplay/RuntimeInputPublication.cpp",
+    "src/input_v2/gameplay/TransientActionGate.cpp",
     "src/input_v2/gameplay/GameplayPresentationPublisher.cpp",
     "src/input_v2/gameplay/RuntimeDiagnostics.cpp"
 }
@@ -207,6 +210,8 @@ local ph6_scaleform_prompt_files = {
 }
 
 local mixed_input_ingress_scaffold_files = {
+    "src/input/injection/PollMaterializationReceipt.cpp",
+    "src/input/injection/SkyrimCurrentCycleEventAdapter.cpp",
     "src/input_v2/ingress/GamepadActivityClassifier.cpp",
     "src/input_v2/ingress/KbmGameplayFactProducer.cpp",
     "src/input/injection/SkyrimKbmInputAdapter.cpp",

@@ -99,6 +99,36 @@ namespace dualpad::input_v2::gameplay
             }
         }
 
+        void FailClosedAffectedChannels(
+            GameplayProjectionFrame& projection,
+            CurrentCycleChannelMaskType affected)
+        {
+            if ((affected & CurrentCycleChannelMask(CurrentCycleChannel::Look)) != 0) {
+                projection.lookOwner = ChannelOwner::None;
+                projection.gatePlan.lookGate = AnalogGateMode::ZeroedByKeyboardMouse;
+                projection.gamepadPlan.analog.lookX = 0.0f;
+                projection.gamepadPlan.analog.lookY = 0.0f;
+            }
+            if ((affected & CurrentCycleChannelMask(CurrentCycleChannel::Move)) != 0) {
+                projection.moveOwner = ChannelOwner::None;
+                projection.gatePlan.moveGate = AnalogGateMode::ZeroedByKeyboardMouse;
+                projection.gamepadPlan.analog.moveX = 0.0f;
+                projection.gamepadPlan.analog.moveY = 0.0f;
+            }
+            if ((affected & CurrentCycleChannelMask(CurrentCycleChannel::Combat)) != 0) {
+                projection.combatOwner = ChannelOwner::None;
+                projection.gatePlan.leftTriggerGate = AnalogGateMode::ZeroedByKeyboardMouse;
+                projection.gatePlan.rightTriggerGate = AnalogGateMode::ZeroedByKeyboardMouse;
+                projection.gamepadPlan.analog.leftTrigger = 0.0f;
+                projection.gamepadPlan.analog.rightTrigger = 0.0f;
+            }
+            if ((affected & CurrentCycleChannelMask(CurrentCycleChannel::TransientDigital)) != 0) {
+                projection.digitalOwner = ChannelOwner::None;
+                projection.gatePlan.transientDigitalGate = DigitalGateMode::CancelAndSuppressNewTransient;
+                projection.gamepadPlan.transientDigital.count = 0;
+            }
+        }
+
         RuntimeHealthReasonMask RuntimeHealthReasonsFromIngress(const ingress::AssembledFactFrame& frame)
         {
             auto reasons = RuntimeHealthMask(RuntimeHealthReason::None);
@@ -430,6 +460,12 @@ namespace dualpad::input_v2::gameplay
         kernel.state.healthDegraded = kernel.state.healthDegraded ||
             runtimeHealthReasons != RuntimeHealthMask(RuntimeHealthReason::None);
 
+        auto currentCycle = RuntimeInputPublication::GetSingleton().FindActiveCallbackAudit();
+        if (!currentCycle && frame.facts.kbmGameplay) {
+            currentCycle = RuntimeInputPublication::GetSingleton().FindCallbackAudit(
+                frame.facts.kbmGameplay->ownerTickToken);
+        }
+
         return DualPadRuntimeInput{
             .kernel = kernel,
             .resolved = std::move(resolved),
@@ -438,6 +474,16 @@ namespace dualpad::input_v2::gameplay
                 contextSnapshot.hostMode == context::HostMode::Gameplay,
                 recovery),
             .recovery = recovery,
+            .currentCyclePlan = currentCycle ?
+                std::optional{ currentCycle->plan } : std::nullopt,
+            .currentCycleAudit = currentCycle ?
+                std::optional{ currentCycle->audit } : std::nullopt,
+            .inputStateEpoch = frame.facts.coherence.inputStateEpoch,
+            .gamepadSessionId = frame.facts.coherence.gamepadSessionId,
+            .controlMapRevision = frame.facts.coherence.controlMapRevision,
+            .orderedCutoffSeq = frame.facts.coherence.orderedCutoffSeq,
+            .eventBatchToken = frame.facts.kbmGameplay ?
+                frame.facts.kbmGameplay->eventBatchToken : 0,
             .runtimeHealthReasons = runtimeHealthReasons,
             .outputTick = kernel.facts.monotonicUs,
             .legacyContext = contextSnapshot.legacyInputContext,
@@ -453,6 +499,7 @@ namespace dualpad::input_v2::gameplay
             _interactionState.Reset();
             _lastProjectionFrame = GameplayProjectionFrame{};
             _channelArbitration = ChannelArbitrationStateSet{};
+            RuntimeInputPublication::GetSingleton().ResetCommittedState();
         }
         if (HasRecoveryRequest(recovery)) {
             MergeRecovery(_pendingRecovery, recovery);
@@ -538,15 +585,65 @@ namespace dualpad::input_v2::gameplay
             input.policy,
             previous,
             input.recovery);
+
+        CurrentCycleGatePlan currentCyclePlan{};
+        currentCyclePlan.commitCurrentCycleSensitiveState = true;
+        if (input.currentCyclePlan) {
+            currentCyclePlan = *input.currentCyclePlan;
+        }
+        CurrentCycleAdapterAudit currentCycleAudit{
+            .success = true,
+            .shadowOnly = true,
+            .affectedChannels = currentCyclePlan.affectedChannels,
+            .currentEventWriterCount = currentCyclePlan.currentEventWriterCount
+        };
+        if (input.currentCycleAudit) {
+            currentCycleAudit = *input.currentCycleAudit;
+        }
+
+        auto proposedSensitive = RuntimeInputPublication::GetSingleton().GetCommitted();
+        proposedSensitive.channels = projection.nextArbitration;
+        ++proposedSensitive.revision;
+        proposedSensitive.inputStateEpoch = input.inputStateEpoch;
+        proposedSensitive.gamepadSessionId = input.gamepadSessionId;
+        proposedSensitive.controlMapRevision = input.controlMapRevision;
+        proposedSensitive.orderedCutoffSeq = input.orderedCutoffSeq;
+        proposedSensitive.eventBatchToken = input.eventBatchToken;
+        const auto prepared = RuntimeInputPublication::GetSingleton().Prepare(
+            proposedSensitive,
+            currentCyclePlan);
+
+        if (currentCyclePlan.requiresEventMutation &&
+            !IsCurrentCycleAuditCommitSafe(currentCyclePlan, currentCycleAudit)) {
+            FailClosedAffectedChannels(
+                projection,
+                currentCycleAudit.affectedChannels != 0 ?
+                    currentCycleAudit.affectedChannels :
+                    currentCyclePlan.affectedChannels);
+        }
         LogRuntimeProjectionPlan(input, projection);
 
         auto output = _pollOutputAdapter.Apply(projection, executor);
+        auto commitAudit = currentCycleAudit;
+        if (!currentCyclePlan.requiresEventMutation &&
+            (currentCyclePlan.commitCurrentCycleSensitiveState ||
+                currentCyclePlan.affectedChannels == 0)) {
+            commitAudit.success = true;
+            commitAudit.failure = CurrentCycleGateFailure::None;
+        }
+        if (!output.outputApplySucceeded) {
+            commitAudit.success = false;
+            commitAudit.failure = CurrentCycleGateFailure::AdapterFailure;
+            commitAudit.affectedChannels = currentCyclePlan.affectedChannels;
+        }
+        const auto sensitiveCommit = RuntimeInputPublication::GetSingleton()
+            .CommitAfterCurrentCycleAudit(prepared.token, commitAudit);
         auto published = _presentationPublisher.GetPublished();
         if (output.outputApplySucceeded) {
             published = PublishGameplayPresentation(projection, input.outputTick, true);
         }
 
-        if (output.outputApplySucceeded) {
+        if (output.outputApplySucceeded && sensitiveCommit.committed) {
             _lastProjectionFrame = projection;
             _channelArbitration = projection.nextArbitration;
         }
@@ -596,6 +693,7 @@ namespace dualpad::input_v2::gameplay
     {
         _lastProjectionFrame = GameplayProjectionFrame{};
         _channelArbitration = ChannelArbitrationStateSet{};
+        RuntimeInputPublication::GetSingleton().Reset();
         _lastDebugSnapshot = RuntimeDebugSnapshot{};
         _diagnosticsLogState = RuntimeDiagnosticsLogState{};
         _pendingRecovery = GameplayRecoveryInput{};

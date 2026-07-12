@@ -7,10 +7,12 @@
 #include "input_v2/gameplay/PollOutputAdapter.h"
 #include "input_v2/gameplay/RuntimeDiagnostics.h"
 #include "input_v2/gameplay/RuntimeFrameEnvelope.h"
+#include "input_v2/gameplay/RuntimeInputPublication.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/presentation/PresentationProjection.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace dualpad::input_v2::gameplay
@@ -21,6 +23,13 @@ namespace dualpad::input_v2::gameplay
         actions::ResolvedActionFrame resolved{};
         GameplayPolicy policy{};
         GameplayRecoveryInput recovery{};
+        std::optional<CurrentCycleGatePlan> currentCyclePlan;
+        std::optional<CurrentCycleAdapterAudit> currentCycleAudit;
+        std::uint64_t inputStateEpoch{ 0 };
+        std::uint64_t gamepadSessionId{ 0 };
+        std::uint32_t controlMapRevision{ 0 };
+        std::uint64_t orderedCutoffSeq{ 0 };
+        std::uint64_t eventBatchToken{ 0 };
         RuntimeHealthReasonMask runtimeHealthReasons{ RuntimeHealthMask(RuntimeHealthReason::None) };
         std::uint64_t outputTick{ 0 };
         dualpad::input::InputContext legacyContext{ dualpad::input::InputContext::Gameplay };

@@ -11,6 +11,7 @@
 #include "input_v2/context/ContextRefreshTick.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/gameplay/PollOutputFrame.h"
+#include "input_v2/gameplay/RuntimeInputPublication.h"
 #include "input_v2/ingress/FrameAssembler.h"
 #include "input_v2/ingress/IngressHub.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
@@ -124,6 +125,8 @@ namespace dualpad::input
             const auto bundle =
                 input_v2::config::AtomicConfigReloader::GetSingleton().GetActiveBundleSnapshot();
             const bool routeActive = nativeBackend.IsRouteActive();
+            const auto runtimeInput =
+                input_v2::gameplay::RuntimeInputPublication::GetSingleton().GetCommitted();
 
             input_v2::gameplay::PollOutputFrame output{
                 .runtimeGeneration = runtimeGeneration,
@@ -135,6 +138,11 @@ namespace dualpad::input
                 .contextEpoch = authoritative.contextEpoch,
                 .menuStackRevision = context.menuStackRevision,
                 .sourceTimestampUs = authoritative.sourceTimestampUs,
+                .inputStateEpoch = runtimeInput.inputStateEpoch,
+                .gamepadSessionId = runtimeInput.gamepadSessionId,
+                .controlMapRevision = runtimeInput.controlMapRevision,
+                .orderedCutoffSeq = runtimeInput.orderedCutoffSeq,
+                .eventBatchToken = runtimeInput.eventBatchToken,
                 .buttons = routeActive ? ToXInputButtons(authoritative.downMask) : std::uint16_t{ 0 },
                 .pressedMask = routeActive ? authoritative.pressedMask : 0,
                 .releasedMask = routeActive ? authoritative.releasedMask : 0,

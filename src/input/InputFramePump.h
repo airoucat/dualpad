@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/injection/SkyrimKbmInputAdapter.h"
+#include "input/injection/SkyrimCurrentCycleEventAdapter.h"
 #include "input_v2/ingress/KbmGameplayFactProducer.h"
 
 #include <RE/Skyrim.h>
@@ -27,6 +28,7 @@ namespace dualpad::input
         bool _registered{ false };
         std::uint64_t _eventBatchToken{ 0 };
         SkyrimKbmInputAdapter _skyrimKbmAdapter{};
+        SkyrimCurrentCycleEventAdapter _currentCycleAdapter{};
         input_v2::ingress::KbmGameplayFactProducer _kbmProducer{};
     };
 }

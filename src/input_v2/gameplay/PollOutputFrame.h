@@ -31,6 +31,11 @@ namespace dualpad::input_v2::gameplay
         std::uint32_t menuStackRevision{ 0 };
         std::uint64_t sourceTimestampUs{ 0 };
         std::uint32_t packetNumber{ 0 };
+        std::uint64_t inputStateEpoch{ 0 };
+        std::uint64_t gamepadSessionId{ 0 };
+        std::uint32_t controlMapRevision{ 0 };
+        std::uint64_t orderedCutoffSeq{ 0 };
+        std::uint64_t eventBatchToken{ 0 };
 
         std::uint16_t buttons{ 0 };
         std::uint32_t pressedMask{ 0 };
