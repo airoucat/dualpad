@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 import unittest
 
 
@@ -26,7 +25,7 @@ class GameplayLookTransformWiringTests(unittest.TestCase):
             "GameplayLookInputSource::Mouse",
             "GameplayLookInputSource::Gamepad",
             "ConsumeFor",
-            "EngineQueryDomain::GameplayLookTransform",
+            "EnterEventLocalLookOverride",
             "ExecutePatchTransaction",
         ):
             self.assertIn(token, hook)
@@ -36,16 +35,13 @@ class GameplayLookTransformWiringTests(unittest.TestCase):
 
     def test_plugin_installs_the_independent_fail_closed_hook(self) -> None:
         main = self.read("src/main.cpp")
+        header = self.read("src/input/injection/GameplayLookTransformHook.h")
 
         self.assertIn('#include "input/injection/GameplayLookTransformHook.h"', main)
-        self.assertRegex(
-            main,
-            re.compile(
-                r"#ifdef DUALPAD_DIAGNOSTIC_BUILD\s+"
-                r"dualpad::input::GameplayLookTransformHook::GetSingleton\(\)\s*"
-                r"\.InstallI2DiagnosticCandidate\(\);\s+#endif"
-            ),
-        )
+        self.assertIn("GameplayLookTransformHook::GetSingleton().Install()", main)
+        self.assertIn("bool Install();", header)
+        self.assertNotIn("InstallI2DiagnosticCandidate", main)
+        self.assertNotIn("InstallI2DiagnosticCandidate", header)
 
 
 if __name__ == "__main__":

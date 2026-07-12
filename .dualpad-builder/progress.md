@@ -3815,3 +3815,12 @@
   - IDA 反向追踪闭合根因：`0x140C150B0` 在四设备 Poll 后调用 `0x140C11600` 做 ControlMap 语义映射；后者在 `ControlMap + 0x121`（`ignoreKeyboardMouse`）为 true 时主动拒绝 keyboard/mouse gameplay mapping。
   - TDD RED/GREEN：新增 pure policy 覆盖 release、幂等与 remap 保留；新增 wiring contract 锁定 policy 位于 `AcquireForPoll -> FillSyntheticXInputState` 之间且禁止 `SetUserEvent/AddButtonEvent`。focused tests 与主 DLL build exit 0。
   - 最小实现复用已验证的 gamepad Poll callsite，在原生 ControlMap mapping 之前同步设置 `ignoreKeyboardMouse=remapMode`；不改写 event、不安装新 query/callsite patch，下一步仅做短 gameplay WASD/攻击实机验证。
+
+## 2026-07-12 18:14:00 +08:00
+
+- `S-DP5-MIXED-INPUT / native Look transform source scope live closure`：
+  - gameplay KBM 三项实机 PASS 后，mouse Look 仍混乱；matching IDA 证明 mouse/RS handler 把不同来源写入同一 `PlayerControlsData::lookInputVec`，随后共享 `0x140705AE0` 因 virtual gamepad enabled 固定进入 gamepad 数学。
+  - TDD RED/GREEN：event-local router 必须 original-first 且 scope 退出立即恢复；source latch 必须绑定 owner、匹配最后 materialized writer 并单次消费；production wiring 必须限定 4 个已签名 site，禁止复制 Bethesda math。
+  - 诊断提交 `57bd7fc0604b`、DLL SHA-256 `309AED8AE8ACCC978FFA51151F9A6988AD6579EBF95C296CCA9AF0A78C74C4A2` 实机安装成功；用户明确报告 mouse Look `PASS`、RS Look `PASS`。
+  - Gate 裁决：I-2=`PASS-B / ScopedOverride`；I-5 仅 `Shared2DTransformScope` patch group=`PASS-B`。global query、其它 transform caller、device/menu/cursor/current-cycle patch 均未获批准并保持 Original/NO-GO。
+  - 正式启用后 focused policy/router/wiring、dynamic evidence checker、closeout contracts、IDA static checker 与主 DLL build 均 exit 0；canonical `run_phase8_ci.ps1` exit 0。Graphify manual closeout=`2423 nodes / 5747 edges / 177 communities`。

@@ -489,9 +489,19 @@
         "releaseRelevantUnknownCallers": 26
       },
       "I-2": {
-        "status": "NO-GO",
-        "manualEvidenceComplete": false,
-        "capabilityEnabled": false
+        "status": "PASS-B",
+        "manualEvidenceComplete": true,
+        "capabilityEnabled": true,
+        "liveVerdict": "ScopedOverride",
+        "approvedDomain": "GameplayLookTransform",
+        "approvedScope": "event-local native Look source only",
+        "candidateBuildCommit": "57bd7fc0604b",
+        "candidateDllSha256": "309AED8AE8ACCC978FFA51151F9A6988AD6579EBF95C296CCA9AF0A78C74C4A2",
+        "runtime": "1-5-97-0",
+        "liveResults": {
+          "mouseLook": "PASS",
+          "rightStickLook": "PASS"
+        }
       },
       "I-MENU": {
         "status": "NO-GO",
@@ -539,7 +549,18 @@
         "manualEvidenceComplete": false,
         "capabilityEnabled": false,
         "verifiedStaticSignatureSites": 6,
-        "allEnabledSitesVerified": false
+        "allEnabledSitesVerified": false,
+        "patchGroups": {
+          "Shared2DTransformScope": {
+            "status": "PASS-B",
+            "manualEvidenceComplete": true,
+            "capabilityEnabled": true,
+            "verifiedSites": 4,
+            "allEnabledSitesVerified": true,
+            "failureDisposition": "atomic rollback or original passthrough",
+            "repeatInitialization": "idempotent"
+          }
+        }
       }
     }
   },

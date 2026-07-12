@@ -197,10 +197,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::Init(skse);
     SKSE::AllocTrampoline(1 << 10);
     dualpad::input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton().Install();
-#ifdef DUALPAD_DIAGNOSTIC_BUILD
-    dualpad::input::GameplayLookTransformHook::GetSingleton()
-        .InstallI2DiagnosticCandidate();
-#endif
+    dualpad::input::GameplayLookTransformHook::GetSingleton().Install();
 
     logger::info("DualPad v1.0.0 loaded");
     logger::info(

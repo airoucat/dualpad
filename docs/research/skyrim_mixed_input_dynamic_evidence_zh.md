@@ -16,12 +16,12 @@
 | I-0 | NO-GO | engine query identity、device availability patch 均禁用 | 入口签名与 delegate slot 7 已静态确认；仍缺 handler vtable、runtime original target 与 availability 动态唯一出口 |
 | I-P | NO-GO | current-cycle event mutation 禁用，仅保留 shadow audit | 缺 Poll receipt、event materialization 与下游 consumer 的动态顺序证明 |
 | I-1 | NO-GO | 26 个 caller override 为零 | 26 个 direct xref 静态 inventory 已冻结；caller 尚未逐一命名并动态分类 |
-| I-2 | NO-GO | shared transform scope/router 禁用 | 缺 ABI、caller、cache 与 Native/force A/B 实机结果 |
+| I-2 | PASS-B | 仅启用 `GameplayLookTransform` 的 event-local source scope | matching `57bd7fc0604b` 下 mouse Look 与 RS Look 均实机 PASS；其它 transform domain 不在批准范围 |
 | I-MENU | NO-GO | menu direct callsite patch 禁用 | 缺四菜单每 epoch 单次 SetPlatform 的动态闭环 |
 | I-CURSOR | NO-GO | 两个方向的坐标 side effect 均禁用 | 缺实例、坐标换算、read-back 与误差矩阵 |
 | I-SPRINT | NO-GO | SprintHandler guard 不存在 | 缺 held-state/release watchpoint 的结果 A 或 B |
 | I-KBM | NO-GO | raw reconcile 与 synthetic suppression 分别禁用 | 缺 complete physical-only provider；缺 S-A/S-B/S-C 独立裁决 |
-| I-5 | NO-GO | 所有可选 patch group 保持禁用 | 6 个基线 signature site 已冻结；仍缺最终启用 site 全集、matching runtime transaction 与 partial rollback 证据 |
+| I-5 | 整体 NO-GO；`Shared2DTransformScope` PASS-B | 仅该独立 patch group 启用 | 4 个 source-scope site 已动态匹配并原子安装；其它可选 patch group 继续 NO-GO |
 
 ## 已自动证明但不解除动态门禁的内容
 
@@ -29,6 +29,17 @@
 - current-cycle 与 next-Poll 分别执行单 writer 检查。
 - Sprint contributor mask、final release、epoch/session、Poll receipt、adapter rollback、cursor exact ack 与 engine Original-only 合同有自动化反例。
 - static/host identity fixture 只能证明 fail-closed 逻辑；不能把任一 Gate 从 `NO-GO` 提升为通过。
+
+## I-2 结果 B：Gameplay Look source scope
+
+matching Skyrim SE 1.5.97 实机在 `57bd7fc0604b`（DLL SHA-256 `309AED8AE8ACCC978FFA51151F9A6988AD6579EBF95C296CCA9AF0A78C74C4A2`）完成最小判定闭环：
+
+- Native 基线中，虚拟 gamepad 持续 enabled 时 mouse delta 被共享 `0x140705AE0` 误送入 gamepad 响应曲线，表现为视角混乱。
+- `LookHandler::ProcessMouseMove` 与 `LookHandler::ProcessThumbstick` 分别把来源绑定到同一轮 `PlayerControlsData::lookInputVec`；source 只消费一次，owner 不匹配时立即丢弃。
+- `0x14070711D` 只在 gameplay Look 调用原始 `0x140705AE0` 期间建立 TLS scope；`0x140705B12` 仍先调用原始 `0x140C15240`，再按精确事件来源选择 KBM 或 gamepad 分支。
+- 用户实机判定：mouse Look `PASS`，RS Look `PASS`；日志同时确认 4-site patch group 安装成功、runtime=`1-5-97-0`、build=`57bd7fc0604b`。
+
+因此 I-2 唯一出口为 **结果 B / ScopedOverride**。批准范围仅为 `GameplayLookTransform` event-local source scope；不批准 global owner hook、其它 caller/domain override，也不复制 Bethesda transform 数学。I-5 只对独立 `Shared2DTransformScope` patch group 记录 PASS-B；I-5 总体及其它 patch group 继续 `NO-GO`。
 
 ## IDA 静态 inventory
 

@@ -18,7 +18,7 @@ namespace dualpad::input
     public:
         static GameplayLookTransformHook& GetSingleton();
 
-        bool InstallI2DiagnosticCandidate();
+        bool Install();
         [[nodiscard]] bool IsInstalled() const noexcept;
 
     private:

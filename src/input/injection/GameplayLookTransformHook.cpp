@@ -88,7 +88,7 @@ namespace dualpad::input
         return hook;
     }
 
-    bool GameplayLookTransformHook::InstallI2DiagnosticCandidate()
+    bool GameplayLookTransformHook::Install()
     {
         bool expected = false;
         if (!_attempted.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
@@ -97,7 +97,7 @@ namespace dualpad::input
 
         if (REL::Module::get().version() != kSupportedRuntime) {
             logger::error(
-                "[DualPad][GameplayLookTransform][I2Candidate] unsupported runtime {}; hook disabled",
+                "[DualPad][GameplayLookTransform][SourceScope] unsupported runtime {}; hook disabled",
                 REL::Module::get().version().string());
             return false;
         }
@@ -125,7 +125,7 @@ namespace dualpad::input
             ReadPatchBytes(transformQueryCallsite, kExpectedTransformQueryCall.size()) !=
                 kExpectedTransformQueryCall) {
             logger::error(
-                "[DualPad][GameplayLookTransform][I2Candidate] identity mismatch; all four source-scope sites remain disabled");
+                "[DualPad][GameplayLookTransform][SourceScope] identity mismatch; all four source-scope sites remain disabled");
             return false;
         }
 
@@ -146,7 +146,7 @@ namespace dualpad::input
         if (scopedTransformStub == 0 || transformQueryStub == 0 ||
             scopedTransformReplacement.empty() || transformQueryReplacement.empty()) {
             logger::error(
-                "[DualPad][GameplayLookTransform][I2Candidate] trampoline preparation failed; hook disabled");
+                "[DualPad][GameplayLookTransform][SourceScope] trampoline preparation failed; hook disabled");
             return false;
         }
 
@@ -196,7 +196,7 @@ namespace dualpad::input
         const auto transaction = patching::ExecutePatchTransaction(sites);
         if (transaction.outcome != patching::PatchTransactionOutcome::Installed) {
             logger::error(
-                "[DualPad][GameplayLookTransform][I2Candidate] install failed outcome={} site={} applied={} rolledBack={}; route remains passthrough",
+                "[DualPad][GameplayLookTransform][SourceScope] install failed outcome={} site={} applied={} rolledBack={}; route remains passthrough",
                 patching::ToString(transaction.outcome),
                 transaction.failedSite,
                 transaction.appliedSites,
@@ -207,7 +207,7 @@ namespace dualpad::input
         _routeEnabled.store(true, std::memory_order_release);
         _installed.store(true, std::memory_order_release);
         logger::info(
-            "[DualPad][GameplayLookTransform][I2Candidate] installed exact source-scoped original-math route vtable=0x{:X} transformCall=0x{:X} queryCall=0x{:X}",
+            "[DualPad][GameplayLookTransform][SourceScope] installed exact source-scoped original-math route vtable=0x{:X} transformCall=0x{:X} queryCall=0x{:X}",
             vtableAddress,
             scopedTransformCallsite,
             transformQueryCallsite);
@@ -293,11 +293,7 @@ namespace dualpad::input
             input_v2::gameplay::EngineInputMode::Gamepad :
             input_v2::gameplay::EngineInputMode::KeyboardMouse;
         auto scope = input_v2::presentation::SkyrimEngineModeRouter{}
-            .EnterScopedOverride(
-                input_v2::gameplay::EngineQueryDomain::GameplayLookTransform,
-                mode,
-                0,
-                0);
+            .EnterEventLocalLookOverride(mode);
         callOriginal();
     }
 

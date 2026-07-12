@@ -14,7 +14,7 @@
 ## 当前工作路（2026-07-12）
 
 - 当前活跃 Sprint：`S-DP5-MIXED-INPUT`；实施基线固定为 `3985eea35a84ec7952a88f8dfd13c068391fc28b`。
-- 当前切片：WP0-WP10 自动化实现与 CI/docs close-out 已推进；I-P、I-CURSOR、I-SPRINT、I-KBM、I-0/I-1/I-2/I-MENU/I-5 仍等待动态证据，对应 production capability 保持 `NO-GO`。
+- 当前切片：WP0-WP10 自动化实现与 CI/docs close-out 已推进；I-2 已得到 `PASS-B`，仅批准 `GameplayLookTransform` event-local source scope。I-P、I-CURSOR、I-SPRINT、I-KBM、I-0/I-1/I-MENU 与 I-5 其它 patch group 仍等待动态证据，对应 capability 保持 `NO-GO`。
 - 最近完成内容：在 `DP5-RC20` U0-U5 closeout 之后，收口输入实时性、runtime concurrency、immutable poll publication、Favorites crash containment 与 matching safe-smoke 动态证据；这是 post-closeout field-readiness hotfix，不是新 runtime phase。
 - 已完成阶段：`PH0` - `PH8b`
 - 当前边界：

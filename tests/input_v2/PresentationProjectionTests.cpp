@@ -740,11 +740,8 @@ void RunEngineOriginalFirstTests()
 
     std::size_t mouseLookOriginalCalls = 0;
     {
-        auto mouseLookScope = router.EnterScopedOverride(
-            gameplay::EngineQueryDomain::GameplayLookTransform,
-            gameplay::EngineInputMode::KeyboardMouse,
-            0,
-            0);
+        auto mouseLookScope = router.EnterEventLocalLookOverride(
+            gameplay::EngineInputMode::KeyboardMouse);
         const auto mouseLookMode = router.DecideWithOriginal([&]() {
             ++mouseLookOriginalCalls;
             return true;

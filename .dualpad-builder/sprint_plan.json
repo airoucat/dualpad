@@ -41,7 +41,7 @@
         "WP0 固结 implementationBaseCommit、canonical gate 与 phase-aware evidence manifest",
         "WP0.5 先落地可独立编译的 ingress batch transport/scaffold，不接管 production authority",
         "每个 WP 完成红灯、最小实现、focused 绿灯、相邻回归、builder progress 同步和独立 commit",
-        "I-P、I-CURSOR、I-SPRINT、I-KBM、I-0/I-1/I-2/I-MENU/I-5 未通过前，对应 production capability 保持 shadow 或 NO-GO",
+        "I-2 已按结果 B 仅批准 GameplayLookTransform event-local source scope；I-P、I-CURSOR、I-SPRINT、I-KBM、I-0/I-1/I-MENU 与 I-5 其它 patch group 未通过前，对应 production capability 保持 shadow 或 NO-GO",
         "最终执行 H 节适用验证、canonical CI、builder memory、Graphify 和 git diff 检查"
       ],
       "verification": [

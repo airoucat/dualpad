@@ -328,13 +328,10 @@ namespace dualpad::input_v2::presentation
         std::uint64_t ownerTickToken,
         std::uint32_t contextRevision) noexcept
     {
-        const bool eventLocalLook =
-            domain == gameplay::EngineQueryDomain::GameplayLookTransform &&
-            ownerTickToken == 0 && contextRevision == 0;
         if (domain == gameplay::EngineQueryDomain::Unknown ||
             domain == gameplay::EngineQueryDomain::Remap ||
             mode == gameplay::EngineInputMode::Original ||
-            (!eventLocalLook && (ownerTickToken == 0 || contextRevision == 0)) ||
+            ownerTickToken == 0 || contextRevision == 0 ||
             g_engineScopeDepth == g_engineScopes.size()) {
             return {};
         }
@@ -345,6 +342,24 @@ namespace dualpad::input_v2::presentation
             .mode = mode,
             .ownerTickToken = ownerTickToken,
             .contextRevision = contextRevision
+        };
+        return EngineQueryScope{ id };
+    }
+
+    EngineQueryScope SkyrimEngineModeRouter::EnterEventLocalLookOverride(
+        gameplay::EngineInputMode mode) noexcept
+    {
+        if (mode == gameplay::EngineInputMode::Original ||
+            g_engineScopeDepth == g_engineScopes.size()) {
+            return {};
+        }
+        const auto id = ++g_nextEngineScopeId;
+        g_engineScopes[g_engineScopeDepth++] = ScopedEngineDecision{
+            .id = id,
+            .domain = gameplay::EngineQueryDomain::GameplayLookTransform,
+            .mode = mode,
+            .ownerTickToken = 0,
+            .contextRevision = 0
         };
         return EngineQueryScope{ id };
     }

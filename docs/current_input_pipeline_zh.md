@@ -61,7 +61,7 @@ mixed-input hardening 在这条主链内补齐：
 - Prompt / Scaleform compatibility：旧 SWF API 继续经 `ScaleformGlyphBridge` 转发到 prompt runtime owner / adapter，不改旧返回 shape。
 - Keyboard helper：仍作为 helper backend / simulated keyboard route 使用，不是 Skyrim PC native event 默认主线。
 
-其中 Skyrim compatibility surface 已改为 Original-first gateway：production caller manifest 仍有 26 个 release-relevant unknown caller，I-0/I-1/I-2/I-MENU/I-5 未闭合前不启用 engine/device/menu/transform override。current-cycle event mutation、cursor 坐标写入、raw reconcile 与 synthetic suppression 也分别保持 shadow 或禁用；详见 [research/skyrim_mixed_input_dynamic_evidence_zh.md](research/skyrim_mixed_input_dynamic_evidence_zh.md)。
+其中 Skyrim compatibility surface 保持 Original-first gateway：production caller manifest 仍有 26 个 release-relevant unknown caller，I-0/I-1/I-MENU 与 I-5 其它 patch group 未闭合前不启用对应 engine/device/menu override。I-2 已得到 `PASS-B`，只启用 `GameplayLookTransform` 的 event-local native source scope；其它 caller/domain 仍返回 Original。current-cycle event mutation、cursor 坐标写入、raw reconcile 与 synthetic suppression 也分别保持 shadow 或禁用；详见 [research/skyrim_mixed_input_dynamic_evidence_zh.md](research/skyrim_mixed_input_dynamic_evidence_zh.md)。
 
 ## PH8b 治理边界
 

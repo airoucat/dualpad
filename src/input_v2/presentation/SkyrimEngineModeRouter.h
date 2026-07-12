@@ -132,6 +132,9 @@ namespace dualpad::input_v2::presentation
             gameplay::EngineInputMode mode,
             std::uint64_t ownerTickToken,
             std::uint32_t contextRevision) noexcept;
+
+        [[nodiscard]] class EngineQueryScope EnterEventLocalLookOverride(
+            gameplay::EngineInputMode mode) noexcept;
     };
 
     class EngineQueryScope
