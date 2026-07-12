@@ -223,6 +223,7 @@ local mixed_input_ingress_scaffold_files = {
 
 local ph7_ingress_files = {
     "src/input_v2/runtime/RuntimeOwnerGuard.cpp",
+    "src/input_v2/runtime/InputRecovery.cpp",
     "src/input_v2/ingress/IngressMarkers.cpp",
     "src/input_v2/ingress/IngressRecovery.cpp",
     "src/input_v2/ingress/LegacyIngressAdapter.cpp",

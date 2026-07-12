@@ -48,11 +48,18 @@ namespace dualpad::input_v2::ingress
         } else if (_bindingGeneration != bindings.generation ||
             _contextRevision != context.contextRevision ||
             _controlMapRevision != bindings.controlMapRevision) {
+            const auto resetReasons =
+                (_contextRevision != context.contextRevision ?
+                    ToMask(InputResetReason::ContextBoundary) : 0u) |
+                (_bindingGeneration != bindings.generation ||
+                        _controlMapRevision != bindings.controlMapRevision ?
+                    ToMask(InputResetReason::ControlMapReload) : 0u);
             UnionInto(_physical.quarantineCodes, _physical.downCodes);
             if (trustedRaw) {
                 UnionInto(_physical.quarantineCodes, observed.rawCurrent.downCodes);
                 CopySet(_physical.downCodes, observed.rawCurrent.downCodes);
             }
+            ResetSyntheticSuppression(resetReasons);
             ++_physicalEpoch;
             _bindingGeneration = bindings.generation;
             _contextRevision = context.contextRevision;

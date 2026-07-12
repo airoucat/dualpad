@@ -3472,3 +3472,23 @@
   - Focused GREEN：`xmake run -y DualPadGameplayProjectionTests`、`xmake run -y DualPadNativeButtonCommitTests`、`xmake run -y DualPadIngressTests` 全部 exit 0。
   - 相邻回归：`xmake run -y DualPadInputV2Tests`、`xmake run -y DualPadReplayTests`、`xmake build -y DualPad` 全部 exit 0；PDB 同路径占用仅产生已知 copy warning，DLL 明确 `build ok`。
   - Gate 保持：真实 joining/non-final event suppression 继续等待 I-P；没有新增 `SprintHandler` hook，I-SPRINT 结果 B 未到前 guard 继续 NO-GO。Favorites/SWF/glyph/haptics/rumble/bindings 均未修改。
+
+## 2026-07-12 12:56:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP7 start`：
+  - 进入 scoped recovery、KBM quarantine/rearm、overflow/gap、disconnect 与 optional reconcile 收口；复用 WP3 已有 Hub/FrameAssembler recovery，不建立第二 epoch/session authority。
+  - raw reconcile 与 synthetic suppression 继续按 I-KBM 两项独立裁决：provider 未证明 complete + physical-only 前不生成 production reconcile；provenance 未证明前不吞真实同 scancode event。
+  - 先以 `InputRecovery` pure request 统一 marker、epoch/session 与 reset scope，再补 producer/backend 的精确 reset fixture。
+
+## 2026-07-12 13:08:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP7 completed`：
+  - 新增 `runtime/InputRecovery` 纯策略与 bounded mailbox：Global reset 要求 `inputStateEpoch` 严格前进并清全部 virtual 域、quarantine KBM、清 synthetic receipt；GamepadSource disconnect 只要求 `gamepadSessionId` 前进并清 gamepad 域，epoch 与 KBM 域保持不变；stale epoch/session fail-closed。
+  - `IngressHub` 只在 accepted reset transaction 后发布 recovery request；overflow 在压缩 backlog 的同一锁事务内推进 epoch 并发布 global recovery。`InputFramePump` 在观察当前 callback 前消费请求，把稳定 `(device,idCode)` down codes 送入 producer quarantine，并在 shutdown 丢弃未应用请求。
+  - `KbmGameplayFactProducer` 的 context/ControlMap boundary 现在原子清理旧 suppression receipt；held-repeat 不 rearm、release/fresh initial press 按证据 drain。pure optional raw provider 只在 `complete=true && physicalOnlyProvenance=true` 时生成一次 `ReconciledRelease`；production Skyrim adapter 仍固定 `complete=false / physicalOnlyProvenance=false`。
+  - `RecoveryPlan` 不再把 GamepadSource hard reset 扩大成全局 native/helper/Sprint aggregator reset；disconnect 通过 scoped output plan 清 G contributor、gamepad owner/candidate/current，并保留 KBM owner/quiet、K Sprint contributor 与既有 virtual bridge，不制造 inactive gap。
+  - RED：缺少 `InputRecovery.h`；Hub 未发布 accepted recovery request；owner pump 未消费 recovery；GamepadSource reset 错误触发全局 backend reset；ControlMap reload 后旧 synthetic receipt 仍会吞真实同 scancode input。以上均由对应 fixture 先稳定复现。
+  - Focused GREEN：`DualPadIngressTests`、`DualPadInputV2Tests`、`DualPadGameplayProjectionTests`、`DualPadNativeButtonCommitTests` build/run 全部 exit 0；`tests.python.test_mixed_input_wp7_recovery_wiring` 2 tests passed；`DualPad` build exit 0。
+  - 相邻回归：`DualPadPropertyTests`、`DualPadFuzzRegressionTests`、`DualPadReplayTests` build/run 全部 exit 0。
+  - Graphify manual closeout：`2204 nodes / 5250 edges / 162 communities`。
+  - I-KBM raw reconcile 与 synthetic suppression 的 production route 继续分别 NO-GO；I-P、I-CURSOR、I-SPRINT、I-0/I-1/I-2/I-MENU/I-5 也未提前启用。下一切片进入 WP8 presentation separation，cursor side effect 在 I-CURSOR 前保持关闭。

@@ -14,6 +14,7 @@
 #include "input_v2/ingress/KbmGameplayFactProducer.h"
 #include "input_v2/gameplay/CurrentCycleGatePlan.h"
 #include "input_v2/gameplay/RuntimeInputPublication.h"
+#include "input_v2/runtime/InputRecovery.h"
 #include "input_v2/runtime/RuntimeOwnerGuard.h"
 
 #include <algorithm>
@@ -132,6 +133,7 @@ namespace dualpad::input
 
     void InputFramePump::Unregister()
     {
+        input_v2::runtime::InputRecoveryMailbox::GetSingleton().Reset();
         if (!_registered) {
             return;
         }
@@ -158,6 +160,18 @@ namespace dualpad::input
             .ConsumeForThread(::GetCurrentThreadId());
         const auto eventBatchToken = NextEventBatchToken();
         const auto ownerNowUs = NowMonotonicUs();
+        for (const auto& recovery :
+            input_v2::runtime::InputRecoveryMailbox::GetSingleton().ConsumeAll()) {
+            if (recovery.quarantineKeyboardMouse) {
+                _kbmProducer.EnterQuarantine(
+                    recovery.reasons,
+                    recovery.contextRevision,
+                    recovery.controlMapRevision);
+            }
+            if (recovery.resetSyntheticSuppression) {
+                _kbmProducer.ResetSyntheticSuppression(recovery.reasons);
+            }
+        }
         const auto contextSnapshot =
             input_v2::context::ContextResolver::GetSingleton().GetPublishedSnapshot();
         const auto bindings = _skyrimKbmAdapter.CaptureBindingSnapshot(contextSnapshot);

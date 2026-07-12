@@ -8,6 +8,7 @@
 #include "input_v2/ingress/GamepadActivityClassifier.h"
 #include "input_v2/ingress/KbmGameplayFacts.h"
 #include "input_v2/ingress/KbmGameplayFactProducer.h"
+#include "input_v2/runtime/InputRecovery.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/config/ActionManifestPublisher.h"
@@ -1329,6 +1330,189 @@ namespace
         const auto released = producer.BuildIngressBatch(release, bindings, contextSnapshot, 4000);
         Require(!released.physical.quarantineCodes.Contains(move), "physical release must drain quarantine");
         Require(released.baseline == ingress::KbmBaselineState::Clean, "drained quarantine must restore clean baseline");
+    }
+
+    void KbmExplicitRecoveryQuarantinesAndResetsSyntheticFixture()
+    {
+        ingress::KbmGameplayFactProducer producer;
+        const auto bindings = FakeKbmBindingSnapshot(1, 5);
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 7;
+        const ingress::KbmPhysicalCode move{ ingress::KbmPhysicalDevice::Keyboard, 0x70 };
+        const ingress::KbmPhysicalCode jump{ ingress::KbmPhysicalDevice::Keyboard, 0x71 };
+
+        (void)producer.BuildIngressBatch(
+            FakeObservedKbmBatch(1, { FakeKbmEvent(1, move, ingress::KbmEdgePhase::Press) }, { move }),
+            bindings,
+            contextSnapshot,
+            1000);
+        producer.EnterQuarantine(
+            ingress::ToMask(ingress::InputResetReason::QueueOverflow),
+            contextSnapshot.contextRevision,
+            bindings.controlMapRevision);
+
+        const auto heldRepeat = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(
+                2,
+                { FakeKbmEvent(2, move, ingress::KbmEdgePhase::Press, false) },
+                { move }),
+            bindings,
+            contextSnapshot,
+            2000);
+        Require(heldRepeat.completeCurrent.keyboardMoveHeldMask == 0 &&
+                heldRepeat.physical.quarantineCodes.Contains(move),
+            "explicit global recovery must quarantine raw held identity without rearming on repeat");
+
+        const auto freshPress = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(
+                3,
+                { FakeKbmEvent(3, move, ingress::KbmEdgePhase::Press, true) },
+                { move }),
+            bindings,
+            contextSnapshot,
+            3000);
+        Require(freshPress.completeCurrent.keyboardMoveHeldMask == 0x1 &&
+                !freshPress.physical.quarantineCodes.Contains(move) &&
+                freshPress.orderedEdges.size() == 1,
+            "fresh initial press must prove a new physical epoch and rearm quarantined input");
+
+        producer.RegisterSyntheticSuppression(ingress::SyntheticKeyboardSuppressionToken{
+            .token = 99,
+            .scancode = static_cast<std::uint8_t>(jump.idCode),
+            .expectedPhase = ingress::KbmEdgePhase::Press,
+            .contextRevision = contextSnapshot.contextRevision,
+            .originatingOutputGeneration = 44,
+            .helperInjectionSequence = 55,
+            .provenanceMode = ingress::SyntheticProvenanceMode::ReservedNonCollidingControl,
+            .remainingMatches = 1,
+            .expiresAtOwnerUs = 10'000
+        });
+        producer.ResetSyntheticSuppression(
+            ingress::ToMask(ingress::InputResetReason::SyntheticSuppressionReset));
+        auto physicalJump = FakeKbmEvent(4, jump, ingress::KbmEdgePhase::Press);
+        physicalJump.syntheticToken = 99;
+        physicalJump.originatingOutputGeneration = 44;
+        physicalJump.helperInjectionSequence = 55;
+        const auto afterReset = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(4, { physicalJump }, { move, jump }),
+            bindings,
+            contextSnapshot,
+            4000);
+        Require(afterReset.orderedEdges.size() == 1,
+            "global recovery must clear old synthetic tokens so later physical input is never swallowed");
+    }
+
+    void KbmOptionalRawReconcileRequiresCompletePhysicalProofFixture()
+    {
+        const auto bindings = FakeKbmBindingSnapshot(1, 5);
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 7;
+        const ingress::KbmPhysicalCode move{ ingress::KbmPhysicalDevice::Keyboard, 0x70 };
+
+        ingress::KbmGameplayFactProducer disabled;
+        (void)disabled.BuildIngressBatch(
+            FakeObservedKbmBatch(1, { FakeKbmEvent(1, move, ingress::KbmEdgePhase::Press) }, { move }),
+            bindings,
+            contextSnapshot,
+            1000);
+        disabled.EnterQuarantine(
+            ingress::ToMask(ingress::InputResetReason::FocusLost),
+            contextSnapshot.contextRevision,
+            bindings.controlMapRevision);
+        auto unavailableRaw = FakeObservedKbmBatch(2, {}, {});
+        unavailableRaw.rawCurrent.complete = false;
+        unavailableRaw.rawCurrent.physicalOnlyProvenance = false;
+        const auto quarantined = disabled.BuildIngressBatch(
+            unavailableRaw,
+            bindings,
+            contextSnapshot,
+            2000);
+        Require(quarantined.orderedEdges.empty() &&
+                quarantined.physical.quarantineCodes.Contains(move) &&
+                quarantined.completeCurrent.keyboardMoveHeldMask == 0,
+            "disabled or unproven raw provider must retain quarantine and never guess all-up");
+
+        ingress::KbmGameplayFactProducer verified;
+        (void)verified.BuildIngressBatch(
+            FakeObservedKbmBatch(1, { FakeKbmEvent(1, move, ingress::KbmEdgePhase::Press) }, { move }),
+            bindings,
+            contextSnapshot,
+            1000);
+        const auto reconciled = verified.BuildIngressBatch(
+            FakeObservedKbmBatch(2, {}, {}),
+            bindings,
+            contextSnapshot,
+            2000);
+        Require(reconciled.orderedEdges.size() == 1 &&
+                reconciled.orderedEdges.front().phase == ingress::KbmEdgePhase::ReconciledRelease &&
+                reconciled.orderedEdges.front().origin == ingress::KbmEdgeOrigin::Reconciled,
+            "complete physical-only provider may emit exactly one evidence-backed reconciled release");
+        const auto noDuplicate = verified.BuildIngressBatch(
+            FakeObservedKbmBatch(3, {}, {}),
+            bindings,
+            contextSnapshot,
+            3000);
+        Require(noDuplicate.orderedEdges.empty(),
+            "verified raw reconcile must consume the lost release exactly once");
+
+        ingress::KbmGameplayFactProducer incomplete;
+        (void)incomplete.BuildIngressBatch(
+            FakeObservedKbmBatch(1, { FakeKbmEvent(1, move, ingress::KbmEdgePhase::Press) }, { move }),
+            bindings,
+            contextSnapshot,
+            1000);
+        auto incompleteRaw = FakeObservedKbmBatch(2, {}, {});
+        incompleteRaw.rawCurrent.complete = false;
+        const auto held = incomplete.BuildIngressBatch(
+            incompleteRaw,
+            bindings,
+            contextSnapshot,
+            2000);
+        Require(held.orderedEdges.empty() && held.completeCurrent.keyboardMoveHeldMask == 0x1,
+            "incomplete raw snapshot must not reconcile or erase a real held fact");
+    }
+
+    void KbmMappingBoundaryClearsOldSyntheticReceiptFixture()
+    {
+        ingress::KbmGameplayFactProducer producer;
+        auto bindings = FakeKbmBindingSnapshot(1, 5);
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 7;
+        const ingress::KbmPhysicalCode jump{ ingress::KbmPhysicalDevice::Keyboard, 0x71 };
+        (void)producer.BuildIngressBatch(
+            FakeObservedKbmBatch(1, {}, {}),
+            bindings,
+            contextSnapshot,
+            1000);
+        producer.RegisterSyntheticSuppression(ingress::SyntheticKeyboardSuppressionToken{
+            .token = 99,
+            .scancode = static_cast<std::uint8_t>(jump.idCode),
+            .expectedPhase = ingress::KbmEdgePhase::Press,
+            .contextRevision = contextSnapshot.contextRevision,
+            .originatingOutputGeneration = 44,
+            .helperInjectionSequence = 55,
+            .provenanceMode = ingress::SyntheticProvenanceMode::ReservedNonCollidingControl,
+            .remainingMatches = 1,
+            .expiresAtOwnerUs = 10'000
+        });
+
+        bindings.generation = 2;
+        bindings.controlMapRevision = 6;
+        std::reverse(bindings.entries.begin(), bindings.entries.end());
+        auto physicalJump = FakeKbmEvent(1, jump, ingress::KbmEdgePhase::Press);
+        physicalJump.syntheticToken = 99;
+        physicalJump.originatingOutputGeneration = 44;
+        physicalJump.helperInjectionSequence = 55;
+        auto observed = FakeObservedKbmBatch(2, { physicalJump }, { jump });
+        observed.rawCurrent.controlMapRevision = 6;
+        const auto afterReload = producer.BuildIngressBatch(
+            observed,
+            bindings,
+            contextSnapshot,
+            2000);
+        Require(afterReload.orderedEdges.size() == 1 &&
+                afterReload.orderedEdges.front().origin == ingress::KbmEdgeOrigin::Physical,
+            "mapping boundary must clear old synthetic receipt before evaluating new physical events");
     }
 
     void TestLatestPadStatePreventsSteadyAnalogQueueGrowth()
@@ -2692,6 +2876,109 @@ namespace
                   << " p95=" << at(95)
                   << " p99=" << at(99) << '\n';
     }
+
+    void InputRecoveryBuildsScopedEpochAndSessionRequestFixture()
+    {
+        const auto global = runtime::BuildInputRecoveryRequest(runtime::InputRecoveryObservation{
+            .marker = ingress::InputResetMarker{
+                .reasons = ingress::ToMask(ingress::InputResetReason::ContextBoundary),
+                .scope = ingress::InputResetScope::GlobalInputState,
+                .inputStateEpoch = 8,
+                .gamepadSessionId = 3,
+                .contextRevision = 11,
+                .controlMapRevision = 5 },
+            .lastAppliedInputStateEpoch = 7,
+            .lastAppliedGamepadSessionId = 3
+        });
+        Require(global.valid && global.clearAllVirtualOutput &&
+                global.quarantineKeyboardMouse && global.resetSyntheticSuppression &&
+                global.nextInputStateEpoch == 8,
+            "global recovery must advance epoch and clear/quarantine every virtual input domain");
+
+        const auto stale = runtime::BuildInputRecoveryRequest(runtime::InputRecoveryObservation{
+            .marker = ingress::InputResetMarker{
+                .scope = ingress::InputResetScope::GlobalInputState,
+                .inputStateEpoch = 7,
+                .gamepadSessionId = 3 },
+            .lastAppliedInputStateEpoch = 7,
+            .lastAppliedGamepadSessionId = 3
+        });
+        Require(!stale.valid && stale.failure == runtime::InputRecoveryFailure::StaleInputStateEpoch,
+            "global recovery must reject a non-advancing epoch");
+
+        const auto disconnect = runtime::BuildInputRecoveryRequest(runtime::InputRecoveryObservation{
+            .marker = ingress::InputResetMarker{
+                .reasons = ingress::ToMask(ingress::InputResetReason::DeviceDisconnected),
+                .scope = ingress::InputResetScope::GamepadSource,
+                .inputStateEpoch = 7,
+                .gamepadSessionId = 4,
+                .contextRevision = 11,
+                .controlMapRevision = 5 },
+            .lastAppliedInputStateEpoch = 7,
+            .lastAppliedGamepadSessionId = 3
+        });
+        Require(disconnect.valid && disconnect.clearGamepadOutput &&
+                !disconnect.clearKeyboardMouseOutput &&
+                !disconnect.quarantineKeyboardMouse &&
+                disconnect.nextInputStateEpoch == 7 &&
+                disconnect.nextGamepadSessionId == 4,
+            "gamepad disconnect must advance only session and preserve KBM domain");
+    }
+
+    void HubPublishesAcceptedScopedRecoveryRequestsFixture()
+    {
+        auto& mailbox = runtime::InputRecoveryMailbox::GetSingleton();
+        mailbox.ResetForTests();
+
+        ingress::IngressHub globalHub{ 16 };
+        const auto globalReceipt = globalHub.PublishGlobalReset(
+            ingress::ToMask(ingress::InputResetReason::ControlMapReload),
+            ingress::InputResetScope::GlobalInputState);
+        Require(globalReceipt.accepted, "global reset must be accepted before recovery publication");
+        const auto globalRequests = mailbox.ConsumeAll();
+        Require(globalRequests.size() == 1,
+            "accepted global reset must publish exactly one recovery request");
+        Require(globalRequests.front().valid && globalRequests.front().clearAllVirtualOutput &&
+                globalRequests.front().quarantineKeyboardMouse &&
+                globalRequests.front().previousInputStateEpoch == 1 &&
+                globalRequests.front().nextInputStateEpoch == 2,
+            "global recovery request must retain the accepted epoch transaction");
+
+        ingress::IngressHub gamepadHub{ 16 };
+        ingress::ClassifiedGamepadReportDraft connected{};
+        connected.current.state.connected = true;
+        connected.producerGamepadSessionId = 0;
+        Require(gamepadHub.PublishGamepadBatch(
+                    std::move(connected),
+                    ingress::GamepadConnectionDraft{
+                        .connectivity = ingress::GamepadConnectivity::Connected })
+                    .accepted,
+            "recovery fixture gamepad must connect");
+        const auto disconnectReceipt = gamepadHub.PublishGamepadDisconnect();
+        Require(disconnectReceipt.accepted, "recovery fixture disconnect must be accepted");
+        const auto disconnectRequests = mailbox.ConsumeAll();
+        Require(disconnectRequests.size() == 1,
+            "accepted gamepad disconnect must publish exactly one recovery request");
+        Require(disconnectRequests.front().valid && disconnectRequests.front().clearGamepadOutput &&
+                !disconnectRequests.front().clearKeyboardMouseOutput &&
+                !disconnectRequests.front().quarantineKeyboardMouse &&
+                disconnectRequests.front().previousGamepadSessionId + 1 ==
+                    disconnectRequests.front().nextGamepadSessionId,
+            "disconnect recovery request must advance only gamepad session");
+
+        mailbox.ResetForTests();
+        ingress::IngressHub overflowHub{ 1 };
+        Require(overflowHub.PushEvent(Manifest(1)), "overflow recovery fixture must fill the queue");
+        Require(!overflowHub.PushEvent(Manifest(2)), "overflow recovery fixture must compact the queue");
+        const auto overflowRequests = mailbox.ConsumeAll();
+        Require(overflowRequests.size() == 1 &&
+                overflowRequests.front().clearAllVirtualOutput &&
+                overflowRequests.front().quarantineKeyboardMouse &&
+                overflowRequests.front().reasons ==
+                    ingress::ToMask(ingress::InputResetReason::QueueOverflow),
+            "queue overflow must publish one global recovery transaction");
+        mailbox.ResetForTests();
+    }
 }
 
 int main()
@@ -2719,6 +3006,11 @@ int main()
     KbmProducerPublishesMappedCurrentAndOrderedFactsFixture();
     KbmSyntheticSuppressionRequiresExactProvenanceFixture();
     KbmMappingChangeUsesStablePhysicalQuarantineFixture();
+    KbmExplicitRecoveryQuarantinesAndResetsSyntheticFixture();
+    KbmOptionalRawReconcileRequiresCompletePhysicalProofFixture();
+    KbmMappingBoundaryClearsOldSyntheticReceiptFixture();
+    InputRecoveryBuildsScopedEpochAndSessionRequestFixture();
+    HubPublishesAcceptedScopedRecoveryRequestsFixture();
     TestLatestPadStatePreventsSteadyAnalogQueueGrowth();
     TestLatestAnalogCanLeadBoundedDigitalEdgeCutoff();
     TestFrameAssemblerDefersLatestAnalogBeyondOrderedEdgeCutoff();

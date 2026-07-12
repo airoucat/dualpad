@@ -701,6 +701,23 @@ namespace
                 disconnected.sprintDecision.virtualBridgeDesired &&
                 disconnected.sprintDecision.nonFinalReleaseSuppressionMask == gamepad,
             "gamepad disconnect must clear only G and preserve the materialized bridge while K remains");
+        const auto scopedDisconnect = gameplay::ResolveGameplayProjection(
+            Kernel(), Resolved(),
+            gameplay::GameplayPolicy{
+                .keyboardPhysicalSustainedActive = true,
+                .clearGamepadSustainedContributor = true,
+                .arbitrationResetMode = gameplay::ChannelArbitrationResetMode::GamepadSource },
+            activeBeforeDisconnect,
+            gameplay::GameplayRecoveryInput{
+                .hardResetRequested = true,
+                .cleanFrame = true,
+                .resetScope = gameplay::RecoveryResetScope::GamepadSource });
+        Require(scopedDisconnect.sprintDecision.next.activeSourceMask == keyboard &&
+                scopedDisconnect.sprintDecision.virtualBridgeDesired &&
+                scopedDisconnect.sprintDecision.nonFinalReleaseSuppressionMask == gamepad &&
+                !scopedDisconnect.recoveryPlan.resetNativeCommitBackend &&
+                !scopedDisconnect.recoveryPlan.resetSustainedDigitalAggregator,
+            "actual GamepadSource recovery must preserve K Sprint and bridge without a global backend reset");
         const auto resetWhileActive = gameplay::ResolveGameplayProjection(
             Kernel(), Resolved(), gameplay::GameplayPolicy{}, activeBeforeDisconnect,
             gameplay::GameplayRecoveryInput{ .hardResetRequested = true, .cleanFrame = true });
@@ -759,6 +776,26 @@ namespace
             gameplay::RecoveryExecutionStep::CommitCleanRecoveryBaseline
         };
         Require(order == expected, "RecoveryPlan execution order must be hard-reset safe and fixed");
+
+        const auto gamepadSource = gameplay::BuildRecoveryPlan(gameplay::GameplayRecoveryInput{
+            .hardResetRequested = true,
+            .cleanFrame = true,
+            .resetScope = gameplay::RecoveryResetScope::GamepadSource
+        });
+        Require(gamepadSource.mode == gameplay::RecoveryMode::HardResetOutputs,
+            "gamepad-scoped reset must remain an explicit hard recovery transaction");
+        Require(!gamepadSource.resetNativeCommitBackend &&
+                !gamepadSource.resetKeyboardHelperBackend &&
+                !gamepadSource.resetSustainedDigitalAggregator &&
+                !gamepadSource.clearProjectionStickyOwners &&
+                !gamepadSource.clearRecoveryBaseline,
+            "gamepad-scoped reset must not widen into global backend, helper, Sprint, or owner reset");
+        const std::vector<gameplay::RecoveryExecutionStep> expectedGamepadSource{
+            gameplay::RecoveryExecutionStep::ApplyOutputPlans,
+            gameplay::RecoveryExecutionStep::CommitCleanRecoveryBaseline
+        };
+        Require(gameplay::BuildRecoveryExecutionPlan(gamepadSource) == expectedGamepadSource,
+            "gamepad-scoped recovery must neutralize through scoped output plans only");
     }
 
     void RunProjectionClassificationAndGateTests()

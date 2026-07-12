@@ -4,6 +4,7 @@
 
 #include "input_v2/ingress/LegacyIngressAdapter.h"
 #include "input_v2/ingress/LiveInputFactProducer.h"
+#include "input_v2/runtime/InputRecovery.h"
 
 #include <algorithm>
 #include <chrono>
@@ -168,7 +169,20 @@ namespace dualpad::input_v2::ingress
         for (const auto& event : incomingEvents) {
             CaptureOverflowFact(overflow.overflow, event);
         }
+        const auto previousInputStateEpoch = _inputStateEpoch;
         ++_inputStateEpoch;
+        (void)runtime::InputRecoveryMailbox::GetSingleton().Publish(
+            runtime::BuildInputRecoveryRequest(runtime::InputRecoveryObservation{
+                .marker = InputResetMarker{
+                    .reasons = ToMask(InputResetReason::QueueOverflow),
+                    .scope = InputResetScope::GlobalInputState,
+                    .inputStateEpoch = _inputStateEpoch,
+                    .gamepadSessionId = _gamepadSessionId,
+                    .contextRevision = _boundaryKey.contextRevision,
+                    .controlMapRevision = _boundaryKey.controlMapRevision },
+                .lastAppliedInputStateEpoch = previousInputStateEpoch,
+                .lastAppliedGamepadSessionId = _gamepadSessionId
+            }));
         _edgeHistoryLost = _edgeHistoryLost ||
             overflow.overflow.droppedControlSamples ||
             overflow.overflow.droppedPulseLedger;
@@ -652,6 +666,8 @@ namespace dualpad::input_v2::ingress
         InputResetScope scope)
     {
         std::scoped_lock lock(_mutex);
+        const auto previousInputStateEpoch = _inputStateEpoch;
+        const auto previousGamepadSessionId = _gamepadSessionId;
         if (scope == InputResetScope::GlobalInputState) {
             ++_inputStateEpoch;
         }
@@ -662,11 +678,7 @@ namespace dualpad::input_v2::ingress
             _latestKbmGameplay.reset();
         }
 
-        IngressEvent event{};
-        event.seq = NextSeqLocked();
-        event.monotonicUs = NowMonotonicUs();
-        event.kind = IngressKind::InputReset;
-        event.inputReset = InputResetMarker{
+        const InputResetMarker marker{
             .reasons = reasons,
             .scope = scope,
             .inputStateEpoch = _inputStateEpoch,
@@ -674,7 +686,20 @@ namespace dualpad::input_v2::ingress
             .contextRevision = _boundaryKey.contextRevision,
             .controlMapRevision = _boundaryKey.controlMapRevision
         };
+        IngressEvent event{};
+        event.seq = NextSeqLocked();
+        event.monotonicUs = NowMonotonicUs();
+        event.kind = IngressKind::InputReset;
+        event.inputReset = marker;
         const auto accepted = PushLocked(std::move(event));
+        if (accepted) {
+            (void)runtime::InputRecoveryMailbox::GetSingleton().Publish(
+                runtime::BuildInputRecoveryRequest(runtime::InputRecoveryObservation{
+                    .marker = marker,
+                    .lastAppliedInputStateEpoch = previousInputStateEpoch,
+                    .lastAppliedGamepadSessionId = previousGamepadSessionId
+                }));
+        }
         return PublishedIngressBatchReceipt{
             .accepted = accepted,
             .publishedResetReasons = reasons,
@@ -691,17 +716,14 @@ namespace dualpad::input_v2::ingress
     PublishedIngressBatchReceipt IngressHub::PublishGamepadDisconnect()
     {
         std::scoped_lock lock(_mutex);
+        const auto previousInputStateEpoch = _inputStateEpoch;
+        const auto previousGamepadSessionId = _gamepadSessionId;
         if (_gamepadConnectivity != GamepadConnectivity::Disconnected) {
             _gamepadConnectivity = GamepadConnectivity::Disconnected;
             ++_gamepadSessionId;
         }
         _latestPadState.reset();
-        IngressEvent reset{};
-        reset.seq = NextSeqLocked();
-        reset.monotonicUs = NowMonotonicUs();
-        reset.kind = IngressKind::InputReset;
-        reset.source = IngressSource::Recovery;
-        reset.inputReset = InputResetMarker{
+        const InputResetMarker marker{
             .reasons = ToMask(InputResetReason::DeviceDisconnected),
             .scope = InputResetScope::GamepadSource,
             .inputStateEpoch = _inputStateEpoch,
@@ -709,7 +731,21 @@ namespace dualpad::input_v2::ingress
             .contextRevision = _boundaryKey.contextRevision,
             .controlMapRevision = _boundaryKey.controlMapRevision
         };
+        IngressEvent reset{};
+        reset.seq = NextSeqLocked();
+        reset.monotonicUs = NowMonotonicUs();
+        reset.kind = IngressKind::InputReset;
+        reset.source = IngressSource::Recovery;
+        reset.inputReset = marker;
         const auto resetAccepted = PushLocked(std::move(reset));
+        if (resetAccepted) {
+            (void)runtime::InputRecoveryMailbox::GetSingleton().Publish(
+                runtime::BuildInputRecoveryRequest(runtime::InputRecoveryObservation{
+                    .marker = marker,
+                    .lastAppliedInputStateEpoch = previousInputStateEpoch,
+                    .lastAppliedGamepadSessionId = previousGamepadSessionId
+                }));
+        }
         const auto causalTail = _lastAllocatedOrderedSeq;
         _latestGamepadConnection = GamepadConnectionFacts{
             .causal = CausalLatestHeader{
@@ -907,5 +943,6 @@ namespace dualpad::input_v2::ingress
             _latestKbmGameplay.reset();
         }
         LiveInputFactProducer::GetSingleton().ResetForTests();
+        runtime::InputRecoveryMailbox::GetSingleton().ResetForTests();
     }
 }

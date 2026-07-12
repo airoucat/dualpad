@@ -16,7 +16,7 @@ namespace dualpad::input_v2::gameplay
         }
 
         plan.mode = hardReset ? RecoveryMode::HardResetOutputs : RecoveryMode::SoftResyncOutputs;
-        if (hardReset) {
+        if (hardReset && input.resetScope == RecoveryResetScope::Global) {
             plan.resetNativeCommitBackend = true;
             plan.resetKeyboardHelperBackend = true;
             plan.resetSustainedDigitalAggregator = true;
