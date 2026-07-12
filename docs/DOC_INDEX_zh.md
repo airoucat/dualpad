@@ -44,6 +44,7 @@
 - [research/skyrim_mixed_input_mode_queries_zh.md](research/skyrim_mixed_input_mode_queries_zh.md)（多设备 Poll、engine gamepad-enabled 查询和二维输入变换的 IDA 证据）
 - [reviews/2026-07-11-mixed-input-solution-plan-request_zh.md](reviews/2026-07-11-mixed-input-solution-plan-request_zh.md)（要求外部 GPT 制定可执行正式方案的主提示词）
 - [reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md](reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md)（专项可行性与外部审查材料，不替代 current truth）
+- [plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md](plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md)（经当前代码与 IDA 事实修订的正式实施计划；尚未登记活跃 Sprint，mixed-input 仍为 `NO-GO`，不替代 authoritative baseline）
 - [menu_context_policy_current_status_zh.md](menu_context_policy_current_status_zh.md)
 - [authoritative-baseline/README.md](authoritative-baseline/README.md)
 - [harness/dualpad-builder.md](harness/dualpad-builder.md)
