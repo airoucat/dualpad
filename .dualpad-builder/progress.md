@@ -3623,3 +3623,29 @@
   - clean-HEAD RC readiness GREEN：Phase 8、Python discovery `71 passed`、mixed close-out `10 passed`、good trace `3 records / 0 violations`、dynamic/static evidence checker、dispatcher replay `10 scenarios / zero-diff`、DInput8 proxy、release artifact manifest、RC closeout、Graphify 与 `git diff --check` 全部 exit 0。
   - Graphify manual closeout：`2366 nodes / 5632 edges / 172 communities`。实现提交：`69739aa test(ci): freeze Skyrim IDA static evidence`。
   - Gate 不变：I-0 仍缺 runtime original target/availability 唯一出口；I-1 的 26 个 caller 全部保留 `Unknown`，未做地址邻近猜测；I-5 仍缺最终 enabled-site transaction/rollback 动态证明。9 个动态 Gate 全部继续 `NO-GO`，未安装或启用任何 production patch。
+
+## 2026-07-12 15:18:00 +08:00
+
+- `S-DP5-MIXED-INPUT / I-1 static caller annotation slice start`：
+  - 继续处理 matching IDB 可客观证明、但不替代动态 Gate 的 I-1 前置事实：为 26 个 direct xref 冻结 return/tail-jump identity、21 个唯一 caller function 指纹、direct caller/data xref 和有效字符串线索。
+  - 所有正式 `classification` 与 causality 继续保持 `Unknown` / pending；`LevelUpMenu`、`FinishRemapMode`、`_root.SetPlatform` 等只允许形成静态 candidate hint，不能把 I-1 或任何 production override 提升为 PASS。
+  - 预期 RED：checker 尚不要求 schema v2/static annotation，artifact/exporter/manifest 也没有 26/21 计数、transfer identity 或 annotation inventory hash。
+
+## 2026-07-12 15:23:32 +08:00
+
+- `S-DP5-MIXED-INPUT / live KBM regression triage + I-0 probe start`：
+  - 用户实机反证优先：gameplay WASD/攻击无反应；菜单键盘能操作但 UI 仍是手柄；键盘期间已 materialize 的手柄问题仍触发。I-1 静态 annotation 切片暂停，未保留半成品生产改动。
+  - live `DualPad.log` 证明 FramePump 与 upstream route 已安装、presentation/menu owner 能由 Gamepad 回切到 KeyboardMouse；同一运行中 engine compatibility gateway 始终 `i0_gate_not_approved / safe_passthrough`。断裂点由“KBM 未进入”缩到 Skyrim engine/menu/current-cycle consumer。
+  - IDA 进一步确认 `0x140705030` 属于 `PlayerControls` 的 `MenuOpenCloseEvent` sink，并直接读取 `0x140C15240`；但该静态事实不足以猜测 gameplay caller override。
+  - TDD RED：`DualPadPresentationProjectionTests` 因缺少 `BuildEngineHookIdentityProbe` 编译失败；WP9 wiring 因 approval 前没有 runtime identity observation 失败。
+  - 本切片只允许增加 read-only I-0 probe：记录 ASLR-independent query/vtable/slot target RVA；不得分配 gateway、执行 patch transaction、批准 I-0 或更改任何返回值。
+
+## 2026-07-12 15:32:36 +08:00
+
+- `S-DP5-MIXED-INPUT / live KBM regression triage + I-0 read-only probe implementation`：
+  - 实装只读 runtime identity snapshot：冻结 `REL 67320` 的 RVA/前 32 bytes，记录 `REL 560029` handler vtable、slot 0–9 target RVA、`devices[kGamepad]` 实例与其 runtime vtable，并要求 live object vtable 与 relocation vtable 一致后才可能进入 future patch eligibility。
+  - `plugin_load` 与 `DataLoaded` 分阶段记录；DataLoaded probe 位于 FramePump 注册前。I-0 仍为 `i0_gate_not_approved`，`patchEligible=false`；未分配 gateway、未执行 patch transaction、未改原函数返回值或任何 gameplay/menu/current-cycle 行为。
+  - TDD RED：focused C++ 因缺少 runtime device/vtable 字段与 `RuntimeDeviceMissing` / `RuntimeHandlerVtableMismatch` 状态编译失败；WP9 wiring 因 DataLoaded 未调用 runtime probe 失败。最小实现后 `xmake run -y DualPadPresentationProjectionTests`、`python tests/python/test_mixed_input_wp9_wiring.py`（5 tests）、`xmake run -y DualPadInputV2Tests`、mixed close-out（10 tests）与 IDA static checker 全部 exit 0。
+  - `ce:review` 主线程顺序复核覆盖 correctness、testing、maintainability、project standards、reliability、api-contract 与 adversarial；已修复首轮发现的“只读 relocation vtable、未证明 live `devices[kGamepad]` identity 且未 dump 0–9 slots”缺口。无剩余可自动修复 finding；剩余 testing gap 仅为 matching 1.5.97 实机 DataLoaded 日志与用户三类复现结果。
+  - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。DLL 已部署到 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`，SHA-256 `80A3DD3A31B0AFEA7A0216F02A0D6394F563DA35757C6321E7935BA0CB6C3315`；同路径 PDB 占用仅为既有 copy warning。
+  - Graphify manual closeout：`2373 nodes / 5657 edges / 171 communities`。Gate 不变：I-0 仍等待本次实机 snapshot 与 IDA 对照；I-1/I-MENU/I-P 分别等待 caller-domain、menu SetPlatform 和 current-cycle consumer 动态证据，9 个动态 gate 全部继续 `NO-GO`。

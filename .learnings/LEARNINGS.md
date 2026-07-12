@@ -291,3 +291,27 @@ Skyrim 的 gamepad-enabled 查询不是纯 presentation 字段；它还会选择
 - `docs/reviews/2026-07-11-mixed-input-solution-plan-request_zh.md`
 - `lib/commonlibsse-ng/include/RE/B/BSIInputDevice.h`
 - `lib/commonlibsse-ng/include/RE/B/BSInputDeviceManager.h`
+
+## [LRN-20260712-001] correction
+
+**Logged**: 2026-07-12T15:23:32+08:00
+**Priority**: critical
+**Status**: open
+**Area**: mixed input / Skyrim consumer routing / dynamic gates
+
+### Summary
+
+KBM owner 能回切不等于 Skyrim gameplay、menu platform 或 current-cycle consumer 已支持混合输入；实机必须分别证明 engine caller、menu SetPlatform 与 event materialization 三条路径。
+
+### Detail
+
+matching build 的实机反馈明确区分了三个失败面：gameplay 中 WASD/攻击无反应；菜单键盘可操作但 UI 仍保持手柄；键盘使用期间已 materialize 的手柄问题仍会触发。同期 `DualPad.log` 显示 presentation/menu owner 确实从 Gamepad 回切到 KeyboardMouse，但 engine compatibility gateway 始终为 `i0_gate_not_approved / safe_passthrough`。因此 ingress/activity 已到达不能证明最终消费成立：原始 `IsGamepadEnabled` caller、menu `SetPlatform` 和 current-cycle event 仍分别受 I-0/I-1、I-MENU、I-P 约束。后续 live smoke 必须把这三类结果分栏记录，禁止再用 owner transition 或 next-Poll 绿灯代表端到端可用。
+
+### Related Files
+
+- `src/input/InputFramePump.cpp`
+- `src/input_v2/presentation/SkyrimCompatibilitySurface.cpp`
+- `src/input_v2/presentation/SkyrimEngineModeRouter.cpp`
+- `src/input/injection/SkyrimCurrentCycleEventAdapter.cpp`
+- `docs/research/skyrim_mixed_input_dynamic_evidence_zh.md`
+- `.learnings/LEARNINGS.md` (`LRN-20260711-007`, `LRN-20260711-008`)

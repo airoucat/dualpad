@@ -4,6 +4,7 @@
 #include "input_v2/presentation/SkyrimEngineModeRouter.h"
 
 #include <REL/Pattern.h>
+#include <RE/B/BSInputDeviceManager.h>
 #include <SKSE/Version.h>
 
 #include <algorithm>
@@ -223,15 +224,10 @@ namespace dualpad::input_v2::presentation
 
         HookInstallResult VerifyHookSites(
             std::uintptr_t usingGamepadAddress,
-            std::uintptr_t gamepadHandlerVtblAddress)
+            std::uintptr_t gamepadHandlerVtblAddress,
+            std::string_view probePhase)
         {
             const auto identityManifest = ProductionEngineHookIdentityManifest();
-            if (!identityManifest.i0Approved) {
-                return detail::MakeHookInstallResult(
-                    HookInstallStatus::SignatureMismatch,
-                    ToString(EngineHookIdentityStatus::GateNotApproved));
-            }
-
             if (!REL::verify_code(usingGamepadAddress, kExpectedBoolSurfaceEntryWindow)) {
                 return detail::MakeHookInstallResult(
                     HookInstallStatus::SignatureMismatch,
@@ -254,6 +250,26 @@ namespace dualpad::input_v2::presentation
                     &observed.handlerVtableTargets[slot],
                     slotBytes.data(),
                     sizeof(std::uintptr_t));
+            }
+            if (auto* manager = RE::BSInputDeviceManager::GetSingleton(); manager) {
+                if (auto* handler = manager->GetGamepadHandler(); handler) {
+                    observed.runtimeGamepadDeviceAddress =
+                        reinterpret_cast<std::uintptr_t>(handler);
+                    std::memcpy(
+                        &observed.runtimeGamepadDeviceVtableAddress,
+                        handler,
+                        sizeof(std::uintptr_t));
+                }
+            }
+            const auto probe = BuildEngineHookIdentityProbe(identityManifest, observed);
+            logger::info(
+                "[DualPad][SkyrimCompat][I0Probe] phase={} {}",
+                probePhase,
+                ToDebugString(probe));
+            if (!identityManifest.i0Approved) {
+                return detail::MakeHookInstallResult(
+                    HookInstallStatus::SignatureMismatch,
+                    ToString(EngineHookIdentityStatus::GateNotApproved));
             }
             const auto identity = VerifyEngineHookIdentity(identityManifest, observed);
             if (!identity.verified()) {
@@ -460,7 +476,8 @@ namespace dualpad::input_v2::presentation
 
             auto gate = VerifyHookSites(
                 usingGamepadHook.address(),
-                gamepadHandlerVtbl.address());
+                gamepadHandlerVtbl.address(),
+                "plugin_load");
             if (IsInstallAttemptFailureStatus(gate.status)) {
                 gate = MarkInstallFailed(gate);
                 logger::error(
@@ -912,6 +929,38 @@ namespace dualpad::input_v2::presentation
         case MenuRefreshExecutionResult::Superseded:
         default:
             return "Superseded";
+        }
+    }
+
+    void SkyrimCompatibilitySurface::RecordI0RuntimeIdentityProbe() const
+    {
+        if (REL::Module::get().version() != kSupportedRuntime) {
+            logger::warn(
+                "[DualPad][SkyrimCompat][I0Probe] phase=data_loaded unsupported_runtime={}",
+                REL::Module::get().version().string());
+            return;
+        }
+        try {
+            REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId };
+            REL::Relocation<std::uintptr_t> gamepadHandlerVtbl{ kGamepadHandlerVtblId };
+            const auto result = VerifyHookSites(
+                usingGamepadHook.address(),
+                gamepadHandlerVtbl.address(),
+                "data_loaded");
+            if (result.debugReason !=
+                ::dualpad::input_v2::presentation::ToString(
+                    EngineHookIdentityStatus::GateNotApproved)) {
+                logger::warn(
+                    "[DualPad][SkyrimCompat][I0Probe] phase=data_loaded observation_failed={}",
+                    result.debugReason);
+            }
+        } catch (const std::exception& error) {
+            logger::error(
+                "[DualPad][SkyrimCompat][I0Probe] phase=data_loaded exception={}",
+                error.what());
+        } catch (...) {
+            logger::error(
+                "[DualPad][SkyrimCompat][I0Probe] phase=data_loaded unknown_exception");
         }
     }
 

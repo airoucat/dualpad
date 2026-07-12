@@ -3,6 +3,8 @@
 #include "input_v2/presentation/SkyrimEngineModeRouter.h"
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 #include <utility>
 
 namespace dualpad::input_v2::presentation
@@ -34,6 +36,13 @@ namespace dualpad::input_v2::presentation
             }
             return originalValue;
         }
+
+        std::uintptr_t RelativeToModule(
+            std::uintptr_t address,
+            std::uintptr_t moduleBase) noexcept
+        {
+            return moduleBase != 0 && address >= moduleBase ? address - moduleBase : 0;
+        }
     }
     EngineHookIdentityResult VerifyEngineHookIdentity(
         const EngineHookIdentityManifest& manifest,
@@ -57,6 +66,14 @@ namespace dualpad::input_v2::presentation
         }
         if (observed.resolvedHandlerVtableAddress == 0) {
             return { .status = EngineHookIdentityStatus::HandlerVtableMissing };
+        }
+        if (observed.runtimeGamepadDeviceAddress == 0 ||
+            observed.runtimeGamepadDeviceVtableAddress == 0) {
+            return { .status = EngineHookIdentityStatus::RuntimeDeviceMissing };
+        }
+        if (observed.runtimeGamepadDeviceVtableAddress !=
+            observed.resolvedHandlerVtableAddress) {
+            return { .status = EngineHookIdentityStatus::RuntimeHandlerVtableMismatch };
         }
         if (manifest.approvedDeviceVfuncTarget == 0) {
             return { .status = EngineHookIdentityStatus::DeviceTargetMissing };
@@ -86,8 +103,56 @@ namespace dualpad::input_v2::presentation
     {
         return EngineHookIdentityManifest{
             .expectedQueryRva = 0xC15240,
+            .expectedQueryBytes = {
+                0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x49, 0x70,
+                0x48, 0x85, 0xC9, 0x74, 0x11, 0x48, 0x8B, 0x01,
+                0xFF, 0x50, 0x38, 0x84, 0xC0, 0x74, 0x07, 0xB0,
+                0x01, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0x32, 0xC0
+            },
             .i0Approved = false
         };
+    }
+
+    EngineHookIdentityProbe BuildEngineHookIdentityProbe(
+        const EngineHookIdentityManifest& manifest,
+        const EngineHookIdentityObservation& observed) noexcept
+    {
+        EngineHookIdentityProbe probe{
+            .verificationStatus = VerifyEngineHookIdentity(manifest, observed).status,
+            .staticQueryIdentityMatched = observed.moduleBase != 0 &&
+                manifest.expectedQueryRva != 0 &&
+                observed.queryRelocationId == manifest.queryRelocationId &&
+                observed.handlerVtableRelocationId ==
+                    manifest.handlerVtableRelocationId &&
+                observed.resolvedQueryAddress ==
+                    observed.moduleBase + manifest.expectedQueryRva &&
+                observed.queryBytes == manifest.expectedQueryBytes,
+            .runtimeGamepadDevicePresent =
+                observed.runtimeGamepadDeviceAddress != 0 &&
+                observed.runtimeGamepadDeviceVtableAddress != 0,
+            .runtimeHandlerVtableMatched =
+                observed.runtimeGamepadDeviceVtableAddress != 0 &&
+                observed.runtimeGamepadDeviceVtableAddress ==
+                    observed.resolvedHandlerVtableAddress,
+            .queryRva = RelativeToModule(
+                observed.resolvedQueryAddress,
+                observed.moduleBase),
+            .handlerVtableRva = RelativeToModule(
+                observed.resolvedHandlerVtableAddress,
+                observed.moduleBase),
+            .runtimeGamepadDeviceAddress = observed.runtimeGamepadDeviceAddress,
+            .runtimeGamepadDeviceVtableRva = RelativeToModule(
+                observed.runtimeGamepadDeviceVtableAddress,
+                observed.moduleBase)
+        };
+        probe.patchEligible = probe.verificationStatus ==
+            EngineHookIdentityStatus::Verified;
+        for (std::size_t slot = 0; slot < probe.handlerVfuncTargetRvas.size(); ++slot) {
+            probe.handlerVfuncTargetRvas[slot] = RelativeToModule(
+                observed.handlerVtableTargets[slot],
+                observed.moduleBase);
+        }
+        return probe;
     }
 
     const char* ToString(EngineHookIdentityStatus status) noexcept
@@ -103,6 +168,10 @@ namespace dualpad::input_v2::presentation
             return "query_bytes_mismatch";
         case EngineHookIdentityStatus::HandlerVtableMissing:
             return "handler_vtable_missing";
+        case EngineHookIdentityStatus::RuntimeDeviceMissing:
+            return "runtime_gamepad_device_missing";
+        case EngineHookIdentityStatus::RuntimeHandlerVtableMismatch:
+            return "runtime_handler_vtable_mismatch";
         case EngineHookIdentityStatus::DeviceTargetMissing:
             return "device_target_missing";
         case EngineHookIdentityStatus::DeviceTargetAmbiguous:
@@ -111,6 +180,29 @@ namespace dualpad::input_v2::presentation
             return "verified";
         }
         return "unknown";
+    }
+
+    std::string ToDebugString(const EngineHookIdentityProbe& probe)
+    {
+        std::ostringstream stream;
+        stream << "verification=" << ToString(probe.verificationStatus)
+               << " staticQueryIdentityMatched="
+               << (probe.staticQueryIdentityMatched ? "true" : "false")
+               << " runtimeDevicePresent="
+               << (probe.runtimeGamepadDevicePresent ? "true" : "false")
+               << " runtimeVtableMatched="
+               << (probe.runtimeHandlerVtableMatched ? "true" : "false")
+               << " patchEligible=" << (probe.patchEligible ? "true" : "false")
+               << std::hex << std::uppercase
+               << " queryRva=0x" << probe.queryRva
+               << " handlerVtableRva=0x" << probe.handlerVtableRva
+               << " runtimeDevice=0x" << probe.runtimeGamepadDeviceAddress
+               << " runtimeVtableRva=0x" << probe.runtimeGamepadDeviceVtableRva;
+        for (std::size_t slot = 0; slot < probe.handlerVfuncTargetRvas.size(); ++slot) {
+            stream << " slot" << slot << "TargetRva=0x"
+                   << probe.handlerVfuncTargetRvas[slot];
+        }
+        return stream.str();
     }
 
     bool SkyrimEngineModeRouter::DecideWithOriginal(

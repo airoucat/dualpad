@@ -32,6 +32,29 @@ class MixedInputWp9WiringTests(unittest.TestCase):
         self.assertIn("EngineInputMode::Original", projection)
         self.assertIn("EngineDecisionCausality::OriginalOnly", projection)
 
+    def test_unapproved_i0_collects_identity_before_any_patch_preparation(self) -> None:
+        compat = self.read("src/input_v2/presentation/SkyrimCompatibilitySurface.cpp")
+        probe = compat.index("BuildEngineHookIdentityProbe")
+        unapproved_gate = compat.index("if (!identityManifest.i0Approved)", probe)
+        gateway = compat.index(
+            "const auto usingGateway = AllocateEntryGateway", unapproved_gate
+        )
+        transaction = compat.index(
+            "const auto transaction = input::patching::ExecutePatchTransaction", gateway
+        )
+        self.assertLess(probe, unapproved_gate)
+        self.assertLess(unapproved_gate, gateway)
+        self.assertLess(gateway, transaction)
+        self.assertIn("[DualPad][SkyrimCompat][I0Probe]", compat)
+
+    def test_data_loaded_rechecks_the_live_gamepad_device_identity(self) -> None:
+        main = self.read("src/main.cpp")
+        data_loaded = main.index("kDataLoaded")
+        probe = main.index("RecordI0RuntimeIdentityProbe", data_loaded)
+        frame_pump = main.index("InputFramePump::GetSingleton().Register()", probe)
+        self.assertLess(data_loaded, probe)
+        self.assertLess(probe, frame_pump)
+
 
 if __name__ == "__main__":
     unittest.main()

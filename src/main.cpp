@@ -78,6 +78,8 @@ namespace
 
             logger::info("[DualPad] Initializing systems");
             LogReverseProbeAddresses();
+            dualpad::input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton()
+                .RecordI0RuntimeIdentityProbe();
 
             dualpad::input::RuntimeConfig::GetSingleton().Load();
 

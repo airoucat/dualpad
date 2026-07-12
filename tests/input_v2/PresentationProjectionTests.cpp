@@ -514,10 +514,14 @@ void RunEngineHookIdentityTests()
         .moduleBase = moduleBase,
         .resolvedQueryAddress = moduleBase + queryRva,
         .queryBytes = entryBytes,
-        .resolvedHandlerVtableAddress = 0x140F00000
+        .resolvedHandlerVtableAddress = 0x140F00000,
+        .runtimeGamepadDeviceAddress = 0x200000000,
+        .runtimeGamepadDeviceVtableAddress = 0x140F00000
     };
+    observed.handlerVtableTargets[0] = 0x140C19000;
     observed.handlerVtableTargets[7] = approvedTarget;
     observed.handlerVtableTargets[8] = 0x140C1B000;
+    observed.handlerVtableTargets[9] = 0x140C1C000;
 
     const auto verified = presentation::VerifyEngineHookIdentity(manifest, observed);
     Require(verified.status == presentation::EngineHookIdentityStatus::Verified &&
@@ -537,6 +541,21 @@ void RunEngineHookIdentityTests()
         presentation::VerifyEngineHookIdentity(manifest, wrongBytes).status ==
             presentation::EngineHookIdentityStatus::QueryBytesMismatch,
         "all 32 I-0 recorded query bytes must match exactly");
+
+    auto missingRuntimeDevice = observed;
+    missingRuntimeDevice.runtimeGamepadDeviceAddress = 0;
+    missingRuntimeDevice.runtimeGamepadDeviceVtableAddress = 0;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, missingRuntimeDevice).status ==
+            presentation::EngineHookIdentityStatus::RuntimeDeviceMissing,
+        "I-0 must fail closed when devices[kGamepad] is unavailable");
+
+    auto mismatchedRuntimeVtable = observed;
+    mismatchedRuntimeVtable.runtimeGamepadDeviceVtableAddress = 0x140F01000;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, mismatchedRuntimeVtable).status ==
+            presentation::EngineHookIdentityStatus::RuntimeHandlerVtableMismatch,
+        "I-0 must prove the live devices[kGamepad] object uses REL 560029");
 
     auto swappedSlot = observed;
     swappedSlot.handlerVtableTargets[7] = 0x140C1B000;
@@ -558,6 +577,44 @@ void RunEngineHookIdentityTests()
         presentation::VerifyEngineHookIdentity(unapproved, observed).status ==
             presentation::EngineHookIdentityStatus::GateNotApproved,
         "synthetic host identity cannot enable production without I-0 approval");
+
+    const auto pendingProbe = presentation::BuildEngineHookIdentityProbe(
+        unapproved,
+        observed);
+    Require(pendingProbe.staticQueryIdentityMatched &&
+            pendingProbe.runtimeGamepadDevicePresent &&
+            pendingProbe.runtimeHandlerVtableMatched &&
+            !pendingProbe.patchEligible &&
+            pendingProbe.verificationStatus ==
+                presentation::EngineHookIdentityStatus::GateNotApproved &&
+            pendingProbe.queryRva == queryRva &&
+            pendingProbe.handlerVtableRva == 0xF00000 &&
+            pendingProbe.handlerVfuncTargetRvas[7] == 0xC1A000 &&
+            pendingProbe.handlerVfuncTargetRvas[8] == 0xC1B000,
+        "unapproved I-0 probe must capture ASLR-independent identity without enabling patch writes");
+    const auto pendingDebug = presentation::ToDebugString(pendingProbe);
+    Require(pendingDebug.find("patchEligible=false") != std::string::npos &&
+            pendingDebug.find("runtimeDevicePresent=true") != std::string::npos &&
+            pendingDebug.find("runtimeVtableMatched=true") != std::string::npos &&
+            pendingDebug.find("queryRva=0xC15240") != std::string::npos &&
+            pendingDebug.find("slot0TargetRva=0xC19000") != std::string::npos &&
+            pendingDebug.find("slot7TargetRva=0xC1A000") != std::string::npos &&
+            pendingDebug.find("slot8TargetRva=0xC1B000") != std::string::npos &&
+            pendingDebug.find("slot9TargetRva=0xC1C000") != std::string::npos,
+        "I-0 probe log must expose the exact runtime identities needed for a PASS/FAIL verdict");
+
+    const auto production = presentation::ProductionEngineHookIdentityManifest();
+    constexpr std::array<std::uint8_t, 32> approvedStaticEntryBytes{
+        0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x49, 0x70,
+        0x48, 0x85, 0xC9, 0x74, 0x11, 0x48, 0x8B, 0x01,
+        0xFF, 0x50, 0x38, 0x84, 0xC0, 0x74, 0x07, 0xB0,
+        0x01, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0x32, 0xC0
+    };
+    Require(!production.i0Approved &&
+            production.expectedQueryRva == queryRva &&
+            production.expectedQueryBytes == approvedStaticEntryBytes &&
+            production.approvedDeviceVfuncTarget == 0,
+        "matching static query bytes may seed the read-only probe but cannot pre-approve the runtime target");
 }
 
 void RunEngineOriginalFirstTests()

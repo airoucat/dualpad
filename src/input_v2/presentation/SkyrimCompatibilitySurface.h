@@ -175,6 +175,7 @@ namespace dualpad::input_v2::presentation
         static SkyrimCompatibilitySurface& GetSingleton();
 
         HookInstallResult Install();
+        void RecordI0RuntimeIdentityProbe() const;
         void Commit(const PublishedPresentationState& state);
         void CommitPreOutputGameplayPresentationHandoff(PresentationOwner owner);
         void EnableRollback(const LegacyCompatibilitySurface& legacy);
