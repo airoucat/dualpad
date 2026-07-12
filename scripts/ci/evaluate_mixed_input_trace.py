@@ -96,6 +96,19 @@ def evaluate_record(record: dict[str, Any], line: int) -> list[dict[str, Any]]:
             )
 
     cursor = record.get("cursor", {})
+    if record.get("caseId") == "runtime-presentation-shadow":
+        requested_owner = cursor.get("requestedOwner")
+        committed_owner = cursor.get("committedOwner")
+        if requested_owner != committed_owner:
+            plan = cursor.get("plan", {})
+            if not cursor.get("pendingAfter", False) or not plan.get("token"):
+                violations.append(
+                    violation(
+                        "B.3-cursor-pending",
+                        line,
+                        "uncommitted cursor owner request has no pending exact plan",
+                    )
+                )
     if cursor.get("commitChanged", False):
         plan = cursor.get("plan", {})
         ack = cursor.get("ack", {})

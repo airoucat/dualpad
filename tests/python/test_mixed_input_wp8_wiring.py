@@ -17,6 +17,21 @@ class MixedInputWp8WiringTests(unittest.TestCase):
         self.assertIn("frame.facts.sourceActivities", source)
         self.assertIn("CursorHandoffAckMailbox::GetSingleton()", source)
 
+    def test_runtime_records_cursor_plan_ack_and_original_engine_shadow(self):
+        source = (ROOT / "src/input_v2/gameplay/DualPadRuntime.cpp").read_text(encoding="utf-8")
+        start = source.index("void DualPadRuntime::PublishStablePresentationSurface")
+        end = source.index("void DualPadRuntime::PublishRuntimeDebugSnapshot", start)
+        body = source[start:end]
+        for token in [
+            "presentationBefore",
+            "pendingCursorPlanBefore",
+            "RecordPresentation",
+            "cursorAck",
+            "engineSnapshotCurrent",
+            "GetEngineModeShadow",
+        ]:
+            self.assertIn(token, body)
+
     def test_pre_output_handoff_only_records_menu_entry_intent(self):
         source = (ROOT / "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp").read_text(
             encoding="utf-8"

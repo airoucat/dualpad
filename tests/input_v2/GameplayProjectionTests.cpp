@@ -1411,6 +1411,14 @@ namespace
                     gameplay::CurrentCycleChannel::Look),
                 .wouldMutateCount = 1,
                 .currentEventWriterCount = 1 },
+            .sprintDecision = gameplay::SustainedContributorDecision{
+                .next = after.sprint,
+                .aggregateHeld = true,
+                .virtualBridgeDesired = true,
+                .winningPressSource = gameplay::SustainedContributorBit::KeyboardPhysical,
+                .joiningPressSuppressionMask = gameplay::SustainedContributorMask(
+                    gameplay::SustainedContributorBit::KeyboardPhysical),
+                .requiresCurrentCycleMutation = true },
             .before = previous,
             .after = after,
             .commit = gameplay::RuntimeInputCommitResult{
@@ -1424,6 +1432,10 @@ namespace
                 json.find("\"materializationId\":\"41:12:11:9\"") != std::string::npos &&
                 json.find("\"Look\":1") != std::string::npos &&
                 json.find("\"result\":\"ShadowOnly\"") != std::string::npos &&
+                json.find("\"winningPressSource\":\"KeyboardPhysical\"") !=
+                    std::string::npos &&
+                json.find("\"joiningPressSuppressionMask\":2") != std::string::npos &&
+                json.find("\"virtualBridgeDesired\":true") != std::string::npos &&
                 json.find("\"sensitiveLedgerBefore\":\"8/1/0\"") != std::string::npos &&
                 json.find("\"sensitiveLedgerAfter\":\"8/1/0\"") != std::string::npos,
             "mixed-input evidence JSON must bind receipt, writers and rollback ledger");
@@ -1441,6 +1453,68 @@ namespace
         record.audit.failure = gameplay::CurrentCycleGateFailure::AdapterFailure;
         Require(sampler.ShouldEmit(record), "evidence decision changes must emit immediately");
         record.audit.failure = gameplay::CurrentCycleGateFailure::None;
+
+        presentation::PublishedPresentationState presentationBefore{};
+        presentationBefore.cursor.requestedOwner = presentation::CursorOwner::Gamepad;
+        presentationBefore.cursor.committedOwner = presentation::CursorOwner::Gamepad;
+        presentationBefore.cursor.pendingToken = 501;
+        presentationBefore.cursor.positionSyncRequired = true;
+        presentationBefore.cursor.contextRevision = 8;
+        presentationBefore.cursor.epoch = 12;
+        presentationBefore.presentationEpoch = 12;
+        presentationBefore.targetMenuInstanceId = 77;
+        presentationBefore.targetMenuPtr = 0x1000;
+        presentationBefore.targetMenuMoviePtr = 0x2000;
+        auto presentationAfter = presentationBefore;
+        presentationAfter.cursor.requestedOwner = presentation::CursorOwner::KeyboardMouse;
+        presentationAfter.cursor.positionSyncRequired = true;
+        presentationAfter.cursor.reason = presentation::CursorOwnerDecisionReason::HandoffPending;
+        const presentation::CursorHandoffPlan cursorPlan{
+            .token = 501,
+            .from = presentation::CursorOwner::Gamepad,
+            .to = presentation::CursorOwner::KeyboardMouse,
+            .contextRevision = 8,
+            .presentationEpoch = 12,
+            .targetMenuInstanceId = 77,
+            .targetMenuPtr = 0x1000,
+            .targetMoviePtr = 0x2000
+        };
+        const presentation::CursorHandoffAck cursorAck{
+            .token = 501,
+            .targetMenuInstanceId = 77,
+            .contextRevision = 8,
+            .presentationEpoch = 12,
+            .positionSynchronized = false,
+            .failure = presentation::CursorHandoffFailure::MappingUnverified
+        };
+        const telemetry::PresentationEvidenceRecord presentationRecord{
+            .monotonicUs = 1'000'000,
+            .ownerTickToken = 100,
+            .before = presentationBefore,
+            .after = presentationAfter,
+            .planBefore = cursorPlan,
+            .planAfter = cursorPlan,
+            .ack = cursorAck,
+            .engine = gameplay::ProjectOriginalEngineModes(100, 4, 8, 11)
+        };
+        const auto presentationJson =
+            telemetry::SerializePresentationEvidenceJsonLine(presentationRecord);
+        Require(presentationJson.find("\"caseId\":\"runtime-presentation-shadow\"") !=
+                    std::string::npos &&
+                presentationJson.find("\"monotonicUs\":1000000") != std::string::npos &&
+                presentationJson.find("\"commitChanged\":false") != std::string::npos &&
+                presentationJson.find("\"positionSyncRequired\":true") != std::string::npos &&
+                presentationJson.find("\"failure\":\"MappingUnverified\"") !=
+                    std::string::npos &&
+                presentationJson.find("\"menuInstance\":77") != std::string::npos &&
+                presentationJson.find("\"menuPtr\":4096") != std::string::npos &&
+                presentationJson.find("\"moviePtr\":8192") != std::string::npos &&
+                presentationJson.find("\"overrideApplied\":false") != std::string::npos &&
+                presentationJson.find("\"scopeActive\":false") != std::string::npos &&
+                presentationJson.find("\"snapshotCurrent\":false") != std::string::npos &&
+                presentationJson.find("\"inputStateEpoch\":4") != std::string::npos &&
+                presentationJson.find("\"contextRevision\":8") != std::string::npos,
+            "presentation evidence JSON must bind cursor plan/ack, menu identity and Original-only engine state");
 
         const auto traceRoot = std::filesystem::temp_directory_path() /
             "dualpad-mixed-input-evidence";
@@ -1483,6 +1557,22 @@ namespace
         runtimeInput.currentCycleEvidence->monotonicUs += 1'000'000;
         runtimeInput.outputTick += 1'000'000;
         (void)runtime.ProcessGameplayFrameForTests(runtimeInput, executor);
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().RecordPresentation(
+            presentationRecord);
+        auto repeatedPresentation = presentationRecord;
+        repeatedPresentation.monotonicUs += 1'000'000;
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().RecordPresentation(
+            repeatedPresentation);
+        auto changedAckPresentation = repeatedPresentation;
+        changedAckPresentation.monotonicUs += 1'000'000;
+        changedAckPresentation.ack->token++;
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().RecordPresentation(
+            changedAckPresentation);
+        auto changedPresentation = changedAckPresentation;
+        changedPresentation.monotonicUs += 1'000'000;
+        changedPresentation.after.menu.owner = presentation::PresentationOwner::Gamepad;
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().RecordPresentation(
+            changedPresentation);
 
         const auto evidencePath = traceRoot / "i-p-shadow" / "mixed_input_evidence.jsonl";
         std::ifstream evidence(evidencePath);
@@ -1490,10 +1580,12 @@ namespace
         for (std::string line; std::getline(evidence, line);) {
             lines.push_back(std::move(line));
         }
-        Require(lines.size() == 1 &&
+        Require(lines.size() == 4 &&
                 lines.front().find("\"caseId\":\"runtime-shadow\"") != std::string::npos &&
-                lines.front().find("\"result\":\"ShadowOnly\"") != std::string::npos,
-            "runtime must write bounded evaluator-compatible I-P shadow evidence");
+                lines.front().find("\"result\":\"ShadowOnly\"") != std::string::npos &&
+                lines.back().find("\"caseId\":\"runtime-presentation-shadow\"") !=
+                    std::string::npos,
+            "runtime must write bounded evaluator-compatible gameplay and presentation shadow evidence");
 
         const auto blockedRoot = std::filesystem::temp_directory_path() /
             "dualpad-mixed-input-evidence-blocked";
@@ -1513,6 +1605,13 @@ namespace
             "blocked mixed-input evidence trace config must load");
         telemetry::MixedInputEvidenceRecorder::GetSingleton().ResetForTests();
         telemetry::MixedInputEvidenceRecorder::GetSingleton().Record(record);
+
+        std::filesystem::remove(blockedRoot, error);
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().Record(record);
+        const auto recoveredEvidencePath =
+            blockedRoot / "i-p-shadow" / "mixed_input_evidence.jsonl";
+        Require(std::filesystem::exists(recoveredEvidencePath),
+            "a failed evidence append must remain eligible for retry");
 
         std::filesystem::remove(configPath, error);
         std::filesystem::remove_all(traceRoot, error);

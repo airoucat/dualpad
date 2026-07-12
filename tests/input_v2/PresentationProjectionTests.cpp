@@ -423,6 +423,73 @@ void RunCursorPlanAckShadowTests()
             intentOnly.epoch == committedState.epoch &&
             intentOnly.gameplayMenuEntryIntentOwner == presentation::PresentationOwner::Gamepad,
         "gameplay pre-output handoff must publish menu-entry intent without forcing menu/cursor owner");
+
+    presentation::PresentationProjection liveProjection;
+    const presentation::SourceEvidenceSnapshot evidence{};
+    const presentation::PublishedGameplayPresentation gameplay{};
+    const std::vector<ingress::MeaningfulSourceActivity> gamepadActivity{
+        Activity(
+            ingress::PhysicalInputSource::Gamepad,
+            ingress::SourceActivityKind::GamepadButtonPress,
+            100,
+            1)
+    };
+    const auto gamepadPending = liveProjection.ProjectOrdered(
+        evidence,
+        context,
+        gameplay,
+        gamepadActivity,
+        resolved,
+        5'000,
+        7,
+        1'000);
+    const auto gamepadPlan = liveProjection.GetPendingCursorPlan();
+    Require(gamepadPlan.has_value() &&
+            gamepadPending.cursor.committedOwner == presentation::CursorOwner::KeyboardMouse,
+        "live projection must first keep KBM cursor until exact gamepad handoff ack");
+
+    const presentation::CursorHandoffAck gamepadAck{
+        .token = gamepadPlan->token,
+        .targetMenuInstanceId = gamepadPlan->targetMenuInstanceId,
+        .contextRevision = gamepadPlan->contextRevision,
+        .presentationEpoch = gamepadPlan->presentationEpoch,
+        .positionSynchronized = true,
+        .failure = presentation::CursorHandoffFailure::None
+    };
+    const auto gamepadCommitted = liveProjection.ProjectOrdered(
+        evidence,
+        context,
+        gameplay,
+        {},
+        resolved,
+        5'001,
+        7,
+        1'001,
+        gamepadAck);
+    Require(gamepadCommitted.cursor.committedOwner == presentation::CursorOwner::Gamepad,
+        "exact test ack must establish a gamepad cursor baseline");
+
+    const std::vector<ingress::MeaningfulSourceActivity> mouseActivity{
+        Activity(
+            ingress::PhysicalInputSource::Mouse,
+            ingress::SourceActivityKind::MouseButtonPress,
+            101,
+            2)
+    };
+    const auto mousePending = liveProjection.ProjectOrdered(
+        evidence,
+        context,
+        gameplay,
+        mouseActivity,
+        resolved,
+        5'002,
+        7,
+        1'002);
+    Require(mousePending.cursor.requestedOwner == presentation::CursorOwner::KeyboardMouse &&
+            mousePending.cursor.committedOwner == presentation::CursorOwner::Gamepad &&
+            mousePending.cursor.pendingToken != 0 &&
+            liveProjection.GetPendingCursorPlan().has_value(),
+        "I-CURSOR NO-GO must keep gamepad-to-KBM handoff pending until exact ack or a proven no-sync verdict");
 }
 
 void RunEngineHookIdentityTests()

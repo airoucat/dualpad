@@ -330,6 +330,9 @@
         "status": "NO-GO",
         "manualEvidenceComplete": false,
         "capabilityEnabled": false,
+        "shadowEvidenceCaptureAvailable": true,
+        "shadowEvidenceFile": "mixed_input_evidence.jsonl",
+        "liveVerdict": "pending",
         "directions": {
           "keyboardMouseToGamepad": "NO-GO",
           "gamepadToKeyboardMouse": "NO-GO"
@@ -339,7 +342,10 @@
         "status": "NO-GO",
         "manualEvidenceComplete": false,
         "capabilityEnabled": false,
-        "guardCreated": false
+        "guardCreated": false,
+        "shadowContributorEvidenceAvailable": true,
+        "shadowEvidenceFile": "mixed_input_evidence.jsonl",
+        "liveVerdict": "pending"
       },
       "I-KBM": {
         "status": "NO-GO",

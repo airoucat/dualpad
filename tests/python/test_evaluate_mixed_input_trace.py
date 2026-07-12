@@ -56,6 +56,12 @@ class MixedInputTraceEvaluatorTests(unittest.TestCase):
     def test_cursor_commit_without_exact_ack_is_rejected(self) -> None:
         self.assert_violation("cursor_commit_without_ack.jsonl", "B.3-cursor-ack")
 
+    def test_cursor_owner_request_without_pending_plan_is_rejected(self) -> None:
+        self.assert_violation(
+            "cursor_request_without_pending.jsonl",
+            "B.3-cursor-pending",
+        )
+
     def test_poll_receipt_failures_are_rejected(self) -> None:
         self.assert_violation("poll_receipt_missing.jsonl", "B.3-poll-receipt")
         self.assert_violation(

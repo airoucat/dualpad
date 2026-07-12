@@ -192,9 +192,25 @@ class MixedInputCloseoutContractTests(unittest.TestCase):
             "mixed_input_evidence.jsonl",
             "enable_trace_recording = true",
             "evaluate_mixed_input_trace.py",
+            "runtime-presentation-shadow",
             "不解除 I-P",
         ]:
             self.assertIn(token, evidence_doc)
+
+        cursor_gate = manifest["dynamicEvidence"]["gates"]["I-CURSOR"]
+        self.assertEqual(cursor_gate["status"], "NO-GO")
+        self.assertFalse(cursor_gate["capabilityEnabled"])
+        self.assertTrue(cursor_gate["shadowEvidenceCaptureAvailable"])
+        self.assertEqual(cursor_gate["liveVerdict"], "pending")
+        self.assertEqual(cursor_gate["directions"]["keyboardMouseToGamepad"], "NO-GO")
+        self.assertEqual(cursor_gate["directions"]["gamepadToKeyboardMouse"], "NO-GO")
+
+        sprint_gate = manifest["dynamicEvidence"]["gates"]["I-SPRINT"]
+        self.assertEqual(sprint_gate["status"], "NO-GO")
+        self.assertFalse(sprint_gate["capabilityEnabled"])
+        self.assertFalse(sprint_gate["guardCreated"])
+        self.assertTrue(sprint_gate["shadowContributorEvidenceAvailable"])
+        self.assertEqual(sprint_gate["liveVerdict"], "pending")
 
     def test_closeout_diff_stays_inside_the_approved_scope(self) -> None:
         if self.phase != "closeout":

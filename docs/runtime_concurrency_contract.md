@@ -73,4 +73,6 @@ menu event 到达后，`UiMenuObserver` 立即发布保留上一稳定节点的 
 
 mixed-input 另有 I-P、I-CURSOR、I-SPRINT、I-KBM 与 I-0/I-1/I-2/I-MENU/I-5 动态门禁；静态/host 并发测试只能证明 fail-closed 事务，不能批准对应 production capability。
 
-I-P shadow evidence 复用 callback-local receipt 与 `Prepare -> Apply -> Commit` 结果，不重新 Acquire Poll frame。记录器默认关闭；开启后只在 decision 变化、时钟回退或每 10 秒健康采样时追加 JSONL，目录不可写时静默放弃该条记录，不让遥测异常越过 runtime owner 边界。
+I-P shadow evidence 复用 callback-local receipt 与 `Prepare -> Apply -> Commit` 结果，不重新 Acquire Poll frame。记录器默认关闭；开启后只在 decision 变化、时钟回退或每 10 秒健康采样时追加 JSONL，目录不可写时不抛异常并保留后续重试资格。该路径是同步 debug I/O，只允许短时证据采集，日常运行必须关闭。
+
+presentation shadow evidence 在同一 owner tick 中先复制上一份 atomic presentation 与 pending cursor plan，再消费 exact ack、投影并提交新 snapshot，最后记录 plan/ack/owner/menu identity 与 Original-only engine snapshot。I-CURSOR 两个方向为 `NO-GO` 时均使用 `MappingUnverified`，没有 exact success ack 或方向级动态 `NotRequired` 裁决就不得推进 committed cursor owner。

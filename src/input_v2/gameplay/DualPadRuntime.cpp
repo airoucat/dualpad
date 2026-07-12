@@ -553,8 +553,12 @@ namespace dualpad::input_v2::gameplay
             return;
         }
 
+        const auto presentationBefore = _presentationProjection.GetPublished();
+        const auto pendingCursorPlanBefore = _presentationProjection.GetPendingCursorPlan();
+        const auto ownerTickToken = frame.facts.kbmGameplay ?
+            frame.facts.kbmGameplay->ownerTickToken : frame.facts.coherence.captureGeneration;
         std::optional<presentation::CursorHandoffAck> cursorAck;
-        if (const auto& pending = _presentationProjection.GetPendingCursorPlan(); pending) {
+        if (const auto& pending = pendingCursorPlanBefore; pending) {
             if (const auto ackEnvelope =
                     presentation::CursorHandoffAckMailbox::GetSingleton().ConsumeExactOnOwnerTick(
                         pending->token,
@@ -576,9 +580,8 @@ namespace dualpad::input_v2::gameplay
                 resolvedForPresentation,
                 frame.facts.monotonicUs / 1000,
                 frame.facts.coherence.inputStateEpoch,
-                frame.facts.kbmGameplay ?
-                    frame.facts.kbmGameplay->ownerTickToken : frame.facts.coherence.captureGeneration,
-                std::move(cursorAck)) :
+                ownerTickToken,
+                cursorAck) :
             _presentationProjection.Project(
                 frame.facts.sourceEvidence,
                 envelope.config.context,
@@ -587,16 +590,28 @@ namespace dualpad::input_v2::gameplay
         auto& compatibilitySurface = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compatibilitySurface.Commit(published);
         const auto committedSensitive = RuntimeInputPublication::GetSingleton().GetCommitted();
-        if (committedSensitive.inputStateEpoch == frame.facts.coherence.inputStateEpoch &&
+        const bool engineSnapshotCurrent =
+            committedSensitive.inputStateEpoch == frame.facts.coherence.inputStateEpoch &&
             committedSensitive.gamepadSessionId == frame.facts.coherence.gamepadSessionId &&
             committedSensitive.controlMapRevision == frame.facts.coherence.controlMapRevision &&
-            committedSensitive.orderedCutoffSeq == frame.facts.coherence.orderedCutoffSeq) {
+            committedSensitive.orderedCutoffSeq == frame.facts.coherence.orderedCutoffSeq;
+        if (engineSnapshotCurrent) {
             RuntimeInputPublication::GetSingleton().PublishOriginalEngineModeShadow(
-                frame.facts.kbmGameplay ?
-                    frame.facts.kbmGameplay->ownerTickToken : frame.facts.coherence.captureGeneration,
+                ownerTickToken,
                 frame.facts.coherence.inputStateEpoch,
                 frame.facts.contextRevision);
         }
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().RecordPresentation(
+            telemetry::PresentationEvidenceRecord{
+                .monotonicUs = frame.facts.monotonicUs,
+                .ownerTickToken = ownerTickToken,
+                .before = presentationBefore,
+                .after = published,
+                .planBefore = pendingCursorPlanBefore,
+                .planAfter = _presentationProjection.GetPendingCursorPlan(),
+                .ack = cursorAck,
+                .engine = RuntimeInputPublication::GetSingleton().GetEngineModeShadow(),
+                .engineSnapshotCurrent = engineSnapshotCurrent });
         if (ShouldPublishPromptScope(result.runtimeHealthReasons)) {
             prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(
                 published,
@@ -732,6 +747,7 @@ namespace dualpad::input_v2::gameplay
                     .receipt = input.currentCycleEvidence->receipt,
                     .plan = currentCyclePlan,
                     .audit = commitAudit,
+                    .sprintDecision = projection.sprintDecision,
                     .before = committedSensitive,
                     .after = RuntimeInputPublication::GetSingleton().GetCommitted(),
                     .commit = sensitiveCommit });

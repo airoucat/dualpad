@@ -406,8 +406,7 @@ namespace dualpad::input_v2::presentation
             .routedActivities = routed.activities,
             .cursorAck = std::move(cursorAck),
             .inputStateEpoch = inputStateEpoch,
-            .ownerTickToken = ownerTickToken,
-            .gamepadToKeyboardMouseSync = CursorPositionSyncPolicy::NotRequired
+            .ownerTickToken = ownerTickToken
         });
         projected.state.activityRouting = routed.next;
         projected.state.gameplayPresentationRevision = gameplay.gameplayPresentationRevision;

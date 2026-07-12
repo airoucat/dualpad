@@ -43,6 +43,12 @@ class MixedInputWp5ShadowWiringTests(unittest.TestCase):
         ]:
             self.assertIn(token, prepare)
 
+    def test_runtime_attaches_sprint_decision_to_shadow_evidence(self):
+        source = (ROOT / "src/input_v2/gameplay/DualPadRuntime.cpp").read_text(encoding="utf-8")
+        start = source.index("MixedInputEvidenceRecord{")
+        end = source.index("});", start)
+        self.assertIn(".sprintDecision = projection.sprintDecision", source[start:end])
+
 
 if __name__ == "__main__":
     unittest.main()

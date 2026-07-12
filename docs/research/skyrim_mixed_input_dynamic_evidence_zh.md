@@ -30,9 +30,14 @@
 - Sprint contributor mask、final release、epoch/session、Poll receipt、adapter rollback、cursor exact ack 与 engine Original-only 合同有自动化反例。
 - static/host identity fixture 只能证明 fail-closed 逻辑；不能把任一 Gate 从 `NO-GO` 提升为通过。
 
-## I-P shadow 证据采集
+## 多 Gate shadow 证据采集
 
-运行时已提供有界、默认关闭的 I-P shadow 记录器。它直接携带 callback 已消费的 `PollMaterializationReceipt`，以及同一轮 `Prepare -> Apply -> Commit` 的 plan、adapter audit 和 current-cycle-sensitive ledger 前后值；它不会重新 Acquire 最新 Poll frame。记录器仅在 decision 变化、时钟回退或每 10 秒健康采样时写入，输出失败会静默保持 fail-closed，不影响 owner tick。
+运行时已提供有界、默认关闭的 mixed-input shadow 记录器。它向同一个 JSONL 写入两类记录：
+
+- `runtime-shadow`：直接携带 callback 已消费的 `PollMaterializationReceipt`，以及同一轮 `Prepare -> Apply -> Commit` 的 plan、adapter audit、current-cycle-sensitive ledger 前后值和完整 Sprint contributor decision；它不会重新 Acquire 最新 Poll frame。
+- `runtime-presentation-shadow`：携带 cursor plan 前后值、exact ack、requested/committed owner、menu identity、presentation epoch 和 Original-only engine snapshot。I-CURSOR 两个方向未裁决前，方向切换只允许保持 pending，不得凭硬编码 `NotRequired` 直接提交。
+
+两类记录分别按 decision key 采样：首次、decision 变化、时钟回退或每 10 秒健康采样时才写入。输出失败不会抛出异常，并保留同一 decision 的后续重试资格。记录器使用同步文件 I/O，只能在短时动态证据采集时显式开启；日常运行必须保持关闭。
 
 在实机使用的 `DualPadDebug.ini` 中设置：
 
@@ -55,6 +60,15 @@ Data/SKSE/Plugins/DualPadTrace/mixed-input-i-p/mixed_input_evidence.jsonl
 python scripts/ci/evaluate_mixed_input_trace.py "G:\SteamLibrary\steamapps\common\Skyrim Special Edition\Data\SKSE\Plugins\DualPadTrace\mixed-input-i-p\mixed_input_evidence.jsonl"
 ```
 
-判定规则：命令输出 `"status": "PASS"` 且 `"violations": []`，只证明这份运行样本没有违反自动化 causal contract；输出 `FAIL` 则本轮证据明确失败。该 shadow trace 不包含下游 consumer watchpoint，因此即使为 `PASS` 也不解除 I-P，仍需补齐 event materialization 与 consumer 顺序的动态证明。采集完成后应把 `enable_trace_recording` 恢复为 `false`。
+判定规则：命令输出 `"status": "PASS"` 且 `"violations": []`，只证明这份运行样本没有违反自动化 causal contract；输出 `FAIL` 则本轮证据明确失败。
+
+该文件可以同时辅助：
+
+- I-P：receipt、writer、adapter rollback 和 Sprint-sensitive ledger 对照；仍缺 event materialization 与下游 consumer watchpoint。
+- I-CURSOR：两个方向的 plan/ack/menu identity 对照；仍缺真实坐标、read-back 和误差矩阵。
+- I-SPRINT：G/K/M source mask、winning source、joining/non-final suppression、virtual bridge 和 final release 对照；仍缺 `heldStateActive` / `triggerReleaseEvent` hardware watchpoint。
+- I-MENU/I-1：只提供 menu identity 与 Original-only owner snapshot，不记录真实 SetPlatform invoke 或 26 caller query，因此不能据此闭合 Gate。
+
+所以 shadow trace 即使为 `PASS` 也不解除 I-P、I-CURSOR、I-SPRINT 或其它动态 Gate。采集完成后应把 `enable_trace_recording` 恢复为 `false`。
 
 动态证据必须绑定被测插件 commit、Skyrim runtime、EXE/DLL/PDB/config hash、原始日志或 debugger artifact，并把唯一出口写回本台账和 `.dualpad-builder/mixed_input_evidence.json`。证据缺失、冲突或无法唯一判断时维持 `NO-GO`。
