@@ -2,6 +2,7 @@
 
 #include "input_v2/gameplay/ChannelArbitration.h"
 #include "input_v2/gameplay/CurrentCycleGatePlan.h"
+#include "input_v2/gameplay/EngineModeProjection.h"
 #include "input_v2/gameplay/SustainedContributorDecision.h"
 #include "input_v2/gameplay/TransientActionGate.h"
 
@@ -68,6 +69,11 @@ namespace dualpad::input_v2::gameplay
             std::uint64_t token,
             const CurrentCycleAdapterAudit& audit);
         CurrentCycleSensitiveState GetCommitted() const;
+        EngineModeDecisionSnapshot PublishOriginalEngineModeShadow(
+            std::uint64_t ownerTickToken,
+            std::uint64_t inputStateEpoch,
+            std::uint32_t contextRevision);
+        EngineModeDecisionSnapshot GetEngineModeShadow() const;
         PreparedCurrentCycleCallback PrepareCallbackAudit(
             std::uint64_t ownerTickToken,
             const CurrentCycleGatePlan& plan);
@@ -90,6 +96,7 @@ namespace dualpad::input_v2::gameplay
 
         mutable std::mutex _mutex;
         CurrentCycleSensitiveState _committed{};
+        EngineModeDecisionSnapshot _engineModeShadow{};
         std::unordered_map<std::uint64_t, PreparedRecord> _prepared;
         std::unordered_set<std::uint64_t> _consumed;
         std::unordered_map<std::uint64_t, PublishedCurrentCycleAudit> _callbackAudits;

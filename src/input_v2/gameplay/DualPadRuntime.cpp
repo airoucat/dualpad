@@ -582,6 +582,17 @@ namespace dualpad::input_v2::gameplay
                 frame.facts.monotonicUs / 1000);
         auto& compatibilitySurface = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compatibilitySurface.Commit(published);
+        const auto committedSensitive = RuntimeInputPublication::GetSingleton().GetCommitted();
+        if (committedSensitive.inputStateEpoch == frame.facts.coherence.inputStateEpoch &&
+            committedSensitive.gamepadSessionId == frame.facts.coherence.gamepadSessionId &&
+            committedSensitive.controlMapRevision == frame.facts.coherence.controlMapRevision &&
+            committedSensitive.orderedCutoffSeq == frame.facts.coherence.orderedCutoffSeq) {
+            RuntimeInputPublication::GetSingleton().PublishOriginalEngineModeShadow(
+                frame.facts.kbmGameplay ?
+                    frame.facts.kbmGameplay->ownerTickToken : frame.facts.coherence.captureGeneration,
+                frame.facts.coherence.inputStateEpoch,
+                frame.facts.contextRevision);
+        }
         if (ShouldPublishPromptScope(result.runtimeHealthReasons)) {
             prompt::PromptRuntimeOwner::GetSingleton().PublishPresentationState(
                 published,

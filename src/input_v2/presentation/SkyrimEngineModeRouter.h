@@ -1,5 +1,7 @@
 #pragma once
 
+#include "input_v2/gameplay/EngineModeProjection.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -72,5 +74,49 @@ namespace dualpad::input_v2::presentation
     public:
         [[nodiscard]] bool DecideWithOriginal(
             const std::function<bool()>& originalGateway) const;
+
+        [[nodiscard]] bool DecideForSnapshot(
+            std::uintptr_t returnAddress,
+            const gameplay::EngineModeDecisionSnapshot& snapshot,
+            bool originalValue) const noexcept;
+
+        [[nodiscard]] gameplay::EngineQueryDomain ClassifyDirectCaller(
+            std::uintptr_t returnAddress) const noexcept;
+
+        [[nodiscard]] class EngineQueryScope EnterScopedOverride(
+            gameplay::EngineQueryDomain domain,
+            gameplay::EngineInputMode mode,
+            std::uint64_t ownerTickToken,
+            std::uint32_t contextRevision) noexcept;
     };
+
+    class EngineQueryScope
+    {
+    public:
+        EngineQueryScope() noexcept = default;
+        EngineQueryScope(const EngineQueryScope&) = delete;
+        EngineQueryScope& operator=(const EngineQueryScope&) = delete;
+        EngineQueryScope(EngineQueryScope&& other) noexcept;
+        EngineQueryScope& operator=(EngineQueryScope&& other) noexcept;
+        ~EngineQueryScope();
+
+    private:
+        friend class SkyrimEngineModeRouter;
+        explicit EngineQueryScope(std::uint64_t scopeId) noexcept : _scopeId(scopeId) {}
+        void Release() noexcept;
+
+        std::uint64_t _scopeId{ 0 };
+    };
+
+    struct EngineCallerShadowManifest
+    {
+        std::array<gameplay::EngineCallerRule, 26> rules{};
+        std::size_t populatedRuleCount{ 0 };
+        std::size_t releaseRelevantUnknownCount{ 26 };
+        bool i1Approved{ false };
+    };
+
+    [[nodiscard]] bool CallerShadowTableReleaseReady(
+        const EngineCallerShadowManifest& manifest) noexcept;
+    [[nodiscard]] EngineCallerShadowManifest ProductionEngineCallerShadowManifest() noexcept;
 }

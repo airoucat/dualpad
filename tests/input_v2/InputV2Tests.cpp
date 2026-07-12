@@ -1156,6 +1156,14 @@ namespace
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
                 presentation::PresentationOwner::Gamepad,
             "stable gamepad evidence must update the independent presentation owner");
+        const auto engineShadow = gameplay::RuntimeInputPublication::GetSingleton().GetEngineModeShadow();
+        Require(engineShadow.generation > 0,
+            "stable committed owner tick must publish an immutable engine shadow snapshot");
+        for (const auto& decision : engineShadow.byDomain) {
+            Require(decision.mode == gameplay::EngineInputMode::Original &&
+                    decision.causality == gameplay::EngineDecisionCausality::OriginalOnly,
+                "prompt/menu activity must not turn an unapproved engine shadow recommendation into an override");
+        }
     }
 
     void RunPromptStatePublishedBeforeRefreshCallbackTests()

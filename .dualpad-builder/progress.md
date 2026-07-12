@@ -3532,3 +3532,15 @@
   - 新增 `GamepadDeviceAvailabilityDecision`，默认 policy 固定 `Native`；connectivity/delegateReady 只有未来 I-0 结果 B 的 verified Poll/init domain 才可能生效，Remap 与无批准 scope 始终返回 original。
   - engine query gateway 无 scope 时 exact 调用 original 一次；gamepad cursor bool 在 I-CURSOR 前也回 original；旧 non-remap fixed `true` 和 PlayerControls/MenuControls remap 内存推断已删除。
   - presentation owner 仍独立发布给 prompt/menu/cursor，不再成为 global engine mode writer。Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadInputV2Tests` build/run 全部 exit 0。
+
+## 2026-07-12 13:47:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP9-C shadow router and WP9 completed`：
+  - RED 先以缺失 `gameplay/EngineModeProjection.h` 证明 9-domain shadow snapshot/TLS router 尚不存在；production wiring RED 再证明 `RuntimeInputPublication` 未发布 committed engine snapshot。
+  - 新增 `EngineInputMode`、9 个 `EngineQueryDomain`、caller causality/rule 与 owner-token/epoch/context/runtime-generation snapshot。owner tick 只发布 `Original/OriginalOnly`；prompt/menu/channel/connectivity 不再写 global engine mode。
+  - TLS scope 采用固定容量栈，支持嵌套恢复；Unknown、Remap、stale owner token/context、OriginalOnly causality、非法/溢出 scope 全部回 original。production hook 仍只走无 scope original gateway；没有任何调用点启用 scope。
+  - production 26-caller manifest 明确 `releaseRelevantUnknownCount=26 / i1Approved=false`，因此 caller override 为零；host fixture 证明只有 26 条均分类或 OriginalOnly 且 unknown=0 才能 release-ready。
+  - 旧 query/cursor/device 三站点组合 patch 已拆除。I-0 未来即使闭合也只先安装 verified engine query gateway；device availability、cursor、menu direct-callsite 与 transform 仍须各自条件 commit。
+  - Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadInputV2Tests`、`tests.python.test_mixed_input_wp9_wiring` 全部 exit 0。相邻 `DualPadGameplayProjectionTests`、`DualPadPromptSnapshotTests` 全部 exit 0。
+  - canonical Phase 8 全量通过。期间两项旧静态治理假设已用现有红灯修正：只 allowlist 经批准的 `S-DP5-MIXED-INPUT` 活跃 Sprint；release-readiness 改验 WP7 scoped disconnect/session reset，而不恢复 global reset。
+  - generated docs manifest hash 更新为 `6dc212b93576ee05`。I-0/I-1/I-2/I-MENU/I-5 均继续 NO-GO；D-G 条件 patch 未创建/未启用。下一切片进入 WP10 evaluator、evidence/CI 与最终 close-out。

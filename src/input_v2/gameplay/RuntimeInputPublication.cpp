@@ -60,6 +60,26 @@ namespace dualpad::input_v2::gameplay
         return _committed;
     }
 
+    EngineModeDecisionSnapshot RuntimeInputPublication::PublishOriginalEngineModeShadow(
+        std::uint64_t ownerTickToken,
+        std::uint64_t inputStateEpoch,
+        std::uint32_t contextRevision)
+    {
+        std::scoped_lock lock(_mutex);
+        _engineModeShadow = ProjectOriginalEngineModes(
+            ownerTickToken,
+            inputStateEpoch,
+            contextRevision,
+            _committed.revision);
+        return _engineModeShadow;
+    }
+
+    EngineModeDecisionSnapshot RuntimeInputPublication::GetEngineModeShadow() const
+    {
+        std::scoped_lock lock(_mutex);
+        return _engineModeShadow;
+    }
+
     PreparedCurrentCycleCallback RuntimeInputPublication::PrepareCallbackAudit(
         std::uint64_t ownerTickToken,
         const CurrentCycleGatePlan& plan)
@@ -129,6 +149,7 @@ namespace dualpad::input_v2::gameplay
     {
         std::scoped_lock lock(_mutex);
         _committed = std::move(initial);
+        _engineModeShadow = EngineModeDecisionSnapshot{};
         _prepared.clear();
         _consumed.clear();
         _nextToken = 0;
@@ -138,6 +159,7 @@ namespace dualpad::input_v2::gameplay
     {
         std::scoped_lock lock(_mutex);
         _committed = std::move(initial);
+        _engineModeShadow = EngineModeDecisionSnapshot{};
         _prepared.clear();
         _consumed.clear();
         _callbackAudits.clear();

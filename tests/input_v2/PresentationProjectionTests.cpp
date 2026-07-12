@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input_v2/actions/InteractionEngine.h"
+#include "input_v2/gameplay/EngineModeProjection.h"
 #include "input_v2/presentation/PresentationProjection.h"
 #include "input_v2/presentation/CursorHandoffAckMailbox.h"
 #include "input_v2/presentation/CursorHandoffCoordinator.h"
@@ -542,6 +543,121 @@ void RunEngineOriginalFirstTests()
                 runtime::GamepadAvailabilityDomain::Remap,
                 true),
         "remap must preserve original under Native availability");
+}
+
+void RunEngineShadowRouterTests()
+{
+    namespace gameplay = dualpad::input_v2::gameplay;
+    namespace presentation = dualpad::input_v2::presentation;
+
+    const auto snapshot = gameplay::ProjectOriginalEngineModes(
+        44,
+        7,
+        9,
+        12);
+    Require(snapshot.generation == 12,
+        "engine shadow snapshot must carry the committed runtime generation");
+    for (std::size_t index = 0; index < snapshot.byDomain.size(); ++index) {
+        Require(snapshot.byDomain[index].domain == static_cast<gameplay::EngineQueryDomain>(index) &&
+                snapshot.byDomain[index].mode == gameplay::EngineInputMode::Original &&
+                snapshot.byDomain[index].causality == gameplay::EngineDecisionCausality::OriginalOnly,
+            "WP9 shadow projection must default every engine domain to Original/OriginalOnly");
+    }
+
+    presentation::EngineCallerShadowManifest classified{};
+    for (std::size_t index = 0; index < classified.rules.size(); ++index) {
+        classified.rules[index] = gameplay::EngineCallerRule{
+            .callerRva = 0x1000 + index * 0x10,
+            .domain = gameplay::EngineQueryDomain::Unknown,
+            .causality = gameplay::EngineDecisionCausality::OriginalOnly,
+            .overrideEnabled = false
+        };
+    }
+    classified.populatedRuleCount = classified.rules.size();
+    classified.releaseRelevantUnknownCount = 0;
+    classified.i1Approved = true;
+    Require(presentation::CallerShadowTableReleaseReady(classified),
+        "26 classified or OriginalOnly caller records must satisfy the host shadow table fixture");
+
+    const auto productionManifest = presentation::ProductionEngineCallerShadowManifest();
+    Require(!presentation::CallerShadowTableReleaseReady(productionManifest) &&
+            productionManifest.releaseRelevantUnknownCount == 26,
+        "production caller overrides must remain NO-GO until I-1 classifies all 26 xrefs");
+
+    presentation::SkyrimEngineModeRouter router;
+    Require(!router.DecideForSnapshot(0xDEADBEEF, snapshot, false),
+        "unknown caller must return original");
+
+    const auto remapSnapshot = gameplay::ProjectEngineModeShadow(
+        gameplay::EngineModeProjectionInput{
+            .ownerTickToken = 44,
+            .inputStateEpoch = 7,
+            .contextRevision = 9,
+            .runtimeGeneration = 12,
+            .recommendations = { gameplay::EngineModeRecommendation{
+                .domain = gameplay::EngineQueryDomain::Remap,
+                .mode = gameplay::EngineInputMode::Gamepad,
+                .causality = gameplay::EngineDecisionCausality::AfterOwnerPublication } }
+        });
+    {
+        auto remapScope = router.EnterScopedOverride(
+            gameplay::EngineQueryDomain::Remap,
+            gameplay::EngineInputMode::Gamepad,
+            44,
+            9);
+        Require(!router.DecideForSnapshot(0, remapSnapshot, false),
+            "Remap scope must fail closed to original");
+    }
+
+    const auto scopedSnapshot = gameplay::ProjectEngineModeShadow(
+        gameplay::EngineModeProjectionInput{
+            .ownerTickToken = 44,
+            .inputStateEpoch = 7,
+            .contextRevision = 9,
+            .runtimeGeneration = 12,
+            .recommendations = {
+                gameplay::EngineModeRecommendation{
+                    .domain = gameplay::EngineQueryDomain::MenuSetPlatform,
+                    .mode = gameplay::EngineInputMode::Gamepad,
+                    .causality = gameplay::EngineDecisionCausality::AfterOwnerPublication },
+                gameplay::EngineModeRecommendation{
+                    .domain = gameplay::EngineQueryDomain::GameplayLookTransform,
+                    .mode = gameplay::EngineInputMode::KeyboardMouse,
+                    .causality = gameplay::EngineDecisionCausality::EventLocalSource }
+            }
+        });
+    {
+        auto menuScope = router.EnterScopedOverride(
+            gameplay::EngineQueryDomain::MenuSetPlatform,
+            gameplay::EngineInputMode::Gamepad,
+            44,
+            9);
+        Require(router.DecideForSnapshot(0, scopedSnapshot, false),
+            "verified host menu scope must expose its scoped gamepad value");
+        {
+            auto lookScope = router.EnterScopedOverride(
+                gameplay::EngineQueryDomain::GameplayLookTransform,
+                gameplay::EngineInputMode::KeyboardMouse,
+                44,
+                9);
+            Require(!router.DecideForSnapshot(0, scopedSnapshot, true),
+                "nested look scope must temporarily override the outer menu scope");
+        }
+        Require(router.DecideForSnapshot(0, scopedSnapshot, false),
+            "destroying an inner TLS scope must restore the outer scope");
+    }
+    Require(!router.DecideForSnapshot(0, scopedSnapshot, false),
+        "destroying the outer TLS scope must restore Original with no leak");
+
+    {
+        auto staleScope = router.EnterScopedOverride(
+            gameplay::EngineQueryDomain::MenuSetPlatform,
+            gameplay::EngineInputMode::Gamepad,
+            43,
+            9);
+        Require(!router.DecideForSnapshot(0, scopedSnapshot, false),
+            "stale owner token scope must return original");
+    }
 }
 
 void RunPresentationProjectionTests()
@@ -1299,6 +1415,7 @@ int main()
     try {
         RunEngineHookIdentityTests();
         RunEngineOriginalFirstTests();
+        RunEngineShadowRouterTests();
         RunOrderedActivityRoutingAndIndependentProjectionTests();
         RunCursorPlanAckShadowTests();
         RunPresentationProjectionTests();

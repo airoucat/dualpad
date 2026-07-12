@@ -203,8 +203,6 @@ namespace dualpad::input_v2::presentation
 
     private:
         static bool StaticIsUsingGamepadHook(void* self);
-        static bool StaticIsGamepadCursorHook(void* self);
-        static bool StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device);
         static void DoRefreshMenus();
 
         struct MenuRefreshRequest
@@ -263,8 +261,6 @@ namespace dualpad::input_v2::presentation
         HookInstallResult _installResult{};
         std::atomic_bool _hooksEnabled{ true };
         std::atomic<std::uintptr_t> _originalUsingGamepadTarget{ 0 };
-        std::atomic<std::uintptr_t> _originalCursorTarget{ 0 };
-        std::atomic<std::uintptr_t> _originalDeviceEnabledTarget{ 0 };
         LegacyCompatibilitySurface _originalHookOutputs{
             .isUsingGamepad = true,
             .gamepadControlsCursor = true,

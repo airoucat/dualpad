@@ -251,8 +251,26 @@ def main() -> int:
         failures.append(".dualpad-builder/feature_list.json: DP5 must remain in_progress/passes=false until native Favorites dynamic closeout.")
 
     sprint_data = json.loads(read(".dualpad-builder/sprint_plan.json"))
-    if sprint_data.get("current_sprint") is not None:
-        failures.append(".dualpad-builder/sprint_plan.json: current_sprint must be null after conditional hotfix closeout.")
+    current_sprint = sprint_data.get("current_sprint")
+    if current_sprint not in {None, "S-DP5-MIXED-INPUT"}:
+        failures.append(
+            ".dualpad-builder/sprint_plan.json: only the approved S-DP5-MIXED-INPUT post-closeout hardening sprint may be active after conditional hotfix closeout."
+        )
+    elif current_sprint == "S-DP5-MIXED-INPUT":
+        mixed_input = next(
+            (item for item in sprint_data["sprints"] if item["id"] == current_sprint),
+            None,
+        )
+        if (
+            not mixed_input
+            or mixed_input.get("unit_id") != "DP5-MIXED-INPUT"
+            or mixed_input.get("status") != "active"
+            or mixed_input.get("implementation_base_commit")
+            != "3985eea35a84ec7952a88f8dfd13c068391fc28b"
+        ):
+            failures.append(
+                ".dualpad-builder/sprint_plan.json: active S-DP5-MIXED-INPUT must retain its approved unit, status, and frozen implementation base."
+            )
     hotfix = next((item for item in sprint_data["sprints"] if item["id"] == "S-DP5-RC20-HOTFIX"), None)
     hotfix_evidence = " ".join((hotfix or {}).get("exit_criteria", []) + (hotfix or {}).get("verification", []))
     if not hotfix or hotfix.get("status") != "completed" or CONDITIONAL_RELEASE_STATUS not in hotfix_evidence:

@@ -292,3 +292,25 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: `--phase preflight` 只用于 WP0 且要求当前 HEAD 精确等于 `3985eea35a84ec7952a88f8dfd13c068391fc28b`；后续 WP 的合法独立 commit 必然不满足该条件。冻结 base 只需继续保持为当前 HEAD 的祖先，不能把 preflight 的零推进条件误用为逐 WP close-out gate。
 - Related files: `tests/python/test_mixed_input_closeout_contracts.py`, `.dualpad-builder/mixed_input_evidence.json`, `docs/plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md`
 - Resolution: 将该失败归类为命令阶段误用而非代码回归；WP4 继续使用计划规定的 focused/adjacent tests、主 DLL build、builder JSON、Graphify、ancestor check 与 `git diff --check`。后续只在最终计划定义的对应 phase/gate 调用该脚本，不再重跑 `--phase preflight`。
+
+## ERR-20260712-013
+
+- Logged: 2026-07-12 13:44 CST
+- Priority: medium
+- Status: resolved
+- Area: CI / post-closeout Sprint governance
+- Summary: mixed-input WP9 canonical Phase 8 在 runtime targets 全绿后，被“RC20 hotfix 完成后 `current_sprint` 必须永久为 null”的旧规则误拒绝。
+- Detail: 本任务按批准合同必须登记 `S-DP5-MIXED-INPUT`，且它明确是 DP5 post-closeout hardening，不会重开 PH0-PH8b。治理检查把“旧 hotfix 不得继续标 active”扩大成“仓库以后不得有任何批准 Sprint”，与 builder workflow 冲突。
+- Related files: `scripts/ci/check_reviewed_docs_consistency.py`, `scripts/ci/check_rc_readiness_closeout.py`, `tests/python/test_rc20_governance_state.py`, `.dualpad-builder/sprint_plan.json`
+- Resolution: 两个 gate 继续允许 `current_sprint=null`，并只额外 allowlist `S-DP5-MIXED-INPUT`；活跃时必须同时匹配 unit、`active` 状态和冻结的 implementation base commit。其它任意活跃 Sprint 仍 fail-closed，RC20 hotfix 仍必须保持 completed。
+
+## ERR-20260712-014
+
+- Logged: 2026-07-12 13:46 CST
+- Priority: medium
+- Status: resolved
+- Area: CI / release readiness contract drift
+- Summary: release-readiness gate 仍要求已被 WP7 scoped recovery 取代的 HID global reset token。
+- Detail: `SubmitReset()` 与 `LiveInputFactProducer::Reset()` 会把 gamepad disconnect 扩大成全局 reset；当前正确合同由 Hub `PublishGamepadDisconnect()` 推进 session、producer classifier/baseline 清理及 haptics device detach 共同表达。
+- Related files: `scripts/ci/check_release_readiness.py`, `src/input/HidReader.cpp`
+- Resolution: 静态门禁改为同时要求 disconnect receipt/session handoff、classifier reset、previous-state/connection baseline 清理、reconnect 日志与 `SetDevice(nullptr)`；不恢复旧 global reset authority。

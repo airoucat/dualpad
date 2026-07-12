@@ -156,9 +156,24 @@ def main() -> int:
         failures.append(".dualpad-builder/feature_list.json: DP5 must retain the completed hotfix, native Favorites fail-closed, conditional release status, and full-GO boundary.")
 
     sprint_data = json.loads((ROOT / ".dualpad-builder/sprint_plan.json").read_text(encoding="utf-8"))
-    if sprint_data.get("current_sprint") is not None:
-        failures.append(".dualpad-builder/sprint_plan.json: current_sprint must be null after the conditional RC20 hotfix closeout.")
     sprints = {item["id"]: item for item in sprint_data["sprints"]}
+    current_sprint = sprint_data.get("current_sprint")
+    if current_sprint not in {None, "S-DP5-MIXED-INPUT"}:
+        failures.append(
+            ".dualpad-builder/sprint_plan.json: only the approved S-DP5-MIXED-INPUT post-closeout hardening sprint may be active after the conditional RC20 hotfix closeout."
+        )
+    elif current_sprint == "S-DP5-MIXED-INPUT":
+        mixed_input = sprints.get(current_sprint)
+        if (
+            not mixed_input
+            or mixed_input.get("unit_id") != "DP5-MIXED-INPUT"
+            or mixed_input.get("status") != "active"
+            or mixed_input.get("implementation_base_commit")
+            != "3985eea35a84ec7952a88f8dfd13c068391fc28b"
+        ):
+            failures.append(
+                ".dualpad-builder/sprint_plan.json: active S-DP5-MIXED-INPUT must retain its approved unit, status, and frozen implementation base."
+            )
     for sprint_id in ["S-DP1", "S-DP2", "S-DP3", "S-DP4", "S-PH0", "S-PH1", "S-PH2", "S-PH3", "S-PH4", "S-PH5", "S-PH6", "S-PH7", "S-PH8", "S-PH8a", "S-PH8b"]:
         sprint = sprints.get(sprint_id)
         if not sprint or sprint.get("status") != "completed":

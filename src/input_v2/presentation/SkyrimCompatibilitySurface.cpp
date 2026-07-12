@@ -18,9 +18,7 @@ namespace dualpad::input_v2::presentation
     namespace
     {
         constexpr REL::ID kIsUsingGamepadId{ 67320 };
-        constexpr REL::ID kGamepadControlsCursorId{ 67321 };
         constexpr REL::ID kGamepadHandlerVtblId{ 560029 };
-        constexpr std::size_t kGamepadIsEnabledVfuncIndex = 0x8;
         constexpr auto kSupportedRuntime = SKSE::RUNTIME_SSE_1_5_97;
         constexpr std::uint8_t kMaxDeferredAttempts = 3;
         constexpr std::size_t kBoolSurfaceEntryPatchSize = 8;
@@ -161,27 +159,10 @@ namespace dualpad::input_v2::presentation
                 status == HookInstallStatus::UnsafePartial;
         }
 
-        bool HasVfuncSlot(std::uintptr_t vtableBase, std::size_t index)
-        {
-            if (vtableBase == 0) {
-                return false;
-            }
-            const auto* slot = reinterpret_cast<const std::uintptr_t*>(
-                vtableBase + (sizeof(std::uintptr_t) * index));
-            return slot && *slot != 0;
-        }
-
         input::patching::Bytes ReadPatchBytes(std::uintptr_t address, std::size_t size)
         {
             input::patching::Bytes bytes(size);
             std::memcpy(bytes.data(), reinterpret_cast<const void*>(address), size);
-            return bytes;
-        }
-
-        input::patching::Bytes PointerBytes(std::uintptr_t value)
-        {
-            input::patching::Bytes bytes(sizeof(value));
-            std::memcpy(bytes.data(), &value, sizeof(value));
             return bytes;
         }
 
@@ -242,7 +223,6 @@ namespace dualpad::input_v2::presentation
 
         HookInstallResult VerifyHookSites(
             std::uintptr_t usingGamepadAddress,
-            std::uintptr_t cursorAddress,
             std::uintptr_t gamepadHandlerVtblAddress)
         {
             const auto identityManifest = ProductionEngineHookIdentityManifest();
@@ -257,17 +237,6 @@ namespace dualpad::input_v2::presentation
                     HookInstallStatus::SignatureMismatch,
                     "is_using_gamepad_entry_signature_mismatch");
             }
-            if (!REL::verify_code(cursorAddress, kExpectedBoolSurfaceEntryWindow)) {
-                return detail::MakeHookInstallResult(
-                    HookInstallStatus::SignatureMismatch,
-                    "gamepad_cursor_entry_signature_mismatch");
-            }
-            if (!HasVfuncSlot(gamepadHandlerVtblAddress, kGamepadIsEnabledVfuncIndex)) {
-                return detail::MakeHookInstallResult(
-                    HookInstallStatus::SignatureMismatch,
-                    "gamepad_handler_vfunc_signature_mismatch");
-            }
-
             EngineHookIdentityObservation observed{
                 .moduleBase = REL::Module::get().base(),
                 .resolvedQueryAddress = usingGamepadAddress,
@@ -471,8 +440,6 @@ namespace dualpad::input_v2::presentation
 
         _hooksEnabled.store(false, std::memory_order_release);
         _originalUsingGamepadTarget.store(0, std::memory_order_release);
-        _originalCursorTarget.store(0, std::memory_order_release);
-        _originalDeviceEnabledTarget.store(0, std::memory_order_release);
 
         if (REL::Module::get().version() != kSupportedRuntime) {
             auto result = detail::EvaluateHookInstallGate(
@@ -489,12 +456,10 @@ namespace dualpad::input_v2::presentation
         bool patchResiduePossible = false;
         try {
             REL::Relocation<std::uintptr_t> usingGamepadHook{ kIsUsingGamepadId };
-            REL::Relocation<std::uintptr_t> cursorHook{ kGamepadControlsCursorId };
             REL::Relocation<std::uintptr_t> gamepadHandlerVtbl{ kGamepadHandlerVtblId };
 
             auto gate = VerifyHookSites(
                 usingGamepadHook.address(),
-                cursorHook.address(),
                 gamepadHandlerVtbl.address());
             if (IsInstallAttemptFailureStatus(gate.status)) {
                 gate = MarkInstallFailed(gate);
@@ -504,43 +469,19 @@ namespace dualpad::input_v2::presentation
                 return gate;
             }
 
-            const auto patchSite = detail::MakeVfuncPatchSite(
-                gamepadHandlerVtbl.address(),
-                kGamepadIsEnabledVfuncIndex);
             const auto usingAddress = usingGamepadHook.address();
-            const auto cursorAddress = cursorHook.address();
-            const auto enabledAddress = patchSite.relocationBase +
-                (sizeof(std::uintptr_t) * patchSite.index);
 
             const auto originalUsingBytes = ReadPatchBytes(usingAddress, kBoolSurfaceEntryPatchSize);
-            const auto originalCursorBytes = ReadPatchBytes(cursorAddress, kBoolSurfaceEntryPatchSize);
-            const auto originalEnabledBytes = ReadPatchBytes(enabledAddress, sizeof(std::uintptr_t));
-            std::uintptr_t originalEnabledTarget = 0;
-            std::memcpy(
-                &originalEnabledTarget,
-                originalEnabledBytes.data(),
-                sizeof(originalEnabledTarget));
 
             const auto usingGateway = AllocateEntryGateway(usingAddress, originalUsingBytes);
-            const auto cursorGateway = AllocateEntryGateway(cursorAddress, originalCursorBytes);
             const auto usingHookStub = AllocateAbsoluteJumpStub(
                 reinterpret_cast<std::uintptr_t>(StaticIsUsingGamepadHook));
-            const auto cursorHookStub = AllocateAbsoluteJumpStub(
-                reinterpret_cast<std::uintptr_t>(StaticIsGamepadCursorHook));
             const auto usingReplacement = input::patching::MakeRelativePatch(
                 usingAddress,
                 usingHookStub,
                 input::patching::RelativePatchOpcode::Jump,
                 kBoolSurfaceEntryPatchSize);
-            const auto cursorReplacement = input::patching::MakeRelativePatch(
-                cursorAddress,
-                cursorHookStub,
-                input::patching::RelativePatchOpcode::Jump,
-                kBoolSurfaceEntryPatchSize);
-            const auto enabledReplacement = PointerBytes(
-                reinterpret_cast<std::uintptr_t>(StaticIsGamepadDeviceEnabledHook));
-            if (usingGateway == 0 || cursorGateway == 0 || originalEnabledTarget == 0 ||
-                usingReplacement.empty() || cursorReplacement.empty()) {
+            if (usingGateway == 0 || usingReplacement.empty()) {
                 auto result = detail::MakeHookInstallResult(
                     HookInstallStatus::Failed,
                     "transaction_preparation_failed");
@@ -550,8 +491,6 @@ namespace dualpad::input_v2::presentation
             }
 
             _originalUsingGamepadTarget.store(usingGateway, std::memory_order_release);
-            _originalCursorTarget.store(cursorGateway, std::memory_order_release);
-            _originalDeviceEnabledTarget.store(originalEnabledTarget, std::memory_order_release);
 
             std::vector<input::patching::PatchSite> sites;
             const auto addSite = [&sites](
@@ -571,8 +510,6 @@ namespace dualpad::input_v2::presentation
                 });
             };
             addSite("is_using_gamepad_entry", usingAddress, originalUsingBytes, usingReplacement);
-            addSite("gamepad_cursor_entry", cursorAddress, originalCursorBytes, cursorReplacement);
-            addSite("gamepad_enabled_vfunc", enabledAddress, originalEnabledBytes, enabledReplacement);
 
             const auto transaction = input::patching::ExecutePatchTransaction(sites);
             patchResiduePossible =
@@ -585,8 +522,6 @@ namespace dualpad::input_v2::presentation
                         ":" + transaction.failedSite);
                 if (transaction.outcome != input::patching::PatchTransactionOutcome::UnsafePartial) {
                     _originalUsingGamepadTarget.store(0, std::memory_order_release);
-                    _originalCursorTarget.store(0, std::memory_order_release);
-                    _originalDeviceEnabledTarget.store(0, std::memory_order_release);
                 }
                 result = MarkInstallFailed(result);
                 logger::error(
@@ -599,7 +534,7 @@ namespace dualpad::input_v2::presentation
 
             auto result = MarkInstallSucceeded();
             logger::info(
-                "[DualPad][SkyrimCompat] Installed input_v2 public surface hooks: {}",
+                "[DualPad][SkyrimCompat] Installed verified original-first engine query gateway: {}",
                 ToDebugString(result));
             return result;
         } catch (...) {
@@ -757,8 +692,6 @@ namespace dualpad::input_v2::presentation
         std::scoped_lock lock(_mutex);
         _originalHookOutputs = legacy;
         _originalUsingGamepadTarget.store(0, std::memory_order_release);
-        _originalCursorTarget.store(0, std::memory_order_release);
-        _originalDeviceEnabledTarget.store(0, std::memory_order_release);
     }
 
     void SkyrimCompatibilitySurface::ForceHooksEnabledForTests(bool enabled)
@@ -794,8 +727,6 @@ namespace dualpad::input_v2::presentation
         _installResult = HookInstallResult{};
         _hooksEnabled.store(true, std::memory_order_release);
         _originalUsingGamepadTarget.store(0, std::memory_order_release);
-        _originalCursorTarget.store(0, std::memory_order_release);
-        _originalDeviceEnabledTarget.store(0, std::memory_order_release);
     }
 
     void SkyrimCompatibilitySurface::ResetRefreshStateForTests()
@@ -1100,21 +1031,14 @@ namespace dualpad::input_v2::presentation
 
     bool SkyrimCompatibilitySurface::CallOriginalGamepadControlsCursor(void* self) const
     {
-        using Hook = bool (*)(void*);
-        if (const auto target = _originalCursorTarget.load(std::memory_order_acquire);
-            target != 0 && self != nullptr) {
-            return reinterpret_cast<Hook>(target)(self);
-        }
+        (void)self;
         std::scoped_lock lock(_mutex);
         return _originalHookOutputs.gamepadControlsCursor;
     }
 
     bool SkyrimCompatibilitySurface::CallOriginalGamepadDeviceEnabled(RE::BSPCGamepadDeviceHandler* device) const
     {
-        using Hook = bool (*)(RE::BSPCGamepadDeviceHandler*);
-        if (const auto target = _originalDeviceEnabledTarget.load(std::memory_order_acquire); target != 0) {
-            return reinterpret_cast<Hook>(target)(device);
-        }
+        (void)device;
         std::scoped_lock lock(_mutex);
         return _originalHookOutputs.gamepadDeviceEnabled;
     }
@@ -1153,18 +1077,6 @@ namespace dualpad::input_v2::presentation
         auto& surface = GetSingleton();
         return SkyrimEngineModeRouter{}.DecideWithOriginal(
             [&surface, self]() { return surface.CallOriginalIsUsingGamepad(self); });
-    }
-
-    bool SkyrimCompatibilitySurface::StaticIsGamepadCursorHook(void* self)
-    {
-        auto& surface = GetSingleton();
-        return surface.CallOriginalGamepadControlsCursor(self);
-    }
-
-    bool SkyrimCompatibilitySurface::StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device)
-    {
-        auto& surface = GetSingleton();
-        return surface.CallOriginalGamepadDeviceEnabled(device);
     }
 
     void SkyrimCompatibilitySurface::DoRefreshMenus()

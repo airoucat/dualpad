@@ -182,6 +182,7 @@ local ph4_action_graph_files = {
 local ph5_gameplay_projection_files = {
     "src/input_v2/gameplay/ChannelArbitration.cpp",
     "src/input_v2/gameplay/CurrentCycleGatePlan.cpp",
+    "src/input_v2/gameplay/EngineModeProjection.cpp",
     "src/input_v2/gameplay/DualPadRuntime.cpp",
     "src/input_v2/gameplay/GameplayProjectionFrame.cpp",
     "src/input_v2/gameplay/PollOutputFrame.cpp",
@@ -289,6 +290,7 @@ target("DualPadPresentationProjectionTests")
     add_files(table.unpack(ph4_action_graph_files))
     add_files(table.unpack(ph2_context_resolver_files))
     add_files(
+        "src/input_v2/gameplay/EngineModeProjection.cpp",
         "src/input_v2/presentation/GameplayPresentationAdapter.cpp",
         "src/input_v2/presentation/PresentationProjection.cpp",
         "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
