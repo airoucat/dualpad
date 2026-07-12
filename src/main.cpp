@@ -15,6 +15,7 @@
 #include "input/RuntimeConfig.h"
 #include "input/glyph/ScaleformGlyphBridge.h"
 #include "input/backend/KeyboardHelperBackend.h"
+#include "input/injection/GameplayLookTransformHook.h"
 #include "input/injection/RouteHealthContract.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/gameplay/PollOutputFrame.h"
@@ -196,6 +197,10 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::Init(skse);
     SKSE::AllocTrampoline(1 << 10);
     dualpad::input_v2::presentation::SkyrimCompatibilitySurface::GetSingleton().Install();
+#ifdef DUALPAD_DIAGNOSTIC_BUILD
+    dualpad::input::GameplayLookTransformHook::GetSingleton()
+        .InstallI2DiagnosticCandidate();
+#endif
 
     logger::info("DualPad v1.0.0 loaded");
     logger::info(

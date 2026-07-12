@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input/injection/RouteHealthContract.h"
+#include "input/injection/GameplayLookTransformPolicy.h"
 #include "input/injection/NativeKbmSemanticPolicy.h"
 #include "input/injection/HookPatchTransaction.h"
 #include "input/injection/KbmIngressDiagnostics.h"
@@ -167,6 +168,52 @@ namespace
             dualpad::input::ApplyNativeKbmSemanticPolicy(true, ignoreKeyboardMouse) &&
                 ignoreKeyboardMouse,
             "remap mode must retain native raw-event semantics");
+    }
+
+    void TestGameplayLookTransformModePolicy()
+    {
+        using dualpad::input::GameplayLookInputSource;
+        using dualpad::input::ResolveGameplayLookTransformGamepadMode;
+
+        Require(!ResolveGameplayLookTransformGamepadMode(
+                    true,
+                    GameplayLookInputSource::Mouse),
+            "native mouse Look must select Skyrim's KBM transform even while the gamepad device is enabled");
+        Require(ResolveGameplayLookTransformGamepadMode(
+                    false,
+                    GameplayLookInputSource::Gamepad),
+            "native right-stick Look must select Skyrim's gamepad transform even after mouse activity");
+        Require(ResolveGameplayLookTransformGamepadMode(
+                    true,
+                    GameplayLookInputSource::None),
+            "unscoped transform callers must preserve the original engine query");
+    }
+
+    void TestGameplayLookSourceLatchTracksTheMaterializedVectorWriter()
+    {
+        using dualpad::input::GameplayLookInputSource;
+        dualpad::input::GameplayLookSourceLatch latch;
+
+        constexpr std::uintptr_t playerControlsData = 0x1000;
+        latch.Note(playerControlsData, GameplayLookInputSource::Mouse);
+        latch.Note(playerControlsData, GameplayLookInputSource::Gamepad);
+
+        Require(latch.ConsumeFor(playerControlsData) == GameplayLookInputSource::Gamepad,
+            "Look transform source must match the last native handler that materialized the shared vector");
+        Require(latch.ConsumeFor(playerControlsData) == GameplayLookInputSource::None,
+            "Look transform source must be single-use and cannot leak into a later cycle");
+    }
+
+    void TestGameplayLookSourceLatchDropsMismatchedOwners()
+    {
+        using dualpad::input::GameplayLookInputSource;
+        dualpad::input::GameplayLookSourceLatch latch;
+
+        latch.Note(0x1000, GameplayLookInputSource::Mouse);
+        Require(latch.ConsumeFor(0x2000) == GameplayLookInputSource::None,
+            "a Look source may not scope a transform for another PlayerControlsData owner");
+        Require(latch.ConsumeFor(0x1000) == GameplayLookInputSource::None,
+            "an owner mismatch must discard stale source provenance instead of applying it later");
     }
 
     void TestPatchTransactionRollback()
@@ -513,6 +560,9 @@ int main()
     TestInstallStatusFailureMapping();
     TestControlMapOverlayGate();
     TestNativeKbmSemanticPolicy();
+    TestGameplayLookTransformModePolicy();
+    TestGameplayLookSourceLatchTracksTheMaterializedVectorWriter();
+    TestGameplayLookSourceLatchDropsMismatchedOwners();
     TestInstallStatusLabels();
     TestPatchTransactionRollback();
     TestPatchEncodingContracts();

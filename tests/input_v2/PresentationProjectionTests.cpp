@@ -707,6 +707,7 @@ void RunEngineHookIdentityTests()
 
 void RunEngineOriginalFirstTests()
 {
+    namespace gameplay = dualpad::input_v2::gameplay;
     namespace presentation = dualpad::input_v2::presentation;
     namespace runtime = dualpad::input_v2::runtime;
 
@@ -736,6 +737,23 @@ void RunEngineOriginalFirstTests()
     });
     Require(routed && originalCalls == 1,
         "unscoped engine gateway must call original exactly once");
+
+    std::size_t mouseLookOriginalCalls = 0;
+    {
+        auto mouseLookScope = router.EnterScopedOverride(
+            gameplay::EngineQueryDomain::GameplayLookTransform,
+            gameplay::EngineInputMode::KeyboardMouse,
+            0,
+            0);
+        const auto mouseLookMode = router.DecideWithOriginal([&]() {
+            ++mouseLookOriginalCalls;
+            return true;
+        });
+        Require(!mouseLookMode && mouseLookOriginalCalls == 1,
+            "event-local mouse Look scope must call original once and select native KBM transform math");
+    }
+    Require(router.DecideWithOriginal([]() { return true; }),
+        "event-local mouse Look scope must restore the original query immediately after the transform");
 
     const runtime::GamepadDeviceAvailabilityDecision native{
         .policy = runtime::GamepadDeviceAvailabilityPolicy::Native,

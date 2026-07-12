@@ -264,7 +264,17 @@ namespace dualpad::input_v2::presentation
     bool SkyrimEngineModeRouter::DecideWithOriginal(
         const std::function<bool()>& originalGateway) const
     {
-        return originalGateway ? originalGateway() : false;
+        const bool originalValue = originalGateway ? originalGateway() : false;
+        if (g_engineScopeDepth == 0) {
+            return originalValue;
+        }
+
+        const auto& scoped = g_engineScopes[g_engineScopeDepth - 1];
+        if (scoped.domain != gameplay::EngineQueryDomain::GameplayLookTransform ||
+            scoped.ownerTickToken != 0 || scoped.contextRevision != 0) {
+            return originalValue;
+        }
+        return ModeValue(scoped.mode, originalValue);
     }
 
     bool SkyrimEngineModeRouter::DecideForSnapshot(
@@ -318,10 +328,13 @@ namespace dualpad::input_v2::presentation
         std::uint64_t ownerTickToken,
         std::uint32_t contextRevision) noexcept
     {
+        const bool eventLocalLook =
+            domain == gameplay::EngineQueryDomain::GameplayLookTransform &&
+            ownerTickToken == 0 && contextRevision == 0;
         if (domain == gameplay::EngineQueryDomain::Unknown ||
             domain == gameplay::EngineQueryDomain::Remap ||
             mode == gameplay::EngineInputMode::Original ||
-            ownerTickToken == 0 || contextRevision == 0 ||
+            (!eventLocalLook && (ownerTickToken == 0 || contextRevision == 0)) ||
             g_engineScopeDepth == g_engineScopes.size()) {
             return {};
         }
