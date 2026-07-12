@@ -1,9 +1,56 @@
 {
   "project": "DualPad Authoritative Baseline",
   "status": "active",
-  "current_sprint": null,
-  "updated_at": "2026-07-11T11:27:00+08:00",
+  "current_sprint": "S-DP5-MIXED-INPUT",
+  "updated_at": "2026-07-12T10:50:42+08:00",
   "sprints": [
+    {
+      "id": "S-DP5-MIXED-INPUT",
+      "unit_id": "DP5-MIXED-INPUT",
+      "title": "Formal keyboard/mouse and gamepad mixed-input implementation",
+      "goal": "在不新增 runtime phase 的前提下，按已批准计划实装真正可用的键鼠与手柄混合输入，并以 IDA / 实机门禁约束所有可选 production capability。",
+      "implementation_base_commit": "3985eea35a84ec7952a88f8dfd13c068391fc28b",
+      "depends_on": [
+        "S-DP5-RC20-HOTFIX"
+      ],
+      "requirements": [
+        "B1",
+        "B5",
+        "B6",
+        "B7",
+        "B8"
+      ],
+      "status": "active",
+      "work_packages": [
+        { "id": "WP0", "status": "completed" },
+        { "id": "WP0.5", "status": "in_progress" },
+        { "id": "WP1", "status": "pending" },
+        { "id": "WP2", "status": "pending" },
+        { "id": "WP3", "status": "pending" },
+        { "id": "WP4", "status": "pending" },
+        { "id": "WP5-shadow", "status": "pending" },
+        { "id": "gated-slices", "status": "pending" }
+      ],
+      "exit_criteria": [
+        "严格按 WP0 -> WP0.5 -> WP1 -> WP2 -> WP3 -> WP4 -> WP5 shadow -> gated slices 推进",
+        "WP0 固结 implementationBaseCommit、canonical gate 与 phase-aware evidence manifest",
+        "WP0.5 先落地可独立编译的 ingress batch transport/scaffold，不接管 production authority",
+        "每个 WP 完成红灯、最小实现、focused 绿灯、相邻回归、builder progress 同步和独立 commit",
+        "I-P、I-CURSOR、I-SPRINT、I-KBM、I-0/I-1/I-2/I-MENU/I-5 未通过前，对应 production capability 保持 shadow 或 NO-GO",
+        "最终执行 H 节适用验证、canonical CI、builder memory、Graphify 和 git diff 检查"
+      ],
+      "verification": [
+        "python tests/python/test_mixed_input_closeout_contracts.py --phase preflight",
+        "xmake build -y DualPadGameplayProjectionTests",
+        "xmake build -y DualPadNativeButtonCommitTests",
+        "xmake run -y DualPadIngressTests",
+        "xmake run -y DualPadInputV2Tests",
+        "xmake run -y DualPadReplayTests",
+        "xmake run -y DualPadPresentationProjectionTests",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout",
+        "git diff --check"
+      ]
+    },
     {
       "id": "S-DP5-RC20-HOTFIX",
       "unit_id": "DP5",

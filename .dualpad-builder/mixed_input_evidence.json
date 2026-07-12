@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "auditSnapshot": "93184697c0f021a5979c9a71113bcb2a96308231",
+  "implementationBaseCommit": "3985eea35a84ec7952a88f8dfd13c068391fc28b",
+  "planCommit": "3985eea35a84ec7952a88f8dfd13c068391fc28b",
+  "branch": "codex/mixed-input-implementation",
+  "preflight": {
+    "planCommitIsHead": true,
+    "planCommitIsAncestorOfHead": true,
+    "worktreeWasCleanBeforeSprintRegistration": true,
+    "auditSnapshotContainsNativeButtonFixture": true
+  },
+  "codeDiffFromAuditSnapshot": {
+    "range": "93184697c0f021a5979c9a71113bcb2a96308231..3985eea35a84ec7952a88f8dfd13c068391fc28b",
+    "paths": [
+      "src",
+      "tests",
+      "xmake.lua",
+      "scripts/ci"
+    ],
+    "entries": []
+  },
+  "nativeButtonAudit": {
+    "targetExists": true,
+    "fileExists": true,
+    "sprintContributorSourceMaskCoverage": false,
+    "deferredTo": "WP6",
+    "preflightDisposition": "reported",
+    "closeoutDisposition": "hard-fail-if-missing"
+  },
+  "sourceListParity": {
+    "runtimeTarget": "DualPad src/**.cpp",
+    "focusedTarget": "DualPadIngressTests ph7_ingress_files",
+    "ingressScaffoldSources": [
+      "src/input_v2/ingress/IngressHub.cpp",
+      "src/input_v2/ingress/FrameAssembler.cpp",
+      "src/input_v2/ingress/IngressBoundaryKey.cpp"
+    ]
+  },
+  "workPackages": {
+    "WP0": {
+      "status": "completed",
+      "red": "preflight contract failed because the evidence manifest and canonical GameplayProjection build/run gates were absent",
+      "focused": "python tests/python/test_mixed_input_closeout_contracts.py --phase preflight",
+      "adjacent": [
+        "xmake build -y DualPadGameplayProjectionTests",
+        "xmake build -y DualPadNativeButtonCommitTests"
+      ]
+    },
+    "WP0.5": {
+      "status": "in_progress"
+    }
+  },
+  "closeoutPolicy": {
+    "requireImplementationBaseAncestor": true,
+    "requireZeroDiffFromImplementationBase": false
+  }
+}

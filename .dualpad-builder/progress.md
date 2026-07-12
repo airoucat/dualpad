@@ -1,5 +1,27 @@
 # DualPad Builder Progress
 
+## 2026-07-12 10:50:42 +08:00
+
+- `S-DP5-MIXED-INPUT / WP0 completed`：
+  - 新增 phase-aware `tests/python/test_mixed_input_closeout_contracts.py` 和 `.dualpad-builder/mixed_input_evidence.json`，固结 audit snapshot、`implementationBaseCommit=3985eea35a84ec7952a88f8dfd13c068391fc28b`、审计范围 diff 摘要、NativeButton content audit 与 source-list parity 合同；close-out 只要求 base 为祖先，不要求相对 base 零代码差异。
+  - RED：`python tests/python/test_mixed_input_closeout_contracts.py --phase preflight` exit 1；预期失败为 evidence manifest 缺失、Phase8 缺少 `DualPadGameplayProjectionTests` build/run。NativeButton target/file 存在，Sprint contributor/source-mask fixture 尚缺失，preflight 仅报告并保留给 gated WP6。
+  - 最小实现只把 `DualPadGameplayProjectionTests` build/run 接入 `scripts/ci/run_phase8_ci.ps1` 并落地证据/契约检查，未修改 runtime authority 或启用 production capability。
+  - GREEN：`python tests/python/test_mixed_input_closeout_contracts.py --phase preflight` exit 0，5 tests passed。
+  - 相邻回归：`xmake build -y DualPadGameplayProjectionTests` exit 0；`xmake build -y DualPadNativeButtonCommitTests` exit 0。
+  - `git diff --check` exit 0，仅有 Windows CRLF 提示，无 whitespace error。
+  - Sprint 状态已推进为 `WP0 completed / WP0.5 in_progress`；后续 gate 仍全部保持 shadow / NO-GO。
+
+## 2026-07-12 10:45:51 +08:00
+
+- `S-DP5-MIXED-INPUT / repository preflight + WP0 start`：
+  - 已按要求完整读取 goal attachment、Windows 仓库入口、authoritative baseline、builder memory、Graphify report、README、architecture、DOC index 与正式 mixed-input 实施计划。
+  - 计划提交 `3985eea35a84ec7952a88f8dfd13c068391fc28b` 已确认存在，且正是开工时 `HEAD`；祖先检查通过。
+  - 开工前 `git status --porcelain=v1 --untracked-files=all` 为 0 行，未发现不属于本任务的工作树改动。
+  - 已在同一 checkout 从该提交创建专用分支 `codex/mixed-input-implementation`。
+  - `implementationBaseCommit` 固结为 `3985eea35a84ec7952a88f8dfd13c068391fc28b`；固定审计快照只用于 preflight，最终 close-out 不要求相对该 base 零代码差异。
+  - 已登记独立工作包 `DP5-MIXED-INPUT` 和 Sprint `S-DP5-MIXED-INPUT`；当前只启动 `WP0`，`WP0.5` 为下一个强制切片，不启用任何需 IDA 动态门禁的 production capability。
+  - 范围继续固定为 post-closeout hardening：不创建 `PH9`，不重开 `PH0-PH8b` authority，不修改 Favorites native gate、`Interface/**`、SWF、glyph 资源、haptics、rumble 或无关 bindings。
+
 ## 2026-06-27 12:27:00 +08:00
 
 - `[RC20][Hostile Hardening] menu refresh eligibility / async readiness follow-up` 按外部 review NACK 项继续收口：
