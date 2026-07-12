@@ -3585,3 +3585,22 @@
   - clean-HEAD RC readiness 全部 exit 0：Python discovery `59 tests passed`；mixed close-out `8 tests passed`；good trace `3 records / 0 violations`；dynamic checker `releaseStatus=NO-GO / 9 gates`；dispatcher replay 10 scenarios 全部 zero-diff；DInput8 proxy、release artifact manifest、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、Graphify 与 `git diff --check` 均通过。
   - Graphify close-out：`2325 nodes / 5530 edges / 172 communities`。实现提交：`4cb2091 feat(telemetry): capture bounded I-P shadow evidence`。
   - Gate 不变：I-P 仍为 `NO-GO`、`capabilityEnabled=false`、`liveVerdict=pending`。shadow trace 只能自动筛出 causal contract 失败，不能替代 event materialization 与下游 consumer watchpoint 的动态顺序证明；其它动态 Gate 也均未提前启用。
+
+## 2026-07-12 14:42:00 +08:00
+
+- `S-DP5-MIXED-INPUT / multi-gate shadow evidence slice start`：
+  - 在 I-P 采集链保持 default-off、所有动态 Gate 继续 `NO-GO` 的前提下，扩展同一 JSONL 以记录 cursor plan/ack、menu owner/navigation、Original-only engine shadow 与 Sprint G/K/M contributor 决策；不安装 engine/device/menu patch，不启用 cursor 坐标 side effect 或 SprintHandler guard。
+  - TDD 首个 RED 由真实 `PresentationProjection` wrapper 链复现：Gamepad 已提交后出现 mouse meaningful activity 时，I-CURSOR 双向均未证明，但旧 wrapper 把 Gamepad -> KBM position sync 硬编码为 `NotRequired`，导致 owner 未经 exact UI ack 直接提交。
+  - 证据 evaluator 同步增加未提交 cursor request 必须保留 exact pending plan 的 fail-closed 合同；shadow evidence 只帮助筛选动态实验，不会把 I-CURSOR、I-SPRINT 或 engine Gate 提升为 PASS。
+
+## 2026-07-12 14:49:00 +08:00
+
+- `S-DP5-MIXED-INPUT / multi-gate shadow evidence slice completed`：
+  - RED 依次证明：I-CURSOR 未裁决时 Gamepad -> KBM wrapper 会跳过 exact ack；presentation evidence API/Sprint contributor 字段尚不存在；同 failure 的错误 ack token 不触发采样；写盘失败后 sampler 会错误抑制同一 decision 的重试；evaluator 会接受 requested/committed 不一致但无 pending plan 的 trace。
+  - 最小修正删除 wrapper 的单向 `NotRequired` 硬编码；I-CURSOR 双向默认均保持 `MappingUnverified`。presentation JSONL 记录 cursor plan/ack、menu identity、Sprint G/K/M decision 与 Original-only engine snapshot，并用 `snapshotCurrent` 区分本帧 publish 和旧快照；`overrideApplied` 始终为 false。
+  - recorder 继续 default-off、change-only / 10 秒 health sampling。exact ack 身份进入 decision key；append/open/flush 失败不会抛出 owner 边界，并重置对应 sampler 以允许后续重试。同步文件 I/O 仅允许短时动态证据采集，日常配置保持关闭。
+  - Tier 2 顺序审查覆盖 correctness、testing、maintainability、project standards、performance、reliability、API contract、Python、agent-native 与 adversarial 边界；发现的 cursor fail-open、stale engine snapshot 标识和 write-retry 缺口均已修复，未发现剩余高置信阻塞项。
+  - Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadGameplayProjectionTests`、`DualPadInputV2Tests`、`DualPadReplayTests`、`DualPadReplayHarness` 与 `DualPad` 均 exit 0；Python wiring/closeout/evaluator 分别 5/4/8/11 tests 通过，good trace 为 3 records / 0 violations。
+  - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator 与 generated diff 全部 exit 0。
+  - Graphify manual closeout：`2342 nodes / 5580 edges / 174 communities`。实现提交：`51f6f2d fix(telemetry): keep mixed-input handoffs fail closed`。
+  - Gate 不变：dynamic checker 仍为 `releaseStatus=NO-GO / 9 gates`；I-CURSOR、I-SPRINT、I-P、I-KBM 与 I-0/I-1/I-2/I-MENU/I-5 均未启用。Favorites native gate、Interface/SWF、glyph、haptics、rumble 与 bindings 均未修改。

@@ -325,3 +325,15 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: replay target 编译 `DualPadRuntimeLive.cpp`，却用 replay stub 代替真实 backend implementation。header 新增虚拟输出依赖时，focused/runtime targets 可由真实 `.cpp` 满足，只有 RC replay harness 才会暴露 stub surface drift。
 - Related files: `src/input/backend/NativeButtonCommitBackend.h`, `src/input_v2/telemetry/NativeButtonCommitBackendReplayStub.cpp`, `xmake.lua`, `scripts/ci/run_rc_readiness.ps1`
 - Resolution: replay stub 补齐无副作用、返回成功的 `SyncHeldContributors(...)` seam；以原始 `DualPadReplayHarness` LNK2019 为红灯，重新构建 harness、运行 replay batch/diff，再重跑完整 RC readiness。后续修改 backend public surface 时必须同时审计 production implementation、focused fake 和 replay stub。
+
+## ERR-20260712-016
+
+- Logged: 2026-07-12 14:40 CST
+- Priority: medium
+- Status: resolved
+- Area: local verification / parallel xmake targets
+- Summary: 同一工作树并行运行多个 xmake build/run 时，共享 MSVC PDB/PCH 输出触发 `C1090`（PDB API error 23）。
+- Detail: `DualPadInputV2Tests`、replay target 与主 `DualPad` 被多个 shell process 同时启动；这些 target 共享 `build/.gens` 和 releasedbg PDB/PCH，外部进程并行不是 xmake 自身可协调的 job 并发。该错误不能作为代码编译结论。
+- Related files: `xmake.lua`, `scripts/ci/run_phase8_ci.ps1`
+- Suggested fix: 同一工作树的 xmake target 必须串行执行；需要并行时只能使用彼此隔离的 worktree/build root。Python-only 检查可与单个 xmake process 并行，但 canonical Phase 8/RC 仍按脚本串行。
+- Resolution: 确认没有残留 `xmake` / `cl` / `mspdbsrv` 进程后，按 `DualPadInputV2Tests -> DualPadReplayTests -> DualPadReplayHarness -> DualPad` 串行重跑，全部 exit 0；后续本工作树不再并行启动 xmake process。
