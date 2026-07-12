@@ -3745,3 +3745,10 @@
   - `[DualPad][I0Availability]` 共 84 个样本，覆盖 Poll `1..2099`。ready 后 82 个样本全部保持 `nativePollReached=true`、`xinputResult=0`、`connected=true`、`delegateReady=true`；没有原生 Poll 中断、connectivity drop 或 delegate drop。
   - current-state 已观测 Menu LS、Gameplay button 与 LT/RT；Gameplay 中有 4 个 neutral health interval。RS、remap、Inventory、Journal 和批准计划要求的各 30 秒 held case 尚未闭合，所以 availability 仅记录为 `leadingAvailabilityDisposition=Native / status=partial`，I-0 总状态仍为 `NO-GO`。
   - 当前证据排除“恢复 original 后 virtual XInput Poll 被稳定阻断”；尚不能区分 physical KBM gameplay event 未被 Skyrim materialize，还是已进入 event batch 后在 owner/runtime 边界丢失。下一步先补 RS held live case，再进入 I-1 caller/domain 动态分类。
+
+## 2026-07-12 16:53:00 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 RS held follow-up partial`：
+  - 用户报告 RS 能持续转动镜头；matching `76895173dda7 / Skyrim 1-5-97-0` 日志同步观测到 Gameplay RS non-neutral current-state，`rx` 从 `10922` 达到 `32767`，原生 Poll 持续返回成功。
+  - RS non-neutral 从 `16:51:22.163` 到 `16:51:31.342`，实际约 `9179 ms`，只有 1 个 5 秒 interval 样本；因此行为 PASS，但批准计划要求的 30 秒 held case 未完成，不能升级为 Gate PASS。
+  - 本轮同时观测到 `JournalMenu`，ready 后 28 个样本中 native Poll、XInput、connectivity 与 delegate 均零失败；remap 仍未覆盖。I-0 继续 `NO-GO`，production patch 继续关闭。

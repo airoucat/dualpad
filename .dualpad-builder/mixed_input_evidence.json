@@ -377,12 +377,28 @@
             "gameplayButtonSamples": 4,
             "gameplayLeftTriggerSamples": 4,
             "gameplayRightTriggerSamples": 3,
-            "gameplayRightStickSamples": 0,
+            "gameplayRightStickSamples": 2,
             "remapSamples": 0
+          },
+          "followupSamples": {
+            "I0-AB-20260712-1651": {
+              "buildCommit": "76895173dda7",
+              "context": "Gameplay",
+              "rightStickBehavior": "PASS-continuous-camera-turn",
+              "rightStickNonNeutralDurationMs": 9179,
+              "rightStickIntervalSamples": 1,
+              "rightStickHeld30sComplete": false,
+              "journalMenuObserved": true,
+              "nativePollMisses": 0,
+              "xinputErrorSamples": 0,
+              "connectivityDrops": 0,
+              "delegateDrops": 0
+            }
           },
           "manualBehavior": {
             "mappedKeyboardMove": "FAIL-no-gameplay-response",
-            "physicalMouseAttack": "FAIL-no-gameplay-response"
+            "physicalMouseAttack": "FAIL-no-gameplay-response",
+            "rightStickGameplay": "PASS-continuous-camera-turn"
           },
           "leadingAvailabilityDisposition": "Native",
           "pendingCases": [
