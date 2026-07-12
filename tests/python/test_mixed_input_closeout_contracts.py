@@ -248,13 +248,16 @@ class MixedInputCloseoutContractTests(unittest.TestCase):
         manifest = self.load_manifest()
         dynamic = manifest["dynamicEvidence"]
         inventory = dynamic["idaStaticInventory"]
-        self.assertEqual(inventory["status"], "inventory-complete-classification-pending")
+        self.assertEqual(inventory["status"], "expanded-inventory-classification-pending")
         self.assertEqual(
             inventory["file"],
             ".dualpad-builder/mixed_input_ida_static_evidence.json",
         )
         self.assertEqual(inventory["directCodeXrefs"], 26)
-        self.assertEqual(inventory["verifiedSignatureSites"], 6)
+        self.assertEqual(inventory["nativeGameplayQueryTarget"], "0x140c15280")
+        self.assertEqual(inventory["nativeGameplayDirectCodeXrefs"], 16)
+        self.assertEqual(inventory["playerControlsProcessEventVa"], "0x140704de0")
+        self.assertEqual(inventory["verifiedSignatureSites"], 7)
 
         i0 = dynamic["gates"]["I-0"]
         self.assertTrue(i0["queryEntrySignatureVerified"])

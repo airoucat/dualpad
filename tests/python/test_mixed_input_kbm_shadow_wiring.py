@@ -15,6 +15,12 @@ class MixedInputKbmShadowWiringTests(unittest.TestCase):
         self.assertIn("observedEventCount", source)
         self.assertIn("mappedEdgeCount", source)
         self.assertIn("batchAccepted", source)
+        self.assertIn("firstNativeUserEvent", source)
+        self.assertIn("firstNativeValue", source)
+        self.assertIn("firstNativeHeldDuration", source)
+        self.assertIn("GetUserEvent()", source)
+        self.assertIn("Value()", source)
+        self.assertIn("HeldDuration()", source)
 
         observe = source.index("ObserveEventList(")
         produce = source.index("BuildIngressBatch(")

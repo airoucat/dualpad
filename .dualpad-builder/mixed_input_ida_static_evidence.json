@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "evidenceKind": "SkyrimMixedInputIdaStatic",
-  "staticEvidenceStatus": "inventory-complete-classification-pending",
+  "staticEvidenceStatus": "expanded-inventory-classification-pending",
   "dynamicGatesRemain": "NO-GO",
   "captureTool": "IDA Pro / IDAPython",
   "idaVersion": "9.3",
@@ -19,6 +19,37 @@
     "virtualSlotIndex": 7,
     "staticMeaning": "non-null delegate device then call byte-returning vfunc",
     "runtimeOriginalTarget": "0x140c19e00-static-live-vptr-recheck-pending"
+  },
+  "nativeGameplayQuery": {
+    "targetVa": "0x140c15280",
+    "functionEndVa": "0x140c152a5",
+    "byteIdentityWithPrimaryQuery": true,
+    "staticMeaning": "non-null delegate device then call byte-returning vfunc",
+    "directCodeXrefCount": 16,
+    "playerControlsVtableRelocationId": 262983,
+    "playerControlsVtableVa": "0x14166e838",
+    "playerControlsProcessEventVa": "0x140704de0",
+    "playerControlsCallsiteVa": "0x140704e4c",
+    "classificationStatus": "pending-per-caller-domain-and-causality",
+    "productionPatchEnabled": false,
+    "directCodeXrefs": [
+      { "callsiteVa": "0x1405b8a59", "callBytes": "E8 22 C8 65 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1405b8890", "callerFunctionEndVa": "0x1405b8a90", "callerFunctionName": "sub_1405B8890", "classification": "Unknown" },
+      { "callsiteVa": "0x1406cf35f", "callBytes": "E8 1C 5F 54 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1406cf2a0", "callerFunctionEndVa": "0x1406cf683", "callerFunctionName": "sub_1406CF2A0", "classification": "Unknown" },
+      { "callsiteVa": "0x140704e4c", "callBytes": "E8 2F 04 51 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x140704de0", "callerFunctionEndVa": "0x140705027", "callerFunctionName": "PlayerControls::ProcessEvent(InputEvent**)", "classification": "Unknown" },
+      { "callsiteVa": "0x140705200", "callBytes": "E8 7B 00 51 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1407051f0", "callerFunctionEndVa": "0x14070521c", "callerFunctionName": "sub_1407051F0", "classification": "Unknown" },
+      { "callsiteVa": "0x140707025", "callBytes": "E8 56 E2 50 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x140706e60", "callerFunctionEndVa": "0x1407070fe", "callerFunctionName": "sub_140706E60", "classification": "Unknown" },
+      { "callsiteVa": "0x14084f50b", "callBytes": "E8 70 5D 3C 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x14084f490", "callerFunctionEndVa": "0x14084f6c2", "callerFunctionName": "sub_14084F490", "classification": "Unknown" },
+      { "callsiteVa": "0x1408880e5", "callBytes": "E8 96 D1 38 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408880a0", "callerFunctionEndVa": "0x1408880fe", "callerFunctionName": "sub_1408880A0", "classification": "Unknown" },
+      { "callsiteVa": "0x1408a8603", "callBytes": "E8 78 CC 36 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408a85c0", "callerFunctionEndVa": "0x1408a8644", "callerFunctionName": "sub_1408A85C0", "classification": "Unknown" },
+      { "callsiteVa": "0x1408b3137", "callBytes": "E8 44 21 36 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408b30f0", "callerFunctionEndVa": "0x1408b315a", "callerFunctionName": "sub_1408B30F0", "classification": "Unknown" },
+      { "callsiteVa": "0x1408e395a", "callBytes": "E8 21 19 33 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408e3500", "callerFunctionEndVa": "0x1408e3a90", "callerFunctionName": "sub_1408E3500", "classification": "Unknown" },
+      { "callsiteVa": "0x1408e54a0", "callBytes": "E8 DB FD 32 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408e5490", "callerFunctionEndVa": "0x1408e54d4", "callerFunctionName": "sub_1408E5490", "classification": "Unknown" },
+      { "callsiteVa": "0x1408e604a", "callBytes": "E8 31 F2 32 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408e5e80", "callerFunctionEndVa": "0x1408e6132", "callerFunctionName": "sub_1408E5E80", "classification": "Unknown" },
+      { "callsiteVa": "0x1408eefba", "callBytes": "E8 C1 62 32 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408eef60", "callerFunctionEndVa": "0x1408ef127", "callerFunctionName": "sub_1408EEF60", "classification": "Unknown" },
+      { "callsiteVa": "0x1408ef1f9", "callBytes": "E8 82 60 32 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408ef130", "callerFunctionEndVa": "0x1408ef4f5", "callerFunctionName": "sub_1408EF130", "classification": "Unknown" },
+      { "callsiteVa": "0x1408f0e40", "callBytes": "E8 3B 44 32 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408f0bf0", "callerFunctionEndVa": "0x1408f1c98", "callerFunctionName": "sub_1408F0BF0", "classification": "Unknown" },
+      { "callsiteVa": "0x1408f2f15", "callBytes": "E8 66 23 32 00", "resolvedTargetVa": "0x140c15280", "callerFunctionVa": "0x1408f2eb0", "callerFunctionEndVa": "0x1408f349c", "callerFunctionName": "sub_1408F2EB0", "classification": "Unknown" }
+    ]
   },
   "handlerTypeIdentity": {
     "completeObjectLocatorRelocationId": 560029,
@@ -79,6 +110,7 @@
   ],
   "signatureSites": [
     { "va": "0x140c15240", "bytes": "48 83 EC 28 48 8B 49 70 48 85 C9 74 11 48 8B 01 FF 50 38 84 C0 74 07 B0 01 48 83 C4 28 C3 32 C0 48 83 C4 28 C3 CC CC CC CC CC CC CC CC CC CC CC 32 C0 C3 CC CC CC CC CC CC CC CC CC CC CC CC CC", "functionVa": "0x140c15240", "functionEndVa": "0x140c15265", "functionName": "sub_140C15240" },
+    { "va": "0x140c15280", "bytes": "48 83 EC 28 48 8B 49 70 48 85 C9 74 11 48 8B 01 FF 50 38 84 C0 74 07 B0 01 48 83 C4 28 C3 32 C0 48 83 C4 28 C3", "functionVa": "0x140c15280", "functionEndVa": "0x140c152a5", "functionName": "sub_140C15280" },
     { "va": "0x140705ae0", "bytes": "48 89 5C 24 08 57 48 83 EC 70 80 3D 7F BC 6E 01 00 48 8B DA 48 8B F9 74 12 F3 0F 10 42 04 F3 0F", "functionVa": "0x140705ae0", "functionEndVa": "0x140705f0e", "functionName": "sub_140705AE0" },
     { "va": "0x140ecd970", "bytes": "48 8B C4 57 48 83 EC 70 48 C7 40 B8 FE FF FF FF 48 89 58 08 48 89 68 10 48 89 70 18 48 8B DA 48", "functionVa": "0x140ecd970", "functionEndVa": "0x140ecdaea", "functionName": "sub_140ECD970" },
     { "va": "0x140ed2f90", "bytes": "48 8B C4 56 57 41 56 48 81 EC 90 00 00 00 48 C7 40 98 FE FF FF FF 48 89 58 10 48 89 68 18 48 8B", "functionVa": "0x140ed2f90", "functionEndVa": "0x140ed3119", "functionName": "sub_140ED2F90" },

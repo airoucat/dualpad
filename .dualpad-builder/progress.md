@@ -3780,3 +3780,22 @@
   - 从 clean commit 执行 `xmake build -r -y DualPad`，exit 0；DLL 已部署到本机 Skyrim mod staging，二进制内嵌 identity 为 `52fe899c1c1e`。
   - DLL SHA-256：`F5137E6173B717C5FF6A4914F979DA93B6923B5E8AC3838F6C245C811DC1360F`；PDB SHA-256：`86FAAA04EFD48DB587072224BD270B8073820D4E1234C95FDE294F0EA445CE8E`。
   - 下一步只执行短实机定位：gameplay 内按住 W 2 秒、左键 2 次后退出。该样本只定位 KBM 首个断裂边界，不宣称 I-0 soak、RC readiness 或 gameplay KBM 已通过。
+
+## 2026-07-12 17:26:48 +08:00
+
+- `S-DP5-MIXED-INPUT / KBM ingress shadow live closure + I-1 static phase start`：
+  - matching build `52fe899c1c1e` 于 `17:24` 完成短实机样本。W（keyboard `idCode=0x11`）在 gameplay 被 adapter 观测，producer 映射为 `Game.Move`，Hub `batchAccepted=true`，runtime 同一 causal frame 为 `keyboardMove=0x1 policyMoveActive=true`；按住约 2.1 秒后 release 完整到达。
+  - mouse `idCode=0x0` 的多次 press/release 同样完整到达，producer 映射为 `Game.Block`，runtime 为 `mouseCombat=0x2 policyCombatActive=true`；用户仍观察到 native gameplay 无响应。
+  - 判定：Skyrim physical event list、KBM producer、Hub receipt、assembler 与 runtime policy 全部 PASS；首个已定位断裂边界是 `DualPadRuntime -> native gameplay consumer` 之后。native `ButtonEvent.userEvent/value/heldDuration` 尚未观测，不能把 physical materialization PASS 误写成 semantic materialization PASS。
+  - Current Phase Packet：Phase=`native ButtonEvent semantic shadow + I-1 caller/domain static convergence`；Goal=先观测 PlayerControls 实际接收的原生事件语义，再用 matching IDA DB 收敛候选 domain；Must not do=不安装 query/device patch、不启用 scoped override、不改变 event、current-cycle、menu/cursor/prompt；Acceptance=原生事件语义可判定，静态分类有逐 target 证据，未知/动态项明确保持 NO-GO。
+
+## 2026-07-12 17:40:00 +08:00
+
+- `S-DP5-MIXED-INPUT / native ButtonEvent semantic shadow + I-1 inventory correction`：
+  - TDD RED：wiring contract 先要求 `GetUserEvent()/Value()/HeldDuration()`，旧 owner pump 因缺少 `firstNativeUserEvent` 失败；最小只读实现从首个 observed ordinal 取得对应 native `ButtonEvent` 三字段并写入现有低噪声 `[DualPad][KbmIngressShadow]`，不修改 event 或 capability gate。
+  - GREEN：`python tests/python/test_mixed_input_kbm_shadow_wiring.py` 3/3；`xmake build -y DualPad` exit 0。当前 dirty build 仅用于编译确认，不作为实机候选。
+  - matching IDA DB 字节搜索发现此前清单遗漏的同构查询 `0x140C15280`：与 `0x140C15240` 的 32-byte body 完全相同，但拥有独立 16 个 direct callers；其中 `PlayerControls::ProcessEvent(InputEvent**)` 为 `0x140704DE0`，callsite=`0x140704E4C`。
+  - 静态证据 schema v3 保留原 `0x140C15240 / 26 xrefs` 身份，并新增独立 `0x140C15280 / 16 xrefs` inventory；checker 输出 `nativeGameplayQueryXrefs=16`，全部 caller classification 仍 pending，production patch 仍 false，动态 gates 仍 `NO-GO`。
+  - Focused/adjacent GREEN：KBM wiring 3/3、IDA checker 10/10、closeout 10/10、RouteHealth、Ingress、InputV2、GameplayProjection、PresentationProjection 与主 DLL 均 exit 0。
+  - Canonical Phase 8 fresh run exit 0，包含主 DLL、全部 runtime/support targets、reviewed docs、release readiness、mixed trace evaluator、IDA static checker 与 generated diff；Graphify manual closeout 为 `2390 nodes / 5685 edges / 173 communities`。
+  - Review 无 actionable finding；下一步只允许从 clean implementation commit 重建诊断候选并做一次约 5 秒 W/鼠标样本，不能宣称 gameplay KBM 已修复。

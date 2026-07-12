@@ -314,16 +314,40 @@
         "KbmGameplayFactProducer draft and IngressHub receipt",
         "assembled KbmGameplay facts and runtime policy"
       ],
-      "liveVerdict": "pending-short-W-mouse-sample"
+      "liveVerdict": "PASS-ingress-and-runtime-boundaries",
+      "liveSample": {
+        "sampleId": "KBM-SHADOW-20260712-1724",
+        "buildCommit": "52fe899c1c1e",
+        "observedAt": "2026-07-12T17:24:20+08:00",
+        "keyboardMove": {
+          "physical": "keyboard-idCode-0x11",
+          "mappedAction": "Game.Move",
+          "ingressCurrentMask": "0x1",
+          "runtimePolicyActive": true,
+          "nativeGameplayResponse": false
+        },
+        "mouseCombat": {
+          "physical": "mouse-idCode-0x0",
+          "mappedAction": "Game.Block",
+          "ingressCurrentMask": "0x2",
+          "runtimePolicyActive": true,
+          "nativeGameplayResponse": false
+        },
+        "firstBrokenBoundary": "after-DualPad-runtime-before-native-gameplay-consumer",
+        "nextGate": "native-ButtonEvent-semantic-shadow-then-I-1-caller-domain-classification"
+      }
     },
     "idaStaticInventory": {
-      "status": "inventory-complete-classification-pending",
+      "status": "expanded-inventory-classification-pending",
       "file": ".dualpad-builder/mixed_input_ida_static_evidence.json",
       "checker": "scripts/ci/check_mixed_input_ida_static_evidence.py",
       "idaVersion": "9.3",
       "binaryHashVerified": true,
       "directCodeXrefs": 26,
-      "verifiedSignatureSites": 6,
+      "nativeGameplayQueryTarget": "0x140c15280",
+      "nativeGameplayDirectCodeXrefs": 16,
+      "playerControlsProcessEventVa": "0x140704de0",
+      "verifiedSignatureSites": 7,
       "dynamicGatesRemain": "NO-GO"
     },
     "gates": {

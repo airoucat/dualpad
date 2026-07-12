@@ -183,6 +183,25 @@ namespace dualpad::input
             frameToken,
             eventBatchToken,
             ownerNowUs);
+        const char* firstNativeUserEvent = "";
+        float firstNativeValue = 0.0F;
+        float firstNativeHeldDuration = 0.0F;
+        if (!observed.events.empty() && event && *event) {
+            const auto targetOrdinal = observed.events.front().eventOrdinal;
+            std::uint32_t ordinal = 0;
+            for (auto* current = *event; current; current = current->next) {
+                if (++ordinal != targetOrdinal) {
+                    continue;
+                }
+                if (const auto* button = current->AsButtonEvent()) {
+                    const auto& userEvent = button->GetUserEvent();
+                    firstNativeUserEvent = userEvent.c_str() ? userEvent.c_str() : "";
+                    firstNativeValue = button->Value();
+                    firstNativeHeldDuration = button->HeldDuration();
+                }
+                break;
+            }
+        }
         input_v2::ingress::PublishedIngressBatchReceipt kbmReceipt{};
         bool kbmBatchAccepted = false;
         bool kbmBatchBuilt = false;
@@ -255,7 +274,7 @@ namespace dualpad::input
         const auto kbmSample = g_kbmIngressSampler.Observe(ownerNowUs / 1000, kbmDiagnostic);
         if (kbmSample.record) {
             logger::info(
-                "[DualPad][KbmIngressShadow] callbackCount={} sampleReason={} fingerprint=0x{:X} thread={} frameToken={} eventBatchToken={} contextRevision={} menuStackRevision={} bindingGeneration={} bindingsComplete={} eventListComplete={} observedEventCount={} firstDevice={} firstIdCode=0x{:X} firstPhase={} firstInitialPress={} batchBuilt={} mappedEdgeCount={} firstMappedClass={} firstMappedAction='{}' sourceActivityCount={} currentComplete={} keyboardMove=0x{:X} keyboardCombat=0x{:X} mouseCombat=0x{:X} keyboardTransient=0x{:X} mouseTransient=0x{:X} keyboardSustained=0x{:X} mouseSustained=0x{:X} physicalDownCount={} quarantineCount={} batchAccepted={} firstOrderedSeq={} causalTail={} inputStateEpoch={} gamepadSessionId={} controlMapRevision={} productionMutationEnabled=false enginePatchEnabled=false",
+                "[DualPad][KbmIngressShadow] callbackCount={} sampleReason={} fingerprint=0x{:X} thread={} frameToken={} eventBatchToken={} contextRevision={} menuStackRevision={} bindingGeneration={} bindingsComplete={} eventListComplete={} observedEventCount={} firstDevice={} firstIdCode=0x{:X} firstPhase={} firstInitialPress={} firstNativeUserEvent='{}' firstNativeValue={} firstNativeHeldDuration={} batchBuilt={} mappedEdgeCount={} firstMappedClass={} firstMappedAction='{}' sourceActivityCount={} currentComplete={} keyboardMove=0x{:X} keyboardCombat=0x{:X} mouseCombat=0x{:X} keyboardTransient=0x{:X} mouseTransient=0x{:X} keyboardSustained=0x{:X} mouseSustained=0x{:X} physicalDownCount={} quarantineCount={} batchAccepted={} firstOrderedSeq={} causalTail={} inputStateEpoch={} gamepadSessionId={} controlMapRevision={} productionMutationEnabled=false enginePatchEnabled=false",
                 kbmSample.callbackCount,
                 ToString(kbmSample.reason),
                 kbmFingerprint,
@@ -272,6 +291,9 @@ namespace dualpad::input
                 kbmDiagnostic.firstIdCode,
                 kbmDiagnostic.firstPhase,
                 kbmDiagnostic.firstInitialPress,
+                firstNativeUserEvent,
+                firstNativeValue,
+                firstNativeHeldDuration,
                 kbmBatchBuilt,
                 mappedEdgeCount,
                 static_cast<std::uint8_t>(firstMappedClass),

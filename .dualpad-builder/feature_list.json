@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-07-12T17:15:02+08:00",
+  "updated_at": "2026-07-12T17:40:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -387,9 +387,9 @@
         "WP6 已实现 Sprint G/K/M 多来源 contributor OR、virtual bridge、full-mask backend materialization 与 prepared rollback；I-P 前 joining/non-final current-cycle suppression 保持 fail-closed，I-SPRINT 结果 B 前不安装 SprintHandler guard",
         "WP7 已实现 scoped epoch/session recovery、Hub 到 owner pump 的 quarantine transaction、ControlMap/context synthetic receipt reset、overflow fail-closed、gamepad disconnect KBM/Sprint 保留与可选 raw reconcile 的 pure evidence contract；I-KBM 两项 production route 仍分别 NO-GO",
         "WP8 已实现基于 ordered meaningful activity 的 prompt、menu、cursor 独立原子投影；pointer threshold/deadline、exact consume-once cursor ack 与 gameplay menu-entry intent 已接线，I-CURSOR 前 Skyrim adapter 固定 MappingUnverified 且无坐标 side effect",
-        "WP9 已将 engine/device query 恢复为 original-first：REL/vtable identity 在 I-0 未批准时写前 fail-closed，availability 默认 Native，9-domain runtime snapshot 全部 Original/OriginalOnly，26 caller manifest 在 I-1 前明确未完成且 production override 为零",
+          "WP9 已将 engine/device query 恢复为 original-first：REL/vtable identity 在 I-0 未批准时写前 fail-closed，availability 默认 Native，9-domain runtime snapshot 全部 Original/OriginalOnly；IDA inventory 分别锁定 primary query 26 callers 与 native gameplay duplicate query 16 callers，两组在 I-1 前均保持 classification pending 且 production override 为零",
         "I-0 identity 子门已由 matching 1.5.97 live vptr/slot/original target 证据判定 PASS；availability shadow telemetry 已覆盖 native Poll reachability、完整 XInput state、connected、delegateReady、menu/remap、session/context 与 5 秒 held health sample，A/B 实机矩阵完成前 I-0 总状态和 production patch 继续 NO-GO",
-        "KBM ingress shadow boundary slice 只观测 Skyrim event list、producer draft 与 Hub receipt；I-0 soak 保留 pending，任何 engine/current-cycle production capability 继续关闭",
+          "KBM ingress/runtime shadow 已确认 gameplay physical W/mouse event、producer、Hub、assembler 与 policy 均 PASS；native ButtonEvent semantic shadow 继续只读定位 PlayerControls 前语义边界，I-0 soak 保留 pending，任何 engine/current-cycle production capability继续关闭",
         "WP10 已建立 causal JSONL trace evaluator、动态证据 fail-closed checker、phase-aware closeout contract 与 reviewed current-truth 文档，并接入 Phase8 / RC readiness；静态自动化不会把未完成 I 节证据误报为 production GO",
         "disconnect、overflow、ControlMap reload 和 lost release 恢复路径闭合，且不修改 Favorites native gate、Interface/SWF、glyph、haptics、rumble 或无关 bindings"
       ]

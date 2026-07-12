@@ -16,6 +16,26 @@ TARGET_SHA256 = "DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579C
 IMAGE_BASE = "0x140000000"
 QUERY_TARGET = "0x140c15240"
 EXPECTED_DIRECT_XREFS = 26
+NATIVE_GAMEPLAY_QUERY_TARGET = "0x140c15280"
+EXPECTED_NATIVE_GAMEPLAY_XREFS = 16
+EXPECTED_NATIVE_GAMEPLAY_CALLS = [
+    ("0x1405b8a59", "0x1405b8890"),
+    ("0x1406cf35f", "0x1406cf2a0"),
+    ("0x140704e4c", "0x140704de0"),
+    ("0x140705200", "0x1407051f0"),
+    ("0x140707025", "0x140706e60"),
+    ("0x14084f50b", "0x14084f490"),
+    ("0x1408880e5", "0x1408880a0"),
+    ("0x1408a8603", "0x1408a85c0"),
+    ("0x1408b3137", "0x1408b30f0"),
+    ("0x1408e395a", "0x1408e3500"),
+    ("0x1408e54a0", "0x1408e5490"),
+    ("0x1408e604a", "0x1408e5e80"),
+    ("0x1408eefba", "0x1408eef60"),
+    ("0x1408ef1f9", "0x1408ef130"),
+    ("0x1408f0e40", "0x1408f0bf0"),
+    ("0x1408f2f15", "0x1408f2eb0"),
+]
 EXPECTED_XREF_INVENTORY_SHA256 = (
     "7C3FA20D43F07650FCB00C569A1E0455E8339FAA8E7AACA0D0CA5810DEB4E7F0"
 )
@@ -32,6 +52,7 @@ ALLOWED_CLASSIFICATIONS = {
 }
 REQUIRED_SIGNATURES = {
     "0x140c15240": "48 83 EC 28 48 8B 49 70 48 85 C9 74 11 48 8B 01 FF 50 38",
+    "0x140c15280": "48 83 EC 28 48 8B 49 70 48 85 C9 74 11 48 8B 01 FF 50 38",
     "0x140705ae0": "48 89 5C 24 08 57 48 83 EC 70",
     "0x140ecd970": "48 8B C4 57 48 83 EC 70",
     "0x140ed2f90": "48 8B C4 56 57 41 56 48 81 EC 90 00 00 00",
@@ -99,8 +120,8 @@ def xref_inventory_sha256(xrefs: list[dict[str, Any]]) -> str:
 
 def validate(evidence: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if evidence.get("schemaVersion") != 2:
-        errors.append("schemaVersion must be 2")
+    if evidence.get("schemaVersion") != 3:
+        errors.append("schemaVersion must be 3")
     if evidence.get("evidenceKind") != "SkyrimMixedInputIdaStatic":
         errors.append("evidenceKind must identify Skyrim mixed-input IDA static evidence")
     if evidence.get("inputSha256") != TARGET_SHA256:
@@ -109,7 +130,7 @@ def validate(evidence: dict[str, Any]) -> list[str]:
         errors.append("image base does not match Skyrim SE 1.5.97")
     if normalized_va(evidence.get("queryTargetVa")) != QUERY_TARGET:
         errors.append("query target is not 0x140C15240")
-    if evidence.get("staticEvidenceStatus") != "inventory-complete-classification-pending":
+    if evidence.get("staticEvidenceStatus") != "expanded-inventory-classification-pending":
         errors.append("static evidence status must remain classification-pending")
     if evidence.get("dynamicGatesRemain") != "NO-GO":
         errors.append("static evidence must not approve dynamic gates")
@@ -159,6 +180,44 @@ def validate(evidence: dict[str, Any]) -> list[str]:
         and xref_inventory_sha256(xrefs) != EXPECTED_XREF_INVENTORY_SHA256
     ):
         errors.append("direct xref inventory does not match the reviewed IDA export")
+
+    native_query = evidence.get("nativeGameplayQuery")
+    if not isinstance(native_query, dict):
+        errors.append("native gameplay query evidence is required")
+    else:
+        if normalized_va(native_query.get("targetVa")) != NATIVE_GAMEPLAY_QUERY_TARGET:
+            errors.append("native gameplay query target is not 0x140C15280")
+        if native_query.get("functionEndVa") != "0x140c152a5":
+            errors.append("native gameplay query function identity drifted")
+        if native_query.get("byteIdentityWithPrimaryQuery") is not True:
+            errors.append("native gameplay query byte identity is not locked")
+        if native_query.get("directCodeXrefCount") != EXPECTED_NATIVE_GAMEPLAY_XREFS:
+            errors.append("native gameplay query directCodeXrefCount must equal 16")
+        native_xrefs = native_query.get("directCodeXrefs")
+        if not isinstance(native_xrefs, list) or len(native_xrefs) != EXPECTED_NATIVE_GAMEPLAY_XREFS:
+            errors.append("native gameplay query directCodeXrefs must contain exactly 16 entries")
+            native_xrefs = []
+        actual_calls = []
+        for index, xref in enumerate(native_xrefs):
+            if not isinstance(xref, dict):
+                errors.append(f"native gameplay xref[{index}] must be an object")
+                continue
+            actual_calls.append(
+                (normalized_va(xref.get("callsiteVa")), normalized_va(xref.get("callerFunctionVa")))
+            )
+            if normalized_va(xref.get("resolvedTargetVa")) != NATIVE_GAMEPLAY_QUERY_TARGET:
+                errors.append(f"native gameplay xref[{index}] resolved target drifted")
+            call_bytes = str(xref.get("callBytes", "")).split()
+            if len(call_bytes) != 5 or not call_bytes or call_bytes[0].upper() != "E8":
+                errors.append(f"native gameplay xref[{index}] is not a five-byte direct call")
+        if actual_calls != EXPECTED_NATIVE_GAMEPLAY_CALLS:
+            errors.append("native gameplay query callsite inventory drifted")
+        if native_query.get("playerControlsProcessEventVa") != "0x140704de0":
+            errors.append("native gameplay query PlayerControls consumer identity drifted")
+        if native_query.get("playerControlsCallsiteVa") != "0x140704e4c":
+            errors.append("native gameplay query PlayerControls callsite identity drifted")
+        if native_query.get("productionPatchEnabled") is not False:
+            errors.append("native gameplay query production patch must remain disabled")
 
     query_entry = evidence.get("queryEntry")
     expected_entry = {
@@ -248,6 +307,7 @@ def main() -> int:
     print(
         "mixed-input IDA static evidence: PASS "
         f"directCodeXrefs={EXPECTED_DIRECT_XREFS} "
+        f"nativeGameplayQueryXrefs={EXPECTED_NATIVE_GAMEPLAY_XREFS} "
         f"signatures={len(REQUIRED_SIGNATURES)} dynamicGatesRemain=NO-GO"
     )
     return 0

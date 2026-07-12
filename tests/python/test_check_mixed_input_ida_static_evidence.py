@@ -34,7 +34,27 @@ class MixedInputIdaStaticEvidenceTests(unittest.TestCase):
         result = self.run_checker()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("directCodeXrefs=26", result.stdout)
+        self.assertIn("nativeGameplayQueryXrefs=16", result.stdout)
         self.assertIn("dynamicGatesRemain=NO-GO", result.stdout)
+
+    def test_native_gameplay_duplicate_query_is_locked(self) -> None:
+        def change_native_gameplay_target(evidence: dict) -> None:
+            evidence["nativeGameplayQuery"]["targetVa"] = "0x140c15240"
+
+        result = self.write_mutated(change_native_gameplay_target)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native gameplay query", result.stdout + result.stderr)
+
+        def remove_player_controls_callsite(evidence: dict) -> None:
+            evidence["nativeGameplayQuery"]["directCodeXrefs"] = [
+                xref
+                for xref in evidence["nativeGameplayQuery"]["directCodeXrefs"]
+                if xref["callsiteVa"].lower() != "0x140704e4c"
+            ]
+
+        callsite_result = self.write_mutated(remove_player_controls_callsite)
+        self.assertNotEqual(callsite_result.returncode, 0)
+        self.assertIn("16", callsite_result.stdout + callsite_result.stderr)
 
     def test_wrong_binary_hash_is_rejected(self) -> None:
         result = self.write_mutated(lambda evidence: evidence.update(inputSha256="00" * 32))
@@ -123,9 +143,9 @@ class MixedInputIdaStaticEvidenceTests(unittest.TestCase):
         self.assertNotEqual(drift_result.returncode, 0)
         self.assertIn("vftable", drift_result.stdout + drift_result.stderr)
 
-    def test_extended_handler_identity_requires_schema_v2(self) -> None:
+    def test_extended_native_gameplay_identity_requires_schema_v3(self) -> None:
         result = self.write_mutated(
-            lambda evidence: evidence.update(schemaVersion=1)
+            lambda evidence: evidence.update(schemaVersion=2)
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("schemaVersion", result.stdout + result.stderr)

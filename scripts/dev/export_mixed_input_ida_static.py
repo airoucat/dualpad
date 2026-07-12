@@ -18,11 +18,13 @@ from typing import Any
 
 TARGET_SHA256 = "DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD"
 QUERY_TARGET = 0x140C15240
+NATIVE_GAMEPLAY_QUERY_TARGET = 0x140C15280
 HANDLER_COL_ENTRY = 0x14175E848
 HANDLER_VFTABLE = 0x14175E850
 HANDLER_DECLARED_SLOT_COUNT = 9
 SIGNATURE_REGIONS = (
     (0x140C15240, 64),
+    (0x140C15280, 32),
     (0x140705AE0, 32),
     (0x140ECD970, 32),
     (0x140ED2F90, 32),
@@ -63,25 +65,30 @@ def collect() -> dict[str, Any]:
             raise RuntimeError(f"unable to read {size} bytes at {ea:#x}")
         return data.hex(" ").upper()
 
-    direct_xrefs: list[dict[str, Any]] = []
-    callsite = ida_xref.get_first_cref_to(QUERY_TARGET)
-    while callsite != idaapi.BADADDR:
-        function = ida_funcs.get_func(callsite)
-        if function is None:
-            raise RuntimeError(f"direct xref at {callsite:#x} has no owning function")
-        direct_xrefs.append(
-            {
-                "callsiteVa": hex(callsite),
-                "callInstruction": idc.generate_disasm_line(callsite, 0),
-                "callBytes": bytes_at(callsite, 5),
-                "resolvedTargetVa": hex(idc.get_operand_value(callsite, 0)),
-                "callerFunctionVa": hex(function.start_ea),
-                "callerFunctionEndVa": hex(function.end_ea),
-                "callerFunctionName": ida_funcs.get_func_name(function.start_ea),
-                "classification": "Unknown",
-            }
-        )
-        callsite = ida_xref.get_next_cref_to(QUERY_TARGET, callsite)
+    def collect_direct_xrefs(target: int) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        callsite = ida_xref.get_first_cref_to(target)
+        while callsite != idaapi.BADADDR:
+            function = ida_funcs.get_func(callsite)
+            if function is None:
+                raise RuntimeError(f"direct xref at {callsite:#x} has no owning function")
+            result.append(
+                {
+                    "callsiteVa": hex(callsite),
+                    "callInstruction": idc.generate_disasm_line(callsite, 0),
+                    "callBytes": bytes_at(callsite, 5),
+                    "resolvedTargetVa": hex(idc.get_operand_value(callsite, 0)),
+                    "callerFunctionVa": hex(function.start_ea),
+                    "callerFunctionEndVa": hex(function.end_ea),
+                    "callerFunctionName": ida_funcs.get_func_name(function.start_ea),
+                    "classification": "Unknown",
+                }
+            )
+            callsite = ida_xref.get_next_cref_to(target, callsite)
+        return result
+
+    direct_xrefs = collect_direct_xrefs(QUERY_TARGET)
+    native_gameplay_xrefs = collect_direct_xrefs(NATIVE_GAMEPLAY_QUERY_TARGET)
 
     signature_sites: list[dict[str, Any]] = []
     for address, size in SIGNATURE_REGIONS:
@@ -116,9 +123,9 @@ def collect() -> dict[str, Any]:
     handler_slot7_target = ida_bytes.get_qword(HANDLER_VFTABLE + 7 * 8)
 
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "evidenceKind": "SkyrimMixedInputIdaStatic",
-        "staticEvidenceStatus": "inventory-complete-classification-pending",
+        "staticEvidenceStatus": "expanded-inventory-classification-pending",
         "dynamicGatesRemain": "NO-GO",
         "captureTool": "IDA Pro / IDAPython",
         "idaVersion": ida_kernwin.get_kernel_version(),
@@ -136,6 +143,21 @@ def collect() -> dict[str, Any]:
             "virtualSlotIndex": 7,
             "staticMeaning": "non-null delegate device then call byte-returning vfunc",
             "runtimeOriginalTarget": "0x140c19e00-static-live-vptr-recheck-pending",
+        },
+        "nativeGameplayQuery": {
+            "targetVa": hex(NATIVE_GAMEPLAY_QUERY_TARGET),
+            "functionEndVa": "0x140c152a5",
+            "byteIdentityWithPrimaryQuery": bytes_at(QUERY_TARGET, 32)
+            == bytes_at(NATIVE_GAMEPLAY_QUERY_TARGET, 32),
+            "staticMeaning": "non-null delegate device then call byte-returning vfunc",
+            "directCodeXrefCount": len(native_gameplay_xrefs),
+            "playerControlsVtableRelocationId": 262983,
+            "playerControlsVtableVa": "0x14166e838",
+            "playerControlsProcessEventVa": "0x140704de0",
+            "playerControlsCallsiteVa": "0x140704e4c",
+            "classificationStatus": "pending-per-caller-domain-and-causality",
+            "productionPatchEnabled": False,
+            "directCodeXrefs": native_gameplay_xrefs,
         },
         "handlerTypeIdentity": {
             "completeObjectLocatorRelocationId": 560029,
