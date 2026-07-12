@@ -319,6 +319,8 @@
         "handlerVtableRva": "0x175E850",
         "handlerColVtableStaticIdentityVerified": true,
         "staticOriginalTargetRva": "0xC19E00",
+        "candidateRuntimeProbeBuildCommit": "f76a53a91263",
+        "candidateRuntimeProbeDllSha256": "EE4540B1E4EF98D67888D8AB23001F6D431471948282D5C5D01F974A2510C37A",
         "runtimeOriginalTargetVerified": false
       },
       "I-P": {
