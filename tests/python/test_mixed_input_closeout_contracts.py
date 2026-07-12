@@ -237,6 +237,43 @@ class MixedInputCloseoutContractTests(unittest.TestCase):
             "mixed-input implementation changed Favorites/SWF/glyph/haptics/rumble/bindings scope",
         )
 
+    def test_ida_static_inventory_is_checked_by_canonical_gates(self) -> None:
+        phase8 = (ROOT / "scripts/ci/run_phase8_ci.ps1").read_text(encoding="utf-8")
+        rc = (ROOT / "scripts/ci/run_rc_readiness.ps1").read_text(encoding="utf-8")
+        checker = "scripts/ci/check_mixed_input_ida_static_evidence.py"
+        self.assertIn(checker, phase8)
+        self.assertIn(checker, rc)
+
+    def test_ida_static_inventory_does_not_approve_dynamic_gates(self) -> None:
+        manifest = self.load_manifest()
+        dynamic = manifest["dynamicEvidence"]
+        inventory = dynamic["idaStaticInventory"]
+        self.assertEqual(inventory["status"], "inventory-complete-classification-pending")
+        self.assertEqual(
+            inventory["file"],
+            ".dualpad-builder/mixed_input_ida_static_evidence.json",
+        )
+        self.assertEqual(inventory["directCodeXrefs"], 26)
+        self.assertEqual(inventory["verifiedSignatureSites"], 6)
+
+        i0 = dynamic["gates"]["I-0"]
+        self.assertTrue(i0["queryEntrySignatureVerified"])
+        self.assertEqual(i0["delegateSlotIndex"], 7)
+        self.assertFalse(i0["runtimeOriginalTargetVerified"])
+        self.assertEqual(i0["status"], "NO-GO")
+        self.assertFalse(i0["capabilityEnabled"])
+
+        i1 = dynamic["gates"]["I-1"]
+        self.assertTrue(i1["staticXrefInventoryComplete"])
+        self.assertFalse(i1["callerClassificationComplete"])
+        self.assertEqual(i1["releaseRelevantUnknownCallers"], 26)
+        self.assertEqual(i1["status"], "NO-GO")
+
+        i5 = dynamic["gates"]["I-5"]
+        self.assertEqual(i5["verifiedStaticSignatureSites"], 6)
+        self.assertFalse(i5["allEnabledSitesVerified"])
+        self.assertEqual(i5["status"], "NO-GO")
+
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(add_help=True)

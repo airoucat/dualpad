@@ -149,12 +149,13 @@ Command failures, exceptions, and unexpected behaviors.
 
 - Logged: 2026-06-15 22:58 CST
 - Priority: medium
-- Status: open
+- Status: resolved
 - Area: tooling / IDA
 - Summary: 在 Codex PowerShell 中直接用 IDA 9.3 CLI 查询 `SkyrimSE.exe.i64` 未能产生脚本报告。
 - Detail: `idat.exe -A -S... SkyrimSE.exe.i64` 首次超时且残留 `idat` 进程；改窄脚本后 `idat.exe` 和 `ida.exe` 都快速退出但没有生成脚本 report，也没有可靠 stdout/log。已删除本轮临时查询文件；不能把这次命令行尝试当作完成的 IDA 取证。
 - Related files: `G:/g/SkyrimSE/SkyrimSE.exe.i64`, `docs/gameplay_ui_owner_code_ida_refactor_plan_zh.md`, `docs/ui_input_ownership_arbitration_plan_zh.md`
 - Suggested fix: 后续若要自动化 IDA 查询，先用已知最小脚本验证 IDAPython 启动方式，或直接打开已有 `.i64` 在 GUI/IDA MCP 中查询固定 RVA，再把输出落到 repo-local 诊断文档。
+- Resolution: 当前会话通过 lazy tool inventory 找到 `ida-pro-mcp-stdio`，确认 IDA 9.3 已加载 matching `SkyrimSE.exe.unpacked.exe.i64`，并由 MCP 读取 image base 与 SHA-256。IDA 9.3 应使用 `ida_ida.inf_get_min_ea()` / `inf_get_max_ea()`，不能继续依赖返回 `None` 的 `idaapi.cvar.inf`；MCP `py_eval` 的分离 globals/locals 也不应在文件读取循环中使用捕获局部变量的 lambda。最终已导出 26 个 direct xref 与 6 个 signature site，并由 repo-local checker 验证。
 
 ## ERR-20260616-001
 

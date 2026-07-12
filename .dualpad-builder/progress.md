@@ -3604,3 +3604,21 @@
   - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator 与 generated diff 全部 exit 0。
   - Graphify manual closeout：`2342 nodes / 5580 edges / 174 communities`。实现提交：`51f6f2d fix(telemetry): keep mixed-input handoffs fail closed`。
   - Gate 不变：dynamic checker 仍为 `releaseStatus=NO-GO / 9 gates`；I-CURSOR、I-SPRINT、I-P、I-KBM 与 I-0/I-1/I-2/I-MENU/I-5 均未启用。Favorites native gate、Interface/SWF、glyph、haptics、rumble 与 bindings 均未修改。
+
+## 2026-07-12 14:53:00 +08:00
+
+- `S-DP5-MIXED-INPUT / IDA static inventory slice start`：
+  - 不等待实机 trace，先处理 I 节中可由 matching IDB 自动收口的静态证据；目标是冻结 binary identity、`0x140C15240` 入口语义、26 个 direct xref 与 6 个基线 signature site。
+  - 该切片只把“未知集合”变成可复现 inventory，不做 caller domain 猜测，不解析 runtime vtable actual target，也不把 I-0、I-1、I-5 或 releaseStatus 提升为 PASS。
+  - RED：新增 checker tests 后，因 artifact 与 checker 均不存在失败；canonical wiring RED 随后证明 Phase 8 / RC 尚未校验静态 inventory；builder contract RED 证明 manifest 尚未区分 static-complete 与 dynamic-pending。
+
+## 2026-07-12 15:08:47 +08:00
+
+- `S-DP5-MIXED-INPUT / IDA static inventory slice completed`：
+  - matching IDA 9.3 / IDAPython exporter 对批准的 Skyrim SE 1.5.97 binary SHA-256 完成实读：冻结 `0x140C15240` 的 `this + 0x70 -> [vtable + 0x38]`（slot 7）入口语义、26 个 direct code xref 与 6 个基线 signature site；另见到的 data xref 不混入 direct-code inventory。
+  - 版本化 artifact 与 checker 均不保存机器私有绝对路径。checker 锁定批准 hash、image base、query target、精确 26-entry inventory、query slot 语义与 signature prefix；future non-`Unknown` caller classification 必须同时提供 classification evidence 与 causality。
+  - Tier 2 顺序审查覆盖 correctness、testing、maintainability、project standards、agent-native、reliability、API/CLI contract、Python、adversarial 与 learnings；审查发现的 exact callsite、slot、embedded path、classification evidence 与 exporter round-trip 缺口均已修复，未留下高置信可操作项。
+  - Focused GREEN：IDA checker tests `7 passed`；mixed-input close-out `10 passed`；Python discovery `71 passed`；static checker 输出 `26 xrefs / 6 signatures / dynamicGatesRemain=NO-GO`；dynamic checker 输出 `releaseStatus=NO-GO / 9 gates`；exporter 与 checker `py_compile` 通过。
+  - canonical Phase 8 GREEN：主 DLL 与全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 均 exit 0；同路径 PDB 占用仍只是已知 copy warning，DLL 明确 `build ok`。
+  - Graphify manual closeout：`2366 nodes / 5632 edges / 172 communities`。实现提交在本条之后形成，并由后续 builder closeout 记录精确 hash。
+  - Gate 不变：I-0 仍缺 runtime original target/availability 唯一出口；I-1 的 26 个 caller 全部保留 `Unknown`，未做地址邻近猜测；I-5 仍缺最终 enabled-site transaction/rollback 动态证明。9 个动态 Gate 全部继续 `NO-GO`，未安装或启用任何 production patch。

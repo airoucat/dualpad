@@ -54,6 +54,7 @@ Invoke-Step python @("-m", "json.tool", ".dualpad-builder/sprint_plan.json", "NU
 Invoke-Step python @("-m", "unittest", "discover", "-s", "tests/python", "-p", "test_*.py")
 Invoke-Step python @("tests/python/test_mixed_input_closeout_contracts.py", "--phase", "closeout")
 Invoke-Step python @("scripts/ci/evaluate_mixed_input_trace.py", "tests/fixtures/mixed_input/good.jsonl")
+Invoke-Step python @("scripts/ci/check_mixed_input_ida_static_evidence.py")
 Invoke-Step python @("scripts/ci/check_mixed_input_dynamic_evidence.py")
 Invoke-Step python @("scripts/ci/check_reviewed_docs_consistency.py")
 Invoke-Step python @("scripts/ci/check_legacy_authority_boundary.py")

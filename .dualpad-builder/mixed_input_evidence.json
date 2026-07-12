@@ -296,11 +296,24 @@
     "targetRuntime": "Skyrim SE 1.5.97",
     "targetSha256": "DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD",
     "releaseStatus": "NO-GO",
+    "idaStaticInventory": {
+      "status": "inventory-complete-classification-pending",
+      "file": ".dualpad-builder/mixed_input_ida_static_evidence.json",
+      "checker": "scripts/ci/check_mixed_input_ida_static_evidence.py",
+      "idaVersion": "9.3",
+      "binaryHashVerified": true,
+      "directCodeXrefs": 26,
+      "verifiedSignatureSites": 6,
+      "dynamicGatesRemain": "NO-GO"
+    },
     "gates": {
       "I-0": {
         "status": "NO-GO",
         "manualEvidenceComplete": false,
-        "capabilityEnabled": false
+        "capabilityEnabled": false,
+        "queryEntrySignatureVerified": true,
+        "delegateSlotIndex": 7,
+        "runtimeOriginalTargetVerified": false
       },
       "I-P": {
         "status": "NO-GO",
@@ -314,6 +327,8 @@
         "status": "NO-GO",
         "manualEvidenceComplete": false,
         "capabilityEnabled": false,
+        "staticXrefInventoryComplete": true,
+        "callerClassificationComplete": false,
         "releaseRelevantUnknownCallers": 26
       },
       "I-2": {
@@ -365,7 +380,9 @@
       "I-5": {
         "status": "NO-GO",
         "manualEvidenceComplete": false,
-        "capabilityEnabled": false
+        "capabilityEnabled": false,
+        "verifiedStaticSignatureSites": 6,
+        "allEnabledSitesVerified": false
       }
     }
   },
