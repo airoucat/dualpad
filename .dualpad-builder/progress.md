@@ -3772,3 +3772,11 @@
   - Graphify：`python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout` exit 0，生成 `2389 nodes / 5682 edges / 172 communities`；`git diff --check` exit 0。
   - RC readiness：`run_rc_readiness.ps1 -ExpectCleanManifest` 内嵌 Phase8 再次全绿，但 standalone `DualPadReplayHarness` 因 host 无 `SkyrimSE.exe` module handle 失败；直接复现随后超时并留下 harness/xmake 子进程，已仅终止本轮 PID。该 RC gate 明确保留失败，不作为本切片通过证据；详见 `ERR-20260712-022`。
   - Gate：仅批准 clean shadow candidate 的后续构建和短实机采样；I-0 30 秒 soak 继续 pending，I-0/I-1/I-P/I-KBM 与全部 production capability 继续 `NO-GO`。
+
+## 2026-07-12 17:15:02 +08:00
+
+- `S-DP5-MIXED-INPUT / KBM ingress shadow clean candidate`：
+  - implementation commit：`52fe899c1c1e4f5bb8164f9705109a7604402419`（`feat(input): add KBM ingress shadow telemetry`）。
+  - 从 clean commit 执行 `xmake build -r -y DualPad`，exit 0；DLL 已部署到本机 Skyrim mod staging，二进制内嵌 identity 为 `52fe899c1c1e`。
+  - DLL SHA-256：`F5137E6173B717C5FF6A4914F979DA93B6923B5E8AC3838F6C245C811DC1360F`；PDB SHA-256：`86FAAA04EFD48DB587072224BD270B8073820D4E1234C95FDE294F0EA445CE8E`。
+  - 下一步只执行短实机定位：gameplay 内按住 W 2 秒、左键 2 次后退出。该样本只定位 KBM 首个断裂边界，不宣称 I-0 soak、RC readiness 或 gameplay KBM 已通过。

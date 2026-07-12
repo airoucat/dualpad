@@ -297,10 +297,14 @@
     "targetSha256": "DE92095A18513FCAFFE5A86FD72879D3350C61CDCDB8500B7D31DF2BAE9579CD",
     "releaseStatus": "NO-GO",
     "kbmIngressShadow": {
-      "status": "candidate-static-verified-live-pending",
+      "status": "candidate-deployed-live-pending",
       "productionMutationEnabled": false,
       "enginePatchEnabled": false,
       "healthIntervalMs": 5000,
+      "candidateBuildCommit": "52fe899c1c1e",
+      "candidateDllSha256": "F5137E6173B717C5FF6A4914F979DA93B6923B5E8AC3838F6C245C811DC1360F",
+      "candidatePdbSha256": "86FAAA04EFD48DB587072224BD270B8073820D4E1234C95FDE294F0EA445CE8E",
+      "candidateDeployedAt": "2026-07-12T17:15:02+08:00",
       "markers": [
         "[DualPad][KbmIngressShadow]",
         "[DualPad][KbmRuntimeShadow]"
