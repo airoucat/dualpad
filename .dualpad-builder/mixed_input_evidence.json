@@ -48,7 +48,23 @@
       ]
     },
     "WP0.5": {
-      "status": "in_progress"
+      "status": "completed",
+      "red": [
+        "DualPadIngressTests failed to compile because GamepadActivityClassifier.h and the batch API did not exist",
+        "overflow-retained physical current-state initially produced a dispatchable stable frame",
+        "InputReset marker initially fell through as a stable frame"
+      ],
+      "focused": [
+        "xmake run -y DualPadIngressTests",
+        "xmake run -y DualPadInputV2Tests"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadReplayTests",
+        "xmake run -y DualPadPresentationProjectionTests",
+        "xmake build -y DualPad"
+      ],
+      "sourceListParity": "passed",
+      "productionAuthorityEnabled": false
     }
   },
   "closeoutPolicy": {

@@ -14,6 +14,33 @@
 
 namespace dualpad::input_v2::ingress
 {
+    struct PublishedIngressBatchReceipt
+    {
+        bool accepted{ false };
+        InputResetReasonMask publishedResetReasons{ 0 };
+        InputResetScope publishedResetScope{ InputResetScope::GlobalInputState };
+        std::uint64_t firstOrderedSeq{ 0 };
+        std::uint64_t causalOrderedTailSeq{ 0 };
+        std::uint64_t inputStateEpoch{ 0 };
+        std::uint64_t gamepadSessionId{ 0 };
+        std::uint32_t contextRevision{ 0 };
+        std::uint32_t controlMapRevision{ 0 };
+    };
+
+    struct IngressBoundaryObservation
+    {
+        std::uint32_t contextRevision{ 0 };
+        std::uint32_t menuStackRevision{ 0 };
+        std::uint64_t controlMapFingerprint{ 0 };
+        std::uint64_t bindingGeneration{ 0 };
+    };
+
+    struct OwnerKbmIngressDraft
+    {
+        IngressBoundaryObservation boundary{};
+        KbmGameplayIngressBatchDraft kbm{};
+    };
+
     struct IngressCapture
     {
         std::uint64_t generation{ 0 };
@@ -21,6 +48,11 @@ namespace dualpad::input_v2::ingress
         std::optional<LatestPadState> latestPadState;
         std::optional<LatestSourceEvidence> latestSourceEvidence;
         std::size_t remainingEvents{ 0 };
+        std::uint64_t orderedCutoffSeq{ 0 };
+        std::uint64_t inputStateEpoch{ 0 };
+        std::uint64_t gamepadSessionId{ 0 };
+        std::optional<GamepadConnectionFacts> latestGamepadConnection;
+        std::optional<LatestKbmGameplayFacts> latestKbmGameplay;
     };
 
     class IngressHub
@@ -36,6 +68,14 @@ namespace dualpad::input_v2::ingress
             const dualpad::input::PadEventSnapshot& snapshot,
             bool retainLegacySnapshot = true,
             const presentation::SourceEvidenceFrame* sourceEvidenceFrame = nullptr);
+        PublishedIngressBatchReceipt PublishOwnerKbmBatch(OwnerKbmIngressDraft batch);
+        PublishedIngressBatchReceipt PublishGamepadBatch(
+            ClassifiedGamepadReportDraft report,
+            std::optional<GamepadConnectionDraft> connection);
+        PublishedIngressBatchReceipt PublishGlobalReset(
+            InputResetReasonMask reasons,
+            InputResetScope scope);
+        PublishedIngressBatchReceipt PublishGamepadDisconnect();
         void PublishSourceEvidenceFrame(const presentation::SourceEvidenceFrame& frame);
         void PushManifestEpochChanged(std::uint64_t manifestEpoch);
         void PushSequenceGap();
@@ -63,12 +103,23 @@ namespace dualpad::input_v2::ingress
 
         std::size_t _capacity{ 256 };
         std::uint64_t _nextSeq{ 1 };
+        std::uint64_t _lastAllocatedOrderedSeq{ 0 };
+        std::uint64_t _lastConsumedOrderedSeq{ 0 };
         std::uint64_t _lastLegacySequence{ 0 };
         std::uint64_t _latestPadGeneration{ 0 };
         std::uint64_t _latestSourceGeneration{ 0 };
+        std::uint64_t _latestGamepadConnectionGeneration{ 0 };
+        std::uint64_t _latestKbmGameplayGeneration{ 0 };
         std::uint64_t _captureGeneration{ 0 };
         std::uint64_t _capturedPadGeneration{ 0 };
         std::uint64_t _capturedSourceGeneration{ 0 };
+        std::uint64_t _capturedGamepadConnectionGeneration{ 0 };
+        std::uint64_t _capturedKbmGameplayGeneration{ 0 };
+        std::uint64_t _inputStateEpoch{ 1 };
+        std::uint64_t _gamepadSessionId{ 0 };
+        std::uint64_t _controlMapFingerprint{ 0 };
+        IngressBoundaryKey _boundaryKey{};
+        GamepadConnectivity _gamepadConnectivity{ GamepadConnectivity::Disconnected };
         std::size_t _pendingLegacySnapshots{ 0 };
         std::uint32_t _previousDigitalMask{ 0 };
         bool _edgeHistoryLost{ false };
@@ -76,6 +127,8 @@ namespace dualpad::input_v2::ingress
         std::optional<UiSnapshotPayload> _lastUiSnapshot;
         std::optional<LatestPadState> _latestPadState;
         std::optional<LatestSourceEvidence> _latestSourceEvidence;
+        std::optional<GamepadConnectionFacts> _latestGamepadConnection;
+        std::optional<LatestKbmGameplayFacts> _latestKbmGameplay;
         std::deque<IngressEvent> _queue;
         mutable std::mutex _mutex;
     };

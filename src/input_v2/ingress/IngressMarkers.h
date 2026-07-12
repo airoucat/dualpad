@@ -3,6 +3,8 @@
 #include "input_v2/actions/LegacyInteractionInputAdapter.h"
 #include "input/injection/PadEventSnapshot.h"
 #include "input_v2/ingress/IngressBoundaryKey.h"
+#include "input_v2/ingress/GamepadActivityClassifier.h"
+#include "input_v2/ingress/KbmGameplayFacts.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
 #include <cstddef>
@@ -32,7 +34,12 @@ namespace dualpad::input_v2::ingress
         DeviceFamilyChanged,
         ExplicitReset,
         QueueOverflow,
-        SequenceGap
+        SequenceGap,
+        InputReset,
+        GamepadDigitalEdge,
+        GamepadMeaningfulActivity,
+        MeaningfulSourceActivity,
+        KbmGameplayEdge
     };
 
     struct PadSnapshotPayload
@@ -106,6 +113,11 @@ namespace dualpad::input_v2::ingress
         DeviceFamilyChangedPayload deviceFamily;
         QueueOverflowPayload overflow;
         SequenceGapPayload sequenceGap;
+        InputResetMarker inputReset;
+        GamepadDigitalEdge gamepadDigitalEdge;
+        GamepadMeaningfulActivity gamepadActivity;
+        MeaningfulSourceActivity sourceActivity;
+        KbmGameplayEdge kbmGameplayEdge;
     };
 
     IngressEvent MakeSequenceGapEvent();

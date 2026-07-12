@@ -1,5 +1,18 @@
 # DualPad Builder Progress
 
+## 2026-07-12 11:03:13 +08:00
+
+- `S-DP5-MIXED-INPUT / WP0.5 completed`：
+  - 新增 `InputResetReason.h`、`MeaningfulSourceActivity.h`、`KbmGameplayFacts.h` 与 `GamepadActivityClassifier.h` 公共 transport/scaffold；classifier 只有 raw draft/result 接口，未实现 WP1 分类行为。
+  - `IngressHub` 新增 `PublishGamepadBatch`、`PublishOwnerKbmBatch`、reset/disconnect receipt、gamepad connection / KBM optional latest slots、联合 owner boundary fingerprint revision、原子容量预检和累计 `_lastConsumedOrderedSeq`。`FrameAssembler` 新增 capture/coherence shadow overload；`xmake.lua` 用共享 scaffold source list 同时覆盖 runtime wildcard 与 focused ingress target。
+  - RED 1：`xmake run -y DualPadIngressTests` exit 1，编译失败于缺少 `GamepadActivityClassifier.h`，证明 batch/transport API 尚不存在。
+  - RED 2/3：新增 fail-closed 断言分别捕获 overflow-retained physical state 会形成 dispatchable stable frame、`InputReset` marker 会落入 stable frame；最小修复使 `virtualGameplayEligible=false` 的 latest 不进入 gameplay，并把 `InputReset` 纳入 health marker。
+  - Batch 合同覆盖：API 可在无 WP1/WP2 producer 时编译链接；容量不足只发布 overflow marker，不半提交 connection/semantic records；完整 physical pad current-state 可保留但 `virtualGameplayEligible=false`；ControlMap fingerprint 与 KBM latest/receipt 在同一 transaction 使用同一 revision；drain 到 seq 7 后两次空 capture 的 `orderedCutoffSeq` 都保持 7。
+  - Focused GREEN：`xmake run -y DualPadIngressTests` exit 0；`xmake run -y DualPadInputV2Tests` exit 0。
+  - 相邻回归：`xmake run -y DualPadReplayTests` exit 0；`xmake run -y DualPadPresentationProjectionTests` exit 0；`xmake build -y DualPad` exit 0。
+  - Source-list fixture：`MixedInputCloseoutContractTests.test_source_list_contract_keeps_runtime_and_focused_targets_in_sync` passed。
+  - `rg` 审计确认新 batch/reset API 仅由测试调用，未接入 HID、KBM、Poll hook 或 runtime owner；WP1 及全部 IDA 动态门禁 capability 仍为 pending / shadow / NO-GO。
+
 ## 2026-07-12 10:50:42 +08:00
 
 - `S-DP5-MIXED-INPUT / WP0 completed`：

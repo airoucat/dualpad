@@ -5,6 +5,8 @@
 #include "input_v2/ingress/LegacyIngressAdapter.h"
 #include "input_v2/ingress/LiveInputFactProducer.h"
 #include "input_v2/ingress/IngressRecovery.h"
+#include "input_v2/ingress/GamepadActivityClassifier.h"
+#include "input_v2/ingress/KbmGameplayFacts.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/config/ActionManifestPublisher.h"
@@ -284,6 +286,136 @@ namespace
         const auto second = hub.Drain(16);
         Require(second.size() == 1 && second.front().seq == 17, "next drain must return the retained 17th event");
         Require(hub.PendingCount() == 0, "second drain must empty the fixture");
+    }
+
+    void BatchApiCompileFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+
+        ingress::ClassifiedGamepadReportDraft gamepad{};
+        gamepad.current.sourceSequence = 11;
+        gamepad.current.sourceTimestampUs = 1100;
+        const auto gamepadReceipt = hub.PublishGamepadBatch(
+            std::move(gamepad),
+            ingress::GamepadConnectionDraft{
+                .connectivity = ingress::GamepadConnectivity::Connected
+            });
+        Require(gamepadReceipt.accepted, "empty gamepad scaffold batch must publish atomically");
+
+        ingress::OwnerKbmIngressDraft ownerKbm{};
+        ownerKbm.boundary.contextRevision = 7;
+        ownerKbm.boundary.menuStackRevision = 9;
+        ownerKbm.boundary.controlMapFingerprint = 0x1234;
+        ownerKbm.boundary.bindingGeneration = 3;
+        ownerKbm.kbm.completeCurrent.complete = true;
+        ownerKbm.kbm.physical.complete = true;
+        const auto kbmReceipt = hub.PublishOwnerKbmBatch(ownerKbm);
+        Require(kbmReceipt.accepted, "empty KBM scaffold batch must publish atomically");
+
+        const auto capture = hub.Capture(16);
+        Require(capture.latestPadState.has_value(), "gamepad batch must expose the existing latest pad slot");
+        Require(capture.latestGamepadConnection.has_value(), "gamepad connection slot must compile and capture");
+        Require(capture.latestKbmGameplay.has_value(), "KBM latest slot must compile and capture");
+        Require(kbmReceipt.controlMapRevision == 1, "owner KBM batch must advance the fingerprint revision in its transaction");
+        Require(
+            capture.latestKbmGameplay->causal.controlMapRevision == kbmReceipt.controlMapRevision,
+            "KBM latest and receipt must share the transaction control-map revision");
+        Require(capture.inputStateEpoch == kbmReceipt.inputStateEpoch, "receipt and capture must expose one epoch");
+        Require(capture.gamepadSessionId == gamepadReceipt.gamepadSessionId, "receipt and capture must expose one session");
+
+        const ingress::InputFactCoherenceKey coherence{
+            .captureGeneration = capture.generation,
+            .orderedCutoffSeq = capture.orderedCutoffSeq,
+            .inputStateEpoch = capture.inputStateEpoch,
+            .gamepadSessionId = capture.gamepadSessionId,
+            .contextRevision = kbmReceipt.contextRevision,
+            .menuStackRevision = ownerKbm.boundary.menuStackRevision,
+            .controlMapRevision = kbmReceipt.controlMapRevision
+        };
+        Require(coherence.captureGeneration != 0, "coherence key scaffold must be constructible");
+
+        ingress::FrameAssembler assembler;
+        const auto shadowFrames = assembler.Assemble(capture);
+        Require(shadowFrames.size() == 1, "existing latest-pad analog path must remain intact");
+        Require(
+            shadowFrames.front().facts.coherence.captureGeneration == capture.generation,
+            "capture overload must stamp shadow coherence metadata");
+        Require(
+            !shadowFrames.front().facts.kbmGameplay.has_value(),
+            "KBM scaffold latest must remain shadow until the coherence gate is implemented");
+
+        const auto resetReceipt = hub.PublishGlobalReset(
+            ingress::ToMask(ingress::InputResetReason::ExplicitReset),
+            ingress::InputResetScope::GlobalInputState);
+        Require(resetReceipt.accepted, "global reset scaffold must publish an ordered marker");
+        const auto resetCapture = hub.Capture(16);
+        ingress::FrameAssembler resetAssembler;
+        const auto resetFrames = resetAssembler.Assemble(resetCapture);
+        Require(
+            std::none_of(resetFrames.begin(), resetFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return ingress::ShouldDispatchToInteractionEngine(frame);
+            }),
+            "global reset marker must fail closed instead of producing a stable gameplay frame");
+    }
+
+    void BatchCapacityAtomicityFixture()
+    {
+        ingress::IngressHub hub{ 1 };
+        ingress::ClassifiedGamepadReportDraft report{};
+        report.current.sourceSequence = 1;
+        report.current.sourceTimestampUs = 100;
+        report.current.state.leftStick.x = 0.75F;
+        report.sourceActivities = {
+            ingress::MeaningfulSourceActivityDraft{
+                .source = ingress::PhysicalInputSource::Gamepad,
+                .kind = ingress::SourceActivityKind::GamepadButtonPress,
+                .controlCode = 1
+            },
+            ingress::MeaningfulSourceActivityDraft{
+                .source = ingress::PhysicalInputSource::Gamepad,
+                .kind = ingress::SourceActivityKind::GamepadButtonPress,
+                .controlCode = 2
+            }
+        };
+
+        const auto receipt = hub.PublishGamepadBatch(
+            std::move(report),
+            ingress::GamepadConnectionDraft{
+                .connectivity = ingress::GamepadConnectivity::Connected
+            });
+        Require(!receipt.accepted, "insufficient batch capacity must reject semantic publication");
+
+        const auto capture = hub.Capture(8);
+        Require(capture.events.size() == 1, "rejected batch must publish only one overflow marker");
+        Require(capture.events.front().kind == ingress::IngressKind::QueueOverflow, "rejected batch must not leak ordered semantic records");
+        Require(!capture.latestGamepadConnection.has_value(), "rejected batch must not half-commit connection semantics");
+        Require(capture.latestPadState.has_value(), "overflow may retain complete physical pad current-state");
+        Require(!capture.latestPadState->virtualGameplayEligible, "overflow-retained physical state must be virtual-ineligible");
+
+        ingress::FrameAssembler assembler;
+        const auto frames = assembler.Assemble(capture);
+        Require(
+            std::none_of(frames.begin(), frames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return ingress::ShouldDispatchToInteractionEngine(frame);
+            }),
+            "overflow-retained physical state must not manufacture virtual gameplay");
+    }
+
+    void CumulativeEmptyCaptureFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        std::vector<ingress::IngressEvent> events(7);
+        Require(hub.PushEvents(std::move(events)), "seven ordered records must fit");
+
+        const auto drained = hub.Capture(7);
+        Require(drained.events.size() == 7, "fixture must drain through ordered seq 7");
+        Require(drained.orderedCutoffSeq == 7, "drained cutoff must reach seq 7");
+
+        const auto firstEmpty = hub.Capture(7);
+        const auto secondEmpty = hub.Capture(7);
+        Require(firstEmpty.events.empty() && secondEmpty.events.empty(), "follow-up captures must be empty");
+        Require(firstEmpty.orderedCutoffSeq == 7, "first empty capture must preserve cumulative cutoff");
+        Require(secondEmpty.orderedCutoffSeq == 7, "second empty capture must preserve cumulative cutoff");
     }
 
     void TestLatestPadStatePreventsSteadyAnalogQueueGrowth()
@@ -1649,6 +1781,9 @@ int main()
 {
     TestHubAssignsSeqAndEmitsOverflowMarker();
     TestHubDrainHonorsExactEventBudget();
+    BatchApiCompileFixture();
+    BatchCapacityAtomicityFixture();
+    CumulativeEmptyCaptureFixture();
     TestLatestPadStatePreventsSteadyAnalogQueueGrowth();
     TestLatestAnalogCanLeadBoundedDigitalEdgeCutoff();
     TestFrameAssemblerKeepsLatestAnalogSeparateFromOrderedEdgeCutoff();

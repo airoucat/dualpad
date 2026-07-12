@@ -5,6 +5,8 @@
 #include "input_v2/ingress/LatestPadState.h"
 #include "input_v2/ingress/IngressMarkers.h"
 #include "input_v2/ingress/IngressRecovery.h"
+#include "input_v2/ingress/GamepadActivityClassifier.h"
+#include "input_v2/ingress/KbmGameplayFacts.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
 #include <cstdint>
@@ -14,6 +16,20 @@
 
 namespace dualpad::input_v2::ingress
 {
+    struct IngressCapture;
+
+    struct InputFactCoherenceKey
+    {
+        std::uint64_t captureGeneration{ 0 };
+        std::uint64_t orderedCutoffSeq{ 0 };
+        std::uint64_t inputStateEpoch{ 0 };
+        std::uint64_t gamepadSessionId{ 0 };
+        std::uint64_t manifestEpoch{ 0 };
+        std::uint32_t contextRevision{ 0 };
+        std::uint32_t menuStackRevision{ 0 };
+        std::uint32_t controlMapRevision{ 0 };
+    };
+
     enum class AssembledFrameKind : std::uint8_t
     {
         Stable = 0,
@@ -57,6 +73,9 @@ namespace dualpad::input_v2::ingress
         std::vector<actions::ControlSample> pulseLedger;
         presentation::SourceEvidenceSnapshot sourceEvidence;
         std::optional<dualpad::input::PadEventSnapshot> legacySnapshot;
+        InputFactCoherenceKey coherence{};
+        std::optional<GamepadConnectionFacts> gamepadConnection;
+        std::optional<LatestKbmGameplayFacts> kbmGameplay;
         FactHealth health;
         std::optional<OverflowCompactionDebugSummary> overflowCompaction;
     };
@@ -85,6 +104,7 @@ namespace dualpad::input_v2::ingress
     {
     public:
         std::vector<AssembledFactFrame> Assemble(const std::vector<IngressEvent>& events);
+        std::vector<AssembledFactFrame> Assemble(const IngressCapture& capture);
         std::vector<AssembledFactFrame> Assemble(
             const std::vector<IngressEvent>& events,
             const std::optional<LatestPadState>& latestPadState,

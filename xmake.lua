@@ -205,17 +205,24 @@ local ph6_scaleform_prompt_files = {
     "src/input_v2/prompt/ScaleformPromptAdapter.cpp"
 }
 
-local ph7_ingress_files = {
-    "src/input_v2/runtime/RuntimeOwnerGuard.cpp",
+local mixed_input_ingress_scaffold_files = {
     "src/input_v2/ingress/IngressHub.cpp",
     "src/input_v2/ingress/FrameAssembler.cpp",
-    "src/input_v2/ingress/IngressBoundaryKey.cpp",
+    "src/input_v2/ingress/IngressBoundaryKey.cpp"
+}
+
+local ph7_ingress_files = {
+    "src/input_v2/runtime/RuntimeOwnerGuard.cpp",
     "src/input_v2/ingress/IngressMarkers.cpp",
     "src/input_v2/ingress/IngressRecovery.cpp",
     "src/input_v2/ingress/LegacyIngressAdapter.cpp",
     "src/input_v2/ingress/LiveInputFactProducer.cpp",
     "src/input_v2/presentation/SourceEvidenceCollector.cpp"
 }
+
+for _, file in ipairs(mixed_input_ingress_scaffold_files) do
+    table.insert(ph7_ingress_files, file)
+end
 
 target("DualPadManifestCompilerTests")
     set_kind("binary")

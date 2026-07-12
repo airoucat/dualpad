@@ -2,6 +2,7 @@
 
 #include "input/injection/PadEventSnapshot.h"
 #include "input_v2/actions/LegacyInteractionInputAdapter.h"
+#include "input_v2/ingress/InputResetReason.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 
 #include <array>
@@ -22,6 +23,11 @@ namespace dualpad::input_v2::ingress
         std::uint32_t contextRevision{ 0 };
         std::uint32_t currentDownMask{ 0 };
         dualpad::input::PadState state{};
+        std::uint64_t causalOrderedTailSeq{ 0 };
+        std::uint64_t inputStateEpoch{ 0 };
+        std::uint64_t gamepadSessionId{ 0 };
+        bool virtualGameplayEligible{ true };
+        InputResetReasonMask recoveryReasons{ 0 };
     };
 
     struct LatestSourceEvidence

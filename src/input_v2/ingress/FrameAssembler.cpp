@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input_v2/ingress/FrameAssembler.h"
+#include "input_v2/ingress/IngressHub.h"
 
 #include <algorithm>
 #include <sstream>
@@ -20,7 +21,8 @@ namespace dualpad::input_v2::ingress
         {
             return kind == IngressKind::SequenceGap ||
                 kind == IngressKind::QueueOverflow ||
-                kind == IngressKind::ExplicitReset;
+                kind == IngressKind::ExplicitReset ||
+                kind == IngressKind::InputReset;
         }
 
         std::uint64_t MergeDownAtUs(
@@ -135,6 +137,24 @@ namespace dualpad::input_v2::ingress
     std::vector<AssembledFactFrame> FrameAssembler::Assemble(const std::vector<IngressEvent>& events)
     {
         return Assemble(events, std::nullopt, std::nullopt);
+    }
+
+    std::vector<AssembledFactFrame> FrameAssembler::Assemble(const IngressCapture& capture)
+    {
+        auto frames = Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        for (auto& frame : frames) {
+            frame.facts.coherence = InputFactCoherenceKey{
+                .captureGeneration = capture.generation,
+                .orderedCutoffSeq = capture.orderedCutoffSeq,
+                .inputStateEpoch = capture.inputStateEpoch,
+                .gamepadSessionId = capture.gamepadSessionId,
+                .manifestEpoch = frame.boundaryKey.manifestEpoch,
+                .contextRevision = frame.boundaryKey.contextRevision,
+                .menuStackRevision = frame.boundaryKey.menuStackRevision,
+                .controlMapRevision = frame.boundaryKey.controlMapRevision
+            };
+        }
+        return frames;
     }
 
     std::vector<AssembledFactFrame> FrameAssembler::Assemble(
@@ -503,6 +523,10 @@ namespace dualpad::input_v2::ingress
 
     void FrameAssembler::ApplyLatestPadState(const LatestPadState& latest)
     {
+        if (!latest.virtualGameplayEligible) {
+            _lastLatestPadGeneration = latest.generation;
+            return;
+        }
         if (_pendingDeviceMarker) {
             return;
         }
