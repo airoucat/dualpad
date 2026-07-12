@@ -335,6 +335,19 @@
         },
         "firstBrokenBoundary": "after-DualPad-runtime-before-native-gameplay-consumer",
         "nextGate": "native-ButtonEvent-semantic-shadow-then-I-1-caller-domain-classification"
+      },
+      "nativeSemanticShadowCandidate": {
+        "buildCommit": "06cbde9805ef",
+        "dllSha256": "5F579EA9E4D175577AF16F5D4B1BFB35CEED104D2AAD96802859BB02D7827BE0",
+        "deployedAt": "2026-07-12T17:44:00+08:00",
+        "fields": [
+          "firstNativeUserEvent",
+          "firstNativeValue",
+          "firstNativeHeldDuration"
+        ],
+        "productionMutationEnabled": false,
+        "enginePatchEnabled": false,
+        "liveVerdict": "pending-short-W-mouse-sample"
       }
     },
     "idaStaticInventory": {

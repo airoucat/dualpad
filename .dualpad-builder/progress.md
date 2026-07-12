@@ -3799,3 +3799,11 @@
   - Focused/adjacent GREEN：KBM wiring 3/3、IDA checker 10/10、closeout 10/10、RouteHealth、Ingress、InputV2、GameplayProjection、PresentationProjection 与主 DLL 均 exit 0。
   - Canonical Phase 8 fresh run exit 0，包含主 DLL、全部 runtime/support targets、reviewed docs、release readiness、mixed trace evaluator、IDA static checker 与 generated diff；Graphify manual closeout 为 `2390 nodes / 5685 edges / 173 communities`。
   - Review 无 actionable finding；下一步只允许从 clean implementation commit 重建诊断候选并做一次约 5 秒 W/鼠标样本，不能宣称 gameplay KBM 已修复。
+
+## 2026-07-12 17:44:00 +08:00
+
+- `S-DP5-MIXED-INPUT / native ButtonEvent semantic shadow clean candidate`：
+  - implementation commit：`06cbde9805ef6f3f95d14e0c58d1a5f7f5879f32`（`feat(input): trace native KBM event semantics`）。
+  - 从 clean commit 执行 `xmake build -r -y DualPad`，exit 0；部署 DLL 内嵌 commit `06cbde9805ef`，SHA-256=`5F579EA9E4D175577AF16F5D4B1BFB35CEED104D2AAD96802859BB02D7827BE0`。
+  - PDB staging 文件被占用而未覆盖，不作为本候选身份依据；DLL 已成功覆盖且 commit/hash 均已核对。
+  - 下一步仅需 gameplay 内按住 W 约 1 秒并点击一次鼠标后立即退出；根据 native userEvent/value/duration 直接判定下一边界，不做长 soak。
