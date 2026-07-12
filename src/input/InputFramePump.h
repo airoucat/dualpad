@@ -1,5 +1,8 @@
 #pragma once
 
+#include "input/injection/SkyrimKbmInputAdapter.h"
+#include "input_v2/ingress/KbmGameplayFactProducer.h"
+
 #include <RE/Skyrim.h>
 
 namespace dualpad::input
@@ -19,7 +22,11 @@ namespace dualpad::input
 
     private:
         InputFramePump() = default;
+        std::uint64_t NextEventBatchToken();
 
         bool _registered{ false };
+        std::uint64_t _eventBatchToken{ 0 };
+        SkyrimKbmInputAdapter _skyrimKbmAdapter{};
+        input_v2::ingress::KbmGameplayFactProducer _kbmProducer{};
     };
 }

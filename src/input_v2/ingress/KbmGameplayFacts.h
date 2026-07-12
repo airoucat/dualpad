@@ -18,6 +18,8 @@ namespace dualpad::input_v2::ingress
         Mouse
     };
 
+    inline constexpr std::uint32_t kMouseDeltaPhysicalIdCode = 0xFFFFFFFFu;
+
     struct KbmPhysicalCode
     {
         KbmPhysicalDevice device{ KbmPhysicalDevice::Keyboard };
@@ -114,6 +116,7 @@ namespace dualpad::input_v2::ingress
     struct KbmBindingSnapshot
     {
         std::uint64_t generation{ 0 };
+        std::uint64_t controlMapFingerprint{ 0 };
         std::uint32_t controlMapRevision{ 0 };
         std::uint32_t contextRevision{ 0 };
         std::vector<KbmBindingEntry> entries;
@@ -145,6 +148,10 @@ namespace dualpad::input_v2::ingress
         KbmEdgeOrigin origin{ KbmEdgeOrigin::Physical };
         std::int32_t deltaX{ 0 };
         std::int32_t deltaY{ 0 };
+        bool initialPress{ false };
+        std::uint64_t syntheticToken{ 0 };
+        std::uint64_t originatingOutputGeneration{ 0 };
+        std::uint64_t helperInjectionSequence{ 0 };
     };
 
     struct KbmGameplayEdgeDraft

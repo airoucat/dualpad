@@ -1,5 +1,13 @@
 # DualPad Builder Progress
 
+## 2026-07-12 11:17:19 +08:00
+
+- `S-DP5-MIXED-INPUT / WP2 start`：
+  - 基于独立 WP1 commit `eb6aa1d` 开始实现 Skyrim KBM adapter 与 input_v2 pure producer。
+  - raw ledger/quarantine 身份固定为 `(KbmPhysicalDevice,idCode)`；binding index 仅允许在 immutable snapshot 内临时查找。
+  - I-KBM 的 raw reconcile 与 synthetic suppression 继续分离：production adapter 默认不声称 complete physical-only raw provider；只有显式 verified/reserved exact receipt 可被 pure producer suppression，unproven 一律按 physical 处理。
+  - 本 WP 只发布 coherent KBM facts，不启用 gameplay gate、channel arbitration 或 current-cycle mutation。
+
 ## 2026-07-12 11:15:09 +08:00
 
 - `S-DP5-MIXED-INPUT / WP1 completed`：
@@ -3381,3 +3389,13 @@
 - 补充 IDA 证据写入 `docs/research/skyrim_mixed_input_mode_queries_zh.md`：`0x140C15240` 已由 device slot 和 vtable `+0x38` 识别为 gamepad `IsEnabled()` 语义查询，共有 26 个 direct code xrefs；`0x140705AE0` 会据此在 gamepad response curve/deadzone/acceleration 与 KBM 时间步/灵敏度缩放之间分支，且由 gameplay/camera-like 与菜单路径共同调用。该证据修正了“engine mode 是纯 presentation 字段”的过度简化。
 - 已生成定向附件 `DualPad_Mixed_Input_Solution_Plan_Bundle_2026-07-11.zip`：根目录包含 4 份按阅读顺序命名的提示词/证据，`repository/` 包含 72 个相关 source/doc/test/toolchain 文件；ZIP 为 260,003 bytes，SHA-256 `F2A40CBF7B75E086924BBFA9576F13FE09D00BC767C7C0F1CD782B9705A69CE2`。通过 .NET ZipArchive 验证 84 entries / 76 files、Unicode 文件名、无绝对/上跳路径，且 4 份根文档逐一与 repo 源文件 SHA-256 相同。
 - 本轮只增强调查材料和外部方案约束，没有修改 runtime 代码，也不声称 mixed-input blocker 已修复。后续应先审查 GPT 输出与 repo/IDA 事实的一致性，再决定是否建立正式修复 slice。
+## 2026-07-12 11:29:22 +08:00
+
+- `S-DP5-MIXED-INPUT / WP2 completed`：
+  - RED 先证明缺失 `KbmGameplayFactProducer`、Skyrim adapter boundary、映射后 current/ordered facts、稳定 `(device,idCode)` quarantine、精确 synthetic provenance、adapter failure fail-closed、生产 `Game.Look` mouse delta 身份及 held-repeat 去重。
+  - 最小实现新增 core-only `KbmGameplayFactProducer` 和 `SkyrimKbmInputAdapter`：ControlMap snapshot/fingerprint、callback-local ordered event list、KBM current masks、物理 ledger/quarantine、mouse delta source activity 与精确 receipt suppression 合同均已落地；mouse delta 使用独立 `0xFFFFFFFF` 物理 ID，避免与鼠标左键 `idCode=0` 冲突。
+  - `InputFramePump` 现在按 `BeginFrame -> CaptureBindingSnapshot -> ObserveEventList -> PublishOwnerKbmBatch -> DrainOnOwnerTick` 发布同一 owner callback 的 KBM facts；`eventListComplete=false` 时不调用 producer、不发布 batch，因此不推进 current-cycle-sensitive ledger。
+  - `button->IsDown()` 是唯一 initial press 判据；held repeat 只保留 physical current-state，不制造 ordered press 或 meaningful activity。平台 raw provider 保持 `physicalOnlyProvenance=false / complete=false`，synthetic receipt 尚无 production route，因此 I-KBM 两项独立裁决均保持 NO-GO。
+  - focused：`python tests/python/test_mixed_input_wp2_boundaries.py`、`xmake run -y DualPadIngressTests`、`xmake run -y DualPadInputV2Tests` 全部 exit 0。
+  - adjacent：`xmake run -y DualPadContextResolverTests`、`xmake run -y DualPadPresentationProjectionTests`、`xmake build -y DualPad` 全部 exit 0；PDB 同路径占用仅产生已知 copy warning，DLL 明确 `build ok`。
+  - 本 WP 只发布 coherent KBM ingress facts，未接入 gameplay gate、Sprint bridge、engine query override、cursor side effect 或其它 IDA-gated production capability。

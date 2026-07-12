@@ -7,6 +7,7 @@
 #include "input_v2/ingress/IngressRecovery.h"
 #include "input_v2/ingress/GamepadActivityClassifier.h"
 #include "input_v2/ingress/KbmGameplayFacts.h"
+#include "input_v2/ingress/KbmGameplayFactProducer.h"
 #include "input_v2/actions/CompiledActionGraph.h"
 #include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/config/ActionManifestPublisher.h"
@@ -641,6 +642,262 @@ namespace
         Require(stable->facts.pulseLedger.size() == 1, "classified digital press must reach the existing pulse ledger");
         Require(stable->facts.pulseLedger.front().pressed, "classified digital press must retain press phase");
         Require(stable->facts.pulseLedger.front().path.code == 0x1, "classified digital press must retain raw control code");
+    }
+
+    ingress::KbmBindingSnapshot FakeKbmBindingSnapshot(
+        std::uint64_t generation = 1,
+        std::uint32_t controlMapRevision = 5)
+    {
+        return ingress::KbmBindingSnapshot{
+            .generation = generation,
+            .controlMapRevision = controlMapRevision,
+            .contextRevision = 7,
+            .entries = {
+                { { ingress::KbmPhysicalDevice::Keyboard, 0x70 }, "Game.Move", ingress::KbmGameplayClass::Move, 0x1 },
+                { { ingress::KbmPhysicalDevice::Mouse, 8 }, "Game.Attack", ingress::KbmGameplayClass::Combat, 0x2 },
+                { { ingress::KbmPhysicalDevice::Keyboard, 0x71 }, "Game.Jump", ingress::KbmGameplayClass::TransientDigital, 0x4 },
+                { { ingress::KbmPhysicalDevice::Mouse, 9 }, "Game.Activate", ingress::KbmGameplayClass::TransientDigital, 0x8 },
+                { { ingress::KbmPhysicalDevice::Keyboard, 0x72 }, "Game.Sprint", ingress::KbmGameplayClass::SustainedDigital, 0x10 },
+                { { ingress::KbmPhysicalDevice::Mouse, ingress::kMouseDeltaPhysicalIdCode }, "Game.Look", ingress::KbmGameplayClass::Look, 0 }
+            }
+        };
+    }
+
+    ingress::KbmObservedBatch FakeObservedKbmBatch(
+        std::uint64_t token,
+        std::vector<ingress::KbmObservedEventDraft> events,
+        std::initializer_list<ingress::KbmPhysicalCode> downCodes)
+    {
+        ingress::KbmObservedBatch observed{
+            .ownerTickToken = token,
+            .eventBatchToken = token,
+            .events = std::move(events),
+            .eventListComplete = true
+        };
+        observed.rawCurrent.providerGeneration = token;
+        observed.rawCurrent.contextRevision = 7;
+        observed.rawCurrent.controlMapRevision = 5;
+        observed.rawCurrent.physicalOnlyProvenance = true;
+        observed.rawCurrent.complete = true;
+        for (const auto code : downCodes) {
+            Require(observed.rawCurrent.downCodes.Insert(code), "fake raw code set must fit");
+        }
+        return observed;
+    }
+
+    ingress::KbmObservedEventDraft FakeKbmEvent(
+        std::uint32_t ordinal,
+        ingress::KbmPhysicalCode code,
+        ingress::KbmEdgePhase phase,
+        bool initialPress = true)
+    {
+        return ingress::KbmObservedEventDraft{
+            .eventOrdinal = ordinal,
+            .producerTimestampUs = ordinal * 1000ull,
+            .physical = code,
+            .phase = phase,
+            .origin = ingress::KbmEdgeOrigin::Physical,
+            .initialPress = initialPress
+        };
+    }
+
+    void KbmProducerPublishesMappedCurrentAndOrderedFactsFixture()
+    {
+        ingress::KbmGameplayFactProducer producer;
+        const auto bindings = FakeKbmBindingSnapshot();
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 7;
+
+        const ingress::KbmPhysicalCode move{ ingress::KbmPhysicalDevice::Keyboard, 0x70 };
+        const ingress::KbmPhysicalCode combat{ ingress::KbmPhysicalDevice::Mouse, 8 };
+        const ingress::KbmPhysicalCode sprint{ ingress::KbmPhysicalDevice::Keyboard, 0x72 };
+        const ingress::KbmPhysicalCode mouseLook{
+            ingress::KbmPhysicalDevice::Mouse,
+            ingress::kMouseDeltaPhysicalIdCode
+        };
+
+        auto moveBatch = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(1, { FakeKbmEvent(1, move, ingress::KbmEdgePhase::Press) }, { move }),
+            bindings,
+            contextSnapshot,
+            1000);
+        Require(moveBatch.completeCurrent.keyboardMoveHeldMask == 0x1, "non-WASD mapped move press must set move current mask");
+        Require(moveBatch.orderedEdges.size() == 1, "move press must publish one ordered edge");
+
+        auto heldRepeatBatch = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(
+                2,
+                { FakeKbmEvent(2, move, ingress::KbmEdgePhase::Press, false) },
+                { move }),
+            bindings,
+            contextSnapshot,
+            2000);
+        Require(heldRepeatBatch.orderedEdges.empty(), "held keyboard repeat must not manufacture another ordered press");
+        Require(heldRepeatBatch.sourceActivities.empty(), "held keyboard repeat must not refresh meaningful KBM activity");
+        Require(heldRepeatBatch.completeCurrent.keyboardMoveHeldMask == 0x1, "held keyboard repeat must preserve physical current-state");
+
+        auto combatBatch = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(3, { FakeKbmEvent(3, combat, ingress::KbmEdgePhase::Press) }, { move, combat }),
+            bindings,
+            contextSnapshot,
+            3000);
+        Require(combatBatch.completeCurrent.keyboardMoveHeldMask == 0x1, "move held must survive mouse combat press");
+        Require(combatBatch.completeCurrent.mouseCombatHeldMask == 0x2, "non-default mouse combat must set combat current mask");
+
+        auto sprintBatch = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(3, { FakeKbmEvent(3, sprint, ingress::KbmEdgePhase::Press) }, { move, combat, sprint }),
+            bindings,
+            contextSnapshot,
+            3000);
+        Require(sprintBatch.completeCurrent.keyboardSustainedHeldMask == 0x10, "mapped Sprint press must set sustained current mask");
+
+        auto mouseMove = FakeKbmEvent(4, mouseLook, ingress::KbmEdgePhase::MouseDelta);
+        mouseMove.deltaX = 5;
+        mouseMove.deltaY = -2;
+        auto lookBatch = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(4, { mouseMove }, { move, combat, sprint }),
+            bindings,
+            contextSnapshot,
+            4000);
+        Require(lookBatch.orderedEdges.size() == 1, "physical mouse delta must remain ordered");
+        Require(lookBatch.sourceActivities.size() == 1, "physical mouse delta must create one source activity");
+
+        auto releasedBatch = producer.BuildIngressBatch(
+            FakeObservedKbmBatch(
+                5,
+                {
+                    FakeKbmEvent(5, move, ingress::KbmEdgePhase::Release, false),
+                    FakeKbmEvent(6, combat, ingress::KbmEdgePhase::Release, false),
+                    FakeKbmEvent(7, sprint, ingress::KbmEdgePhase::Release, false)
+                },
+                {}),
+            bindings,
+            contextSnapshot,
+            5000);
+        Require(releasedBatch.completeCurrent.keyboardMoveHeldMask == 0, "move release must clear current mask");
+        Require(releasedBatch.completeCurrent.mouseCombatHeldMask == 0, "combat release must clear current mask");
+        Require(releasedBatch.completeCurrent.keyboardSustainedHeldMask == 0, "Sprint release must clear sustained mask");
+        Require(releasedBatch.orderedEdges.size() == 3, "all releases must remain ordered");
+
+        ingress::KbmGameplayFactProducer rebuilt;
+        const auto rebuiltBatch = rebuilt.BuildIngressBatch(
+            FakeObservedKbmBatch(6, {}, { move, combat, sprint }),
+            bindings,
+            contextSnapshot,
+            6000);
+        Require(rebuiltBatch.completeCurrent.keyboardMoveHeldMask == 0x1, "producer rebuild must recover move from trusted raw state");
+        Require(rebuiltBatch.completeCurrent.mouseCombatHeldMask == 0x2, "producer rebuild must recover combat from trusted raw state");
+        Require(rebuiltBatch.completeCurrent.keyboardSustainedHeldMask == 0x10, "producer rebuild must recover Sprint from trusted raw state");
+    }
+
+    void KbmSyntheticSuppressionRequiresExactProvenanceFixture()
+    {
+        const auto bindings = FakeKbmBindingSnapshot();
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 7;
+        const ingress::KbmPhysicalCode jump{ ingress::KbmPhysicalDevice::Keyboard, 0x71 };
+
+        const auto runCase = [&](ingress::SyntheticProvenanceMode mode, bool expectSuppressed) {
+            ingress::KbmGameplayFactProducer producer;
+            producer.RegisterSyntheticSuppression(ingress::SyntheticKeyboardSuppressionToken{
+                .token = 99,
+                .scancode = 0x71,
+                .expectedPhase = ingress::KbmEdgePhase::Press,
+                .contextRevision = 7,
+                .originatingOutputGeneration = 44,
+                .helperInjectionSequence = 55,
+                .provenanceMode = mode,
+                .remainingMatches = 1,
+                .expiresAtOwnerUs = 10'000
+            });
+            auto event = FakeKbmEvent(1, jump, ingress::KbmEdgePhase::Press);
+            event.syntheticToken = 99;
+            event.originatingOutputGeneration = 44;
+            event.helperInjectionSequence = 55;
+            const auto batch = producer.BuildIngressBatch(
+                FakeObservedKbmBatch(1, { event }, expectSuppressed ?
+                    std::initializer_list<ingress::KbmPhysicalCode>{} :
+                    std::initializer_list<ingress::KbmPhysicalCode>{ jump }),
+                bindings,
+                contextSnapshot,
+                1000);
+            Require(
+                batch.orderedEdges.empty() == expectSuppressed,
+                "only exact verified/reserved synthetic receipt may suppress ordered facts");
+            Require(
+                (batch.completeCurrent.keyboardTransientHeldMask == 0) == expectSuppressed,
+                "unproven synthetic match must remain physical current-state");
+        };
+
+        runCase(ingress::SyntheticProvenanceMode::VerifiedPhysicalOnlyProvider, true);
+        runCase(ingress::SyntheticProvenanceMode::ReservedNonCollidingControl, true);
+        runCase(ingress::SyntheticProvenanceMode::Unproven, false);
+
+        ingress::KbmGameplayFactProducer mismatchProducer;
+        mismatchProducer.RegisterSyntheticSuppression(ingress::SyntheticKeyboardSuppressionToken{
+            .token = 99,
+            .scancode = 0x71,
+            .expectedPhase = ingress::KbmEdgePhase::Press,
+            .contextRevision = 7,
+            .originatingOutputGeneration = 44,
+            .helperInjectionSequence = 55,
+            .provenanceMode = ingress::SyntheticProvenanceMode::ReservedNonCollidingControl,
+            .remainingMatches = 1,
+            .expiresAtOwnerUs = 10'000
+        });
+        auto mismatch = FakeKbmEvent(1, jump, ingress::KbmEdgePhase::Press);
+        mismatch.syntheticToken = 98;
+        mismatch.originatingOutputGeneration = 44;
+        mismatch.helperInjectionSequence = 55;
+        const auto mismatchBatch = mismatchProducer.BuildIngressBatch(
+            FakeObservedKbmBatch(1, { mismatch }, { jump }),
+            bindings,
+            contextSnapshot,
+            1000);
+        Require(mismatchBatch.orderedEdges.size() == 1, "token mismatch must never swallow physical same-scancode input");
+    }
+
+    void KbmMappingChangeUsesStablePhysicalQuarantineFixture()
+    {
+        ingress::KbmGameplayFactProducer producer;
+        auto bindings = FakeKbmBindingSnapshot(1, 5);
+        context::ResolvedContextSnapshot contextSnapshot{};
+        contextSnapshot.contextRevision = 7;
+        const ingress::KbmPhysicalCode move{ ingress::KbmPhysicalDevice::Keyboard, 0x70 };
+
+        (void)producer.BuildIngressBatch(
+            FakeObservedKbmBatch(1, { FakeKbmEvent(1, move, ingress::KbmEdgePhase::Press) }, { move }),
+            bindings,
+            contextSnapshot,
+            1000);
+
+        bindings.generation = 2;
+        bindings.controlMapRevision = 6;
+        std::reverse(bindings.entries.begin(), bindings.entries.end());
+        auto remapped = FakeObservedKbmBatch(2, {}, { move });
+        remapped.rawCurrent.controlMapRevision = 6;
+        const auto quarantined = producer.BuildIngressBatch(remapped, bindings, contextSnapshot, 2000);
+        Require(quarantined.completeCurrent.keyboardMoveHeldMask == 0, "mapping change must clear old semantic held state");
+        Require(quarantined.physical.quarantineCodes.Contains(move), "mapping change must quarantine stable physical identity");
+        Require(quarantined.baseline == ingress::KbmBaselineState::MappingRearmRequired, "mapping change must require rearm");
+
+        auto heldRepeat = FakeObservedKbmBatch(
+            3,
+            { FakeKbmEvent(3, move, ingress::KbmEdgePhase::Press, false) },
+            { move });
+        heldRepeat.rawCurrent.controlMapRevision = 6;
+        const auto repeated = producer.BuildIngressBatch(heldRepeat, bindings, contextSnapshot, 3000);
+        Require(repeated.completeCurrent.keyboardMoveHeldMask == 0, "held repeat must not rearm quarantined mapping");
+        Require(repeated.physical.quarantineCodes.Contains(move), "held repeat must preserve quarantine identity after entry reorder");
+
+        auto release = FakeObservedKbmBatch(
+            4,
+            { FakeKbmEvent(4, move, ingress::KbmEdgePhase::Release, false) },
+            {});
+        release.rawCurrent.controlMapRevision = 6;
+        const auto released = producer.BuildIngressBatch(release, bindings, contextSnapshot, 4000);
+        Require(!released.physical.quarantineCodes.Contains(move), "physical release must drain quarantine");
+        Require(released.baseline == ingress::KbmBaselineState::Clean, "drained quarantine must restore clean baseline");
     }
 
     void TestLatestPadStatePreventsSteadyAnalogQueueGrowth()
@@ -2015,6 +2272,9 @@ int main()
     ConnectivityOnlyFixture();
     ContextNeutralGamepadDraftFixture();
     ClassifiedDigitalEdgeFeedsExistingKernelFixture();
+    KbmProducerPublishesMappedCurrentAndOrderedFactsFixture();
+    KbmSyntheticSuppressionRequiresExactProvenanceFixture();
+    KbmMappingChangeUsesStablePhysicalQuarantineFixture();
     TestLatestPadStatePreventsSteadyAnalogQueueGrowth();
     TestLatestAnalogCanLeadBoundedDigitalEdgeCutoff();
     TestFrameAssemblerKeepsLatestAnalogSeparateFromOrderedEdgeCutoff();

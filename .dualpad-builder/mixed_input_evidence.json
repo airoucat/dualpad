@@ -84,6 +84,31 @@
       ],
       "productionAuthorityEnabled": false,
       "dynamicGateRequired": false
+    },
+    "WP2": {
+      "status": "completed",
+      "red": [
+        "DualPadIngressTests could not compile because KbmGameplayFactProducer did not exist",
+        "mapped KBM current-state, ordered mouse delta, exact synthetic provenance and stable physical quarantine contracts were absent",
+        "InputFramePump still used legacy presentation-only KBM evidence and lacked the Skyrim adapter boundary",
+        "adapter failure still advanced the owner KBM ledger",
+        "mouse delta reused mouse button idCode 0 and lacked a production Game.Look binding",
+        "held ButtonEvent repeats refreshed meaningful KBM activity and manufactured ordered presses"
+      ],
+      "focused": [
+        "python tests/python/test_mixed_input_wp2_boundaries.py",
+        "xmake run -y DualPadIngressTests",
+        "xmake run -y DualPadInputV2Tests"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadContextResolverTests",
+        "xmake run -y DualPadPresentationProjectionTests",
+        "xmake build -y DualPad"
+      ],
+      "platformRawReconcileEnabled": false,
+      "syntheticSuppressionRouteEnabled": false,
+      "gameplayAuthorityEnabled": false,
+      "dynamicGateRequired": false
     }
   },
   "closeoutPolicy": {
