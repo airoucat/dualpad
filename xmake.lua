@@ -214,6 +214,7 @@ local mixed_input_ingress_scaffold_files = {
     "src/input/injection/PollMaterializationReceipt.cpp",
     "src/input/injection/SkyrimCurrentCycleEventAdapter.cpp",
     "src/input_v2/ingress/GamepadActivityClassifier.cpp",
+    "src/input_v2/ingress/MeaningfulSourceActivity.cpp",
     "src/input_v2/ingress/KbmGameplayFactProducer.cpp",
     "src/input/injection/SkyrimKbmInputAdapter.cpp",
     "src/input_v2/ingress/IngressHub.cpp",
@@ -228,7 +229,9 @@ local ph7_ingress_files = {
     "src/input_v2/ingress/IngressRecovery.cpp",
     "src/input_v2/ingress/LegacyIngressAdapter.cpp",
     "src/input_v2/ingress/LiveInputFactProducer.cpp",
-    "src/input_v2/presentation/SourceEvidenceCollector.cpp"
+    "src/input_v2/presentation/SourceEvidenceCollector.cpp",
+    "src/input_v2/presentation/CursorHandoffCoordinator.cpp",
+    "src/input_v2/presentation/CursorHandoffAckMailbox.cpp"
 }
 
 for _, file in ipairs(mixed_input_ingress_scaffold_files) do
@@ -286,7 +289,8 @@ target("DualPadPresentationProjectionTests")
     add_files(
         "src/input_v2/presentation/GameplayPresentationAdapter.cpp",
         "src/input_v2/presentation/PresentationProjection.cpp",
-        "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp")
+        "src/input_v2/presentation/SkyrimCompatibilitySurface.cpp",
+        "src/input/SkyrimCursorHandoffAdapter.cpp")
     add_headerfiles("tests/**.h")
     add_headerfiles("src/**.h")
     add_includedirs("src")

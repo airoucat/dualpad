@@ -6,6 +6,7 @@
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/context/ContextResolver.h"
 #include "input_v2/ingress/IngressRecovery.h"
+#include "input_v2/presentation/CursorHandoffAckMailbox.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/prompt/PromptRuntimeOwner.h"
 
@@ -548,10 +549,37 @@ namespace dualpad::input_v2::gameplay
             return;
         }
 
-        const auto published = _presentationProjection.Project(
-            frame.facts.sourceEvidence,
-            envelope.config.context,
-            result.gameplayPresentation);
+        std::optional<presentation::CursorHandoffAck> cursorAck;
+        if (const auto& pending = _presentationProjection.GetPendingCursorPlan(); pending) {
+            if (const auto ackEnvelope =
+                    presentation::CursorHandoffAckMailbox::GetSingleton().ConsumeExactOnOwnerTick(
+                        pending->token,
+                        pending->contextRevision,
+                        pending->presentationEpoch,
+                        pending->targetMenuInstanceId)) {
+                cursorAck = ackEnvelope->ack;
+            }
+        }
+        const actions::ResolvedActionFrame resolvedForPresentation{};
+        const bool needsOrderedProjection = !frame.facts.sourceActivities.empty() ||
+            cursorAck.has_value();
+        const auto published = needsOrderedProjection ?
+            _presentationProjection.ProjectOrdered(
+                frame.facts.sourceEvidence,
+                envelope.config.context,
+                result.gameplayPresentation,
+                frame.facts.sourceActivities,
+                resolvedForPresentation,
+                frame.facts.monotonicUs / 1000,
+                frame.facts.coherence.inputStateEpoch,
+                frame.facts.kbmGameplay ?
+                    frame.facts.kbmGameplay->ownerTickToken : frame.facts.coherence.captureGeneration,
+                std::move(cursorAck)) :
+            _presentationProjection.Project(
+                frame.facts.sourceEvidence,
+                envelope.config.context,
+                result.gameplayPresentation,
+                frame.facts.monotonicUs / 1000);
         auto& compatibilitySurface = presentation::SkyrimCompatibilitySurface::GetSingleton();
         compatibilitySurface.Commit(published);
         if (ShouldPublishPromptScope(result.runtimeHealthReasons)) {
@@ -741,6 +769,7 @@ namespace dualpad::input_v2::gameplay
         _interactionState.Reset();
         _presentationPublisher.ResetForTests();
         _presentationProjection.ResetForTests();
+        presentation::CursorHandoffAckMailbox::GetSingleton().ResetForTests();
     }
 
     void DualPadRuntime::ResetForTests()

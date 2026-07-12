@@ -3492,3 +3492,24 @@
   - 相邻回归：`DualPadPropertyTests`、`DualPadFuzzRegressionTests`、`DualPadReplayTests` build/run 全部 exit 0。
   - Graphify manual closeout：`2204 nodes / 5250 edges / 162 communities`。
   - I-KBM raw reconcile 与 synthetic suppression 的 production route 继续分别 NO-GO；I-P、I-CURSOR、I-SPRINT、I-0/I-1/I-2/I-MENU/I-5 也未提前启用。下一切片进入 WP8 presentation separation，cursor side effect 在 I-CURSOR 前保持关闭。
+
+## 2026-07-12 13:10:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP8 start`：
+  - 从已推送 WP7 commit `a262f0c` 进入 prompt/menu/cursor 独立投影与原子 presentation transaction。
+  - ordered meaningful activity 以 ingress seq 为唯一先后权威；producer timestamp 不参与 owner 决胜。pointer candidate 由 owner tick deadline 推进，不能依赖后续 mouse event。
+  - cursor plan/ack 先建立 pure contract、bounded consume-once mailbox 与 shadow Skyrim adapter；I-CURSOR 未闭合前 adapter 固定 `MappingUnverified`，不写坐标、不直接 commit owner。
+  - gameplay pre-output 只允许发布 menu-entry intent，不修改 Favorites native gate，不强制 cursor/navigation，不触碰 Interface/SWF/glyph/haptics/rumble/bindings。
+
+## 2026-07-12 13:27:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP8 completed`：
+  - RED 从缺失 `CursorHandoffAckMailbox.h` 开始，随后依次证明 `FactFrame` 未保留 ordered source activity、runtime 未走 `ProjectOrdered`、prompt-only activity 错改 menu reason，以及旧兼容测试仍把任意 mouse move 当立即 owner 翻转。
+  - `MeaningfulSourceActivity` 现在以 ingress seq 为唯一先后权威；keyboard/mouse button 与 gamepad press 作为 strong activity，pointer 使用 10 px 累积阈值和 120 ms owner-clock deadline，竞争活动可取消旧 pointer candidate，neutral/release/idle report 不产生 owner 抢占。
+  - `PublishedPresentationState` 在同一原子 publication 中分别携带 prompt family、menu/navigation owner、cursor requested/committed owner 与 routing state；旧字段只保留为派生 compat mirror，不形成第二 authority。
+  - cursor handoff 采用 plan -> UI ack -> owner exact consume-once；token、context revision、presentation epoch、menu instance、position sync 与 failure 任一不匹配均 fail-closed。I-CURSOR 未闭合，`SkyrimCursorHandoffAdapter` 固定返回 `MappingUnverified`，没有生产坐标写入调用点。
+  - gameplay pre-output 只更新 `gameplayMenuEntryIntentOwner/revision`，不强制修改已提交的 menu/navigation/cursor owner 或 presentation epoch；Favorites native gate、Interface/SWF、glyph、haptics、rumble 与 bindings 未改。
+  - Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadInputV2Tests`、`DualPadIngressTests`、`tests.python.test_mixed_input_wp8_wiring` 与 `DualPad` build 全部 exit 0；cursor ack 额外覆盖 wrong token/context/epoch/menu instance、write failure 和 duplicate consume。
+  - 相邻回归：`DualPadPromptSnapshotTests`、`DualPadGameplayProjectionTests`、`DualPadReplayTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests` 全部 exit 0。
+  - Graphify manual closeout：`2246 nodes / 5327 edges / 169 communities`。
+  - I-CURSOR 继续 NO-GO；I-P、I-SPRINT、I-KBM、I-0/I-1/I-2/I-MENU/I-5 也未提前启用。下一切片进入 WP9 original-first engine/device query shadow gateway。

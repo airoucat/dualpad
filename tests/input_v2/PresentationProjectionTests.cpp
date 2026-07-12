@@ -1,9 +1,13 @@
 #include "pch.h"
 
+#include "input_v2/actions/InteractionEngine.h"
 #include "input_v2/presentation/PresentationProjection.h"
+#include "input_v2/presentation/CursorHandoffAckMailbox.h"
+#include "input_v2/presentation/CursorHandoffCoordinator.h"
 #include "input_v2/presentation/GameplayPresentationAdapter.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
+#include "input/SkyrimCursorHandoffAdapter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -75,6 +79,347 @@ namespace
         state.dirty = dualpad::input_v2::presentation::PresentationDirtyFlags::Context;
         return state;
     }
+
+    dualpad::input_v2::ingress::MeaningfulSourceActivity Activity(
+        dualpad::input_v2::ingress::PhysicalInputSource source,
+        dualpad::input_v2::ingress::SourceActivityKind kind,
+        std::uint64_t seq,
+        std::uint64_t producerTimestampUs,
+        std::int32_t deltaX = 0,
+        std::int32_t deltaY = 0)
+    {
+        return dualpad::input_v2::ingress::MeaningfulSourceActivity{
+            { source, kind, 0, deltaX, deltaY, producerTimestampUs },
+            seq,
+            7,
+            source == dualpad::input_v2::ingress::PhysicalInputSource::Gamepad ? 3u : 0u,
+            8
+        };
+    }
+}
+
+void RunOrderedActivityRoutingAndIndependentProjectionTests()
+{
+    namespace input_v2 = dualpad::input_v2;
+    namespace ingress = input_v2::ingress;
+    namespace presentation = input_v2::presentation;
+
+    const auto context = MenuContext();
+    const input_v2::actions::ResolvedActionFrame resolved{};
+    const std::vector<ingress::MeaningfulSourceActivity> keyboardWins{
+        Activity(ingress::PhysicalInputSource::Gamepad,
+            ingress::SourceActivityKind::GamepadButtonPress, 50, 9'000),
+        Activity(ingress::PhysicalInputSource::Keyboard,
+            ingress::SourceActivityKind::KeyboardPress, 51, 1)
+    };
+    const auto routedKeyboard = ingress::RouteSourceActivities(
+        keyboardWins, {}, context, resolved, 1000);
+    presentation::PublishedPresentationState initial{};
+    const auto keyboardDecision = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = initial,
+            .context = context,
+            .gameplayMenuEntryOwner = presentation::PresentationOwner::Gamepad,
+            .routedActivities = routedKeyboard.activities,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 10
+        });
+    Require(keyboardDecision.state.prompt.family == presentation::DeviceFamily::KeyboardMouse &&
+            keyboardDecision.state.prompt.acceptedActivitySeq == 51 &&
+            keyboardDecision.state.menu.owner == presentation::PresentationOwner::KeyboardMouse,
+        "higher ingress seq keyboard activity must win prompt/menu regardless of producer timestamp");
+
+    const std::vector<ingress::MeaningfulSourceActivity> gamepadWins{
+        Activity(ingress::PhysicalInputSource::Keyboard,
+            ingress::SourceActivityKind::KeyboardPress, 50, 99'000),
+        Activity(ingress::PhysicalInputSource::Gamepad,
+            ingress::SourceActivityKind::GamepadButtonPress, 51, 1)
+    };
+    const auto routedGamepad = ingress::RouteSourceActivities(
+        gamepadWins, {}, context, resolved, 1000);
+    const auto gamepadDecision = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = initial,
+            .context = context,
+            .routedActivities = routedGamepad.activities,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 11
+        });
+    Require(gamepadDecision.state.prompt.family == presentation::DeviceFamily::Gamepad &&
+            gamepadDecision.state.prompt.acceptedActivitySeq == 51 &&
+            gamepadDecision.state.menu.owner == presentation::PresentationOwner::Gamepad,
+        "higher ingress seq gamepad activity must win prompt/menu regardless of producer timestamp");
+    const auto neutralDecision = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = gamepadDecision.state,
+            .context = context,
+            .routedActivities = {},
+            .inputStateEpoch = 7,
+            .ownerTickToken = 11
+        });
+    Require(neutralDecision.state.prompt == gamepadDecision.state.prompt &&
+            neutralDecision.state.menu == gamepadDecision.state.menu &&
+            neutralDecision.state.cursor == gamepadDecision.state.cursor,
+        "neutral/release-only/unchanged/suppressed cycles must carry all presentation decisions");
+
+    const auto ninePixelCandidate = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Mouse,
+            ingress::SourceActivityKind::MouseDelta,
+            59,
+            9,
+            9,
+            0) },
+        {}, context, resolved, 5000);
+    const auto nineAfterDeadline = ingress::RouteSourceActivities(
+        {}, ninePixelCandidate.next, context, resolved, 5120);
+    Require(nineAfterDeadline.activities.empty(),
+        "9 px pointer movement must not promote even after the owner deadline");
+
+    const auto pointerStart = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Mouse,
+            ingress::SourceActivityKind::MouseDelta,
+            60,
+            10,
+            6,
+            0) },
+        {}, context, resolved, 1000);
+    const auto pointerThreshold = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Mouse,
+            ingress::SourceActivityKind::MouseDelta,
+            61,
+            11,
+            4,
+            0) },
+        pointerStart.next, context, resolved, 1050);
+    const auto beforeDeadline = ingress::RouteSourceActivities(
+        {}, pointerThreshold.next, context, resolved, 1119);
+    Require(beforeDeadline.activities.empty(),
+        "10 px pointer candidate must not promote before the 120 ms owner deadline");
+    const auto atDeadline = ingress::RouteSourceActivities(
+        {}, beforeDeadline.next, context, resolved, 1120);
+    Require(atDeadline.activities.size() == 1 &&
+            atDeadline.activities.front().qualifiedByOwnerTimer &&
+            atDeadline.activities.front().qualifiesForPrompt &&
+            atDeadline.activities.front().qualifiesForCursor &&
+            !atDeadline.activities.front().strongForMenuOwner,
+        "owner tick must promote a stopped 10 px pointer candidate without another mouse event");
+
+    auto pointerPrevious = gamepadDecision.state;
+    pointerPrevious.cursor.committedOwner = presentation::CursorOwner::Gamepad;
+    pointerPrevious.cursor.requestedOwner = presentation::CursorOwner::Gamepad;
+    pointerPrevious.cursor.pendingToken = 0;
+    const auto pointerDecision = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = pointerPrevious,
+            .context = context,
+            .routedActivities = atDeadline.activities,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 12,
+            .gamepadToKeyboardMouseSync = presentation::CursorPositionSyncPolicy::NotRequired
+        });
+    Require(pointerDecision.state.prompt.family == presentation::DeviceFamily::KeyboardMouse &&
+            pointerDecision.state.menu.owner == presentation::PresentationOwner::Gamepad &&
+            pointerDecision.state.cursor.committedOwner == presentation::CursorOwner::KeyboardMouse,
+        "pointer promotion must change prompt/cursor without changing menu navigation owner");
+
+    const auto candidateAgain = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Mouse,
+            ingress::SourceActivityKind::MouseDelta,
+            70,
+            20,
+            10,
+            0) },
+        {}, context, resolved, 2000);
+    const auto competed = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Gamepad,
+            ingress::SourceActivityKind::GamepadButtonPress,
+            71,
+            1) },
+        candidateAgain.next, context, resolved, 2050);
+    const auto staleTimer = ingress::RouteSourceActivities(
+        {}, competed.next, context, resolved, 2120);
+    Require(staleTimer.activities.empty(),
+        "higher-seq strong gamepad activity must cancel an older pointer timer candidate");
+
+    const auto mouseClick = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Mouse,
+            ingress::SourceActivityKind::MouseButtonPress,
+            80,
+            30) },
+        {}, context, resolved, 3000);
+    const auto clickDecision = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = pointerPrevious,
+            .context = context,
+            .routedActivities = mouseClick.activities,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 13,
+            .gamepadToKeyboardMouseSync = presentation::CursorPositionSyncPolicy::NotRequired
+        });
+    Require(clickDecision.state.menu.owner == presentation::PresentationOwner::KeyboardMouse &&
+            clickDecision.state.menu.navigationOwner == presentation::NavigationOwner::KeyboardMouse &&
+            clickDecision.state.cursor.committedOwner == presentation::CursorOwner::KeyboardMouse,
+        "mouse click must strongly switch menu navigation and cursor to KBM");
+
+    const auto promptOnly = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = pointerPrevious,
+            .context = context,
+            .routedActivities = atDeadline.activities,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 14,
+            .gamepadToKeyboardMouseSync = presentation::CursorPositionSyncPolicy::MappingUnverified
+        });
+    Require(promptOnly.state.prompt.family == presentation::DeviceFamily::KeyboardMouse &&
+            promptOnly.state.menu == pointerPrevious.menu &&
+            promptOnly.state.cursor.committedOwner == pointerPrevious.cursor.committedOwner,
+        "prompt-only activity must not mutate menu or committed cursor state");
+}
+
+void RunCursorPlanAckShadowTests()
+{
+    namespace input_v2 = dualpad::input_v2;
+    namespace ingress = input_v2::ingress;
+    namespace presentation = input_v2::presentation;
+
+    const auto context = MenuContext();
+    const input_v2::actions::ResolvedActionFrame resolved{};
+    const auto routed = ingress::RouteSourceActivities(
+        std::vector<ingress::MeaningfulSourceActivity>{ Activity(
+            ingress::PhysicalInputSource::Gamepad,
+            ingress::SourceActivityKind::GamepadButtonPress,
+            90,
+            1) },
+        {}, context, resolved, 4000);
+    presentation::PublishedPresentationState previous{};
+    const auto pending = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = previous,
+            .context = context,
+            .routedActivities = routed.activities,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 900,
+            .keyboardMouseToGamepadSync = presentation::CursorPositionSyncPolicy::Required
+        });
+    Require(pending.cursorPlan.has_value() &&
+            pending.state.cursor.requestedOwner == presentation::CursorOwner::Gamepad &&
+            pending.state.cursor.committedOwner == presentation::CursorOwner::KeyboardMouse &&
+            pending.state.cursor.reason == presentation::CursorOwnerDecisionReason::HandoffPending,
+        "KBM-to-gamepad cursor request must remain pending until exact success ack");
+
+    dualpad::input::SkyrimCursorHandoffAdapter adapter;
+    const auto shadowAck = adapter.ExecuteVerifiedHandoff(*pending.cursorPlan);
+    Require(shadowAck.failure == presentation::CursorHandoffFailure::MappingUnverified &&
+            !shadowAck.positionSynchronized,
+        "I-CURSOR shadow adapter must fail MappingUnverified without coordinate side effects");
+    const auto shadowRejected = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = pending.state,
+            .context = context,
+            .cursorAck = shadowAck,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 901,
+            .keyboardMouseToGamepadSync = presentation::CursorPositionSyncPolicy::Required
+        });
+    Require(shadowRejected.state.cursor.committedOwner == presentation::CursorOwner::KeyboardMouse,
+        "MappingUnverified ack must never commit cursor owner");
+
+    presentation::CursorHandoffAckMailbox mailbox;
+    auto successAck = shadowAck;
+    successAck.failure = presentation::CursorHandoffFailure::None;
+    successAck.positionSynchronized = true;
+    mailbox.PublishFromUiTask(successAck);
+    const auto consumed = mailbox.ConsumeExactOnOwnerTick(
+        pending.cursorPlan->token,
+        pending.cursorPlan->contextRevision,
+        pending.cursorPlan->presentationEpoch,
+        pending.cursorPlan->targetMenuInstanceId);
+    Require(consumed.has_value(), "exact cursor ack envelope must be consumed once");
+    Require(!mailbox.ConsumeExactOnOwnerTick(
+                pending.cursorPlan->token,
+                pending.cursorPlan->contextRevision,
+                pending.cursorPlan->presentationEpoch,
+                pending.cursorPlan->targetMenuInstanceId)
+                .has_value(),
+        "duplicate cursor ack consume must fail closed");
+
+    const auto committed = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = pending.state,
+            .context = context,
+            .cursorAck = consumed->ack,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 902,
+            .keyboardMouseToGamepadSync = presentation::CursorPositionSyncPolicy::Required
+        });
+    Require(committed.state.cursor.committedOwner == presentation::CursorOwner::Gamepad &&
+            committed.state.cursor.pendingToken == 0 &&
+            committed.state.cursor.reason == presentation::CursorOwnerDecisionReason::HandoffCommitted,
+        "exact success ack must commit cursor owner and clear pending token");
+
+    auto wrongToken = successAck;
+    ++wrongToken.token;
+    const auto wrongRejected = presentation::ProjectPresentation(
+        presentation::PresentationProjectionInput{
+            .previous = pending.state,
+            .context = context,
+            .cursorAck = wrongToken,
+            .inputStateEpoch = 7,
+            .ownerTickToken = 903,
+            .keyboardMouseToGamepadSync = presentation::CursorPositionSyncPolicy::Required
+        });
+    Require(wrongRejected.state.cursor.committedOwner == presentation::CursorOwner::KeyboardMouse,
+        "wrong-token cursor ack must not commit");
+
+    const auto requireRejectedAck = [&](presentation::CursorHandoffAck ack, const char* message) {
+        const auto rejected = presentation::ProjectPresentation(
+            presentation::PresentationProjectionInput{
+                .previous = pending.state,
+                .context = context,
+                .cursorAck = ack,
+                .inputStateEpoch = 7,
+                .ownerTickToken = 904,
+                .keyboardMouseToGamepadSync = presentation::CursorPositionSyncPolicy::Required
+            });
+        Require(rejected.state.cursor.committedOwner == presentation::CursorOwner::KeyboardMouse &&
+                rejected.state.cursor.pendingToken == pending.cursorPlan->token,
+            message);
+    };
+
+    auto wrongContext = successAck;
+    ++wrongContext.contextRevision;
+    requireRejectedAck(wrongContext, "wrong-context cursor ack must fail closed");
+
+    auto wrongEpoch = successAck;
+    ++wrongEpoch.presentationEpoch;
+    requireRejectedAck(wrongEpoch, "wrong-epoch cursor ack must fail closed");
+
+    auto wrongInstance = successAck;
+    ++wrongInstance.targetMenuInstanceId;
+    requireRejectedAck(wrongInstance, "wrong-menu-instance cursor ack must fail closed");
+
+    auto writeFailure = successAck;
+    writeFailure.failure = presentation::CursorHandoffFailure::WriteVerificationFailed;
+    writeFailure.positionSynchronized = false;
+    requireRejectedAck(writeFailure, "failed cursor coordinate verification must fail closed");
+
+    presentation::SkyrimCompatibilitySurface compat;
+    auto committedState = EligibleMenuPresentation(5, 8);
+    compat.Commit(committedState);
+    compat.CommitPreOutputGameplayPresentationHandoff(presentation::PresentationOwner::Gamepad);
+    const auto intentOnly = compat.GetCommittedState();
+    Require(intentOnly.owner == committedState.owner &&
+            intentOnly.navigationOwner == committedState.navigationOwner &&
+            intentOnly.cursorOwner == committedState.cursorOwner &&
+            intentOnly.epoch == committedState.epoch &&
+            intentOnly.gameplayMenuEntryIntentOwner == presentation::PresentationOwner::Gamepad,
+        "gameplay pre-output handoff must publish menu-entry intent without forcing menu/cursor owner");
 }
 
 void RunPresentationProjectionTests()
@@ -825,6 +1170,8 @@ void RunPresentationProjectionTests()
 int main()
 {
     try {
+        RunOrderedActivityRoutingAndIndependentProjectionTests();
+        RunCursorPlanAckShadowTests();
         RunPresentationProjectionTests();
         return 0;
     } catch (const std::exception& e) {

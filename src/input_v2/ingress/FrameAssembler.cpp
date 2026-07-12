@@ -49,6 +49,7 @@ namespace dualpad::input_v2::ingress
                 }
             }
             facts.pulseLedger.clear();
+            facts.sourceActivities.clear();
             facts.health = FactHealth{};
             facts.overflowCompaction.reset();
             return facts;
@@ -218,6 +219,7 @@ namespace dualpad::input_v2::ingress
                 const auto clearGamepad = [&]() {
                     _latestFacts.controlSamples.clear();
                     _latestFacts.pulseLedger.clear();
+                    _latestFacts.sourceActivities.clear();
                     _latestFacts.legacySnapshot.reset();
                     _latestFacts.gamepadConnection.reset();
                     _gamepadDownAtUs = {};
@@ -342,6 +344,7 @@ namespace dualpad::input_v2::ingress
                     _pendingGlobalResetReasons |= ToMask(InputResetReason::SequenceGap);
                     _latestFacts.controlSamples.clear();
                     _latestFacts.pulseLedger.clear();
+                    _latestFacts.sourceActivities.clear();
                     _latestFacts.kbmGameplay.reset();
                     _gamepadDownAtUs = {};
                     return true;
@@ -432,6 +435,8 @@ namespace dualpad::input_v2::ingress
             };
             _window.facts.pulseLedger.push_back(sample);
             UpsertLatestSample(_window.facts.controlSamples, sample);
+        } else if (event.kind == IngressKind::MeaningfulSourceActivity) {
+            _window.facts.sourceActivities.push_back(event.sourceActivity);
         } else if (event.kind == IngressKind::SourceEvidence) {
             _window.facts.sourceEvidence = event.sourceEvidence;
         }
@@ -467,6 +472,7 @@ namespace dualpad::input_v2::ingress
         FactFrame facts = _latestFacts;
         facts.controlSamples.clear();
         facts.pulseLedger.clear();
+        facts.sourceActivities.clear();
         facts.legacySnapshot.reset();
         facts.health = FactHealth{};
         facts.health.queueOverflow = true;

@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-07-12T13:08:00+08:00",
+  "updated_at": "2026-07-12T13:27:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -386,7 +386,7 @@
         "Look、Move、Combat 与 TransientDigital 按通道仲裁，current-cycle 使用 PollMaterializationReceipt -> Prepare -> Apply -> Commit",
         "WP6 已实现 Sprint G/K/M 多来源 contributor OR、virtual bridge、full-mask backend materialization 与 prepared rollback；I-P 前 joining/non-final current-cycle suppression 保持 fail-closed，I-SPRINT 结果 B 前不安装 SprintHandler guard",
         "WP7 已实现 scoped epoch/session recovery、Hub 到 owner pump 的 quarantine transaction、ControlMap/context synthetic receipt reset、overflow fail-closed、gamepad disconnect KBM/Sprint 保留与可选 raw reconcile 的 pure evidence contract；I-KBM 两项 production route 仍分别 NO-GO",
-        "prompt、menu、cursor 独立投影",
+        "WP8 已实现基于 ordered meaningful activity 的 prompt、menu、cursor 独立原子投影；pointer threshold/deadline、exact consume-once cursor ack 与 gameplay menu-entry intent 已接线，I-CURSOR 前 Skyrim adapter 固定 MappingUnverified 且无坐标 side effect",
         "engine query 保持 original-first；只对 IDA 证明的 caller/domain 做最小覆盖，证据不足时保持 shadow 或 NO-GO",
         "disconnect、overflow、ControlMap reload 和 lost release 恢复路径闭合，且不修改 Favorites native gate、Interface/SWF、glyph、haptics、rumble 或无关 bindings"
       ]

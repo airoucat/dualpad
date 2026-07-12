@@ -1073,6 +1073,46 @@ namespace
         Require(stable->facts.pulseLedger.front().path.code == 0x1, "classified digital press must retain raw control code");
     }
 
+    void OrderedMeaningfulActivityReachesOneStableFrameFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::FrameAssembler assembler;
+        ingress::ClassifiedGamepadReportDraft report{};
+        report.current.sourceSequence = 1;
+        report.current.sourceTimestampUs = 1000;
+        report.current.state.connected = true;
+        report.sourceActivities.push_back(ingress::MeaningfulSourceActivityDraft{
+            .source = ingress::PhysicalInputSource::Gamepad,
+            .kind = ingress::SourceActivityKind::GamepadButtonPress,
+            .controlCode = 0x1,
+            .producerTimestampUs = 1000
+        });
+        Require(hub.PublishGamepadBatch(
+                    std::move(report),
+                    ingress::GamepadConnectionDraft{
+                        .connectivity = ingress::GamepadConnectivity::Connected })
+                    .accepted,
+            "ordered activity fixture must publish");
+        const auto frames = assembler.Assemble(hub.Capture(16));
+        const auto& stable = LastStableFrame(frames);
+        Require(stable.facts.sourceActivities.size() == 1 &&
+                stable.facts.sourceActivities.front().ingressSeq == stable.lastSeq &&
+                stable.facts.sourceActivities.front().kind ==
+                    ingress::SourceActivityKind::GamepadButtonPress,
+            "ordered meaningful activity must reach the causal stable frame with ingress seq intact");
+
+        ingress::ClassifiedGamepadReportDraft neutral{};
+        neutral.current.sourceSequence = 2;
+        neutral.current.sourceTimestampUs = 2000;
+        neutral.current.state.connected = true;
+        Require(hub.PublishGamepadBatch(std::move(neutral), std::nullopt).accepted,
+            "neutral latest-only state must publish after activity");
+        const auto neutralFrames = assembler.Assemble(hub.Capture(16));
+        const auto& neutralStable = LastStableFrame(neutralFrames);
+        Require(neutralStable.facts.sourceActivities.empty(),
+            "ordered activity must not leak into a later neutral stable frame");
+    }
+
     ingress::KbmBindingSnapshot FakeKbmBindingSnapshot(
         std::uint64_t generation = 1,
         std::uint32_t controlMapRevision = 5)
@@ -3003,6 +3043,7 @@ int main()
     ConnectivityOnlyFixture();
     ContextNeutralGamepadDraftFixture();
     ClassifiedDigitalEdgeFeedsExistingKernelFixture();
+    OrderedMeaningfulActivityReachesOneStableFrameFixture();
     KbmProducerPublishesMappedCurrentAndOrderedFactsFixture();
     KbmSyntheticSuppressionRequiresExactProvenanceFixture();
     KbmMappingChangeUsesStablePhysicalQuarantineFixture();

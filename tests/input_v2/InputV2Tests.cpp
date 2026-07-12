@@ -1297,11 +1297,11 @@ namespace
         const auto& afterMouseMove =
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState();
         Require(
-            afterMouseMove.owner == presentation::PresentationOwner::KeyboardMouse,
-            "mouse move evidence must publish KeyboardMouse owner");
+            afterMouseMove.owner == presentation::PresentationOwner::Gamepad,
+            "pointer-only candidate must not change menu owner before owner-tick promotion");
         Require(
             afterMouseMove.cursorOwner == presentation::CursorOwner::KeyboardMouse,
-            "mouse move evidence must publish KeyboardMouse cursor owner");
+            "I-CURSOR shadow must preserve the previously committed KBM cursor owner");
 
         producer.PublishGamepadSourceEvidence(contextSnapshot, 74'000);
         drive();

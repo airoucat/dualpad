@@ -72,6 +72,7 @@ namespace dualpad::input_v2::ingress
         std::uint64_t latestSourceEvidenceGeneration{ 0 };
         std::vector<actions::ControlSample> controlSamples;
         std::vector<actions::ControlSample> pulseLedger;
+        std::vector<MeaningfulSourceActivity> sourceActivities;
         presentation::SourceEvidenceSnapshot sourceEvidence;
         std::optional<dualpad::input::PadEventSnapshot> legacySnapshot;
         InputFactCoherenceKey coherence{};

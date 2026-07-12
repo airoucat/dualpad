@@ -592,25 +592,14 @@ namespace dualpad::input_v2::presentation
 
     void SkyrimCompatibilitySurface::CommitPreOutputGameplayPresentationHandoff(PresentationOwner owner)
     {
-        if (owner != PresentationOwner::Gamepad) {
-            return;
-        }
-
         std::scoped_lock lock(_mutex);
-        const bool changed =
-            _committed.owner != PresentationOwner::Gamepad ||
-            _committed.navigationOwner != NavigationOwner::Gamepad ||
-            _committed.cursorOwner != CursorOwner::Gamepad;
-        _committed.owner = PresentationOwner::Gamepad;
-        _committed.navigationOwner = NavigationOwner::Gamepad;
-        _committed.cursorOwner = CursorOwner::Gamepad;
-        _committed.reason = PresentationDecisionReason::GameplayEngineOwner;
-        _committed.dirty = PresentationDirtyFlags::Owner | PresentationDirtyFlags::Cursor;
-        if (changed) {
-            ++_committed.epoch;
+        if (_committed.gameplayMenuEntryIntentOwner != owner) {
+            _committed.gameplayMenuEntryIntentOwner = owner;
+            ++_committed.gameplayMenuEntryIntentRevision;
         }
         logger::info(
-            "[DualPad][PresentationHandoff] event=pre_output_gameplay owner={} navigationOwner={} cursorOwner={} epoch={} contextRevision={} gameplayPresentationRevision={}",
+            "[DualPad][PresentationHandoff] event=menu_entry_intent intentOwner={} owner={} navigationOwner={} cursorOwner={} epoch={} contextRevision={} gameplayPresentationRevision={}",
+            ToLogString(_committed.gameplayMenuEntryIntentOwner),
             ToLogString(_committed.owner),
             ToLogString(_committed.navigationOwner),
             ToLogString(_committed.cursorOwner),
