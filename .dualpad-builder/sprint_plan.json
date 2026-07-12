@@ -2,7 +2,7 @@
   "project": "DualPad Authoritative Baseline",
   "status": "active",
   "current_sprint": "S-DP5-MIXED-INPUT",
-  "updated_at": "2026-07-12T13:27:00+08:00",
+  "updated_at": "2026-07-12T13:34:00+08:00",
   "sprints": [
     {
       "id": "S-DP5-MIXED-INPUT",
@@ -32,7 +32,7 @@
         { "id": "WP6", "status": "completed" },
         { "id": "WP7", "status": "completed" },
         { "id": "WP8", "status": "completed" },
-        { "id": "WP9", "status": "pending" },
+        { "id": "WP9", "status": "in_progress" },
         { "id": "WP10", "status": "pending" },
         { "id": "gated-slices", "status": "in_progress" }
       ],

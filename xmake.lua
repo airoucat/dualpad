@@ -230,6 +230,7 @@ local ph7_ingress_files = {
     "src/input_v2/ingress/LegacyIngressAdapter.cpp",
     "src/input_v2/ingress/LiveInputFactProducer.cpp",
     "src/input_v2/presentation/SourceEvidenceCollector.cpp",
+    "src/input_v2/presentation/SkyrimEngineModeRouter.cpp",
     "src/input_v2/presentation/CursorHandoffCoordinator.cpp",
     "src/input_v2/presentation/CursorHandoffAckMailbox.cpp"
 }

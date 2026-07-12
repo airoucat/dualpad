@@ -3513,3 +3513,16 @@
   - 相邻回归：`DualPadPromptSnapshotTests`、`DualPadGameplayProjectionTests`、`DualPadReplayTests`、`DualPadPropertyTests`、`DualPadFuzzRegressionTests` 全部 exit 0。
   - Graphify manual closeout：`2246 nodes / 5327 edges / 169 communities`。
   - I-CURSOR 继续 NO-GO；I-P、I-SPRINT、I-KBM、I-0/I-1/I-2/I-MENU/I-5 也未提前启用。下一切片进入 WP9 original-first engine/device query shadow gateway。
+
+## 2026-07-12 13:31:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP9 start`：
+  - 从已推送 WP8 commit `732f34e` 进入 engine/device original-first 治理；按批准边界拆为 A identity、B Original gateway、C shadow caller decision 三个可独立回退 commit。
+  - 当前 I-0 尚无 REL/vtable/slot/original target 动态唯一出口，I-1 尚未完成 26 caller 分类，I-2/I-MENU/I-5 也未闭合；因此 production availability、menu direct callsite 与 transform override 均保持禁用。
+  - 先以 host identity fixture 和 pure transaction gate 建立 fail-closed 合同；不得把 slot `0x7/0x8` 任一者凭源码命名直接当作已验证 production identity。
+
+- `S-DP5-MIXED-INPUT / WP9-A identity completed`：
+  - RED 由缺失 `SkyrimEngineModeRouter.h` 证明 identity manifest/gate 尚不存在。
+  - 新增 REL 67320 RVA + 前 32 bytes exact match、REL 560029 handler vtable、slot `0x7/0x8` 与 I-0 recorded original target 唯一匹配合同；无匹配、双匹配、RVA/bytes/REL mismatch 全部在写 patch 前失败。
+  - production manifest 明确 `i0Approved=false`；`SkyrimCompatibilitySurface::Install` 因此在 I-0 未闭合时返回 safe passthrough `SignatureMismatch/i0_gate_not_approved`，不安装旧 global presentation-owner query、cursor bool 或 fixed-true device vfunc transaction。
+  - Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadInputV2Tests` build/run 全部 exit 0。下一 commit 进入 unscoped Original gateway 与 Native availability。

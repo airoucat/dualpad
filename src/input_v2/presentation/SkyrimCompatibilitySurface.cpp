@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+#include "input_v2/presentation/SkyrimEngineModeRouter.h"
 
 #include <REL/Pattern.h>
 #include <SKSE/Version.h>
@@ -246,6 +247,13 @@ namespace dualpad::input_v2::presentation
             std::uintptr_t cursorAddress,
             std::uintptr_t gamepadHandlerVtblAddress)
         {
+            const auto identityManifest = ProductionEngineHookIdentityManifest();
+            if (!identityManifest.i0Approved) {
+                return detail::MakeHookInstallResult(
+                    HookInstallStatus::SignatureMismatch,
+                    ToString(EngineHookIdentityStatus::GateNotApproved));
+            }
+
             if (!REL::verify_code(usingGamepadAddress, kExpectedBoolSurfaceEntryWindow)) {
                 return detail::MakeHookInstallResult(
                     HookInstallStatus::SignatureMismatch,
@@ -260,6 +268,31 @@ namespace dualpad::input_v2::presentation
                 return detail::MakeHookInstallResult(
                     HookInstallStatus::SignatureMismatch,
                     "gamepad_handler_vfunc_signature_mismatch");
+            }
+
+            EngineHookIdentityObservation observed{
+                .moduleBase = REL::Module::get().base(),
+                .resolvedQueryAddress = usingGamepadAddress,
+                .resolvedHandlerVtableAddress = gamepadHandlerVtblAddress
+            };
+            const auto queryBytes = ReadPatchBytes(
+                usingGamepadAddress,
+                kEngineQueryIdentityByteCount);
+            std::copy(queryBytes.begin(), queryBytes.end(), observed.queryBytes.begin());
+            for (std::size_t slot = 0; slot < observed.handlerVtableTargets.size(); ++slot) {
+                const auto slotBytes = ReadPatchBytes(
+                    gamepadHandlerVtblAddress + sizeof(std::uintptr_t) * slot,
+                    sizeof(std::uintptr_t));
+                std::memcpy(
+                    &observed.handlerVtableTargets[slot],
+                    slotBytes.data(),
+                    sizeof(std::uintptr_t));
+            }
+            const auto identity = VerifyEngineHookIdentity(identityManifest, observed);
+            if (!identity.verified()) {
+                return detail::MakeHookInstallResult(
+                    HookInstallStatus::SignatureMismatch,
+                    ToString(identity.status));
             }
             return detail::MakeHookInstallResult(HookInstallStatus::Success, "hook_sites_verified");
         }

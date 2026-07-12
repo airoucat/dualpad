@@ -6,6 +6,7 @@
 #include "input_v2/presentation/CursorHandoffCoordinator.h"
 #include "input_v2/presentation/GameplayPresentationAdapter.h"
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
+#include "input_v2/presentation/SkyrimEngineModeRouter.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
 #include "input/SkyrimCursorHandoffAdapter.h"
 
@@ -420,6 +421,74 @@ void RunCursorPlanAckShadowTests()
             intentOnly.epoch == committedState.epoch &&
             intentOnly.gameplayMenuEntryIntentOwner == presentation::PresentationOwner::Gamepad,
         "gameplay pre-output handoff must publish menu-entry intent without forcing menu/cursor owner");
+}
+
+void RunEngineHookIdentityTests()
+{
+    namespace presentation = dualpad::input_v2::presentation;
+
+    constexpr std::uintptr_t moduleBase = 0x140000000;
+    constexpr std::uintptr_t queryRva = 0xC15240;
+    constexpr std::uintptr_t approvedTarget = 0x140C1A000;
+    std::array<std::uint8_t, 32> entryBytes{};
+    for (std::size_t index = 0; index < entryBytes.size(); ++index) {
+        entryBytes[index] = static_cast<std::uint8_t>(0x40 + index);
+    }
+
+    const presentation::EngineHookIdentityManifest manifest{
+        .expectedQueryRva = queryRva,
+        .expectedQueryBytes = entryBytes,
+        .approvedDeviceVfuncTarget = approvedTarget,
+        .i0Approved = true
+    };
+    presentation::EngineHookIdentityObservation observed{
+        .moduleBase = moduleBase,
+        .resolvedQueryAddress = moduleBase + queryRva,
+        .queryBytes = entryBytes,
+        .resolvedHandlerVtableAddress = 0x140F00000
+    };
+    observed.handlerVtableTargets[7] = approvedTarget;
+    observed.handlerVtableTargets[8] = 0x140C1B000;
+
+    const auto verified = presentation::VerifyEngineHookIdentity(manifest, observed);
+    Require(verified.status == presentation::EngineHookIdentityStatus::Verified &&
+            verified.deviceVfuncSlot == 7,
+        "REL 67320 bytes and exactly one I-0 recorded handler slot must verify together");
+
+    auto wrongAddress = observed;
+    ++wrongAddress.resolvedQueryAddress;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, wrongAddress).status ==
+            presentation::EngineHookIdentityStatus::QueryRvaMismatch,
+        "REL 67320 resolved VA mismatch must stop before patching");
+
+    auto wrongBytes = observed;
+    wrongBytes.queryBytes[31] ^= 0xFF;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, wrongBytes).status ==
+            presentation::EngineHookIdentityStatus::QueryBytesMismatch,
+        "all 32 I-0 recorded query bytes must match exactly");
+
+    auto swappedSlot = observed;
+    swappedSlot.handlerVtableTargets[7] = 0x140C1B000;
+    swappedSlot.handlerVtableTargets[8] = approvedTarget;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, swappedSlot).deviceVfuncSlot == 8,
+        "only the slot matching the I-0 original target may be selected");
+
+    auto ambiguousSlots = observed;
+    ambiguousSlots.handlerVtableTargets[8] = approvedTarget;
+    Require(
+        presentation::VerifyEngineHookIdentity(manifest, ambiguousSlots).status ==
+            presentation::EngineHookIdentityStatus::DeviceTargetAmbiguous,
+        "matching both handler slots must fail closed as ambiguous");
+
+    auto unapproved = manifest;
+    unapproved.i0Approved = false;
+    Require(
+        presentation::VerifyEngineHookIdentity(unapproved, observed).status ==
+            presentation::EngineHookIdentityStatus::GateNotApproved,
+        "synthetic host identity cannot enable production without I-0 approval");
 }
 
 void RunPresentationProjectionTests()
@@ -1170,6 +1239,7 @@ void RunPresentationProjectionTests()
 int main()
 {
     try {
+        RunEngineHookIdentityTests();
         RunOrderedActivityRoutingAndIndependentProjectionTests();
         RunCursorPlanAckShadowTests();
         RunPresentationProjectionTests();
