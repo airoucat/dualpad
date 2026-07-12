@@ -3544,3 +3544,20 @@
   - Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadInputV2Tests`、`tests.python.test_mixed_input_wp9_wiring` 全部 exit 0。相邻 `DualPadGameplayProjectionTests`、`DualPadPromptSnapshotTests` 全部 exit 0。
   - canonical Phase 8 全量通过。期间两项旧静态治理假设已用现有红灯修正：只 allowlist 经批准的 `S-DP5-MIXED-INPUT` 活跃 Sprint；release-readiness 改验 WP7 scoped disconnect/session reset，而不恢复 global reset。
   - generated docs manifest hash 更新为 `6dc212b93576ee05`。I-0/I-1/I-2/I-MENU/I-5 均继续 NO-GO；D-G 条件 patch 未创建/未启用。下一切片进入 WP10 evaluator、evidence/CI 与最终 close-out。
+
+## 2026-07-12 14:05:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP10 start`：
+  - 从已推送 WP9 commit `eb884f3` 进入 causal trace evaluator、dynamic evidence gate、canonical CI 与 current-truth close-out。
+  - RED 已证明 evaluator/fixtures 尚不存在，closeout evidence manifest 尚未覆盖 WP4-WP10，native Sprint source-mask 静态探测尚未对齐实际 `sourceMask` 标识。
+  - 本切片只把可自动证明的 causal/runtime 合同接入 CI；I-P、I-CURSOR、I-SPRINT、I-KBM、I-0/I-1/I-2/I-MENU/I-5 无实机或 IDA 动态证据时继续记录为 `NO-GO`，不得由静态测试推导为 production approval。
+
+## 2026-07-12 14:18:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP10 automated close-out completed`：
+  - RED 已稳定复现：evaluator/fixtures 不存在；closeout evidence 缺 WP4-WP10；NativeButton `heldContributorMask` 审计未被旧静态 token 识别；dynamic evidence 无法阻止未证明 capability 被启用。
+  - 新增 causal JSONL evaluator 与 10 类负例，覆盖 neutral takeover、current/next double writer、Sprint held/final release、stale epoch/session、engine scope leak、cursor ack、Poll receipt、adapter rollback 与 synthetic takeover；good fixture 为 3 records / 0 violations。
+  - dynamic evidence checker 绑定 Skyrim SE 1.5.97 SHA-256 和 9 组 Gate；I-KBM raw reconcile/synthetic suppression 独立记录。当前所有动态门禁均 `NO-GO`，static/host proof 不会启用 production capability。
+  - Focused GREEN：两个 evaluator Python suites、phase-aware closeout contract、good fixture CLI、dynamic checker、`DualPadIngressTests` 与 `DualPadInputV2Tests` 全部 exit 0。
+  - canonical Phase8 GREEN：主 DLL、13 个 runtime/support targets build/run、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator 与 generated diff 全部 exit 0。
+  - 架构、并发、背压、backend、menu、baseline、harness、builder spec 与索引已同步；active Sprint 仍为 `S-DP5-MIXED-INPUT`，因为 gated slices 需要 IDA/实机动态证据。下一步在干净 HEAD 运行 RC readiness 与 Graphify/diff close-out。

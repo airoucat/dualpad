@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-07-12T13:47:00+08:00",
+  "updated_at": "2026-07-12T14:18:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -388,6 +388,7 @@
         "WP7 已实现 scoped epoch/session recovery、Hub 到 owner pump 的 quarantine transaction、ControlMap/context synthetic receipt reset、overflow fail-closed、gamepad disconnect KBM/Sprint 保留与可选 raw reconcile 的 pure evidence contract；I-KBM 两项 production route 仍分别 NO-GO",
         "WP8 已实现基于 ordered meaningful activity 的 prompt、menu、cursor 独立原子投影；pointer threshold/deadline、exact consume-once cursor ack 与 gameplay menu-entry intent 已接线，I-CURSOR 前 Skyrim adapter 固定 MappingUnverified 且无坐标 side effect",
         "WP9 已将 engine/device query 恢复为 original-first：REL/vtable identity 在 I-0 未批准时写前 fail-closed，availability 默认 Native，9-domain runtime snapshot 全部 Original/OriginalOnly，26 caller manifest 在 I-1 前明确未完成且 production override 为零",
+        "WP10 已建立 causal JSONL trace evaluator、动态证据 fail-closed checker、phase-aware closeout contract 与 reviewed current-truth 文档，并接入 Phase8 / RC readiness；静态自动化不会把未完成 I 节证据误报为 production GO",
         "disconnect、overflow、ControlMap reload 和 lost release 恢复路径闭合，且不修改 Favorites native gate、Interface/SWF、glyph、haptics、rumble 或无关 bindings"
       ]
     }

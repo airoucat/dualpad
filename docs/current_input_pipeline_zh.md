@@ -27,6 +27,14 @@ Generated facts 固定由 `DualPadDocGen` 输出到：
 - pulse 以 owner generation 推进，不以 Poll 次数推进；
 - menu refresh 绑定并复验单一 target，不遍历整个 menu stack。
 
+mixed-input hardening 在这条主链内补齐：
+
+- gamepad connection、完整 current-state 与 meaningful activity 分离；neutral/unchanged HID report 不生成 owner takeover。
+- Skyrim KBM callback 以 immutable ControlMap snapshot 解析 gameplay facts，并以稳定 `(device,idCode)` 保存 raw/quarantine 身份。
+- Look、Move、Combat、TransientDigital 分别仲裁 next-Poll；current-cycle 使用实际 materialized frame 的 consume-once receipt，不读取 later HID publication 猜测本轮 identity。
+- Sprint 使用 Gamepad/Keyboard/Mouse 完整 contributor mask 和 virtual bridge；disconnect 只清 gamepad scope，K/M contributor 可继续保持 aggregate held。
+- prompt、menu/navigation 与 cursor 独立投影；engine query 默认 original，不由 prompt、connectivity 或任一单通道 owner 全局翻转。
+
 保留的 legacy-named 入口只承担兼容 adapter / shim 职责：
 
 - `src/input/injection/PadEventSnapshotProcessor.*`
@@ -52,6 +60,8 @@ Generated facts 固定由 `DualPadDocGen` 输出到：
 - Skyrim compatibility surface：提供 `IsUsingGamepad`、cursor owner、remap/menu enable 等黑盒观察面。
 - Prompt / Scaleform compatibility：旧 SWF API 继续经 `ScaleformGlyphBridge` 转发到 prompt runtime owner / adapter，不改旧返回 shape。
 - Keyboard helper：仍作为 helper backend / simulated keyboard route 使用，不是 Skyrim PC native event 默认主线。
+
+其中 Skyrim compatibility surface 已改为 Original-first gateway：production caller manifest 仍有 26 个 release-relevant unknown caller，I-0/I-1/I-2/I-MENU/I-5 未闭合前不启用 engine/device/menu/transform override。current-cycle event mutation、cursor 坐标写入、raw reconcile 与 synthetic suppression 也分别保持 shadow 或禁用；详见 [research/skyrim_mixed_input_dynamic_evidence_zh.md](research/skyrim_mixed_input_dynamic_evidence_zh.md)。
 
 ## PH8b 治理边界
 

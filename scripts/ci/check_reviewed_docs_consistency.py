@@ -198,8 +198,8 @@ def main() -> int:
             failures.append(f"docs/authoritative-baseline/work-packages/README.md: missing current status marker {marker}.")
     if "`DP5`：`in_progress` / `passes=false`（post-closeout field-readiness hotfix；不是新的 runtime phase）" not in work_packages:
         failures.append("docs/authoritative-baseline/work-packages/README.md: DP5 must identify the active post-closeout hotfix without reopening a runtime phase.")
-    if "当前无活跃 Sprint；最近完成：`S-DP5-RC20-HOTFIX`" not in work_packages:
-        failures.append("docs/authoritative-baseline/work-packages/README.md: missing completed RC20 hotfix marker.")
+    if "当前活跃 Sprint：`S-DP5-MIXED-INPUT`；最近完成：`S-DP5-RC20-HOTFIX`" not in work_packages:
+        failures.append("docs/authoritative-baseline/work-packages/README.md: missing active mixed-input and completed RC20 hotfix markers.")
 
     status_docs = [
         pathlib.Path("README.md"),

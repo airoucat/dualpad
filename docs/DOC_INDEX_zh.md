@@ -4,7 +4,7 @@
 
 ## 当前工作状态
 
-- 当前无活跃 Sprint；最近完成的 `S-DP5-RC20-HOTFIX` 是 post-closeout field-readiness hardening，当前发布状态为 `GO WITH NATIVE FAVORITES DISABLED`。
+- 当前活跃 `S-DP5-MIXED-INPUT` 是 post-closeout mixed-input hardening；最近完成的 `S-DP5-RC20-HOTFIX` 保持 `GO WITH NATIVE FAVORITES DISABLED` 条件发布状态，未闭合 mixed-input capability 单独保持 `NO-GO`。
 - `PH8b` 已完成；`PH0` - `PH8b` closeout 已收口。
 - `DP5-RC20` U0-U5 已完成；后续为 RC evidence / field-readiness fixes 与实机 QA，不是新 runtime phase。
 - `PR-A`、`PR-B1`、`PR-B2`、`PR-B3` 已合入；`PR-C` 只修正文档合同卫生、死链和状态滞后。
@@ -42,9 +42,10 @@
 - [testing/rc20_runtime_validation.md](testing/rc20_runtime_validation.md)
 - [research/skyrim_xinput_poll_callsite.md](research/skyrim_xinput_poll_callsite.md)
 - [research/skyrim_mixed_input_mode_queries_zh.md](research/skyrim_mixed_input_mode_queries_zh.md)（多设备 Poll、engine gamepad-enabled 查询和二维输入变换的 IDA 证据）
+- [research/skyrim_mixed_input_dynamic_evidence_zh.md](research/skyrim_mixed_input_dynamic_evidence_zh.md)（mixed-input I 节动态门禁、目标二进制绑定、当前 NO-GO capability 与唯一出口台账）
 - [reviews/2026-07-11-mixed-input-solution-plan-request_zh.md](reviews/2026-07-11-mixed-input-solution-plan-request_zh.md)（要求外部 GPT 制定可执行正式方案的主提示词）
 - [reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md](reviews/2026-07-11-mixed-input-feasibility-gpt-review-brief_zh.md)（专项可行性与外部审查材料，不替代 current truth）
-- [plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md](plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md)（经当前代码与 IDA 事实修订的正式实施计划；尚未登记活跃 Sprint，mixed-input 仍为 `NO-GO`，不替代 authoritative baseline）
+- [plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md](plans/2026-07-12-dualpad-mixed-input-formal-implementation-plan_zh.md)（`S-DP5-MIXED-INPUT` 的批准执行合同；WP0-WP10 自动化实现已落地，I 节未闭合 capability 继续 `NO-GO`，不替代 authoritative baseline）
 - [menu_context_policy_current_status_zh.md](menu_context_policy_current_status_zh.md)
 - [authoritative-baseline/README.md](authoritative-baseline/README.md)
 - [harness/dualpad-builder.md](harness/dualpad-builder.md)

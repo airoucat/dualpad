@@ -8,6 +8,8 @@
 | --- | --- | --- |
 | axes / triggers / current physical mask | `LatestPadState` complete-generation publication | 连续状态只需要最新完整值，不应按 HID report 排队 |
 | source evidence snapshot | `LatestSourceEvidence` | 重复 evidence latest-wins；device-family change 仍作为 boundary 入队 |
+| gamepad connectivity / current-state / meaningful activity | 三份独立事实 | report arrival 不等于 activity；neutral/unchanged report 仍可更新完整 current-state，但不能续 owner lease |
+| KBM current physical ledger | latest snapshot，稳定 `(device,idCode)` identity | ControlMap binding index 可重排，不能成为跨 snapshot 持久身份 |
 | digital press/release | bounded ordered queue | edge 不可覆盖、乱序或重复 |
 | manifest/UI/device boundary | bounded ordered queue | 必须在对应后续 edge 前消费 |
 | reset / overflow marker | bounded ordered queue | 建立显式 recovery barrier，不静默丢历史 |
@@ -25,6 +27,8 @@ ordered queue 的唯一顺序权威是 `IngressEvent.seq`。该序号在 `Ingres
 2. 内部完整的 latest state/source generations。
 
 latest analog 可以领先仍在 backlog 中的同 context/device digital edge，但 normal digital reducer 只由已 drain edge 推进。`currentDownMask` 只用于 overflow 后建立 clean physical baseline，不能在正常路径猜造 press/release。
+
+每份 latest fact 额外携带 `causalOrderedTailSeq`、`inputStateEpoch` 与适用的 `gamepadSessionId`。只有 causal tail 不领先本轮累计 cutoff 且 epoch/session 与 boundary transaction 一致时才可进入 Stable frame；later HID generation 不能倒灌进已由旧 Poll receipt 锁定的 current-cycle decision。
 
 `LatestSourceEvidence` 也可能已经描述仍位于本轮 ordered cutoff 之后的 `DeviceFamilyChanged` marker。此时 assembler 必须延迟 latest generation，直到匹配 revision 的 marker 被消费；不能把“latest 快照领先 capture cutoff”当作 marker mismatch 或 `ExplicitReset`。配对完成前，latest pad 与 ordered pad facts 均不得生成新 boundary 的 `Stable` frame。真正同一 ordered pairing 内的不一致仍保持 fail-closed。
 
@@ -50,6 +54,8 @@ latest analog 可以领先仍在 backlog 中的同 context/device digital edge�
 ## Overflow 与恢复
 
 ordered queue overflow 会压缩为 typed `QueueOverflow` marker，保留 latest axes/current physical mask 与必要 boundary facts，丢弃已无法证明顺序的 volatile edge history。之后 transient digital 冻结，直到观察到全键释放建立 clean baseline；该 release 本身不泄漏 stale pulse，下一次新 press 才恢复正常 edge delivery。
+
+触发 overflow 的 incoming batch 不提交 ordered/semantic action。只有完整且可以安全保存的 physical analog/current-state 可作为 recovery-stamped latest 保留，并显式标记 `virtualGameplayEligible=false`；Hub 在同一 owner transaction 推进 epoch 并发布 recovery request，防止旧 held 在新边界重附着。
 
 该策略优先保证“不制造错误动作”和“模拟量不冻结”，而不是在历史已丢失时猜测用户意图。
 

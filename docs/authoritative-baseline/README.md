@@ -11,14 +11,16 @@
 
 它不替代 `README.md`、`src/ARCHITECTURE.md`、`docs/DOC_INDEX_zh.md` 或 generated facts。
 
-## 当前工作路（2026-07-11）
+## 当前工作路（2026-07-12）
 
-- 当前活跃 Sprint：无；最近完成 `S-DP5-RC20-HOTFIX`。
+- 当前活跃 Sprint：`S-DP5-MIXED-INPUT`；实施基线固定为 `3985eea35a84ec7952a88f8dfd13c068391fc28b`。
+- 当前切片：WP0-WP10 自动化实现与 CI/docs close-out 已推进；I-P、I-CURSOR、I-SPRINT、I-KBM、I-0/I-1/I-2/I-MENU/I-5 仍等待动态证据，对应 production capability 保持 `NO-GO`。
 - 最近完成内容：在 `DP5-RC20` U0-U5 closeout 之后，收口输入实时性、runtime concurrency、immutable poll publication、Favorites crash containment 与 matching safe-smoke 动态证据；这是 post-closeout field-readiness hotfix，不是新 runtime phase。
 - 已完成阶段：`PH0` - `PH8b`
 - 当前边界：
   - `PH8a` 已完成 runtime closeout；`PH8b` 不负责 runtime 主线裁决。
   - `DP5-RC20` 是 post-closeout hardening / RC readiness，不是新的 runtime phase。
+  - `DP5-MIXED-INPUT` 同样是 post-closeout hardening；不得创建 PH9，也不得用静态证据启用动态门禁 capability。
   - `DP5` 当前为 `in_progress` / `passes=false`；Unit 1-9 与摇杆/Journal matching safe smoke 已完成，Unit 10 只剩 native Favorites 的完整动态证据。
   - native `Game.Favorites` 在 matching dump / IDA 与真实游戏循环闭环前保持 fail-closed；当前 release status 为 `GO WITH NATIVE FAVORITES DISABLED`。
   - `PR-A`、`PR-B1`、`PR-B2`、`PR-B3` 已合入；`PR-C` 只收口文档合同卫生、死链和状态滞后。

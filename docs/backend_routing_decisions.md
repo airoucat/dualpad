@@ -22,6 +22,8 @@
 - `PollOutputFrame` 是当前完整、同代且不可变的虚拟 XInput authority；`AuthoritativePollState` 只保留 legacy compatibility。
 - Skyrim 原生 user event 尽量由游戏自己的 `producer / handler` 从这份硬件状态推导；Poll reader 不修改 packet、pulse 或 runtime state。
 
+mixed-input 不新增第三条 backend。KBM gameplay facts 只参与 per-channel ownership、physical-first current-cycle decision 与 sustained contributor aggregation；最终 virtual 输出仍由同一个 `PollCommitCoordinator` materialize。Skyrim 原生 KBM event 继续存在，不由 keyboard helper 取代。
+
 ## 当前 backend ownership
 
 ### 1. `NativeButtonCommitBackend`
@@ -42,6 +44,8 @@
 - 消费 `FrameActionPlan`。
 - 通过 `PollCommitCoordinator` 维护 owner-generation 可见性；Poll 次数不是 pulse clock。
 - 输出的是标准手柄硬件位，不直接构造 `BSInputEvent`。
+
+Sprint 是 sustained 特例：backend 每 owner frame 原子同步 Gamepad/Keyboard/Mouse 三位完整 contributor mask。需要 virtual bridge 时只由 coordinator 管理一次 Down 与最终一次 Up；K-only/M-only 不合成 virtual press，non-final contributor release 不清 aggregate held。
 
 ### 2. `AxisProjection`
 
@@ -152,3 +156,10 @@
 - 原生线优先 materialize 标准手柄硬件位 / 轴，再交给 Skyrim 自己解释。
 - mod 线单独走 keyboard helper，不与原生线混用。
 - upstream hook 只有 transactional install 成功后才能激活；unsafe partial 保持 original passthrough 并 fail-closed。
+
+## current-cycle 与可选 patch 边界
+
+- next-Poll Look/Move/Combat/TransientDigital gate 已是 production authority；四通道彼此不共享 writer。
+- current-cycle adapter 当前仅 shadow audit，`ProductionMutationEnabled=false`。I-P 未闭合前不能修改 Skyrim event list，adapter 失败也不能推进 transient、Sprint、channel 或 backend ledger。
+- raw-state reconcile 与 synthetic helper suppression 是 I-KBM 的两个独立 capability；当前都禁用。来源不可证时按 physical event 处理或关闭冲突 helper route，禁止按 token/time window 吞同 scancode 真实输入。
+- engine/device/menu/transform patch 分别服从 I-0、I-1、I-2、I-MENU、I-5；未批准 domain 只调用 original。

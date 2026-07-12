@@ -26,7 +26,7 @@
 - 当前唯一正式支持面仍是：
   - `Skyrim SE 1.5.97`
   - `CommonLibSSE-NG`
-- `PH0` - `PH8b` closeout 已收口；当前无活跃 Sprint，且不新增后续 runtime phase。
+- `PH0` - `PH8b` closeout 已收口；当前活跃 `S-DP5-MIXED-INPUT` 仅是 post-closeout hardening，不新增后续 runtime phase，也不重开既有 authority。
 - `PH8a` 已完成 runtime closeout；`PH8b` 已完成 governance closeout，后续治理工作不能重开 runtime 主线裁决。
 - `ScaleformGlyphBridge`、`GlyphResolutionCompat` 与旧 SWF API 只允许作为 `PromptRuntimeOwner / PromptService` 的兼容包装层，不得恢复 `BindingManager`、trigger reverse lookup 或 menu fallback authority。
 - 动态图标当前已落地、且可直接在 repo 内继续维护的 surface 是：
@@ -120,7 +120,7 @@
   先读 `docs/menu_context_policy_current_status_zh.md`、`docs/gameplay_input_ownership_investigation_and_plan_zh.md`、`docs/gameplay_sustained_digital_and_cursor_handoff_plan_zh.md`。
 
 - “我要改动态 glyph”
-  先读 `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md`、`docs/main_menu_glyph_current_status_zh.md` 和当前 `.dualpad-builder/sprint_plan.json`，确认当前无活跃 Sprint；当前 compat surface 只能沿 `PromptRuntimeOwner / PromptService` 包装层维护。`docs/dynamic_glyph_svg_system_plan_zh.md` 只用于长期 SVG / Widget 方案，不替代当前 compat surface 合同。
+  先读 `docs/authoritative-baseline/README.md`、`docs/authoritative-baseline/work-packages/README.md`、`docs/main_menu_glyph_current_status_zh.md` 和当前 `.dualpad-builder/sprint_plan.json`；当前 mixed-input Sprint 不改变 glyph scope，compat surface 仍只能沿 `PromptRuntimeOwner / PromptService` 包装层维护。`docs/dynamic_glyph_svg_system_plan_zh.md` 只用于长期 SVG / Widget 方案，不替代当前 compat surface 合同。
 
 - “按默认工作流继续”
   先读 `docs/harness/dualpad-builder.md`、`.dualpad-builder/spec.md`、`.dualpad-builder/feature_list.json`、`.dualpad-builder/sprint_plan.json` 和 `.dualpad-builder/progress.md`，然后按 `Planner -> ce:plan`、`Generator -> ce:work`、`Evaluator -> ce:review` 推进当前 slice。

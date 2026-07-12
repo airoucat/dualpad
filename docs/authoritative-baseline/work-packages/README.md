@@ -13,13 +13,15 @@
 - `DP4a`：`completed`
 - `PH0` - `PH8b`：`completed`
 - `DP5`：`in_progress` / `passes=false`（post-closeout field-readiness hotfix；不是新的 runtime phase）
-- 当前无活跃 Sprint；最近完成：`S-DP5-RC20-HOTFIX`
+- `DP5-MIXED-INPUT`：`in_progress` / `passes=false`（post-closeout mixed-input hardening；不是新的 runtime phase）
+- 当前活跃 Sprint：`S-DP5-MIXED-INPUT`；最近完成：`S-DP5-RC20-HOTFIX`
 
 状态模型：
 
 - `PH0` - `PH8b` 是已完成的 rearchitecture / closeout 链。
 - `DP1` - `DP4` 已按 PH8b baseline 结算为 completed，不再代表未完成 current runtime work。
 - `DP5` / `S-DP5` 是既有 post-closeout hardening / RC readiness 记录面；U0-U5 已完成。`S-DP5-RC20-HOTFIX` 已完成 field-readiness 修复与 safe-smoke 证据闭环，不阻塞或重开 PH8b runtime closeout。
+- `S-DP5-MIXED-INPUT` 按 `WP0 -> WP0.5 -> WP1 ... WP10 -> gated slices` 执行；自动化实现不等于 I 节动态批准，未闭合 capability 保持 shadow 或 `NO-GO`。
 
 ## PH8b Governance Closeout
 
@@ -37,7 +39,7 @@
 - `DP1` - `DP4` 已同步结算为 `completed` / `passes=true`，避免与 `PH0` - `PH8b` closeout 形成第二状态口径。
 - `S-DP5` 保留为既有 U0-U5 closeout 记录；`S-DP5-RC20-HOTFIX` 已完成，但 `DP5` 因 native Favorites 完整动态验证未完成而保持 `in_progress` / `passes=false`。该 hotfix 是 field-readiness 修正，不是 U6 或新 runtime phase。
 - `.dualpad-builder/feature_list.json` 中 `PH8b` 为 `completed` / `passes=true`。
-- `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 与 `S-DP5-RC20-HOTFIX` 均为 `completed`，`current_sprint=null`。
+- `.dualpad-builder/sprint_plan.json` 中 `S-PH8b` 与 `S-DP5-RC20-HOTFIX` 均为 `completed`，当前 `current_sprint=S-DP5-MIXED-INPUT`。
 - 本 closeout 不新增后续 runtime phase。
 
 ## DP5-RC20 Post-Closeout Hardening

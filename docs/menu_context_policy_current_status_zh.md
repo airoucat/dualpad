@@ -16,6 +16,10 @@
 - `PresentationProjection` 决定 owner/cursor、device family、refresh eligibility 和目标菜单身份。
 - `SkyrimCompatibilitySurface` 只消费已发布状态，不跨线程读取 registry 拼装第二份 truth。
 
+mixed-input 下 presentation 不再折叠为单一 global owner：prompt family、menu/navigation owner、cursor requested owner 与 cursor committed owner 分别投影并在同一 publication 原子发布。gameplay channel owner 和 engine query domain 不由这些 presentation 字段反向决定。
+
+ordered keyboard/mouse button、mouse click/wheel 和 gamepad navigation 是 strong activity；neutral/release/idle HID 不切换 owner。pointer-only movement 累计达到 10 px 后建立 candidate，由 owner clock 在 120 ms deadline 一次性 promotion，即使没有后续 mouse event；它只改变 cursor/prompt，不改变 menu/navigation owner 或 `_root.SetPlatform`。candidate 后更高 ingress seq 的 strong activity 会取消旧 promotion。
+
 `config/DualPadMenuPolicy.ini` 仍是 checked-in 配置输入，但它通过 current config/catalog compiler 进入 input-v2；不再由旧 policy singleton 独立裁决 runtime context。
 
 ## 菜单名称与上下文名称
@@ -55,6 +59,10 @@ verified UI task 只调用 `UI::GetMenu(capturedName)` 获取一个 target，并
 5. Loading/Fader/MessageBox/Favorites 等 denied target 不刷新。
 
 任何路径都不会遍历 `RE::UI::menuStack` 或刷新其它菜单。
+
+cursor handoff 独立执行 `Plan -> UI side effect -> Ack -> next owner tick commit`。UI task 必须复验 menu/movie identity、context revision、presentation epoch 与 token；position sync 需要成功且 read-back 可证才允许 ack。I-CURSOR 未闭合前 Skyrim adapter 固定返回 mapping unverified，不写坐标，也不直接提交新 cursor owner。
+
+菜单平台 query 默认 original。I-MENU 尚无每 epoch 单次 refresh 的 matching 实机唯一出口，因此不会安装 direct callsite patch，也不会用 prompt owner 或 connectivity 全局翻转 SetPlatform。
 
 ## Unknown / degraded menu
 

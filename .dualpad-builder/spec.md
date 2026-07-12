@@ -43,7 +43,7 @@
 - `B5` `DP5` 必须把验证、cleanup、handoff 和 workflow honesty 串成 post-closeout hardening 链；它不是新的 runtime phase
 - `B6` 所有默认工作流都必须同步更新 `.dualpad-builder/` 记忆层
 - `B7` Graphify 本地自动化必须可初始化、可重建、可查询
-- `B8` mixed-input 必须严格执行 `WP0 -> WP0.5 -> WP1 -> ...`；当前仅登记并执行 WP0 / WP0.5，所有需 IDA 动态证据的 production capability 保持 shadow 或 `NO-GO`
+- `B8` mixed-input 必须严格执行 `WP0 -> WP0.5 -> WP1 -> ... -> WP10 -> gated slices`；WP0-WP10 自动化实现已推进，所有尚缺 IDA / 实机动态证据的 production capability 继续保持 shadow 或 `NO-GO`
 
 ## Non-Goals
 

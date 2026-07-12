@@ -268,6 +268,28 @@
       "productionCallerOverrides": 0,
       "releaseRelevantUnknownCallers": 26,
       "dynamicGates": ["I-0", "I-1", "I-2", "I-MENU", "I-5"]
+    },
+    "WP10": {
+      "status": "completed",
+      "red": [
+        "evaluate_mixed_input_trace.py and JSONL fixtures did not exist",
+        "closeout evidence manifest did not record WP4 through WP10",
+        "dynamic evidence state could enable an unproven production capability without a fail-closed checker"
+      ],
+      "focused": [
+        "python tests/python/test_evaluate_mixed_input_trace.py",
+        "python tests/python/test_check_mixed_input_dynamic_evidence.py",
+        "python tests/python/test_mixed_input_closeout_contracts.py --phase closeout",
+        "python scripts/ci/evaluate_mixed_input_trace.py tests/fixtures/mixed_input/good.jsonl"
+      ],
+      "adjacent": [
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_phase8_ci.ps1",
+        "powershell -ExecutionPolicy Bypass -File scripts/ci/run_rc_readiness.ps1 -ExpectCleanManifest",
+        "python3 scripts/dev/setup_graphify_local.py rebuild --reason manual-closeout",
+        "git diff --check"
+      ],
+      "dynamicReleaseStatus": "NO-GO",
+      "productionCapabilityEnabledByStaticEvidence": false
     }
   },
   "dynamicEvidence": {
