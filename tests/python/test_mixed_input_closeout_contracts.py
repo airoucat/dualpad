@@ -259,8 +259,13 @@ class MixedInputCloseoutContractTests(unittest.TestCase):
         i0 = dynamic["gates"]["I-0"]
         self.assertTrue(i0["queryEntrySignatureVerified"])
         self.assertEqual(i0["delegateSlotIndex"], 7)
-        self.assertFalse(i0["runtimeOriginalTargetVerified"])
+        self.assertEqual(i0["identityVerdict"], "PASS")
+        self.assertTrue(i0["runtimeHandlerVtableVerified"])
+        self.assertTrue(i0["runtimeOriginalTargetVerified"])
+        self.assertEqual(i0["availabilityVerdict"], "pending-A-B-matrix")
+        self.assertFalse(i0["productionPatchEnabled"])
         self.assertEqual(i0["status"], "NO-GO")
+        self.assertFalse(i0["manualEvidenceComplete"])
         self.assertFalse(i0["capabilityEnabled"])
 
         i1 = dynamic["gates"]["I-1"]

@@ -3696,3 +3696,19 @@
   - 主线程顺序 `ce:review` 覆盖 correctness、testing、maintainability、project standards、agent-native、learnings、api-contract、reliability、kieran-python 与 adversarial；2 个 safe-auto finding（slot 7 唯一性、artifact schema version）均已修复，复审无剩余置信度不低于 `0.60` 的 finding。review artifact：`.context/compound-engineering/ce-review/20260712-i0-handler-vftable-identity/review.md`。
   - canonical Phase 8 GREEN；Graphify manual closeout：`2375 nodes / 5662 edges / 169 communities`。Phase Closure：静态 COL/vftable/slot/original target 身份 PASS；clean-build DataLoaded runtime vptr 重检仍 pending，因此 I-0 整体继续 NO-GO，其他 8 个动态 Gate 不变。
   - 实现提交 `f76a53a fix(skyrim): distinguish handler COL from vftable` 已推送。随后从 clean HEAD 强制重编译并部署 `G:/skyrim_mod_develop/mods/dualPad/SKSE/Plugins/DualPad.dll`；内嵌 build identity `f76a53a91263`，SHA-256 `EE4540B1E4EF98D67888D8AB23001F6D431471948282D5C5D01F974A2510C37A`。该候选仅用于下一次只读 DataLoaded probe，不启用 production patch。
+
+## 2026-07-12 16:11:31 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 clean-build runtime identity verification PASS`：
+  - 用户按最小步骤启动至主菜单、等待并退出；live log 最后写入时间为 `2026-07-12 16:11:31 +08:00`，构建身份精确为 `f76a53a91263 / Skyrim 1-5-97-0`。
+  - DataLoaded probe：`staticQueryIdentityMatched=true`、`handlerColMatched=true`、`runtimeDevicePresent=true`、`runtimeVtableMatched=true`；`handlerColRva=0x175E848`、COL target `0x194DA20`、正式 vftable 与 live vptr 均为 `0x175E850`。
+  - 同一 address point 的 `slot7TargetRva=0xC19E00`，与 matching IDA 的 `IsEnabled` original target 完全一致；slot `8=0xC19980`、index `9=0x194D988` 边界也与版本化 artifact 一致。I-0 的 REL/vftable/slot/original-target identity 子门判定 PASS。
+  - 总 Gate 仍为 `NO-GO`：计划 I.2 还要求 neutral/LS/RS/LT-RT/button、KBM activity、gameplay/menu/remap 的 A/B availability 动态矩阵，以唯一选择 `Native` 或 `ScopedConnectivity`。当前 `verification=i0_gate_not_approved`、`patchEligible=false`，未启用任何 production patch。
+
+## 2026-07-12 16:14:36 +08:00
+
+- `S-DP5-MIXED-INPUT / I-0 identity evidence governance sync`：
+  - TDD RED：live identity 证据将 `runtimeOriginalTargetVerified` 合法推进为 true 后，旧 closeout 测试仍把 false 当作永久代理，1/10 失败；该失败不涉及 production runtime。
+  - 最小治理修正将身份和 availability 分离：允许 `identityVerdict=PASS`、runtime vtable/original target verified，同时强制 `availabilityVerdict=pending-A-B-matrix`、`productionPatchEnabled=false`、`manualEvidenceComplete=false`、`capabilityEnabled=false` 和 I-0 总状态 `NO-GO`。
+  - GREEN：`python tests/python/test_mixed_input_closeout_contracts.py --phase closeout` 为 10/10；`python scripts/ci/check_mixed_input_dynamic_evidence.py` 报告 `releaseStatus=NO-GO gates=9`；JSON parse 与 `git diff --check` 通过。
+  - canonical Phase 8 GREEN：主 DLL、全部 runtime/support targets、DocGen、reviewed docs、legacy authority、release readiness、config/prompt/menu/glyph closure、mixed trace evaluator、IDA static checker 与 generated diff 全部 exit 0。Graphify manual closeout：`2375 nodes / 5662 edges / 169 communities`。

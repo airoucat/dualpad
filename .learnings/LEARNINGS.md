@@ -368,3 +368,5 @@ Skyrim SE 1.5.97 中 `REL 560029 -> RVA 0x175E848`，其 qword 指向 `BSPCGamep
 ### Resolution
 
 probe 同时记录 `REL 560029` 的 COL entry/target 和 `REL 285457` 的 vftable address point；verifier 将 `IsEnabled` 唯一锁定到 slot `7`。production manifest 继续 `i0Approved=false`，等待 clean-build DataLoaded runtime 重检。
+
+clean build `f76a53a91263` 的 DataLoaded 实机日志已完成该重检：COL、正式 vftable、live vptr 与 slot `7 -> 0xC19E00` 全部匹配。该结果只关闭 identity 子门；I-0 availability 的 A/B 动态矩阵仍独立 pending。

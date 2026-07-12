@@ -361,3 +361,14 @@ Command failures, exceptions, and unexpected behaviors.
 - Related files: `.dualpad-builder/progress.md`, `.learnings/LEARNINGS.md`
 - Suggested fix: 保留本地提交，先安全重试一次；若仍失败，明确报告分支 ahead 状态并等待网络恢复后重推。
 - Resolution: 未改变提交历史或远端引用，第二次普通 push 成功发布 `6381b9a`；首次失败确认为瞬时网络故障。
+
+## ERR-20260712-019
+
+- Logged: 2026-07-12 16:14 CST
+- Priority: medium
+- Status: resolved
+- Area: CI / dynamic gate contract drift
+- Summary: I-0 live identity 子门通过后，closeout 测试仍把 `runtimeOriginalTargetVerified=false` 当作永久 NO-GO 条件。
+- Detail: DataLoaded probe 已合法证明 handler vftable、live vptr、slot 7 与 original target 一致，但 A/B availability matrix 尚未完成，因此完整 I-0 仍必须 NO-GO。旧断言混淆了“身份未验证”和“能力未获批准”两个独立状态。
+- Related files: `.dualpad-builder/mixed_input_evidence.json`, `tests/python/test_mixed_input_closeout_contracts.py`
+- Resolution: TDD 红灯保留为证据；测试改为接受 identity PASS，同时强制 `availabilityVerdict=pending-A-B-matrix`、`productionPatchEnabled=false`、`manualEvidenceComplete=false`、`capabilityEnabled=false` 与总状态 `NO-GO`。closeout 10 tests 和动态 gate checker 随后全绿。
