@@ -56,7 +56,8 @@ namespace dualpad::input
     {
         using namespace input_v2::ingress;
         KbmBindingSnapshot snapshot{
-            .contextRevision = context.contextRevision
+            .contextRevision = context.contextRevision,
+            .complete = false
         };
         const auto* controlMap = RE::ControlMap::GetSingleton();
         const auto* userEvents = RE::UserEvents::GetSingleton();
@@ -115,6 +116,7 @@ namespace dualpad::input
         }
         _lastFingerprint = snapshot.controlMapFingerprint;
         snapshot.generation = _bindingGeneration;
+        snapshot.complete = true;
         return snapshot;
     }
 

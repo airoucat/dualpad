@@ -42,7 +42,7 @@ class MixedInputWp2BoundaryTests(unittest.TestCase):
         ):
             self.assertIn(required, contents)
         self.assertNotIn("PublishKeyboardMouseEvidence", contents)
-        self.assertIn("if (observed.eventListComplete)", contents)
+        self.assertIn("if (bindings.complete && observed.eventListComplete)", contents)
 
         begin = contents.index("BeginFrame()")
         observe = contents.index("ObserveEventList(")

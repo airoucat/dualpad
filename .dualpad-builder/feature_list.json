@@ -6,7 +6,7 @@
     "README.md",
     "src/ARCHITECTURE.md"
   ],
-  "updated_at": "2026-07-12T11:29:22+08:00",
+  "updated_at": "2026-07-12T11:49:00+08:00",
   "features": [
     {
       "id": "WF0",
@@ -381,7 +381,7 @@
       "acceptance": [
         "本工作包是 DP5 post-closeout hardening，不创建 PH9，不重开 PH0-PH8b authority",
         "实施顺序固定为 WP0 -> WP0.5 -> WP1 -> WP2 -> WP3 -> WP4 -> WP5 shadow -> gated slices，不得跳过 WP0.5",
-        "WP0、WP0.5、WP1、WP2 已完成；KBM facts 已进入 ingress shadow transport，但 gameplay authority、raw reconcile 与 synthetic suppression production route 仍保持关闭",
+        "WP0、WP0.5、WP1、WP2、WP3 已完成；KBM facts 与 causal ingress coherence 已进入 mainline transport，但 gameplay authority、raw reconcile 与 synthetic suppression production route 仍保持关闭",
         "gamepad connectivity、current-state 与 meaningful activity 分离，原生 KBM gameplay facts 以稳定 (device,idCode) 身份发布",
         "Look、Move、Combat 与 TransientDigital 按通道仲裁，current-cycle 使用 PollMaterializationReceipt -> Prepare -> Apply -> Commit",
         "Sprint 使用多来源 contributor OR 和 virtual bridge；prompt、menu、cursor 独立投影",

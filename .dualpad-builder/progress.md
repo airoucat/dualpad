@@ -3399,3 +3399,18 @@
   - focused：`python tests/python/test_mixed_input_wp2_boundaries.py`、`xmake run -y DualPadIngressTests`、`xmake run -y DualPadInputV2Tests` 全部 exit 0。
   - adjacent：`xmake run -y DualPadContextResolverTests`、`xmake run -y DualPadPresentationProjectionTests`、`xmake build -y DualPad` 全部 exit 0；PDB 同路径占用仅产生已知 copy warning，DLL 明确 `build ok`。
   - 本 WP 只发布 coherent KBM ingress facts，未接入 gameplay gate、Sprint bridge、engine query override、cursor side effect 或其它 IDA-gated production capability。
+## 2026-07-12 11:31:32 +08:00
+
+- `S-DP5-MIXED-INPUT / WP3 start`：
+  - 按批准顺序进入 causal ingress cutoff、global epoch、gamepad session 与 recovery scope；先补 partial drain、latest-only、empty capture、overflow、disconnect/session、revision-ahead 和 atomic first-batch 红灯。
+  - 本切片不实现 WP4 channel arbitration、WP5 receipt/runtime mutation，也不启用任何 IDA-gated production capability。
+## 2026-07-12 11:49:00 +08:00
+
+- `S-DP5-MIXED-INPUT / WP3 completed`：
+  - RED 覆盖 partial drain 越 cutoff 应用 latest、boundary payload 缺 control-map revision、首批 KBM event 前无 atomic marker、runtime dispatcher 丢弃完整 `IngressCapture`、HID 无 session tag、sequence gap 无 Hub reset receipt，以及 ControlMap adapter failure 仍可能推进 ledger。
+  - Hub 现在是 `inputStateEpoch`、`gamepadSessionId`、`controlMapRevision` 与 binding generation transaction 的唯一 writer；latest-only 不分配 ordered seq，empty capture 保留累计 cutoff，old epoch/session/revision latest defer 或 drop。
+  - `FrameAssembler` 按 causal tail/cumulative cutoff 应用 pad、connection、KBM latest；overflow/global reset 清除 durable gameplay carry，gamepad disconnect 只清 gamepad scope并保留 KBM Move/Sprint facts；ordered seq gap 同 tick产生 fail-closed transition并请求 Hub global reset receipt。
+  - gamepad report 携带 producer 已确认 session；old-session 大 generation report 被明确拒绝且 HID reader 会重置 classifier/baseline并重新发布 connection。connectivity 不受 context/control-map epoch 误清，pad current-state则继承 Hub 当前 context/menu boundary。
+  - owner KBM batch在容量检查通过后原子提交 boundary marker、new `IngressBoundaryKey`、binding generation、首个 ordered event与 latest；overflow只保留完整物理 current-state，标记 virtual-ineligible，不制造 ordered/semantic action，也不让旧 held在后续 KBM frame重附着。
+  - focused 与相邻回归已通过：Ingress、InputV2、Replay、Property、Fuzz、两个 Python boundary tests及主 DLL build 均 exit 0；最终 fresh rerun 与 Graphify 在 commit 前执行。
+  - WP4 channel arbitration、WP5 current-cycle receipt/runtime mutation和所有 IDA-gated capability仍未启用。

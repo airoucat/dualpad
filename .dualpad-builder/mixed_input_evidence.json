@@ -109,6 +109,35 @@
       "syntheticSuppressionRouteEnabled": false,
       "gameplayAuthorityEnabled": false,
       "dynamicGateRequired": false
+    },
+    "WP3": {
+      "status": "completed",
+      "red": [
+        "partial capture cutoff 1 applied a latest pad state bound to causal tail 2",
+        "atomic boundary fixture could not compile because UiSnapshotPayload lacked controlMapRevision",
+        "new boundary had no ordered marker before its first KBM edge",
+        "runtime dispatcher discarded IngressCapture cutoff/epoch/session metadata by calling the legacy Assemble overload",
+        "HID reports had no acknowledged producer gamepad session and stale-session rejection was indistinguishable from overflow",
+        "ordered sequence gaps emitted a transition but had no Hub-owned global reset receipt",
+        "ControlMap adapter singleton failure could still advance the KBM producer ledger"
+      ],
+      "focused": [
+        "python tests/python/test_mixed_input_wp2_boundaries.py",
+        "python tests/python/test_mixed_input_wp3_boundaries.py",
+        "xmake run -y DualPadIngressTests",
+        "xmake run -y DualPadInputV2Tests"
+      ],
+      "adjacent": [
+        "xmake run -y DualPadReplayTests",
+        "xmake run -y DualPadPropertyTests",
+        "xmake run -y DualPadFuzzRegressionTests",
+        "xmake build -y DualPad"
+      ],
+      "causalCutoffEnabled": true,
+      "globalEpochOwner": "IngressHub",
+      "gamepadSessionEnabled": true,
+      "gameplayAuthorityEnabled": false,
+      "dynamicGateRequired": false
     }
   },
   "closeoutPolicy": {

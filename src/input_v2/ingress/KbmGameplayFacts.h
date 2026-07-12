@@ -119,6 +119,7 @@ namespace dualpad::input_v2::ingress
         std::uint64_t controlMapFingerprint{ 0 };
         std::uint32_t controlMapRevision{ 0 };
         std::uint32_t contextRevision{ 0 };
+        bool complete{ true };
         std::vector<KbmBindingEntry> entries;
     };
 
@@ -201,12 +202,14 @@ namespace dualpad::input_v2::ingress
         CausalLatestHeader causal{};
         std::uint64_t ownerTickToken{ 0 };
         std::uint64_t eventBatchToken{ 0 };
+        std::uint64_t bindingGeneration{ 0 };
         KbmGameplayCurrentFacts current{};
         KbmPhysicalLedger physical{};
         std::uint64_t lastPhysicalMouseMoveOwnerUs{ 0 };
         bool physicalMouseMoveThisFrame{ false };
         KbmBaselineState baseline{ KbmBaselineState::Clean };
         InputResetReasonMask resetReasons{ 0 };
+        bool virtualGameplayEligible{ true };
     };
 
     struct KbmGameplayIngressBatchDraft

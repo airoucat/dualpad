@@ -57,6 +57,8 @@ namespace dualpad::input_v2::ingress
     {
         std::uint32_t contextRevision{ 0 };
         std::uint32_t menuStackRevision{ 0 };
+        std::uint32_t controlMapRevision{ 0 };
+        std::uint64_t bindingGeneration{ 0 };
     };
 
     struct HostFactsPayload

@@ -6,6 +6,7 @@
 #include "input_v2/ingress/MeaningfulSourceActivity.h"
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace dualpad::input_v2::ingress
@@ -93,6 +94,7 @@ namespace dualpad::input_v2::ingress
     struct ClassifiedGamepadReportDraft
     {
         GamepadCurrentStateDraft current{};
+        std::optional<std::uint64_t> producerGamepadSessionId;
         std::vector<GamepadDigitalEdgeDraft> orderedDigitalEdges;
         std::vector<GamepadActivityDraft> meaningfulActivities;
         std::vector<MeaningfulSourceActivityDraft> sourceActivities;

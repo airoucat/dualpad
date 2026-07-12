@@ -17,6 +17,7 @@ namespace dualpad::input_v2::ingress
     struct PublishedIngressBatchReceipt
     {
         bool accepted{ false };
+        bool staleGamepadSession{ false };
         InputResetReasonMask publishedResetReasons{ 0 };
         InputResetScope publishedResetScope{ InputResetScope::GlobalInputState };
         std::uint64_t firstOrderedSeq{ 0 };
@@ -118,6 +119,7 @@ namespace dualpad::input_v2::ingress
         std::uint64_t _inputStateEpoch{ 1 };
         std::uint64_t _gamepadSessionId{ 0 };
         std::uint64_t _controlMapFingerprint{ 0 };
+        std::uint64_t _bindingGeneration{ 0 };
         IngressBoundaryKey _boundaryKey{};
         GamepadConnectivity _gamepadConnectivity{ GamepadConnectivity::Disconnected };
         std::size_t _pendingLegacySnapshots{ 0 };

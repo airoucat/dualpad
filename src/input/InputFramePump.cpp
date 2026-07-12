@@ -92,7 +92,7 @@ namespace dualpad::input
             frameToken,
             eventBatchToken,
             ownerNowUs);
-        if (observed.eventListComplete) {
+        if (bindings.complete && observed.eventListComplete) {
             auto kbmBatch = _kbmProducer.BuildIngressBatch(
                 observed,
                 bindings,

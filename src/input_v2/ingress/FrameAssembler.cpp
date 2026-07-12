@@ -133,7 +133,24 @@ namespace dualpad::input_v2::ingress
         _lastMonotonicUs = 0;
         _lastLatestPadGeneration = 0;
         _lastLatestSourceGeneration = 0;
+        _lastGamepadConnectionGeneration = 0;
+        _lastKbmGameplayGeneration = 0;
+        _captureOrderedCutoffSeq = 0;
+        _captureInputStateEpoch = 0;
+        _captureGamepadSessionId = 0;
+        _captureGamepadConnection.reset();
+        _captureKbmGameplay.reset();
+        _captureCoherenceActive = false;
+        _globalResetObservedThisCapture = false;
+        _pendingGlobalResetReasons = 0;
         _gamepadDownAtUs = {};
+    }
+
+    InputResetReasonMask FrameAssembler::ConsumeGlobalResetRequest() noexcept
+    {
+        const auto reasons = _pendingGlobalResetReasons;
+        _pendingGlobalResetReasons = 0;
+        return reasons;
     }
 
     std::vector<AssembledFactFrame> FrameAssembler::Assemble(const std::vector<IngressEvent>& events)
@@ -143,7 +160,17 @@ namespace dualpad::input_v2::ingress
 
     std::vector<AssembledFactFrame> FrameAssembler::Assemble(const IngressCapture& capture)
     {
+        _captureOrderedCutoffSeq = capture.orderedCutoffSeq;
+        _captureInputStateEpoch = capture.inputStateEpoch;
+        _captureGamepadSessionId = capture.gamepadSessionId;
+        _captureGamepadConnection = capture.latestGamepadConnection;
+        _captureKbmGameplay = capture.latestKbmGameplay;
+        _captureCoherenceActive = true;
+        _globalResetObservedThisCapture = false;
         auto frames = Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        _captureCoherenceActive = false;
+        _captureGamepadConnection.reset();
+        _captureKbmGameplay.reset();
         for (auto& frame : frames) {
             frame.facts.coherence = InputFactCoherenceKey{
                 .captureGeneration = capture.generation,
@@ -184,6 +211,30 @@ namespace dualpad::input_v2::ingress
                     reason = TransitionReason::QueueOverflow;
                 }
                 EmitTransition(frames, _currentKey, _currentKey, reason);
+                const auto clearGamepad = [&]() {
+                    _latestFacts.controlSamples.clear();
+                    _latestFacts.pulseLedger.clear();
+                    _latestFacts.legacySnapshot.reset();
+                    _latestFacts.gamepadConnection.reset();
+                    _gamepadDownAtUs = {};
+                };
+                const auto clearKbm = [&]() {
+                    _latestFacts.kbmGameplay.reset();
+                };
+                if (event.kind == IngressKind::InputReset) {
+                    if (event.inputReset.scope != InputResetScope::KeyboardMouseSource) {
+                        clearGamepad();
+                    }
+                    if (event.inputReset.scope != InputResetScope::GamepadSource) {
+                        clearKbm();
+                    }
+                    _globalResetObservedThisCapture = _globalResetObservedThisCapture ||
+                        event.inputReset.scope == InputResetScope::GlobalInputState;
+                } else {
+                    clearGamepad();
+                    clearKbm();
+                    _globalResetObservedThisCapture = true;
+                }
                 if (event.kind == IngressKind::QueueOverflow) {
                     ApplyOverflowCompaction(frames, event);
                 }
@@ -201,6 +252,9 @@ namespace dualpad::input_v2::ingress
                 auto nextKey = _currentKey;
                 nextKey.contextRevision = event.ui.contextRevision;
                 nextKey.menuStackRevision = event.ui.menuStackRevision;
+                if (event.ui.controlMapRevision != 0 || event.ui.bindingGeneration != 0) {
+                    nextKey.controlMapRevision = event.ui.controlMapRevision;
+                }
                 if (nextKey == _currentKey) {
                     ApplyEventToWindow(event);
                 } else {
@@ -236,6 +290,14 @@ namespace dualpad::input_v2::ingress
         }
         if (latestPadState && latestPadState->generation > _lastLatestPadGeneration) {
             ApplyLatestPadState(*latestPadState);
+        }
+        if (_captureGamepadConnection &&
+            _captureGamepadConnection->causal.generation > _lastGamepadConnectionGeneration) {
+            ApplyLatestGamepadConnection(*_captureGamepadConnection);
+        }
+        if (_captureKbmGameplay &&
+            _captureKbmGameplay->causal.generation > _lastKbmGameplayGeneration) {
+            ApplyLatestKbmGameplay(*_captureKbmGameplay);
         }
 
         FlushWindow(frames);
@@ -273,6 +335,11 @@ namespace dualpad::input_v2::ingress
                     FactHealth health{};
                     health.sequenceGap = true;
                     EmitTransition(frames, _currentKey, _currentKey, TransitionReason::SequenceGap, health);
+                    _pendingGlobalResetReasons |= ToMask(InputResetReason::SequenceGap);
+                    _latestFacts.controlSamples.clear();
+                    _latestFacts.pulseLedger.clear();
+                    _latestFacts.kbmGameplay.reset();
+                    _gamepadDownAtUs = {};
                     return true;
                 }
                 if (event.kind != IngressKind::SequenceGap && event.seq > _lastConsumedSeq + 1) {
@@ -280,6 +347,11 @@ namespace dualpad::input_v2::ingress
                     FactHealth health{};
                     health.sequenceGap = true;
                     EmitTransition(frames, _currentKey, _currentKey, TransitionReason::SequenceGap, health);
+                    _pendingGlobalResetReasons |= ToMask(InputResetReason::SequenceGap);
+                    _latestFacts.controlSamples.clear();
+                    _latestFacts.pulseLedger.clear();
+                    _latestFacts.kbmGameplay.reset();
+                    _gamepadDownAtUs = {};
                 }
             }
             _lastConsumedSeq = event.seq;
@@ -380,6 +452,9 @@ namespace dualpad::input_v2::ingress
         if (payload.hasUi) {
             nextKey.contextRevision = payload.ui.contextRevision;
             nextKey.menuStackRevision = payload.ui.menuStackRevision;
+            if (payload.ui.controlMapRevision != 0 || payload.ui.bindingGeneration != 0) {
+                nextKey.controlMapRevision = payload.ui.controlMapRevision;
+            }
         }
         if (payload.hasDeviceFamily) {
             nextKey.deviceFamilyRevision = payload.deviceFamily.deviceFamilyRevision;
@@ -554,8 +629,22 @@ namespace dualpad::input_v2::ingress
 
     void FrameAssembler::ApplyLatestPadState(const LatestPadState& latest)
     {
+        if (_captureCoherenceActive) {
+            if (latest.causalOrderedTailSeq > _captureOrderedCutoffSeq) {
+                return;
+            }
+            if (latest.inputStateEpoch != 0 &&
+                (latest.inputStateEpoch != _captureInputStateEpoch ||
+                    latest.gamepadSessionId != _captureGamepadSessionId)) {
+                _lastLatestPadGeneration = latest.generation;
+                return;
+            }
+        }
         if (!latest.virtualGameplayEligible) {
             _lastLatestPadGeneration = latest.generation;
+            _latestFacts.controlSamples.clear();
+            _latestFacts.pulseLedger.clear();
+            _gamepadDownAtUs = {};
             return;
         }
         if (_pendingDeviceMarker) {
@@ -578,6 +667,61 @@ namespace dualpad::input_v2::ingress
         if (!_pendingDeviceMarker) {
             _latestFacts = _window.facts;
         }
+    }
+
+    void FrameAssembler::ApplyLatestGamepadConnection(const GamepadConnectionFacts& latest)
+    {
+        if (_globalResetObservedThisCapture) {
+            return;
+        }
+        if (_captureCoherenceActive) {
+            if (latest.causal.causalOrderedTailSeq > _captureOrderedCutoffSeq) {
+                return;
+            }
+            if (latest.gamepadSessionId != _captureGamepadSessionId) {
+                _lastGamepadConnectionGeneration = latest.causal.generation;
+                return;
+            }
+        }
+        _lastGamepadConnectionGeneration = latest.causal.generation;
+        IngressEvent event{};
+        event.seq = _lastConsumedSeq;
+        event.monotonicUs = _lastMonotonicUs;
+        event.kind = IngressKind::HostFacts;
+        ApplyEventToWindow(event);
+        _window.facts.gamepadConnection = latest;
+        _latestFacts = _window.facts;
+    }
+
+    void FrameAssembler::ApplyLatestKbmGameplay(const LatestKbmGameplayFacts& latest)
+    {
+        if (_captureCoherenceActive) {
+            if (latest.causal.causalOrderedTailSeq > _captureOrderedCutoffSeq) {
+                return;
+            }
+            if (latest.causal.inputStateEpoch != _captureInputStateEpoch) {
+                _lastKbmGameplayGeneration = latest.causal.generation;
+                return;
+            }
+        }
+        if (!latest.virtualGameplayEligible) {
+            _lastKbmGameplayGeneration = latest.causal.generation;
+            _latestFacts.kbmGameplay.reset();
+            return;
+        }
+        if (latest.causal.contextRevision != _currentKey.contextRevision ||
+            latest.causal.controlMapRevision != _currentKey.controlMapRevision) {
+            _lastKbmGameplayGeneration = latest.causal.generation;
+            return;
+        }
+        _lastKbmGameplayGeneration = latest.causal.generation;
+        IngressEvent event{};
+        event.seq = _lastConsumedSeq;
+        event.monotonicUs = _lastMonotonicUs;
+        event.kind = IngressKind::HostFacts;
+        ApplyEventToWindow(event);
+        _window.facts.kbmGameplay = latest;
+        _latestFacts = _window.facts;
     }
 
     bool ShouldDispatchToInteractionEngine(const AssembledFactFrame& frame)

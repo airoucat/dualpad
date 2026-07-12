@@ -110,6 +110,7 @@ namespace dualpad::input_v2::ingress
             const std::vector<IngressEvent>& events,
             const std::optional<LatestPadState>& latestPadState,
             const std::optional<LatestSourceEvidence>& latestSourceEvidence);
+        InputResetReasonMask ConsumeGlobalResetRequest() noexcept;
         void Reset();
 
     private:
@@ -132,6 +133,16 @@ namespace dualpad::input_v2::ingress
         std::uint64_t _lastMonotonicUs{ 0 };
         std::uint64_t _lastLatestPadGeneration{ 0 };
         std::uint64_t _lastLatestSourceGeneration{ 0 };
+        std::uint64_t _lastGamepadConnectionGeneration{ 0 };
+        std::uint64_t _lastKbmGameplayGeneration{ 0 };
+        std::uint64_t _captureOrderedCutoffSeq{ 0 };
+        std::uint64_t _captureInputStateEpoch{ 0 };
+        std::uint64_t _captureGamepadSessionId{ 0 };
+        std::optional<GamepadConnectionFacts> _captureGamepadConnection;
+        std::optional<LatestKbmGameplayFacts> _captureKbmGameplay;
+        bool _captureCoherenceActive{ false };
+        bool _globalResetObservedThisCapture{ false };
+        InputResetReasonMask _pendingGlobalResetReasons{ 0 };
         std::array<std::uint64_t, 32> _gamepadDownAtUs{};
 
         void ApplyEventToWindow(const IngressEvent& event);
@@ -149,6 +160,8 @@ namespace dualpad::input_v2::ingress
         bool HandleOrderingViolation(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
         void HandleSourceEvidence(std::vector<AssembledFactFrame>& frames, const IngressEvent& event);
         void ApplyLatestPadState(const LatestPadState& latest);
+        void ApplyLatestGamepadConnection(const GamepadConnectionFacts& latest);
+        void ApplyLatestKbmGameplay(const LatestKbmGameplayFacts& latest);
         void ApplyLatestSourceEvidence(
             std::vector<AssembledFactFrame>& frames,
             const LatestSourceEvidence& latest);

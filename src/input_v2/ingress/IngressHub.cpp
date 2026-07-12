@@ -168,6 +168,7 @@ namespace dualpad::input_v2::ingress
         for (const auto& event : incomingEvents) {
             CaptureOverflowFact(overflow.overflow, event);
         }
+        ++_inputStateEpoch;
         _edgeHistoryLost = _edgeHistoryLost ||
             overflow.overflow.droppedControlSamples ||
             overflow.overflow.droppedPulseLedger;
@@ -187,14 +188,15 @@ namespace dualpad::input_v2::ingress
             ApplySourceEvidenceFrameLocked(*sourceEvidenceFrame, converted);
         }
 
+        std::optional<LatestPadState> incomingLatest;
         if (snapshot.type == dualpad::input::PadEventSnapshotType::Reset) {
             _latestPadState.reset();
             _previousDigitalMask = 0;
             _digitalDownAtUs = {};
             _lastUiSnapshot.reset();
         } else {
-            _latestPadState = LatestPadState{
-                .generation = ++_latestPadGeneration,
+            incomingLatest = LatestPadState{
+                .generation = _latestPadGeneration + 1,
                 .sourceSequence = snapshot.sequence,
                 .sourceTimestampUs = LatestTimestampUs(snapshot),
                 .context = snapshot.context,
@@ -271,6 +273,15 @@ namespace dualpad::input_v2::ingress
             const auto overflowSeq = NextSeqLocked();
             const auto overflowTime = snapshot.sourceTimestampUs != 0 ? snapshot.sourceTimestampUs : NowMonotonicUs();
             ReplaceBacklogWithOverflowLocked(overflowSeq, overflowTime, converted);
+            if (incomingLatest) {
+                incomingLatest->generation = ++_latestPadGeneration;
+                incomingLatest->causalOrderedTailSeq = overflowSeq;
+                incomingLatest->inputStateEpoch = _inputStateEpoch;
+                incomingLatest->gamepadSessionId = _gamepadSessionId;
+                incomingLatest->virtualGameplayEligible = false;
+                incomingLatest->recoveryReasons = ToMask(InputResetReason::QueueOverflow);
+                _latestPadState = *incomingLatest;
+            }
             if (_edgeHistoryLost &&
                 snapshot.type != dualpad::input::PadEventSnapshotType::Reset &&
                 snapshot.state.buttons.digitalMask == 0) {
@@ -296,6 +307,15 @@ namespace dualpad::input_v2::ingress
             }
             _queue.push_back(std::move(event));
         }
+        if (incomingLatest) {
+            incomingLatest->generation = ++_latestPadGeneration;
+            incomingLatest->causalOrderedTailSeq = _lastAllocatedOrderedSeq;
+            incomingLatest->inputStateEpoch = _inputStateEpoch;
+            incomingLatest->gamepadSessionId = _gamepadSessionId;
+            incomingLatest->virtualGameplayEligible = true;
+            incomingLatest->recoveryReasons = 0;
+            _latestPadState = *incomingLatest;
+        }
         if (snapshot.sequence != 0) {
             _lastLegacySequence = snapshot.sequence;
         }
@@ -313,6 +333,17 @@ namespace dualpad::input_v2::ingress
         std::optional<GamepadConnectionDraft> connection)
     {
         std::scoped_lock lock(_mutex);
+        if (report.producerGamepadSessionId &&
+            *report.producerGamepadSessionId != _gamepadSessionId) {
+            return PublishedIngressBatchReceipt{
+                .accepted = false,
+                .staleGamepadSession = true,
+                .inputStateEpoch = _inputStateEpoch,
+                .gamepadSessionId = _gamepadSessionId,
+                .contextRevision = _boundaryKey.contextRevision,
+                .controlMapRevision = _boundaryKey.controlMapRevision
+            };
+        }
         const auto orderedCount = report.orderedDigitalEdges.size() +
             report.meaningfulActivities.size() + report.sourceActivities.size();
         const auto available = _capacity > _queue.size() ? _capacity - _queue.size() : 0;
@@ -320,14 +351,13 @@ namespace dualpad::input_v2::ingress
         if (orderedCount > available) {
             const auto overflowSeq = NextSeqLocked();
             ReplaceBacklogWithOverflowLocked(overflowSeq, report.current.sourceTimestampUs, {});
-            ++_inputStateEpoch;
 
             _latestPadState = LatestPadState{
                 .generation = ++_latestPadGeneration,
                 .sourceSequence = report.current.sourceSequence,
                 .sourceTimestampUs = report.current.sourceTimestampUs,
                 .context = dualpad::input::InputContext::Gameplay,
-                .contextEpoch = 0,
+                .contextEpoch = _boundaryKey.menuStackRevision,
                 .contextRevision = _boundaryKey.contextRevision,
                 .currentDownMask = report.current.currentDownMask,
                 .state = report.current.state,
@@ -415,7 +445,7 @@ namespace dualpad::input_v2::ingress
             .sourceSequence = report.current.sourceSequence,
             .sourceTimestampUs = report.current.sourceTimestampUs,
             .context = dualpad::input::InputContext::Gameplay,
-            .contextEpoch = 0,
+            .contextEpoch = _boundaryKey.menuStackRevision,
             .contextRevision = _boundaryKey.contextRevision,
             .currentDownMask = report.current.currentDownMask,
             .state = report.current.state,
@@ -454,12 +484,37 @@ namespace dualpad::input_v2::ingress
     PublishedIngressBatchReceipt IngressHub::PublishOwnerKbmBatch(OwnerKbmIngressDraft batch)
     {
         std::scoped_lock lock(_mutex);
-        const auto orderedCount = batch.kbm.orderedEdges.size() + batch.kbm.sourceActivities.size();
+        const bool mappingChanged =
+            batch.boundary.controlMapFingerprint != _controlMapFingerprint ||
+            batch.boundary.bindingGeneration != _bindingGeneration;
+        const bool boundaryChanged =
+            batch.boundary.contextRevision != _boundaryKey.contextRevision ||
+            batch.boundary.menuStackRevision != _boundaryKey.menuStackRevision ||
+            mappingChanged;
+        const auto orderedCount = batch.kbm.orderedEdges.size() +
+            batch.kbm.sourceActivities.size() + (boundaryChanged ? 1u : 0u);
         const auto available = _capacity > _queue.size() ? _capacity - _queue.size() : 0;
         if (orderedCount > available) {
             const auto overflowSeq = NextSeqLocked();
             ReplaceBacklogWithOverflowLocked(overflowSeq, NowMonotonicUs(), {});
-            ++_inputStateEpoch;
+            _latestKbmGameplay = LatestKbmGameplayFacts{
+                .causal = CausalLatestHeader{
+                    .generation = ++_latestKbmGameplayGeneration,
+                    .causalOrderedTailSeq = overflowSeq,
+                    .inputStateEpoch = _inputStateEpoch,
+                    .contextRevision = _boundaryKey.contextRevision,
+                    .controlMapRevision = _boundaryKey.controlMapRevision
+                },
+                .ownerTickToken = batch.kbm.ownerTickToken,
+                .eventBatchToken = batch.kbm.eventBatchToken,
+                .bindingGeneration = batch.boundary.bindingGeneration,
+                .current = {},
+                .physical = batch.kbm.physical,
+                .lastPhysicalMouseMoveOwnerUs = batch.kbm.lastPhysicalMouseMoveOwnerUs,
+                .baseline = KbmBaselineState::ProviderIncomplete,
+                .resetReasons = ToMask(InputResetReason::QueueOverflow),
+                .virtualGameplayEligible = false
+            };
             return PublishedIngressBatchReceipt{
                 .accepted = false,
                 .publishedResetReasons = ToMask(InputResetReason::QueueOverflow),
@@ -472,10 +527,14 @@ namespace dualpad::input_v2::ingress
             };
         }
 
+        if (boundaryChanged) {
+            ++_inputStateEpoch;
+        }
         _boundaryKey.contextRevision = batch.boundary.contextRevision;
         _boundaryKey.menuStackRevision = batch.boundary.menuStackRevision;
-        if (batch.boundary.controlMapFingerprint != _controlMapFingerprint) {
+        if (mappingChanged) {
             _controlMapFingerprint = batch.boundary.controlMapFingerprint;
+            _bindingGeneration = batch.boundary.bindingGeneration;
             ++_boundaryKey.controlMapRevision;
         }
 
@@ -487,6 +546,21 @@ namespace dualpad::input_v2::ingress
             }
             return seq;
         };
+
+        if (boundaryChanged) {
+            IngressEvent event{};
+            event.seq = nextOrdered();
+            event.monotonicUs = NowMonotonicUs();
+            event.kind = IngressKind::UiSnapshot;
+            event.source = IngressSource::UiObserver;
+            event.ui = UiSnapshotPayload{
+                .contextRevision = _boundaryKey.contextRevision,
+                .menuStackRevision = _boundaryKey.menuStackRevision,
+                .controlMapRevision = _boundaryKey.controlMapRevision,
+                .bindingGeneration = _bindingGeneration
+            };
+            _queue.push_back(std::move(event));
+        }
 
         for (auto& draft : batch.kbm.orderedEdges) {
             IngressEvent event{};
@@ -535,12 +609,14 @@ namespace dualpad::input_v2::ingress
             },
             .ownerTickToken = batch.kbm.ownerTickToken,
             .eventBatchToken = batch.kbm.eventBatchToken,
+            .bindingGeneration = batch.boundary.bindingGeneration,
             .current = batch.kbm.completeCurrent,
             .physical = batch.kbm.physical,
             .lastPhysicalMouseMoveOwnerUs = batch.kbm.lastPhysicalMouseMoveOwnerUs,
             .physicalMouseMoveThisFrame = physicalMouseMoveThisFrame,
             .baseline = batch.kbm.baseline,
-            .resetReasons = 0
+            .resetReasons = 0,
+            .virtualGameplayEligible = true
         };
 
         return PublishedIngressBatchReceipt{
@@ -603,10 +679,25 @@ namespace dualpad::input_v2::ingress
             ++_gamepadSessionId;
         }
         _latestPadState.reset();
+        IngressEvent reset{};
+        reset.seq = NextSeqLocked();
+        reset.monotonicUs = NowMonotonicUs();
+        reset.kind = IngressKind::InputReset;
+        reset.source = IngressSource::Recovery;
+        reset.inputReset = InputResetMarker{
+            .reasons = ToMask(InputResetReason::DeviceDisconnected),
+            .scope = InputResetScope::GamepadSource,
+            .inputStateEpoch = _inputStateEpoch,
+            .gamepadSessionId = _gamepadSessionId,
+            .contextRevision = _boundaryKey.contextRevision,
+            .controlMapRevision = _boundaryKey.controlMapRevision
+        };
+        const auto resetAccepted = PushLocked(std::move(reset));
+        const auto causalTail = _lastAllocatedOrderedSeq;
         _latestGamepadConnection = GamepadConnectionFacts{
             .causal = CausalLatestHeader{
                 .generation = ++_latestGamepadConnectionGeneration,
-                .causalOrderedTailSeq = _lastAllocatedOrderedSeq,
+                .causalOrderedTailSeq = causalTail,
                 .inputStateEpoch = _inputStateEpoch,
                 .contextRevision = _boundaryKey.contextRevision,
                 .controlMapRevision = _boundaryKey.controlMapRevision
@@ -615,10 +706,11 @@ namespace dualpad::input_v2::ingress
             .gamepadSessionId = _gamepadSessionId
         };
         return PublishedIngressBatchReceipt{
-            .accepted = true,
+            .accepted = resetAccepted,
             .publishedResetReasons = ToMask(InputResetReason::DeviceDisconnected),
             .publishedResetScope = InputResetScope::GamepadSource,
-            .causalOrderedTailSeq = _lastAllocatedOrderedSeq,
+            .firstOrderedSeq = resetAccepted ? causalTail : 0,
+            .causalOrderedTailSeq = causalTail,
             .inputStateEpoch = _inputStateEpoch,
             .gamepadSessionId = _gamepadSessionId,
             .contextRevision = _boundaryKey.contextRevision,
@@ -784,6 +876,7 @@ namespace dualpad::input_v2::ingress
             _inputStateEpoch = 1;
             _gamepadSessionId = 0;
             _controlMapFingerprint = 0;
+            _bindingGeneration = 0;
             _boundaryKey = {};
             _gamepadConnectivity = GamepadConnectivity::Disconnected;
             _pendingLegacySnapshots = 0;

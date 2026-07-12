@@ -222,10 +222,13 @@ namespace dualpad::input
         const auto pendingBefore = hub.PendingCount();
         auto capture = hub.Capture(maxEvents);
         const auto drainedEventCount = capture.events.size();
-        auto frames = RuntimeFrameAssembler().Assemble(
-            capture.events,
-            capture.latestPadState,
-            capture.latestSourceEvidence);
+        auto frames = RuntimeFrameAssembler().Assemble(capture);
+        if (const auto resetReasons = RuntimeFrameAssembler().ConsumeGlobalResetRequest();
+            resetReasons != 0) {
+            (void)hub.PublishGlobalReset(
+                resetReasons,
+                input_v2::ingress::InputResetScope::GlobalInputState);
+        }
         for (const auto& frame : frames) {
             PadEventSnapshotProcessor::GetSingleton().ProcessIngressFrame(frame);
         }
@@ -262,10 +265,13 @@ namespace dualpad::input
         const auto pendingBefore = hub.PendingCount();
         auto capture = hub.Capture(maxEvents);
         const auto drainedEventCount = capture.events.size();
-        const auto frames = RuntimeFrameAssembler().Assemble(
-            capture.events,
-            capture.latestPadState,
-            capture.latestSourceEvidence);
+        const auto frames = RuntimeFrameAssembler().Assemble(capture);
+        if (const auto resetReasons = RuntimeFrameAssembler().ConsumeGlobalResetRequest();
+            resetReasons != 0) {
+            (void)hub.PublishGlobalReset(
+                resetReasons,
+                input_v2::ingress::InputResetScope::GlobalInputState);
+        }
         (void)sink;
         (void)context;
         for (const auto& frame : frames) {

@@ -337,13 +337,24 @@ namespace
 
         ingress::FrameAssembler assembler;
         const auto shadowFrames = assembler.Assemble(capture);
-        Require(shadowFrames.size() == 1, "existing latest-pad analog path must remain intact");
+        Require(!shadowFrames.empty(), "coherent batch capture must assemble at least one boundary or stable frame");
         Require(
-            shadowFrames.front().facts.coherence.captureGeneration == capture.generation,
+            std::all_of(shadowFrames.begin(), shadowFrames.end(), [&](const ingress::AssembledFactFrame& frame) {
+                return frame.facts.coherence.captureGeneration == capture.generation;
+            }),
             "capture overload must stamp shadow coherence metadata");
         Require(
-            !shadowFrames.front().facts.kbmGameplay.has_value(),
-            "KBM scaffold latest must remain shadow until the coherence gate is implemented");
+            std::any_of(shadowFrames.begin(), shadowFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.kind == ingress::AssembledFrameKind::Stable && frame.facts.kbmGameplay.has_value();
+            }),
+            "KBM latest must publish only after its boundary marker reaches the cumulative cutoff");
+        Require(
+            std::any_of(shadowFrames.begin(), shadowFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.kind == ingress::AssembledFrameKind::Stable &&
+                    frame.facts.gamepadConnection &&
+                    frame.facts.gamepadConnection->connectivity == ingress::GamepadConnectivity::Connected;
+            }),
+            "context/control-map epoch changes must not erase independent gamepad connectivity");
 
         const auto resetReceipt = hub.PublishGlobalReset(
             ingress::ToMask(ingress::InputResetReason::ExplicitReset),
@@ -417,6 +428,395 @@ namespace
         Require(firstEmpty.events.empty() && secondEmpty.events.empty(), "follow-up captures must be empty");
         Require(firstEmpty.orderedCutoffSeq == 7, "first empty capture must preserve cumulative cutoff");
         Require(secondEmpty.orderedCutoffSeq == 7, "second empty capture must preserve cumulative cutoff");
+    }
+
+    void PartialDrainCausalTailFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::ClassifiedGamepadReportDraft report{};
+        report.current.sourceSequence = 1;
+        report.current.sourceTimestampUs = 1000;
+        report.current.state.connected = true;
+        report.current.state.rightStick.x = 0.70F;
+        report.orderedDigitalEdges = {
+            { ingress::GamepadDigitalEdgePhase::Press, 0x1, 1, 1000 },
+            { ingress::GamepadDigitalEdgePhase::Press, 0x2, 1, 1000 }
+        };
+        const auto receipt = hub.PublishGamepadBatch(
+            std::move(report),
+            ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected });
+        Require(receipt.accepted && receipt.causalOrderedTailSeq == 2, "two-edge report must bind latest to ordered tail 2");
+
+        ingress::FrameAssembler assembler;
+        const auto first = hub.Capture(1);
+        const auto firstFrames = assembler.Assemble(first);
+        Require(first.orderedCutoffSeq == 1, "first partial capture must stop at cutoff 1");
+        Require(
+            std::none_of(firstFrames.begin(), firstFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.facts.latestPadStateGeneration != 0;
+            }),
+            "latest tail 2 must defer while cumulative cutoff is 1");
+
+        const auto second = hub.Capture(1);
+        const auto secondFrames = assembler.Assemble(second);
+        const auto applied = std::find_if(secondFrames.begin(), secondFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+            return frame.kind == ingress::AssembledFrameKind::Stable && frame.facts.latestPadStateGeneration == 1;
+        });
+        Require(applied != secondFrames.end(), "latest must apply when cumulative cutoff reaches its causal tail");
+        const auto* rightStick = FindAxisSample(applied->facts, input::PadAxisId::RightStickX);
+        Require(rightStick && rightStick->scalar == 0.70F, "causally released latest must retain complete analog current-state");
+    }
+
+    void LatestOnlyNoFakeSeqFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::ClassifiedGamepadReportDraft neutral{};
+        neutral.current.state.connected = true;
+        for (std::uint64_t sequence = 1; sequence <= 1000; ++sequence) {
+            neutral.current.sourceSequence = sequence;
+            neutral.current.sourceTimestampUs = sequence * 1000;
+            Require(
+                hub.PublishGamepadBatch(neutral, sequence == 1 ?
+                    std::optional<ingress::GamepadConnectionDraft>{ ingress::GamepadConnectionDraft{
+                        .connectivity = ingress::GamepadConnectivity::Connected } } :
+                    std::nullopt).accepted,
+                "latest-only neutral report must publish");
+        }
+        Require(hub.PendingCount() == 0, "latest-only reports must not allocate ordered records");
+
+        ingress::ClassifiedGamepadReportDraft press{};
+        press.current.sourceSequence = 1001;
+        press.current.sourceTimestampUs = 1'001'000;
+        press.current.state.connected = true;
+        press.current.currentDownMask = 0x1;
+        press.orderedDigitalEdges.push_back(
+            { ingress::GamepadDigitalEdgePhase::Press, 0x1, 1001, 1'001'000 });
+        const auto receipt = hub.PublishGamepadBatch(std::move(press), std::nullopt);
+        Require(receipt.accepted, "ordered press after latest-only traffic must publish");
+        Require(receipt.firstOrderedSeq == 1, "latest-only generations must not manufacture ingress sequence numbers");
+    }
+
+    void EmptyCaptureAppliesReadyLatestFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::FrameAssembler assembler;
+        Require(hub.PushEvent(PadSample(1, true, true, false)), "fixture ordered record must publish");
+        (void)assembler.Assemble(hub.Capture(1));
+
+        ingress::ClassifiedGamepadReportDraft latestOnly{};
+        latestOnly.current.sourceSequence = 2;
+        latestOnly.current.sourceTimestampUs = 2000;
+        latestOnly.current.state.connected = true;
+        latestOnly.current.state.leftStick.y = 0.50F;
+        Require(hub.PublishGamepadBatch(std::move(latestOnly), std::nullopt).accepted, "latest-only state must publish");
+        const auto empty = hub.Capture(0);
+        Require(empty.events.empty() && empty.orderedCutoffSeq == 1, "empty capture must preserve cumulative cutoff 1");
+        const auto frames = assembler.Assemble(empty);
+        const auto stable = std::find_if(frames.begin(), frames.end(), [](const ingress::AssembledFactFrame& frame) {
+            return frame.kind == ingress::AssembledFrameKind::Stable && frame.facts.latestPadStateGeneration != 0;
+        });
+        Require(stable != frames.end(), "empty capture must apply latest whose causal tail equals cumulative cutoff");
+        const auto* axis = FindAxisSample(stable->facts, input::PadAxisId::LeftStickY);
+        Require(axis && axis->scalar == 0.50F, "ready latest applied on empty capture must retain analog state");
+    }
+
+    void DisconnectScopeKeepsKbmAndGlobalEpochFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::OwnerKbmIngressDraft kbm{};
+        kbm.boundary.contextRevision = 7;
+        kbm.boundary.menuStackRevision = 9;
+        kbm.boundary.controlMapFingerprint = 0x100;
+        kbm.boundary.bindingGeneration = 1;
+        kbm.kbm.completeCurrent.complete = true;
+        kbm.kbm.completeCurrent.keyboardMoveHeldMask = 0x1;
+        kbm.kbm.completeCurrent.keyboardSustainedHeldMask = 0x1;
+        kbm.kbm.physical.complete = true;
+        Require(hub.PublishOwnerKbmBatch(std::move(kbm)).accepted, "KBM held baseline must publish");
+
+        ingress::ClassifiedGamepadReportDraft connected{};
+        connected.current.state.connected = true;
+        connected.producerGamepadSessionId = 0;
+        const auto connectedReceipt = hub.PublishGamepadBatch(
+            std::move(connected),
+            ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected });
+        Require(connectedReceipt.accepted, "gamepad connection must publish");
+        ingress::FrameAssembler assembler;
+        (void)assembler.Assemble(hub.Capture(16));
+
+        const auto disconnectedReceipt = hub.PublishGamepadDisconnect();
+        const auto disconnected = hub.Capture(16);
+        Require(disconnectedReceipt.accepted, "gamepad disconnect reset must publish");
+        Require(disconnected.inputStateEpoch == connectedReceipt.inputStateEpoch, "gamepad disconnect must not advance global input epoch");
+        Require(disconnected.gamepadSessionId > connectedReceipt.gamepadSessionId, "gamepad disconnect must advance only gamepad session");
+        Require(disconnected.latestKbmGameplay.has_value(), "gamepad disconnect must preserve KBM latest facts");
+        Require(disconnected.latestKbmGameplay->current.keyboardMoveHeldMask == 0x1, "gamepad disconnect must preserve KBM Move held fact");
+        Require(disconnected.latestKbmGameplay->current.keyboardSustainedHeldMask == 0x1, "gamepad disconnect must preserve KBM Sprint held fact");
+        const auto frames = assembler.Assemble(disconnected);
+        Require(
+            std::any_of(frames.begin(), frames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.kind == ingress::AssembledFrameKind::Stable &&
+                    frame.facts.kbmGameplay &&
+                    frame.facts.kbmGameplay->current.keyboardMoveHeldMask == 0x1;
+            }),
+            "gamepad-scoped reset must keep KBM facts in the next coherent stable publication");
+    }
+
+    void OldGamepadSessionDropFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::ClassifiedGamepadReportDraft connected{};
+        connected.current.state.connected = true;
+        connected.producerGamepadSessionId = 0;
+        const auto connectedReceipt = hub.PublishGamepadBatch(
+            std::move(connected),
+            ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected });
+        Require(connectedReceipt.accepted, "initial session must connect");
+        const auto oldSession = connectedReceipt.gamepadSessionId;
+        (void)hub.Capture(16);
+        const auto disconnected = hub.PublishGamepadDisconnect();
+        Require(disconnected.gamepadSessionId > oldSession, "disconnect must create a newer session");
+        (void)hub.Capture(16);
+
+        ingress::ClassifiedGamepadReportDraft stale{};
+        stale.producerGamepadSessionId = oldSession;
+        stale.current.sourceSequence = 9999;
+        stale.current.sourceTimestampUs = 9999;
+        stale.current.state.connected = true;
+        stale.current.state.rightStick.x = 0.90F;
+        stale.current.currentDownMask = 0x1;
+        stale.orderedDigitalEdges.push_back(
+            { ingress::GamepadDigitalEdgePhase::Press, 0x1, 9999, 9999 });
+        const auto staleReceipt = hub.PublishGamepadBatch(std::move(stale), std::nullopt);
+        Require(!staleReceipt.accepted, "old-session report must be rejected even with a larger generation");
+        Require(staleReceipt.staleGamepadSession, "old-session rejection must be distinguishable from capacity overflow");
+        const auto afterStale = hub.Capture(16);
+        Require(afterStale.events.empty(), "old-session report must publish no ordered activity");
+        Require(!afterStale.latestPadState.has_value(), "old-session report must not restore disconnected current-state");
+        Require(afterStale.gamepadSessionId == disconnected.gamepadSessionId, "old-session report must not mutate current session");
+    }
+
+    void OverflowDoesNotReattachOldHeldFixture()
+    {
+        ingress::IngressHub hub{ 1 };
+        ingress::FrameAssembler assembler;
+
+        ingress::ClassifiedGamepadReportDraft held{};
+        held.current.sourceSequence = 1;
+        held.current.sourceTimestampUs = 1000;
+        held.current.state.connected = true;
+        held.current.state.leftStick.x = 0.60F;
+        held.current.currentDownMask = 0x1;
+        held.orderedDigitalEdges.push_back(
+            { ingress::GamepadDigitalEdgePhase::Press, 0x1, 1, 1000 });
+        Require(
+            hub.PublishGamepadBatch(
+                std::move(held),
+                ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected }).accepted,
+            "pre-overflow held baseline must publish");
+        const auto baselineFrames = assembler.Assemble(hub.Capture(1));
+        Require(
+            std::any_of(baselineFrames.begin(), baselineFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.kind == ingress::AssembledFrameKind::Stable && !frame.facts.controlSamples.empty();
+            }),
+            "fixture must first establish held gamepad facts");
+
+        ingress::ClassifiedGamepadReportDraft overflow{};
+        overflow.current.sourceSequence = 2;
+        overflow.current.sourceTimestampUs = 2000;
+        overflow.current.state.connected = true;
+        overflow.current.state.leftStick.x = 0.90F;
+        overflow.current.currentDownMask = 0x1;
+        overflow.orderedDigitalEdges = {
+            { ingress::GamepadDigitalEdgePhase::Press, 0x2, 2, 2000 },
+            { ingress::GamepadDigitalEdgePhase::Press, 0x4, 2, 2000 }
+        };
+        const auto overflowReceipt = hub.PublishGamepadBatch(std::move(overflow), std::nullopt);
+        Require(!overflowReceipt.accepted, "oversized report must enter overflow recovery");
+        const auto overflowFrames = assembler.Assemble(hub.Capture(1));
+        Require(
+            std::none_of(overflowFrames.begin(), overflowFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return ingress::ShouldDispatchToInteractionEngine(frame);
+            }),
+            "overflow capture must publish no virtual gameplay frame");
+
+        ingress::OwnerKbmIngressDraft unrelated{};
+        unrelated.kbm.sourceActivities.push_back(ingress::MeaningfulSourceActivityDraft{
+            .source = ingress::PhysicalInputSource::Keyboard,
+            .kind = ingress::SourceActivityKind::KeyboardPress,
+            .controlCode = 0x20,
+            .producerTimestampUs = 3000
+        });
+        Require(hub.PublishOwnerKbmBatch(std::move(unrelated)).accepted, "post-overflow unrelated KBM fact must publish");
+        const auto nextFrames = assembler.Assemble(hub.Capture(1));
+        for (const auto& frame : nextFrames) {
+            if (frame.kind != ingress::AssembledFrameKind::Stable) {
+                continue;
+            }
+            Require(
+                FindAxisSample(frame.facts, input::PadAxisId::LeftStickX) == nullptr,
+                "post-overflow stable frame must not reattach old gamepad analog held state");
+            Require(
+                std::none_of(frame.facts.controlSamples.begin(), frame.facts.controlSamples.end(), [](const actions::ControlSample& sample) {
+                    return sample.path.kind == actions::ControlPathKind::DigitalButton && sample.path.code == 0x1 && sample.down;
+                }),
+                "post-overflow stable frame must not reattach old gamepad digital held state");
+        }
+    }
+
+    void AtomicBoundaryFirstBatchFixture()
+    {
+        ingress::IngressHub hub{ 16 };
+        ingress::OwnerKbmIngressDraft batch{};
+        batch.boundary.contextRevision = 7;
+        batch.boundary.menuStackRevision = 9;
+        batch.boundary.controlMapFingerprint = 0xABCD;
+        batch.boundary.bindingGeneration = 3;
+        batch.kbm.ownerTickToken = 100;
+        batch.kbm.eventBatchToken = 200;
+        batch.kbm.completeCurrent.complete = true;
+        batch.kbm.physical.complete = true;
+        batch.kbm.orderedEdges.push_back(ingress::KbmGameplayEdgeDraft{
+            .producerTimestampUs = 1000,
+            .physical = { ingress::KbmPhysicalDevice::Keyboard, 0x20 },
+            .gameplayClass = ingress::KbmGameplayClass::Move,
+            .actionId = "Game.Move",
+            .phase = ingress::KbmEdgePhase::Press,
+            .origin = ingress::KbmEdgeOrigin::Physical
+        });
+        const auto receipt = hub.PublishOwnerKbmBatch(std::move(batch));
+        Require(receipt.accepted, "new-boundary first KBM batch must publish atomically");
+
+        ingress::FrameAssembler assembler;
+        const auto boundaryCapture = hub.Capture(1);
+        Require(boundaryCapture.events.size() == 1, "first partial capture must contain the boundary marker only");
+        Require(boundaryCapture.events.front().kind == ingress::IngressKind::UiSnapshot, "new boundary must be ordered before its first KBM edge");
+        Require(boundaryCapture.events.front().ui.contextRevision == 7, "boundary marker must carry ContextResolver revision");
+        Require(boundaryCapture.events.front().ui.controlMapRevision == receipt.controlMapRevision, "boundary marker and receipt must share control-map revision");
+        Require(boundaryCapture.events.front().ui.bindingGeneration == 3, "boundary marker must carry the callback binding generation");
+        const auto boundaryFrames = assembler.Assemble(boundaryCapture);
+        Require(
+            std::none_of(boundaryFrames.begin(), boundaryFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.kind == ingress::AssembledFrameKind::Stable && frame.facts.kbmGameplay.has_value();
+            }),
+            "new-revision latest must wait while the first event remains beyond cutoff");
+
+        const auto firstEventCapture = hub.Capture(1);
+        Require(firstEventCapture.events.size() == 1, "second partial capture must contain first new-boundary KBM edge");
+        Require(firstEventCapture.events.front().kind == ingress::IngressKind::KbmGameplayEdge, "first KBM edge must follow its boundary marker");
+        Require(firstEventCapture.events.front().kbmGameplayEdge.controlMapRevision == receipt.controlMapRevision, "first KBM edge must use the new transaction revision");
+        const auto eventFrames = assembler.Assemble(firstEventCapture);
+        const auto stable = std::find_if(eventFrames.begin(), eventFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+            return frame.kind == ingress::AssembledFrameKind::Stable && frame.facts.kbmGameplay.has_value();
+        });
+        Require(stable != eventFrames.end(), "KBM latest must apply once its first event reaches cumulative cutoff");
+        Require(stable->facts.kbmGameplay->bindingGeneration == 3, "KBM latest and boundary marker must share binding generation");
+        Require(stable->boundaryKey.contextRevision == 7, "first new mapping event must not be rejected by old context revision");
+        Require(stable->boundaryKey.controlMapRevision == receipt.controlMapRevision, "first new mapping event must share boundary control-map revision");
+
+        ingress::ClassifiedGamepadReportDraft gamepad{};
+        gamepad.current.sourceSequence = 1;
+        gamepad.current.sourceTimestampUs = 2000;
+        gamepad.current.state.connected = true;
+        gamepad.current.state.leftStick.x = 0.65F;
+        gamepad.producerGamepadSessionId = firstEventCapture.gamepadSessionId;
+        Require(
+            hub.PublishGamepadBatch(
+                std::move(gamepad),
+                ingress::GamepadConnectionDraft{ .connectivity = ingress::GamepadConnectivity::Connected }).accepted,
+            "context-neutral gamepad current-state must publish after KBM boundary");
+        const auto gamepadFrames = assembler.Assemble(hub.Capture(0));
+        const auto gamepadStable = std::find_if(gamepadFrames.begin(), gamepadFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+            return frame.kind == ingress::AssembledFrameKind::Stable &&
+                FindAxisSample(frame.facts, input::PadAxisId::LeftStickX) != nullptr;
+        });
+        Require(gamepadStable != gamepadFrames.end(), "gamepad latest must inherit Hub context/menu boundary and remain causally applicable");
+        Require(
+            FindAxisSample(gamepadStable->facts, input::PadAxisId::LeftStickX)->scalar == 0.65F,
+            "post-boundary gamepad latest must retain complete analog state");
+    }
+
+    void SequenceGapRequestsGlobalEpochResetFixture()
+    {
+        ingress::FrameAssembler assembler;
+        auto first = PadSample(1, true, true, false);
+        first.seq = 1;
+        auto skipped = PadSample(2, true, true, false);
+        skipped.seq = 3;
+        const auto frames = assembler.Assemble({ first, skipped });
+        Require(
+            std::any_of(frames.begin(), frames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.kind == ingress::AssembledFrameKind::Transition &&
+                    frame.transition.reason == ingress::TransitionReason::SequenceGap;
+            }),
+            "ordered ingress gap must immediately emit a fail-closed transition");
+        const auto resetReasons = assembler.ConsumeGlobalResetRequest();
+        Require(
+            (resetReasons & ingress::ToMask(ingress::InputResetReason::SequenceGap)) != 0,
+            "ordered ingress gap must request a Hub-owned global reset receipt");
+
+        ingress::IngressHub hub{ 16 };
+        const auto before = hub.Capture(0).inputStateEpoch;
+        const auto receipt = hub.PublishGlobalReset(resetReasons, ingress::InputResetScope::GlobalInputState);
+        Require(receipt.accepted && receipt.inputStateEpoch > before, "global sequence-gap receipt must advance Hub epoch");
+        const auto capture = hub.Capture(1);
+        Require(
+            capture.events.size() == 1 &&
+                capture.events.front().kind == ingress::IngressKind::InputReset &&
+                capture.events.front().inputReset.inputStateEpoch == receipt.inputStateEpoch,
+            "global sequence-gap reset marker must publish with the new epoch");
+    }
+
+    void RevisionAheadFixture()
+    {
+        ingress::LatestKbmGameplayFacts oldLatest{};
+        oldLatest.causal.generation = 1;
+        oldLatest.causal.causalOrderedTailSeq = 2;
+        oldLatest.causal.inputStateEpoch = 2;
+        oldLatest.causal.contextRevision = 1;
+        oldLatest.causal.controlMapRevision = 1;
+        oldLatest.current.complete = true;
+        oldLatest.current.keyboardMoveHeldMask = 0x1;
+
+        ingress::IngressEvent boundary{};
+        boundary.seq = 1;
+        boundary.kind = ingress::IngressKind::UiSnapshot;
+        boundary.ui = ingress::UiSnapshotPayload{
+            .contextRevision = 2,
+            .menuStackRevision = 2,
+            .controlMapRevision = 2,
+            .bindingGeneration = 2
+        };
+        ingress::IngressCapture first{};
+        first.generation = 1;
+        first.events.push_back(boundary);
+        first.orderedCutoffSeq = 1;
+        first.inputStateEpoch = 2;
+        first.latestKbmGameplay = oldLatest;
+
+        ingress::FrameAssembler assembler;
+        const auto firstFrames = assembler.Assemble(first);
+        Require(
+            std::none_of(firstFrames.begin(), firstFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.kind == ingress::AssembledFrameKind::Stable && frame.facts.kbmGameplay.has_value();
+            }),
+            "old-context latest ahead of boundary prefix must defer");
+
+        ingress::IngressEvent tail{};
+        tail.seq = 2;
+        tail.kind = ingress::IngressKind::HostFacts;
+        ingress::IngressCapture second{};
+        second.generation = 2;
+        second.events.push_back(tail);
+        second.orderedCutoffSeq = 2;
+        second.inputStateEpoch = 2;
+        second.latestKbmGameplay = oldLatest;
+        const auto secondFrames = assembler.Assemble(second);
+        Require(
+            std::none_of(secondFrames.begin(), secondFrames.end(), [](const ingress::AssembledFactFrame& frame) {
+                return frame.facts.kbmGameplay.has_value();
+            }),
+            "old-context latest must drop rather than cross the new boundary when its tail becomes ready");
     }
 
     void NeutralHidInterleaveFixture()
@@ -586,7 +986,11 @@ namespace
         const auto disconnectedReceipt = hub.PublishGamepadDisconnect();
         Require(disconnectedReceipt.accepted, "disconnect must publish");
         const auto disconnectedCapture = hub.Capture(16);
-        Require(disconnectedCapture.events.empty(), "disconnect must not create ordered source activity");
+        Require(
+            disconnectedCapture.events.size() == 1 &&
+                disconnectedCapture.events.front().kind == ingress::IngressKind::InputReset &&
+                disconnectedCapture.events.front().inputReset.scope == ingress::InputResetScope::GamepadSource,
+            "disconnect must publish one gamepad-scoped reset without source activity");
         Require(disconnectedCapture.gamepadSessionId > connectedCapture.gamepadSessionId, "disconnect must advance gamepad session");
         Require(!disconnectedCapture.latestPadState.has_value(), "disconnect must clear gamepad current-state");
         Require(
@@ -950,13 +1354,13 @@ namespace
         Require(second.remainingEvents == 0, "second capture must consume remaining release");
     }
 
-    void TestFrameAssemblerKeepsLatestAnalogSeparateFromOrderedEdgeCutoff()
+    void TestFrameAssemblerDefersLatestAnalogBeyondOrderedEdgeCutoff()
     {
         ingress::IngressHub hub{ 16 };
         ingress::FrameAssembler assembler;
         Require(hub.PushPadSnapshot(LiveHidSnapshot(1, 0, 100), false), "assembler baseline must publish");
         auto capture = hub.Capture(16);
-        (void)assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        (void)assembler.Assemble(capture);
 
         auto press = LiveHidSnapshot(2, 0x1, 200);
         press.state.leftStick.x = 0.25f;
@@ -969,20 +1373,22 @@ namespace
         Require(hub.PushPadSnapshot(newestAnalog, false), "newest analog state must publish without another edge");
 
         capture = hub.Capture(1);
-        auto frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        auto frames = assembler.Assemble(capture);
         const auto& pressFrame = LastStableFrame(frames);
         const auto* pressSample = FindControlSample(pressFrame.facts, 0x1);
         const auto* axisSample = FindAxisSample(pressFrame.facts, input::PadAxisId::LeftStickX);
         Require(pressSample && pressSample->pressed && !pressSample->released, "first cutoff frame must contain only the ordered press edge");
-        Require(axisSample && axisSample->scalar == 0.9f, "first cutoff frame may contain newer latest analog state");
+        Require(axisSample && axisSample->scalar != 0.9f, "first cutoff frame must defer analog latest whose causal tail is still ahead");
         Require(FindPulse(pressFrame.facts, 0x1, false, true) == nullptr, "future release mask must not synthesize an early release");
         const auto pressMonotonicUs = pressFrame.facts.monotonicUs;
 
         capture = hub.Capture(1);
-        frames = assembler.Assemble(capture.events, capture.latestPadState, capture.latestSourceEvidence);
+        frames = assembler.Assemble(capture);
         const auto& releaseFrame = LastStableFrame(frames);
         Require(FindPulse(releaseFrame.facts, 0x1, false, true) != nullptr, "second cutoff frame must deliver the queued release edge");
-        Require(releaseFrame.facts.monotonicUs >= pressMonotonicUs, "older queued release must not regress stable fact time after latest analog led the cutoff");
+        axisSample = FindAxisSample(releaseFrame.facts, input::PadAxisId::LeftStickX);
+        Require(axisSample && axisSample->scalar == 0.9f, "latest analog must apply once release reaches its causal tail");
+        Require(releaseFrame.facts.monotonicUs >= pressMonotonicUs, "queued release must not regress stable fact time when latest becomes causally ready");
     }
 
     void TestOverflowRetainsLatestPadState()
@@ -1002,6 +1408,8 @@ namespace
         Require(capture.events.size() == 1 && capture.events[0].kind == ingress::IngressKind::QueueOverflow, "overflow must remain an ordered marker");
         Require(capture.latestPadState->state.rightStick.y == 0.9f, "overflow must not delete latest axis state");
         Require(capture.latestPadState->currentDownMask == 0, "overflow recovery baseline must retain current physical mask");
+        Require(!capture.latestPadState->virtualGameplayEligible, "overflow-retained physical state must remain virtual-ineligible");
+        Require(capture.latestPadState->inputStateEpoch == capture.inputStateEpoch, "overflow latest and capture must share the new global epoch");
     }
 
     void TestOverflowFreezesDigitalEdgesUntilCleanRelease()
@@ -2266,6 +2674,15 @@ int main()
     BatchApiCompileFixture();
     BatchCapacityAtomicityFixture();
     CumulativeEmptyCaptureFixture();
+    PartialDrainCausalTailFixture();
+    LatestOnlyNoFakeSeqFixture();
+    EmptyCaptureAppliesReadyLatestFixture();
+    DisconnectScopeKeepsKbmAndGlobalEpochFixture();
+    OldGamepadSessionDropFixture();
+    OverflowDoesNotReattachOldHeldFixture();
+    AtomicBoundaryFirstBatchFixture();
+    SequenceGapRequestsGlobalEpochResetFixture();
+    RevisionAheadFixture();
     NeutralHidInterleaveFixture();
     HeldStickUnchangedFixture();
     ReleaseDoesNotTakeoverFixture();
@@ -2277,7 +2694,7 @@ int main()
     KbmMappingChangeUsesStablePhysicalQuarantineFixture();
     TestLatestPadStatePreventsSteadyAnalogQueueGrowth();
     TestLatestAnalogCanLeadBoundedDigitalEdgeCutoff();
-    TestFrameAssemblerKeepsLatestAnalogSeparateFromOrderedEdgeCutoff();
+    TestFrameAssemblerDefersLatestAnalogBeyondOrderedEdgeCutoff();
     TestOverflowRetainsLatestPadState();
     TestOverflowFreezesDigitalEdgesUntilCleanRelease();
     TestSourceEvidenceUsesLatestPublicationWithoutQueueGrowth();

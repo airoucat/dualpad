@@ -42,10 +42,13 @@ namespace
         dualpad::input::PadState previousState{};
         bool havePreviousState = false;
         bool connectionPublished = false;
+        std::uint64_t producerGamepadSessionId = 0;
 
         const auto publishDisconnect = [&]() {
             if (connectionPublished) {
-                (void)dualpad::input_v2::ingress::IngressHub::GetSingleton().PublishGamepadDisconnect();
+                const auto disconnectReceipt =
+                    dualpad::input_v2::ingress::IngressHub::GetSingleton().PublishGamepadDisconnect();
+                producerGamepadSessionId = disconnectReceipt.gamepadSessionId;
                 dualpad::input::PadEventSnapshotDispatcher::GetSingleton().NotifyIngressPublished();
             }
             classifier.Reset(dualpad::input_v2::ingress::ToMask(
@@ -101,6 +104,7 @@ namespace
                 currentState,
                 currentState.sequence,
                 currentState.timestampUs);
+            classified.producerGamepadSessionId = producerGamepadSessionId;
             const auto connectionChange = connectionPublished ?
                 std::optional<dualpad::input_v2::ingress::GamepadConnectionDraft>{} :
                 std::optional<dualpad::input_v2::ingress::GamepadConnectionDraft>{
@@ -111,6 +115,16 @@ namespace
             const auto receipt = dualpad::input_v2::ingress::IngressHub::GetSingleton().PublishGamepadBatch(
                 std::move(classified),
                 connectionChange);
+            producerGamepadSessionId = receipt.gamepadSessionId;
+            if (receipt.staleGamepadSession) {
+                classifier.Reset(dualpad::input_v2::ingress::ToMask(
+                    dualpad::input_v2::ingress::InputResetReason::DeviceDisconnected));
+                previousState = {};
+                havePreviousState = false;
+                connectionPublished = false;
+                dualpad::input::PadEventSnapshotDispatcher::GetSingleton().NotifyIngressPublished();
+                continue;
+            }
             if (receipt.accepted && connectionChange) {
                 connectionPublished = true;
             }
