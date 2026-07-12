@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 namespace dualpad::input_v2::presentation
 {
@@ -65,4 +66,11 @@ namespace dualpad::input_v2::presentation
     // Production remains unapproved until I-0 records the exact entry bytes,
     // handler slot and original target from the supported 1.5.97 host.
     [[nodiscard]] EngineHookIdentityManifest ProductionEngineHookIdentityManifest() noexcept;
+
+    class SkyrimEngineModeRouter
+    {
+    public:
+        [[nodiscard]] bool DecideWithOriginal(
+            const std::function<bool()>& originalGateway) const;
+    };
 }

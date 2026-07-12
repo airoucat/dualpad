@@ -81,4 +81,10 @@ namespace dualpad::input_v2::presentation
         }
         return "unknown";
     }
+
+    bool SkyrimEngineModeRouter::DecideWithOriginal(
+        const std::function<bool()>& originalGateway) const
+    {
+        return originalGateway ? originalGateway() : false;
+    }
 }

@@ -8,6 +8,7 @@
 #include "input_v2/presentation/SkyrimCompatibilitySurface.h"
 #include "input_v2/presentation/SkyrimEngineModeRouter.h"
 #include "input_v2/presentation/SourceEvidenceCollector.h"
+#include "input_v2/runtime/EngineModeDecision.h"
 #include "input/SkyrimCursorHandoffAdapter.h"
 
 #include <iostream>
@@ -491,6 +492,58 @@ void RunEngineHookIdentityTests()
         "synthetic host identity cannot enable production without I-0 approval");
 }
 
+void RunEngineOriginalFirstTests()
+{
+    namespace presentation = dualpad::input_v2::presentation;
+    namespace runtime = dualpad::input_v2::runtime;
+
+    presentation::SkyrimCompatibilitySurface compat;
+    auto projected = EligibleMenuPresentation(20, 30);
+    projected.owner = presentation::PresentationOwner::Gamepad;
+    projected.cursorOwner = presentation::CursorOwner::Gamepad;
+    compat.Commit(projected);
+    compat.ForceOriginalHookOutputsForTests(presentation::LegacyCompatibilitySurface{
+        .isUsingGamepad = false,
+        .gamepadControlsCursor = false,
+        .gamepadDeviceEnabled = false
+    });
+    compat.ForceHooksEnabledForTests(true);
+    Require(!compat.IsUsingGamepadHook(),
+        "unscoped engine query must return original even when presentation owner is gamepad");
+    Require(!compat.GamepadControlsCursorHook(),
+        "unverified cursor bool surface must remain original before I-CURSOR");
+    Require(!compat.IsGamepadDeviceEnabledHook(false),
+        "Native device availability must not replace original with fixed true");
+
+    std::size_t originalCalls = 0;
+    presentation::SkyrimEngineModeRouter router;
+    const auto routed = router.DecideWithOriginal([&]() {
+        ++originalCalls;
+        return true;
+    });
+    Require(routed && originalCalls == 1,
+        "unscoped engine gateway must call original exactly once");
+
+    const runtime::GamepadDeviceAvailabilityDecision native{
+        .policy = runtime::GamepadDeviceAvailabilityPolicy::Native,
+        .allowedDomain = runtime::GamepadAvailabilityDomain::None,
+        .connected = true,
+        .delegateReady = true,
+        .gamepadSessionId = 4,
+        .contextRevision = 9
+    };
+    Require(!runtime::ResolveGamepadDeviceAvailability(
+                native,
+                runtime::GamepadAvailabilityDomain::VerifiedPollOrInitialization,
+                false),
+        "connectivity must not override original while availability policy is Native");
+    Require(runtime::ResolveGamepadDeviceAvailability(
+                native,
+                runtime::GamepadAvailabilityDomain::Remap,
+                true),
+        "remap must preserve original under Native availability");
+}
+
 void RunPresentationProjectionTests()
 {
     namespace presentation = dualpad::input_v2::presentation;
@@ -729,6 +782,11 @@ void RunPresentationProjectionTests()
         context.contextRevision = 9;
         const auto published = projection.Project(snapshot, context, gameplay);
         compat.Commit(published);
+        compat.ForceOriginalHookOutputsForTests(presentation::LegacyCompatibilitySurface{
+            .isUsingGamepad = false,
+            .gamepadControlsCursor = false,
+            .gamepadDeviceEnabled = false
+        });
         Require(!compat.IsUsingGamepadHook(), "compat hook must read committed published owner");
         Require(!compat.GamepadControlsCursorHook(), "pointer active KBM state must publish KeyboardMouse cursor owner");
 
@@ -1195,7 +1253,7 @@ void RunPresentationProjectionTests()
         Require(compat.GamepadControlsCursorHook(), "CompatSurfacePartialInstall_DoesNotForceKeyboardMode cursor");
         Require(compat.IsGamepadDeviceEnabledHook(true), "CompatSurfacePartialInstall_DoesNotForceKeyboardMode device enabled");
         compat.ForceHooksEnabledForTests(true);
-        Require(!compat.IsUsingGamepadHook(), "enabled SkyrimCompat hooks should read committed input_v2 state");
+        Require(compat.IsUsingGamepadHook(), "enabled engine gateway must still return the original value without a verified scope");
 
         Require(
             presentation::detail::EvaluateHookInstallGate(true, true).status ==
@@ -1240,6 +1298,7 @@ int main()
 {
     try {
         RunEngineHookIdentityTests();
+        RunEngineOriginalFirstTests();
         RunOrderedActivityRoutingAndIndependentProjectionTests();
         RunCursorPlanAckShadowTests();
         RunPresentationProjectionTests();

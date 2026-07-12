@@ -1153,8 +1153,9 @@ namespace
                     1010)),
             gamepadExecutor);
         Require(
-            presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
-            "stable gamepad evidence must update IsUsingGamepadHook through committed input_v2 state");
+            presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
+                presentation::PresentationOwner::Gamepad,
+            "stable gamepad evidence must update the independent presentation owner");
     }
 
     void RunPromptStatePublishedBeforeRefreshCallbackTests()
@@ -1225,7 +1226,7 @@ namespace
         Require(committed.owner == presentation::PresentationOwner::Gamepad, "live-style gamepad evidence must publish Gamepad owner");
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
-            "live-style gamepad evidence must update IsUsingGamepadHook through committed state");
+            "live-style presentation changes must not replace the unscoped original engine result");
 
         const auto scope = prompt::PromptRuntimeOwner::GetSingleton().GetPublishedPromptScopeForTests();
         Require(scope.state == prompt::PromptScopeState::Ready, "live-style presentation publish must update prompt scope");
@@ -1269,7 +1270,7 @@ namespace
         drive();
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
-            "gamepad input must publish IsUsingGamepadHook=true");
+            "gamepad input must leave the unscoped original engine result unchanged");
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
                 presentation::PresentationOwner::Gamepad,
@@ -1278,8 +1279,8 @@ namespace
         producer.PublishKeyboardSourceEvidence(contextSnapshot, 0x1E, 71'000);
         drive();
         Require(
-            !presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
-            "keyboard evidence must publish IsUsingGamepadHook=false");
+            presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
+            "keyboard presentation evidence must not globally override the original engine result");
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
                 presentation::PresentationOwner::KeyboardMouse,
@@ -1323,7 +1324,7 @@ namespace
         drive();
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
-            "synthetic keyboard window must not publish IsUsingGamepadHook=false");
+            "synthetic keyboard window must leave the original engine result unchanged");
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().GetCommittedState().owner ==
                 presentation::PresentationOwner::Gamepad,
@@ -2227,7 +2228,7 @@ namespace
             "live Menu source evidence must publish Gamepad presentation owner with the resolved native output");
         Require(
             presentation::SkyrimCompatibilitySurface::GetSingleton().IsUsingGamepadHook(),
-            "live Menu source evidence must publish IsUsingGamepadHook=true with the resolved native output");
+            "live Menu presentation evidence must not replace the unscoped original engine result");
         Require(
             prompt::PromptRuntimeOwner::GetSingleton().ResolveLegacyGlyphToken(
                 dualpad::input::actions::MenuScrollDown,

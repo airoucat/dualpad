@@ -21,8 +21,6 @@ namespace dualpad::input_v2::presentation
         constexpr REL::ID kGamepadControlsCursorId{ 67321 };
         constexpr REL::ID kGamepadHandlerVtblId{ 560029 };
         constexpr std::size_t kGamepadIsEnabledVfuncIndex = 0x8;
-        constexpr std::ptrdiff_t kGamepadDelegateOffset = 0x08;
-        constexpr std::ptrdiff_t kMenuControlsRemapModeOffset = 0x82;
         constexpr auto kSupportedRuntime = SKSE::RUNTIME_SSE_1_5_97;
         constexpr std::uint8_t kMaxDeferredAttempts = 3;
         constexpr std::size_t kBoolSurfaceEntryPatchSize = 8;
@@ -652,29 +650,19 @@ namespace dualpad::input_v2::presentation
 
     bool SkyrimCompatibilitySurface::IsUsingGamepadHook() const
     {
-        if (!_hooksEnabled.load(std::memory_order_acquire)) {
-            return CallOriginalIsUsingGamepad();
-        }
-        return GetCommittedState().owner == PresentationOwner::Gamepad;
+        return SkyrimEngineModeRouter{}.DecideWithOriginal(
+            [this]() { return CallOriginalIsUsingGamepad(); });
     }
 
     bool SkyrimCompatibilitySurface::GamepadControlsCursorHook() const
     {
-        if (!_hooksEnabled.load(std::memory_order_acquire)) {
-            return CallOriginalGamepadControlsCursor();
-        }
-        return GetCommittedState().cursorOwner == CursorOwner::Gamepad;
+        return CallOriginalGamepadControlsCursor();
     }
 
     bool SkyrimCompatibilitySurface::IsGamepadDeviceEnabledHook(bool remapMode) const
     {
-        if (!_hooksEnabled.load(std::memory_order_acquire)) {
-            return CallOriginalGamepadDeviceEnabled(nullptr);
-        }
-        if (!remapMode) {
-            return true;
-        }
-        return GetCommittedState().owner == PresentationOwner::Gamepad;
+        (void)remapMode;
+        return CallOriginalGamepadDeviceEnabled(nullptr);
     }
 
     bool SkyrimCompatibilitySurface::ShouldRefreshMenus()
@@ -1163,46 +1151,20 @@ namespace dualpad::input_v2::presentation
     bool SkyrimCompatibilitySurface::StaticIsUsingGamepadHook(void* self)
     {
         auto& surface = GetSingleton();
-        if (!surface._hooksEnabled.load(std::memory_order_acquire)) {
-            return surface.CallOriginalIsUsingGamepad(self);
-        }
-        return surface.GetCommittedState().owner == PresentationOwner::Gamepad;
+        return SkyrimEngineModeRouter{}.DecideWithOriginal(
+            [&surface, self]() { return surface.CallOriginalIsUsingGamepad(self); });
     }
 
     bool SkyrimCompatibilitySurface::StaticIsGamepadCursorHook(void* self)
     {
         auto& surface = GetSingleton();
-        if (!surface._hooksEnabled.load(std::memory_order_acquire)) {
-            return surface.CallOriginalGamepadControlsCursor(self);
-        }
-        return surface.GetCommittedState().cursorOwner == CursorOwner::Gamepad;
+        return surface.CallOriginalGamepadControlsCursor(self);
     }
 
     bool SkyrimCompatibilitySurface::StaticIsGamepadDeviceEnabledHook(RE::BSPCGamepadDeviceHandler* device)
     {
         auto& surface = GetSingleton();
-        if (!surface._hooksEnabled.load(std::memory_order_acquire)) {
-            return surface.CallOriginalGamepadDeviceEnabled(device);
-        }
-
-        const auto isEnabled = device != nullptr &&
-            *reinterpret_cast<void* const*>(reinterpret_cast<const std::uint8_t*>(device) + kGamepadDelegateOffset) != nullptr;
-        if (!isEnabled) {
-            return false;
-        }
-
-        const auto* playerControls = RE::PlayerControls::GetSingleton();
-        const auto playerRemapMode = playerControls && playerControls->data.remapMode;
-
-        const auto* menuControls = RE::MenuControls::GetSingleton();
-        const auto menuRemapMode = menuControls &&
-            *reinterpret_cast<const bool*>(reinterpret_cast<const std::uint8_t*>(menuControls) + kMenuControlsRemapModeOffset);
-
-        if (playerRemapMode || menuRemapMode) {
-            return surface.IsGamepadDeviceEnabledHook(true);
-        }
-
-        return true;
+        return surface.CallOriginalGamepadDeviceEnabled(device);
     }
 
     void SkyrimCompatibilitySurface::DoRefreshMenus()

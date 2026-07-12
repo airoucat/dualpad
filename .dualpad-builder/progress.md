@@ -3526,3 +3526,9 @@
   - 新增 REL 67320 RVA + 前 32 bytes exact match、REL 560029 handler vtable、slot `0x7/0x8` 与 I-0 recorded original target 唯一匹配合同；无匹配、双匹配、RVA/bytes/REL mismatch 全部在写 patch 前失败。
   - production manifest 明确 `i0Approved=false`；`SkyrimCompatibilitySurface::Install` 因此在 I-0 未闭合时返回 safe passthrough `SignatureMismatch/i0_gate_not_approved`，不安装旧 global presentation-owner query、cursor bool 或 fixed-true device vfunc transaction。
   - Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadInputV2Tests` build/run 全部 exit 0。下一 commit 进入 unscoped Original gateway 与 Native availability。
+
+- `S-DP5-MIXED-INPUT / WP9-B Original gateway completed`：
+  - RED 先由缺失 `runtime/EngineModeDecision.h` 证明 availability 与 engine query 未拆分；实现后旧测试稳定捕获 enabled compat hook 仍把 committed presentation owner 返回给全部 engine caller 的跨层耦合。
+  - 新增 `GamepadDeviceAvailabilityDecision`，默认 policy 固定 `Native`；connectivity/delegateReady 只有未来 I-0 结果 B 的 verified Poll/init domain 才可能生效，Remap 与无批准 scope 始终返回 original。
+  - engine query gateway 无 scope 时 exact 调用 original 一次；gamepad cursor bool 在 I-CURSOR 前也回 original；旧 non-remap fixed `true` 和 PlayerControls/MenuControls remap 内存推断已删除。
+  - presentation owner 仍独立发布给 prompt/menu/cursor，不再成为 global engine mode writer。Focused GREEN：`DualPadPresentationProjectionTests`、`DualPadInputV2Tests` build/run 全部 exit 0。
