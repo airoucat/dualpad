@@ -29,6 +29,20 @@ class MixedInputWp5ShadowWiringTests(unittest.TestCase):
         header = (ROOT / "src/input/injection/SkyrimCurrentCycleEventAdapter.h").read_text(encoding="utf-8")
         self.assertIn("ProductionMutationEnabled() noexcept { return false; }", header)
 
+    def test_pump_attaches_receipt_and_current_boundary_to_shadow_evidence(self):
+        source = (ROOT / "src/input/InputFramePump.cpp").read_text(encoding="utf-8")
+        prepare = source[source.index("PrepareCallbackAudit"):source.index("AuditEventListShadow")]
+        for token in [
+            "CurrentCycleCallbackEvidence",
+            ".ownerTickToken = frameToken",
+            ".monotonicUs = ownerNowUs",
+            ".currentInputStateEpoch = kbmReceipt.inputStateEpoch",
+            ".currentGamepadSessionId = kbmReceipt.gamepadSessionId",
+            ".receiptFailure = consumedReceipt.failure",
+            ".receipt = consumedReceipt.receipt",
+        ]:
+            self.assertIn(token, prepare)
+
 
 if __name__ == "__main__":
     unittest.main()

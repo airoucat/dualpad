@@ -305,7 +305,10 @@
       "I-P": {
         "status": "NO-GO",
         "manualEvidenceComplete": false,
-        "capabilityEnabled": false
+        "capabilityEnabled": false,
+        "shadowEvidenceCaptureAvailable": true,
+        "shadowEvidenceFile": "mixed_input_evidence.jsonl",
+        "liveVerdict": "pending"
       },
       "I-1": {
         "status": "NO-GO",

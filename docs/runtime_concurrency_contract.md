@@ -72,3 +72,5 @@ menu event 到达后，`UiMenuObserver` 立即发布保留上一稳定节点的 
 待证明：Skyrim 1.5.97 新 build 的 owner/Poll/UI ordering、菜单后按键恢复、真实 pulse 可见性、长时间 soak 与 Favorites crash dump 闭环。在这些证据完成前，发布状态不得为 `GO`。
 
 mixed-input 另有 I-P、I-CURSOR、I-SPRINT、I-KBM 与 I-0/I-1/I-2/I-MENU/I-5 动态门禁；静态/host 并发测试只能证明 fail-closed 事务，不能批准对应 production capability。
+
+I-P shadow evidence 复用 callback-local receipt 与 `Prepare -> Apply -> Commit` 结果，不重新 Acquire Poll frame。记录器默认关闭；开启后只在 decision 变化、时钟回退或每 10 秒健康采样时追加 JSONL，目录不可写时静默放弃该条记录，不让遥测异常越过 runtime owner 边界。

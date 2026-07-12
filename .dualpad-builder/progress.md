@@ -3565,3 +3565,20 @@
   - 最小修复为 replay stub 补齐无副作用的同签名 seam。focused rerun：`xmake build -y DualPadReplayHarness` exit 0；dispatcher batch 10 scenarios matched；`dualpad_trace_diff.py` 10 scenarios 全部 `no diff`。完整 clean-HEAD RC readiness 继续重跑。
   - 最终 clean-HEAD RC readiness GREEN：内层 Phase8 全部 build/run；Python discovery `57 tests passed`；mixed closeout `7 tests passed`；good trace `3 records / 0 violations`；dynamic evidence checker `releaseStatus=NO-GO / 9 gates`；dispatcher replay 10 scenarios 全部 zero-diff；DInput8 proxy build、release artifact manifest `--expect-clean`、Graphify manual closeout 与 `git diff --check` 全部 exit 0。
   - Graphify 最终结果：`2310 nodes / 5441 edges / 170 communities`。WP10 自动化/文档 slice 完成；`gated-slices` 继续 `in_progress`，等待用户按 I 节执行 matching Skyrim/IDA 动态实验后逐项给出唯一 PASS/FAIL 出口。
+
+## 2026-07-12 14:24:00 +08:00
+
+- `S-DP5-MIXED-INPUT / I-P shadow evidence slice start`：
+  - 在所有自动化 WP 已 close-out、动态 Gate 仍为 `NO-GO` 的前提下，进入不启用 production mutation 的 I-P 实机证据采集工具切片。
+  - 目标只是在一次 Skyrim callback 中绑定已消费的 `PollMaterializationReceipt`、同一 owner transaction 的 epoch/session、`Prepare -> Apply -> Commit` audit 和 sensitive ledger 前后值；禁止重新 Acquire 最新 Poll frame。
+  - 输出复用默认关闭的 `[Replay] enable_trace_recording` 开关，并要求 change-only / 10 秒 health sampling；采集工具本身不得把 I-P 提升为 PASS。
+
+## 2026-07-12 14:25:00 +08:00
+
+- `S-DP5-MIXED-INPUT / I-P shadow evidence slice completed`：
+  - RED 1：close-out contract 因 `.dualpad-builder/mixed_input_evidence.json` 缺少 `shadowEvidenceCaptureAvailable` 明确失败；RED 2：将 `trace_output_dir` 指向普通文件后，focused C++ test 捕获 `create_directories` 异常越过 runtime owner 边界。
+  - 新增 `MixedInputEvidenceRecorder`：从 callback-local publication 一路携带 receipt 与 current boundary evidence，在 runtime `CommitAfterCurrentCycleAudit` 后记录实际 before/after/commit；没有重新 Acquire Poll frame，也没有修改 `ProductionMutationEnabled() == false`。
+  - JSONL 输出与 `evaluate_mixed_input_trace.py` schema 兼容，覆盖 per-channel current-cycle/next-Poll writer、Sprint contributor、epoch/session、exact receipt、adapter rollback 与 commit 结果。采样仅在首次、decision 变化、时钟回退或每 10 秒 health tick 写入；目录失败使用 `error_code` 静默放弃，不影响 owner tick。
+  - Focused GREEN：`xmake run -y DualPadGameplayProjectionTests`、`python tests/python/test_mixed_input_closeout_contracts.py --phase closeout`、`python tests/python/test_mixed_input_wp5_shadow_wiring.py`、`python tests/python/test_evaluate_mixed_input_trace.py` 全部 exit 0（分别 8、4、10 个 Python tests 通过）。
+  - 相邻回归：`xmake run -y DualPadInputV2Tests`、`xmake build -y DualPadReplayHarness`、`xmake build -y DualPad` 全部 exit 0；PDB 同路径占用仅为已知 copy warning，DLL 明确 `build ok`。
+  - Gate 不变：I-P 仍为 `NO-GO`、`capabilityEnabled=false`、`liveVerdict=pending`。shadow trace 只能自动筛出 causal contract 失败，不能替代 event materialization 与下游 consumer watchpoint 的动态顺序证明；其它动态 Gate 也均未提前启用。

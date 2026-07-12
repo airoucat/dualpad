@@ -181,6 +181,7 @@ namespace dualpad::input
             frameToken,
             eventBatchToken,
             ownerNowUs);
+        input_v2::ingress::PublishedIngressBatchReceipt kbmReceipt{};
         bool kbmBatchAccepted = false;
         if (bindings.complete && observed.eventListComplete) {
             auto kbmBatch = _kbmProducer.BuildIngressBatch(
@@ -188,7 +189,7 @@ namespace dualpad::input
                 bindings,
                 contextSnapshot,
                 ownerNowUs);
-            const auto receipt = input_v2::ingress::IngressHub::GetSingleton().PublishOwnerKbmBatch(
+            kbmReceipt = input_v2::ingress::IngressHub::GetSingleton().PublishOwnerKbmBatch(
                 input_v2::ingress::OwnerKbmIngressDraft{
                     .boundary = input_v2::ingress::IngressBoundaryObservation{
                         .contextRevision = contextSnapshot.contextRevision,
@@ -198,13 +199,22 @@ namespace dualpad::input
                     },
                     .kbm = std::move(kbmBatch)
                 });
-            kbmBatchAccepted = receipt.accepted;
+            kbmBatchAccepted = kbmReceipt.accepted;
         }
         const auto currentCyclePlan = input_v2::gameplay::BuildCurrentCycleGatePlan(
             BuildCurrentCycleInput(consumedReceipt, observed, bindings, kbmBatchAccepted));
         const auto preparedCurrentCycle =
             input_v2::gameplay::RuntimeInputPublication::GetSingleton()
-                .PrepareCallbackAudit(frameToken, currentCyclePlan);
+                .PrepareCallbackAudit(
+                    frameToken,
+                    currentCyclePlan,
+                    input_v2::gameplay::CurrentCycleCallbackEvidence{
+                        .ownerTickToken = frameToken,
+                        .monotonicUs = ownerNowUs,
+                        .currentInputStateEpoch = kbmReceipt.inputStateEpoch,
+                        .currentGamepadSessionId = kbmReceipt.gamepadSessionId,
+                        .receiptFailure = consumedReceipt.failure,
+                        .receipt = consumedReceipt.receipt });
         const auto currentCycleAudit = _currentCycleAdapter.AuditEventListShadow(
             event,
             currentCyclePlan);

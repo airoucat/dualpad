@@ -192,7 +192,8 @@ local ph5_gameplay_projection_files = {
     "src/input_v2/gameplay/SustainedContributorDecision.cpp",
     "src/input_v2/gameplay/TransientActionGate.cpp",
     "src/input_v2/gameplay/GameplayPresentationPublisher.cpp",
-    "src/input_v2/gameplay/RuntimeDiagnostics.cpp"
+    "src/input_v2/gameplay/RuntimeDiagnostics.cpp",
+    "src/input_v2/telemetry/MixedInputEvidence.cpp"
 }
 
 local ph5_gameplay_runtime_files = {

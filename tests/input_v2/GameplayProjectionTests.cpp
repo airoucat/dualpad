@@ -15,6 +15,7 @@
 #include "input_v2/gameplay/RuntimeInputPublication.h"
 #include "input_v2/gameplay/SustainedContributorDecision.h"
 #include "input_v2/gameplay/TransientActionGate.h"
+#include "input_v2/telemetry/MixedInputEvidence.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -31,6 +32,7 @@ namespace
     namespace actions = dualpad::input_v2::actions;
     namespace gameplay = dualpad::input_v2::gameplay;
     namespace presentation = dualpad::input_v2::presentation;
+    namespace telemetry = dualpad::input_v2::telemetry;
     namespace backend = dualpad::input::backend;
     namespace input = dualpad::input;
 
@@ -525,13 +527,31 @@ namespace
         Require(committed.committed && publication.GetCommitted().revision == 8,
             "successful no-mutation audit must commit proposed sensitive state");
 
-        const auto preparedCallback = publication.PrepareCallbackAudit(9001, plan);
+        const gameplay::CurrentCycleCallbackEvidence callbackEvidence{
+            .ownerTickToken = 9001,
+            .monotonicUs = 123'000,
+            .currentInputStateEpoch = 7,
+            .currentGamepadSessionId = 3,
+            .receipt = input::PollMaterializationReceipt{
+                .hookCallSequence = 71,
+                .threadId = 1001,
+                .identity = ReceiptIdentity(70, 11),
+                .serializeSucceeded = true }
+        };
+        const auto preparedCallback = publication.PrepareCallbackAudit(
+            9001,
+            plan,
+            callbackEvidence);
         Require(preparedCallback.token != 0 &&
                 publication.CommitCallbackAudit(preparedCallback.token, shadowAudit),
             "callback-local receipt plan must follow Prepare -> Apply -> Commit");
         Require(!publication.CommitCallbackAudit(preparedCallback.token, shadowAudit),
             "callback-local prepared token must be consume-once");
-        Require(publication.FindCallbackAudit(9001).has_value(),
+        const auto publishedCallback = publication.FindCallbackAudit(9001);
+        Require(publishedCallback.has_value() &&
+                publishedCallback->evidence.receipt.has_value() &&
+                publishedCallback->evidence.receipt->hookCallSequence == 71 &&
+                publishedCallback->evidence.currentInputStateEpoch == 7,
             "committed callback audit must remain visible only during its callback scope");
         publication.ClearCallbackAudit(9001);
         Require(!publication.FindCallbackAudit(9001).has_value(),
@@ -1346,6 +1366,163 @@ namespace
             !gameplay::DualPadRuntime::LiveCoordinatorPresentationAuthorityReachable(),
             "legacy gameplay ownership authority must not be reachable from live runtime");
     }
+
+    void RunMixedInputEvidenceTests()
+    {
+        input::PollMaterializationReceipt receipt{
+            .hookCallSequence = 41,
+            .threadId = 77,
+            .identity = input::PollFrameIdentity{
+                .publicationGeneration = 12,
+                .runtimeGeneration = 11,
+                .packetNumber = 9,
+                .inputStateEpoch = 4,
+                .gamepadSessionId = 2,
+                .contextRevision = 7,
+                .controlMapRevision = 3,
+                .orderedCutoffSeq = 90,
+                .eventBatchToken = 33 },
+            .serializeSucceeded = true,
+            .routeAvailable = true,
+            .materializedLookEvent = true
+        };
+        gameplay::CurrentCycleSensitiveState previous{};
+        previous.revision = 8;
+        previous.sprint.activeSourceMask = 1;
+        auto after = previous;
+        telemetry::MixedInputEvidenceRecord record{
+            .monotonicUs = 1'000'000,
+            .ownerTickToken = 100,
+            .currentInputStateEpoch = 4,
+            .currentGamepadSessionId = 2,
+            .receipt = receipt,
+            .plan = gameplay::CurrentCycleGatePlan{
+                .look = gameplay::CurrentCycleEventDisposition::Neutralize,
+                .affectedChannels = gameplay::CurrentCycleChannelMask(
+                    gameplay::CurrentCycleChannel::Look),
+                .requiresEventMutation = true,
+                .currentEventWriterCount = 1,
+                .nextPollWriterCount = 1 },
+            .audit = gameplay::CurrentCycleAdapterAudit{
+                .success = true,
+                .shadowOnly = true,
+                .mutationApplied = false,
+                .affectedChannels = gameplay::CurrentCycleChannelMask(
+                    gameplay::CurrentCycleChannel::Look),
+                .wouldMutateCount = 1,
+                .currentEventWriterCount = 1 },
+            .before = previous,
+            .after = after,
+            .commit = gameplay::RuntimeInputCommitResult{
+                .failClosedChannels = gameplay::CurrentCycleChannelMask(
+                    gameplay::CurrentCycleChannel::Look) }
+        };
+
+        const auto json = telemetry::SerializeMixedInputEvidenceJsonLine(record);
+        Require(json.find("\"schemaVersion\":1") != std::string::npos &&
+                json.find("\"ownerTickToken\":100") != std::string::npos &&
+                json.find("\"materializationId\":\"41:12:11:9\"") != std::string::npos &&
+                json.find("\"Look\":1") != std::string::npos &&
+                json.find("\"result\":\"ShadowOnly\"") != std::string::npos &&
+                json.find("\"sensitiveLedgerBefore\":\"8/1/0\"") != std::string::npos &&
+                json.find("\"sensitiveLedgerAfter\":\"8/1/0\"") != std::string::npos,
+            "mixed-input evidence JSON must bind receipt, writers and rollback ledger");
+
+        telemetry::MixedInputEvidenceSampler sampler;
+        Require(sampler.ShouldEmit(record), "first mixed-input evidence record must emit");
+        record.monotonicUs += 1'000'000;
+        record.ownerTickToken++;
+        Require(!sampler.ShouldEmit(record),
+            "unchanged high-rate evidence must not emit before the health interval");
+        record.monotonicUs += 9'000'000;
+        Require(sampler.ShouldEmit(record),
+            "unchanged mixed-input evidence must emit a ten-second health summary");
+        record.monotonicUs += 1;
+        record.audit.failure = gameplay::CurrentCycleGateFailure::AdapterFailure;
+        Require(sampler.ShouldEmit(record), "evidence decision changes must emit immediately");
+        record.audit.failure = gameplay::CurrentCycleGateFailure::None;
+
+        const auto traceRoot = std::filesystem::temp_directory_path() /
+            "dualpad-mixed-input-evidence";
+        const auto configPath = std::filesystem::temp_directory_path() /
+            "dualpad-mixed-input-evidence.ini";
+        std::error_code error;
+        std::filesystem::remove_all(traceRoot, error);
+        {
+            std::ofstream config(configPath, std::ios::trunc);
+            config << "[Replay]\n"
+                   << "enable_trace_recording = true\n"
+                   << "trace_output_dir = " << traceRoot.string() << "\n"
+                   << "trace_session = i-p-shadow\n";
+        }
+        Require(input::RuntimeConfig::GetSingleton().Load(configPath),
+            "mixed-input evidence trace config must load");
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().ResetForTests();
+
+        gameplay::DualPadRuntime runtime;
+        runtime.ResetForTests();
+        gameplay::DualPadRuntimeInput runtimeInput{
+            .kernel = Kernel(),
+            .resolved = Resolved(),
+            .policy = gameplay::GameplayPolicy{},
+            .recovery = gameplay::GameplayRecoveryInput{ .cleanFrame = true },
+            .currentCyclePlan = record.plan,
+            .currentCycleAudit = record.audit,
+            .currentCycleEvidence = gameplay::CurrentCycleCallbackEvidence{
+                .ownerTickToken = record.ownerTickToken,
+                .monotonicUs = record.monotonicUs,
+                .currentInputStateEpoch = record.currentInputStateEpoch,
+                .currentGamepadSessionId = record.currentGamepadSessionId,
+                .receipt = record.receipt },
+            .inputStateEpoch = record.currentInputStateEpoch,
+            .gamepadSessionId = record.currentGamepadSessionId,
+            .outputTick = record.monotonicUs
+        };
+        RecordingPollOutputExecutor executor;
+        (void)runtime.ProcessGameplayFrameForTests(runtimeInput, executor);
+        runtimeInput.currentCycleEvidence->monotonicUs += 1'000'000;
+        runtimeInput.outputTick += 1'000'000;
+        (void)runtime.ProcessGameplayFrameForTests(runtimeInput, executor);
+
+        const auto evidencePath = traceRoot / "i-p-shadow" / "mixed_input_evidence.jsonl";
+        std::ifstream evidence(evidencePath);
+        std::vector<std::string> lines;
+        for (std::string line; std::getline(evidence, line);) {
+            lines.push_back(std::move(line));
+        }
+        Require(lines.size() == 1 &&
+                lines.front().find("\"caseId\":\"runtime-shadow\"") != std::string::npos &&
+                lines.front().find("\"result\":\"ShadowOnly\"") != std::string::npos,
+            "runtime must write bounded evaluator-compatible I-P shadow evidence");
+
+        const auto blockedRoot = std::filesystem::temp_directory_path() /
+            "dualpad-mixed-input-evidence-blocked";
+        std::filesystem::remove_all(blockedRoot, error);
+        {
+            std::ofstream blocker(blockedRoot, std::ios::trunc);
+            blocker << "not a directory";
+        }
+        {
+            std::ofstream config(configPath, std::ios::trunc);
+            config << "[Replay]\n"
+                   << "enable_trace_recording = true\n"
+                   << "trace_output_dir = " << blockedRoot.string() << "\n"
+                   << "trace_session = i-p-shadow\n";
+        }
+        Require(input::RuntimeConfig::GetSingleton().Load(configPath),
+            "blocked mixed-input evidence trace config must load");
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().ResetForTests();
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().Record(record);
+
+        std::filesystem::remove(configPath, error);
+        std::filesystem::remove_all(traceRoot, error);
+        std::filesystem::remove(blockedRoot, error);
+        const auto missingConfig = std::filesystem::temp_directory_path() /
+            "dualpad-missing-mixed-input-evidence.ini";
+        std::filesystem::remove(missingConfig, error);
+        (void)input::RuntimeConfig::GetSingleton().Load(missingConfig);
+        telemetry::MixedInputEvidenceRecorder::GetSingleton().ResetForTests();
+    }
 }
 
 int main()
@@ -1369,6 +1546,7 @@ int main()
         RunPollOutputAdapterExecutionTests();
         RunDualPadRuntimePublisherSeamTests();
         RunCoordinatorAuthorityCutoverTests();
+        RunMixedInputEvidenceTests();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

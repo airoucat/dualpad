@@ -48,13 +48,27 @@ namespace dualpad::input_v2::gameplay
         std::uint64_t ownerTickToken{ 0 };
         CurrentCycleGatePlan plan{};
         CurrentCycleAdapterAudit audit{};
+        struct CurrentCycleCallbackEvidence
+        {
+            std::uint64_t ownerTickToken{ 0 };
+            std::uint64_t monotonicUs{ 0 };
+            std::uint64_t currentInputStateEpoch{ 0 };
+            std::uint64_t currentGamepadSessionId{ 0 };
+            dualpad::input::PollReceiptConsumeFailure receiptFailure{
+                dualpad::input::PollReceiptConsumeFailure::None
+            };
+            std::optional<dualpad::input::PollMaterializationReceipt> receipt;
+        } evidence{};
     };
+
+    using CurrentCycleCallbackEvidence = PublishedCurrentCycleAudit::CurrentCycleCallbackEvidence;
 
     struct PreparedCurrentCycleCallback
     {
         std::uint64_t token{ 0 };
         std::uint64_t ownerTickToken{ 0 };
         CurrentCycleGatePlan plan{};
+        CurrentCycleCallbackEvidence evidence{};
     };
 
     class RuntimeInputPublication
@@ -76,7 +90,8 @@ namespace dualpad::input_v2::gameplay
         EngineModeDecisionSnapshot GetEngineModeShadow() const;
         PreparedCurrentCycleCallback PrepareCallbackAudit(
             std::uint64_t ownerTickToken,
-            const CurrentCycleGatePlan& plan);
+            const CurrentCycleGatePlan& plan,
+            CurrentCycleCallbackEvidence evidence = {});
         bool CommitCallbackAudit(
             std::uint64_t token,
             const CurrentCycleAdapterAudit& audit);

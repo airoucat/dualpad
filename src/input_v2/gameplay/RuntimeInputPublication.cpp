@@ -82,7 +82,8 @@ namespace dualpad::input_v2::gameplay
 
     PreparedCurrentCycleCallback RuntimeInputPublication::PrepareCallbackAudit(
         std::uint64_t ownerTickToken,
-        const CurrentCycleGatePlan& plan)
+        const CurrentCycleGatePlan& plan,
+        CurrentCycleCallbackEvidence evidence)
     {
         if (ownerTickToken == 0) {
             return {};
@@ -92,7 +93,8 @@ namespace dualpad::input_v2::gameplay
         PreparedCurrentCycleCallback prepared{
             .token = ++_nextCallbackToken,
             .ownerTickToken = ownerTickToken,
-            .plan = plan
+            .plan = plan,
+            .evidence = std::move(evidence)
         };
         _preparedCallbacks.emplace(prepared.token, prepared);
         return prepared;
@@ -116,7 +118,8 @@ namespace dualpad::input_v2::gameplay
         _callbackAudits[prepared.ownerTickToken] = PublishedCurrentCycleAudit{
             .ownerTickToken = prepared.ownerTickToken,
             .plan = prepared.plan,
-            .audit = audit
+            .audit = audit,
+            .evidence = prepared.evidence
         };
         return true;
     }

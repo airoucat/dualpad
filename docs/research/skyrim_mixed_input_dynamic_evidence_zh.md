@@ -30,4 +30,31 @@
 - Sprint contributor mask、final release、epoch/session、Poll receipt、adapter rollback、cursor exact ack 与 engine Original-only 合同有自动化反例。
 - static/host identity fixture 只能证明 fail-closed 逻辑；不能把任一 Gate 从 `NO-GO` 提升为通过。
 
+## I-P shadow 证据采集
+
+运行时已提供有界、默认关闭的 I-P shadow 记录器。它直接携带 callback 已消费的 `PollMaterializationReceipt`，以及同一轮 `Prepare -> Apply -> Commit` 的 plan、adapter audit 和 current-cycle-sensitive ledger 前后值；它不会重新 Acquire 最新 Poll frame。记录器仅在 decision 变化、时钟回退或每 10 秒健康采样时写入，输出失败会静默保持 fail-closed，不影响 owner tick。
+
+在实机使用的 `DualPadDebug.ini` 中设置：
+
+```ini
+[Replay]
+enable_trace_recording = true
+trace_output_dir = Data/SKSE/Plugins/DualPadTrace
+trace_session = mixed-input-i-p
+```
+
+退出游戏后，从 Skyrim 数据目录取得：
+
+```text
+Data/SKSE/Plugins/DualPadTrace/mixed-input-i-p/mixed_input_evidence.jsonl
+```
+
+在仓库根目录执行：
+
+```powershell
+python scripts/ci/evaluate_mixed_input_trace.py "G:\SteamLibrary\steamapps\common\Skyrim Special Edition\Data\SKSE\Plugins\DualPadTrace\mixed-input-i-p\mixed_input_evidence.jsonl"
+```
+
+判定规则：命令输出 `"status": "PASS"` 且 `"violations": []`，只证明这份运行样本没有违反自动化 causal contract；输出 `FAIL` 则本轮证据明确失败。该 shadow trace 不包含下游 consumer watchpoint，因此即使为 `PASS` 也不解除 I-P，仍需补齐 event materialization 与 consumer 顺序的动态证明。采集完成后应把 `enable_trace_recording` 恢复为 `false`。
+
 动态证据必须绑定被测插件 commit、Skyrim runtime、EXE/DLL/PDB/config hash、原始日志或 debugger artifact，并把唯一出口写回本台账和 `.dualpad-builder/mixed_input_evidence.json`。证据缺失、冲突或无法唯一判断时维持 `NO-GO`。

@@ -2,6 +2,8 @@
 
 #include "input_v2/gameplay/DualPadRuntime.h"
 
+#include "input_v2/telemetry/MixedInputEvidence.h"
+
 #include "input_v2/actions/CompiledActionGraphPublisher.h"
 #include "input_v2/config/AtomicConfigReloader.h"
 #include "input_v2/context/ContextResolver.h"
@@ -504,6 +506,8 @@ namespace dualpad::input_v2::gameplay
                 std::optional{ currentCycle->plan } : std::nullopt,
             .currentCycleAudit = currentCycle ?
                 std::optional{ currentCycle->audit } : std::nullopt,
+            .currentCycleEvidence = currentCycle ?
+                std::optional{ currentCycle->evidence } : std::nullopt,
             .inputStateEpoch = frame.facts.coherence.inputStateEpoch,
             .gamepadSessionId = frame.facts.coherence.gamepadSessionId,
             .controlMapRevision = frame.facts.coherence.controlMapRevision,
@@ -717,6 +721,21 @@ namespace dualpad::input_v2::gameplay
         }
         const auto sensitiveCommit = RuntimeInputPublication::GetSingleton()
             .CommitAfterCurrentCycleAudit(prepared.token, commitAudit);
+        if (input.currentCycleEvidence) {
+            telemetry::MixedInputEvidenceRecorder::GetSingleton().Record(
+                telemetry::MixedInputEvidenceRecord{
+                    .monotonicUs = input.currentCycleEvidence->monotonicUs,
+                    .ownerTickToken = input.currentCycleEvidence->ownerTickToken,
+                    .currentInputStateEpoch = input.currentCycleEvidence->currentInputStateEpoch,
+                    .currentGamepadSessionId = input.currentCycleEvidence->currentGamepadSessionId,
+                    .receiptFailure = input.currentCycleEvidence->receiptFailure,
+                    .receipt = input.currentCycleEvidence->receipt,
+                    .plan = currentCyclePlan,
+                    .audit = commitAudit,
+                    .before = committedSensitive,
+                    .after = RuntimeInputPublication::GetSingleton().GetCommitted(),
+                    .commit = sensitiveCommit });
+        }
         auto published = _presentationPublisher.GetPublished();
         if (output.outputApplySucceeded) {
             published = PublishGameplayPresentation(projection, input.outputTick, true);

@@ -25,6 +25,7 @@ namespace dualpad::input_v2::gameplay
         GameplayRecoveryInput recovery{};
         std::optional<CurrentCycleGatePlan> currentCyclePlan;
         std::optional<CurrentCycleAdapterAudit> currentCycleAudit;
+        std::optional<CurrentCycleCallbackEvidence> currentCycleEvidence;
         std::uint64_t inputStateEpoch{ 0 };
         std::uint64_t gamepadSessionId{ 0 };
         std::uint32_t controlMapRevision{ 0 };

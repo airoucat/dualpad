@@ -161,6 +161,41 @@ class MixedInputCloseoutContractTests(unittest.TestCase):
         self.assertIn("test_mixed_input_closeout_contracts.py", rc)
         self.assertIn('"--phase", "closeout"', rc)
 
+    def test_i_p_shadow_capture_is_bounded_and_does_not_approve_mutation(self) -> None:
+        manifest = self.load_manifest()
+        gate = manifest["dynamicEvidence"]["gates"]["I-P"]
+        self.assertEqual(gate["status"], "NO-GO")
+        self.assertFalse(gate["capabilityEnabled"])
+        self.assertTrue(gate["shadowEvidenceCaptureAvailable"])
+        self.assertEqual(gate["shadowEvidenceFile"], "mixed_input_evidence.jsonl")
+        self.assertEqual(gate["liveVerdict"], "pending")
+
+        xmake = (ROOT / "xmake.lua").read_text(encoding="utf-8")
+        self.assertIn(
+            '"src/input_v2/telemetry/MixedInputEvidence.cpp"',
+            xmake,
+        )
+        adapter = (
+            ROOT / "src/input/injection/SkyrimCurrentCycleEventAdapter.h"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "ProductionMutationEnabled() noexcept { return false; }",
+            adapter,
+        )
+
+        config = (ROOT / "config/DualPadDebug.ini").read_text(encoding="utf-8")
+        self.assertIn("enable_trace_recording = false", config)
+        evidence_doc = (
+            ROOT / "docs/research/skyrim_mixed_input_dynamic_evidence_zh.md"
+        ).read_text(encoding="utf-8")
+        for token in [
+            "mixed_input_evidence.jsonl",
+            "enable_trace_recording = true",
+            "evaluate_mixed_input_trace.py",
+            "不解除 I-P",
+        ]:
+            self.assertIn(token, evidence_doc)
+
     def test_closeout_diff_stays_inside_the_approved_scope(self) -> None:
         if self.phase != "closeout":
             self.skipTest("closeout-only scope contract")
