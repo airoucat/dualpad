@@ -349,3 +349,15 @@ Command failures, exceptions, and unexpected behaviors.
 - Detail: `.learnings/LEARNINGS.md` 存在多个相同状态行；仅以字段文本匹配无法保证目标 entry。diff 复核立即发现 `LRN-20260711` 被误标 resolved，而目标 `LRN-20260712-002` 仍为 open。
 - Related files: `.learnings/LEARNINGS.md`
 - Resolution: 恢复旧条目并用 `Logged` 时间与目标 entry ID 邻域限定 patch，将 `LRN-20260712-002` 正确标为 resolved。后续修改重复 Markdown/JSON 字段必须把稳定 ID 一并放入 patch context，并在提交前检查 scoped diff。
+
+## ERR-20260712-018
+
+- Logged: 2026-07-12 15:50 CST
+- Priority: low
+- Status: resolved
+- Area: GitHub push / external network
+- Summary: 实机验证证据提交后首次 `git push` 无法连接 GitHub HTTPS 443。
+- Detail: 本地提交 `6381b9a` 成功且工作树完整；`git push origin codex/mixed-input-implementation` 在约 21 秒后报告无法连接 `github.com:443`。这是外部网络失败，不得把本地 ahead 状态误报为已推送，也不得 force push。
+- Related files: `.dualpad-builder/progress.md`, `.learnings/LEARNINGS.md`
+- Suggested fix: 保留本地提交，先安全重试一次；若仍失败，明确报告分支 ahead 状态并等待网络恢复后重推。
+- Resolution: 未改变提交历史或远端引用，第二次普通 push 成功发布 `6381b9a`；首次失败确认为瞬时网络故障。
